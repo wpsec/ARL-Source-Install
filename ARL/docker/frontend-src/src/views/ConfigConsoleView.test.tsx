@@ -55,7 +55,11 @@ describe('ConfigConsoleView 初始化读取（React Query）', () => {
     await screen.findByDisplayValue('1408');
     await screen.findByDisplayValue('4');
     // black_ips 数组按 \n 拼接进水合 textarea。
-    await screen.findByDisplayValue('127.0.0.0/8\n10.0.0.0/8');
+    await waitFor(() => {
+      const el = document.getElementById('config-black-ips') as HTMLTextAreaElement | null;
+      expect(el, 'black_ips textarea 未渲染').toBeTruthy();
+      expect(el!.value).toBe('127.0.0.0/8\n10.0.0.0/8');
+    });
     // 单查询源：挂载只发一次 GET（React Query 去重，StrictMode 安全）。
     expect(calls.filter((c) => c.method === 'GET')).toHaveLength(1);
   });

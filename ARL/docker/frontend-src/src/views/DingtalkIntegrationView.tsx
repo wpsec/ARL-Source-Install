@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Settings,
 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { PageHeader } from '../layout/PageHeader';
@@ -77,7 +78,6 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   const [runtimeStatus, setRuntimeStatus] = useState<any>({});
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
@@ -151,30 +151,44 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
     return normalized;
   }, [sensitiveFieldSet]);
 
-  const loadDingtalkConfig = useCallback(async () => {
-    resetSensitiveState();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const result = await requestApi(token, '/dingtalk_api/config/', { method: 'GET' });
-      const data = result?.data || {};
-      setForm(normalizeForm(data?.config));
-      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-      setRuntimeStatus(data?.runtime_status || {});
-      setConfigPath(String(data.config_path || ''));
-      setUpdatedAt(String(data.updated_at || ''));
-      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
-    } catch (err: any) {
-      setError(err?.message || '加载钉钉集成配置失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [token, normalizeForm, normalizeSensitiveConfigured, resetSensitiveState]);
+  // 数据层迁移（计划 4 控制台批次）：初始化读取 = useQuery 快照 + 水合。
+  // 保存/连通性测试成功后 invalidate；reveal/workspaces/nodes 为按需操作读，
+  // 保持自身响应回写、不触碰缓存（与 ApiConsoleView 同一口径）。
+  const queryClient = useQueryClient();
+  const dingtalkConfigQueryKey = ['dingtalk-integration-config', token] as const;
+  const dingtalkConfigQuery = useQuery({
+    queryKey: dingtalkConfigQueryKey,
+    queryFn: () => requestApi(token, '/dingtalk_api/config/', { method: 'GET' }),
+    retry: 0,
+  });
+  const loading = dingtalkConfigQuery.isPending;
 
   useEffect(() => {
-    void loadDingtalkConfig();
-  }, [loadDingtalkConfig]);
+    if (dingtalkConfigQuery.isPending) {
+      setError('');
+      setSuccess('');
+      return;
+    }
+    if (dingtalkConfigQuery.isError) {
+      setError((dingtalkConfigQuery.error as Error)?.message || '加载钉钉集成配置失败');
+      return;
+    }
+    resetSensitiveState();
+    const data = dingtalkConfigQuery.data?.data || {};
+    setForm(normalizeForm(data?.config));
+    setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
+    setRuntimeStatus(data?.runtime_status || {});
+    setConfigPath(String(data.config_path || ''));
+    setUpdatedAt(String(data.updated_at || ''));
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
+  }, [
+    dingtalkConfigQuery.isPending,
+    dingtalkConfigQuery.isError,
+    dingtalkConfigQuery.data,
+    normalizeForm,
+    normalizeSensitiveConfigured,
+    resetSensitiveState,
+  ]);
 
   const updateStringField = (key: DingtalkStringKey, value: string) => {
     if (sensitiveFieldSet.has(key as DingtalkSensitiveStringKey)) {
@@ -236,7 +250,9 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
 
   const toggleSensitiveDisplay = () => {
     if (sensitiveVisible) {
-      void loadDingtalkConfig();
+      // 先本地收敛明文态（原 loadDingtalkConfig 开头同款 reset），再重取脱敏快照。
+      resetSensitiveState();
+      void dingtalkConfigQuery.refetch();
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -312,6 +328,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingFieldSet(new Set());
+      void queryClient.invalidateQueries({ queryKey: dingtalkConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存钉钉集成配置失败');
     } finally {
@@ -330,6 +347,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
       });
       setDebugResult(JSON.stringify(result?.data || {}, null, 2));
       setSuccess('钉钉连通性测试完成');
+      void queryClient.invalidateQueries({ queryKey: dingtalkConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '钉钉连通性测试失败');
     } finally {
@@ -385,7 +403,11 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
           <div className="text-sm font-bold tracking-wide">配置状态</div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => void loadDingtalkConfig()}
+              onClick={() => {
+                setError('');
+                setSuccess('');
+                void dingtalkConfigQuery.refetch();
+              }}
               className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={loading}
             >

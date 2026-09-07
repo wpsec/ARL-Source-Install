@@ -13,6 +13,7 @@ import {
   Settings,
   X,
 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { Modal } from '../components/ui/Modal';
@@ -156,7 +157,6 @@ export function ApiConsoleView({ token }: { token: string }) {
 
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -280,29 +280,43 @@ export function ApiConsoleView({ token }: { token: string }) {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const loadServiceApiConfig = useCallback(async () => {
-    resetSensitiveState();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const result = await requestApi(token, '/api_console/service_api/', { method: 'GET' });
-      const data = result?.data || {};
-      setForm(normalizeForm(data?.service_api));
-      setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-      setConfigPath(String(data.config_path || ''));
-      setUpdatedAt(String(data.updated_at || ''));
-      setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
-    } catch (err: any) {
-      setError(err?.message || '加载 API 配置失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [token, normalizeForm, normalizeSensitiveConfigured, resetSensitiveState]);
+  // 数据层迁移（计划 4 控制台批次）：初始化读取 = useQuery 快照，到达后水合表单。
+  // 保存/单测/批量测试成功后 invalidate 本查询取服务端权威快照；reveal 属鉴权读
+  // （不改服务端状态），按自身响应回写且不触碰缓存——避免脱敏 refetch 冲掉明文展示。
+  const queryClient = useQueryClient();
+  const serviceApiQueryKey = ['api-console-service-api', token] as const;
+  const serviceApiQuery = useQuery({
+    queryKey: serviceApiQueryKey,
+    queryFn: () => requestApi(token, '/api_console/service_api/', { method: 'GET' }),
+    retry: 0,
+  });
+  const loading = serviceApiQuery.isPending;
 
   useEffect(() => {
-    void loadServiceApiConfig();
-  }, [loadServiceApiConfig]);
+    if (serviceApiQuery.isPending) {
+      setError('');
+      setSuccess('');
+      return;
+    }
+    if (serviceApiQuery.isError) {
+      setError((serviceApiQuery.error as Error)?.message || '加载 API 配置失败');
+      return;
+    }
+    resetSensitiveState();
+    const data = serviceApiQuery.data?.data || {};
+    setForm(normalizeForm(data?.service_api));
+    setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
+    setConfigPath(String(data.config_path || ''));
+    setUpdatedAt(String(data.updated_at || ''));
+    setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
+  }, [
+    serviceApiQuery.isPending,
+    serviceApiQuery.isError,
+    serviceApiQuery.data,
+    normalizeForm,
+    normalizeSensitiveConfigured,
+    resetSensitiveState,
+  ]);
 
   /**
    * 构造保存/测试共用的 service_api payload，避免两处字段处理不一致。
@@ -359,7 +373,8 @@ export function ApiConsoleView({ token }: { token: string }) {
       });
       setSensitiveVisible(false);
       setSensitiveEditingFieldSet(new Set());
-      void loadServiceApiConfig();
+      // 重取拿回脱敏快照；水合 effect 的 resetSensitiveState 收敛明文编辑态。
+      void serviceApiQuery.refetch();
       return;
     }
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || sensitiveVerifyUsername);
@@ -429,6 +444,7 @@ export function ApiConsoleView({ token }: { token: string }) {
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingFieldSet(new Set());
+      void queryClient.invalidateQueries({ queryKey: serviceApiQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存 API 配置失败');
     } finally {
@@ -474,6 +490,7 @@ export function ApiConsoleView({ token }: { token: string }) {
         [providerId]: providerResult,
       }));
       setSuccess(`${providerTitle} 测试已完成`);
+      void queryClient.invalidateQueries({ queryKey: serviceApiQueryKey });
     } catch (err: any) {
       const message = err?.message || `${providerTitle} 测试失败`;
       setProviderTestResultMap((prev) => ({
@@ -900,6 +917,7 @@ export function ApiConsoleView({ token }: { token: string }) {
           ? `一键验证完成，成功 ${successCount} 项，失败 ${failCount} 项`
           : summaryMessage
       );
+      void queryClient.invalidateQueries({ queryKey: serviceApiQueryKey });
     } catch (err: any) {
       const message = err?.message || '一键验证失败';
       setBatchTestError(message);
@@ -925,7 +943,11 @@ export function ApiConsoleView({ token }: { token: string }) {
           <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => void loadServiceApiConfig()}
+              onClick={() => {
+                setError('');
+                setSuccess('');
+                void serviceApiQuery.refetch();
+              }}
               className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={loading || batchTesting || Boolean(testingProviderId)}
             >
