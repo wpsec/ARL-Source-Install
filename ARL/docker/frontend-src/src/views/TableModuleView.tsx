@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -131,11 +131,6 @@ export function TableModuleView({
   const [policyTaskTag, setPolicyTaskTag] = useState<'task' | 'risk_cruising'>('task');
   const [policyTaskName, setPolicyTaskName] = useState('');
   const [policyTaskTarget, setPolicyTaskTarget] = useState('');
-  const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [taskNameOptions, setTaskNameOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [vulnCategoryOptions, setVulnCategoryOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [taskDetailCounts, setTaskDetailCounts] = useState<Record<string, number>>({});
-  const [taskDetailCountLoading, setTaskDetailCountLoading] = useState(false);
   const [expandedScopeRows, setExpandedScopeRows] = useState<Record<string, boolean>>({});
   const [expandedTaskScheduleTargetRows, setExpandedTaskScheduleTargetRows] = useState<Record<string, boolean>>({});
   const [expandedTaskOptionRows, setExpandedTaskOptionRows] = useState<Record<string, boolean>>({});
@@ -143,12 +138,6 @@ export function TableModuleView({
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
-  const [aiDenoiseConfig, setAiDenoiseConfig] = useState<AiDenoiseConfigSnapshot>({
-    enable: true,
-    moduleEnabled: true,
-    promptId: '',
-  });
-  const [aiDenoiseConfigLoading, setAiDenoiseConfigLoading] = useState(false);
   const [aiDenoiseLoading, setAiDenoiseLoading] = useState(false);
   const [aiDenoiseResultMap, setAiDenoiseResultMap] = useState<Record<string, AiDenoiseResultItem>>({});
   const [aiDenoiseDetail, setAiDenoiseDetail] = useState<{
@@ -196,11 +185,8 @@ export function TableModuleView({
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
   const latestLoadRowsRequestIdRef = useRef(0);
   const activeModuleCacheKeyRef = useRef('');
-  const taskDetailCountCacheRef = useRef<Record<string, Record<string, number>>>({});
-  const taskSchedulePolicyOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
-  const taskNameOptionsCacheRef = useRef<Array<{ label: string; value: string }> | null>(null);
-  const vulnCategoryOptionsCacheRef = useRef<Record<string, Array<{ label: string; value: string }>>>({});
-  const aiDenoiseConfigCacheRef = useRef<Record<string, AiDenoiseConfigSnapshot>>({});
+  // loadRows 精确 total 对 size=1 探测值的覆盖表（按筛选签名分键，组件生命周期内有效）。
+  const taskDetailCountOverridesRef = useRef<Record<string, Record<string, number>>>({});
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -628,169 +614,89 @@ export function TableModuleView({
     }
   }, []);
 
-  useEffect(() => {
-    if (module.id !== 'task_schedule') {
-      setTaskSchedulePolicyOptions([]);
-      return;
-    }
+  // Phase 3 数据层：筛选选项读取统一 React Query（取代手动 cacheRef+cancelled 模式）。
+  // staleTime 30s 对齐列表现有节奏；跨组件实例共享缓存，模块切换命中不重取。
+  const policyNamesQuery = useQuery({
+    queryKey: ['module-options-policy-names', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/policy/', {
+        method: 'GET',
+        query: { page: 1, size: 1000, order: 'name' },
+      });
+      const items = normalizeListData(response).items || [];
+      const uniqueNames = Array.from(
+        new Set(
+          items
+            .map((item: any) => String(item?.name || '').trim())
+            .filter((name: string) => name)
+        )
+      );
+      return uniqueNames.map((name) => ({ label: name, value: name }));
+    },
+    enabled: module.id === 'task_schedule',
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const taskSchedulePolicyOptions =
+    module.id === 'task_schedule' ? policyNamesQuery.data ?? [] : [];
 
-    if (taskSchedulePolicyOptionsCacheRef.current) {
-      setTaskSchedulePolicyOptions(taskSchedulePolicyOptionsCacheRef.current);
-      return;
-    }
+  const taskNamesQuery = useQuery({
+    queryKey: ['module-options-task-names', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/task/', {
+        method: 'GET',
+        query: { page: 1, size: 1000, order: 'name' },
+      });
+      const items = normalizeListData(response).items || [];
+      return buildUniqueTextOptions(items.map((item: any) => item?.name));
+    },
+    enabled: module.id === 'task',
+    staleTime: 30_000,
+    retry: 0,
+  });
+  // 选项 = 全量快照 ∪ 当前页行值（与原“拉取后合并 rows”的增量语义一致，改为派生）。
+  const taskNameOptions = useMemo(() => {
+    if (module.id !== 'task') return [];
+    const base = taskNamesQuery.data ?? [];
+    const rowOptions = rows.length
+      ? buildUniqueTextOptions(rows.map((row) => row?.name))
+      : [];
+    return buildUniqueTextOptions([
+      ...base.map((option) => option.value),
+      ...rowOptions.map((option) => option.value),
+    ]);
+  }, [buildUniqueTextOptions, module.id, rows, taskNamesQuery.data]);
 
-    let cancelled = false;
-    const loadPolicyOptions = async () => {
-      try {
-        const response = await requestApi(token, '/policy/', {
-          method: 'GET',
-          query: { page: 1, size: 1000, order: 'name' },
-        });
-        const items = normalizeListData(response).items || [];
-        const uniqueNames = Array.from(
-          new Set(
-            items
-              .map((item: any) => String(item?.name || '').trim())
-              .filter((name: string) => name)
-          )
-        );
-        if (cancelled) return;
-        const options = uniqueNames.map((name) => ({ label: name, value: name }));
-        taskSchedulePolicyOptionsCacheRef.current = options;
-        setTaskSchedulePolicyOptions(options);
-      } catch {
-        if (cancelled) return;
-        setTaskSchedulePolicyOptions([]);
-      }
-    };
-
-    void loadPolicyOptions();
-    return () => {
-      cancelled = true;
-    };
-  }, [module.id, token]);
-
-  useEffect(() => {
-    if (module.id !== 'task') {
-      setTaskNameOptions([]);
-      return;
-    }
-
-    if (taskNameOptionsCacheRef.current) {
-      setTaskNameOptions(taskNameOptionsCacheRef.current);
-      return;
-    }
-
-    let cancelled = false;
-    const loadTaskNameOptions = async () => {
-      try {
-        const response = await requestApi(token, '/task/', {
-          method: 'GET',
-          query: { page: 1, size: 1000, order: 'name' },
-        });
-        const items = normalizeListData(response).items || [];
-        const options = buildUniqueTextOptions(items.map((item: any) => item?.name));
-        if (cancelled) return;
-        taskNameOptionsCacheRef.current = options;
-        setTaskNameOptions(options);
-      } catch {
-        if (cancelled) return;
-        setTaskNameOptions([]);
-      }
-    };
-
-    void loadTaskNameOptions();
-    return () => {
-      cancelled = true;
-    };
-  }, [buildUniqueTextOptions, module.id, token]);
-
-  useEffect(() => {
-    if (module.id !== 'task' || rows.length === 0) return;
-
-    const rowOptions = buildUniqueTextOptions(rows.map((row) => row?.name));
-    if (rowOptions.length === 0) return;
-
-    setTaskNameOptions((prev) => {
-      const merged = buildUniqueTextOptions([
-        ...prev.map((option) => option.value),
-        ...rowOptions.map((option) => option.value),
-      ]);
-
-      const hasChanged =
-        merged.length !== prev.length ||
-        merged.some((option, index) => option.value !== prev[index]?.value);
-
-      if (!hasChanged) return prev;
-      taskNameOptionsCacheRef.current = merged;
-      return merged;
-    });
-  }, [buildUniqueTextOptions, module.id, rows]);
-
-  useEffect(() => {
-    if (module.id !== 'vuln') {
-      setVulnCategoryOptions([]);
-      return;
-    }
-
-    const cacheKey = `vuln_category::${activeExternalFilterSignature}`;
-    const cached = vulnCategoryOptionsCacheRef.current[cacheKey];
-    if (cached) {
-      setVulnCategoryOptions(cached);
-      return;
-    }
-
-    let cancelled = false;
-    const loadVulnCategoryOptions = async () => {
-      try {
-        const response = await requestApi(token, '/vuln/', {
-          method: 'GET',
-          query: {
-            page: 1,
-            size: 1000,
-            order: 'plg_type',
-            ...activeExternalFilters,
-          },
-        });
-        const items = normalizeListData(response).items || [];
-        const options = buildUniqueTextOptions(items.map((item: any) => item?.plg_type));
-        if (cancelled) return;
-        vulnCategoryOptionsCacheRef.current[cacheKey] = options;
-        setVulnCategoryOptions(options);
-      } catch {
-        if (cancelled) return;
-        setVulnCategoryOptions([]);
-      }
-    };
-
-    void loadVulnCategoryOptions();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeExternalFilterSignature, activeExternalFilters, buildUniqueTextOptions, module.id, token]);
-
-  useEffect(() => {
-    if (module.id !== 'vuln' || rows.length === 0) return;
-
-    const cacheKey = `vuln_category::${activeExternalFilterSignature}`;
-    const rowOptions = buildUniqueTextOptions(rows.map((row) => row?.plg_type));
-    if (rowOptions.length === 0) return;
-
-    setVulnCategoryOptions((prev) => {
-      const merged = buildUniqueTextOptions([
-        ...prev.map((option) => option.value),
-        ...rowOptions.map((option) => option.value),
-      ]);
-
-      const hasChanged =
-        merged.length !== prev.length ||
-        merged.some((option, index) => option.value !== prev[index]?.value);
-
-      if (!hasChanged) return prev;
-      vulnCategoryOptionsCacheRef.current[cacheKey] = merged;
-      return merged;
-    });
-  }, [activeExternalFilterSignature, buildUniqueTextOptions, module.id, rows]);
+  const vulnCategoryQuery = useQuery({
+    queryKey: ['module-options-vuln-category', token, activeExternalFilterSignature],
+    queryFn: async () => {
+      const response = await requestApi(token, '/vuln/', {
+        method: 'GET',
+        query: {
+          page: 1,
+          size: 1000,
+          order: 'plg_type',
+          ...activeExternalFilters,
+        },
+      });
+      const items = normalizeListData(response).items || [];
+      return buildUniqueTextOptions(items.map((item: any) => item?.plg_type));
+    },
+    enabled: module.id === 'vuln',
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const vulnCategoryOptions = useMemo(() => {
+    if (module.id !== 'vuln') return [];
+    const base = vulnCategoryQuery.data ?? [];
+    const rowOptions = rows.length
+      ? buildUniqueTextOptions(rows.map((row) => row?.plg_type))
+      : [];
+    return buildUniqueTextOptions([
+      ...base.map((option) => option.value),
+      ...rowOptions.map((option) => option.value),
+    ]);
+  }, [buildUniqueTextOptions, module.id, rows, vulnCategoryQuery.data]);
 
   const isTaskDetailModule = useMemo(
     () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
@@ -801,60 +707,45 @@ export function TableModuleView({
     [activeExternalFilterSignature]
   );
 
-  useEffect(() => {
-    if (!isTaskDetailModule) {
-      setTaskDetailCounts({});
-      setTaskDetailCountLoading(false);
-      return;
-    }
-
-    const cachedCounts = taskDetailCountCacheRef.current[taskDetailCountCacheKey];
-    if (cachedCounts) {
-      setTaskDetailCounts(cachedCounts);
-      setTaskDetailCountLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const loadTaskDetailCounts = async () => {
-      setTaskDetailCountLoading(true);
-      try {
-        const requests = TASK_DETAIL_TABS.map(async (tab) => {
-          const tabModule = getModuleById(tab.id);
-          if (!tabModule.listPath) return [tab.id, 0] as const;
-          const response = await requestApi(token, tabModule.listPath, {
-            method: 'GET',
-            query: {
-              page: 1,
-              size: 1,
-              ...activeExternalFilters,
-            },
-          });
-          const normalized = normalizeListData(response);
-          return [tab.id, Number(normalized.total || 0)] as const;
+  const taskDetailCountsQuery = useQuery({
+    queryKey: ['module-task-detail-counts', token, activeExternalFilterSignature],
+    queryFn: async () => {
+      const requests = TASK_DETAIL_TABS.map(async (tab) => {
+        const tabModule = getModuleById(tab.id);
+        if (!tabModule.listPath) return [tab.id, 0] as const;
+        const response = await requestApi(token, tabModule.listPath, {
+          method: 'GET',
+          query: {
+            page: 1,
+            size: 1,
+            ...activeExternalFilters,
+          },
         });
-
-        const entries = await Promise.all(requests);
-        if (cancelled) return;
-        const nextCounts: Record<string, number> = {};
-        entries.forEach(([id, count]) => {
-          nextCounts[id] = count;
-        });
-        taskDetailCountCacheRef.current[taskDetailCountCacheKey] = nextCounts;
-        setTaskDetailCounts(nextCounts);
-      } catch {
-        if (cancelled) return;
-        setTaskDetailCounts({});
-      } finally {
-        if (!cancelled) setTaskDetailCountLoading(false);
-      }
-    };
-
-    void loadTaskDetailCounts();
-    return () => {
-      cancelled = true;
-    };
-  }, [isTaskDetailModule, token, activeExternalFilters, taskDetailCountCacheKey]);
+        const normalized = normalizeListData(response);
+        return [tab.id, Number(normalized.total || 0)] as const;
+      });
+      const entries = await Promise.all(requests);
+      const nextCounts: Record<string, number> = {};
+      entries.forEach(([id, count]) => {
+        nextCounts[id] = count;
+      });
+      return nextCounts;
+    },
+    enabled: isTaskDetailModule,
+    staleTime: 30_000,
+    retry: 0,
+  });
+  // 并行 size=1 探测 + loadRows 拿到的本模块精确 total 覆盖（原 cacheRef 写入语义）。
+  const taskDetailCounts = useMemo(() => {
+    if (!isTaskDetailModule) return {};
+    const merged: Record<string, number> = { ...(taskDetailCountsQuery.data ?? {}) };
+    const override = taskDetailCountOverridesRef.current[taskDetailCountCacheKey];
+    if (override && typeof override[module.id] === 'number') {
+      merged[module.id] = override[module.id];
+    }
+    return merged;
+  }, [activeExternalFilterSignature, isTaskDetailModule, module.id, taskDetailCountCacheKey, taskDetailCountsQuery.data]);
+  const taskDetailCountLoading = isTaskDetailModule && taskDetailCountsQuery.isFetching;
 
   useEffect(() => {
     if (!taskErrorDialog) return;
@@ -1014,9 +905,9 @@ export function TableModuleView({
       setSelectedIds([]);
       if (isTaskDetailModule) {
         const currentTotal = Number(normalized.total || 0);
-        setTaskDetailCounts((prev) => ({ ...prev, [module.id]: currentTotal }));
-        taskDetailCountCacheRef.current[taskDetailCountCacheKey] = {
-          ...(taskDetailCountCacheRef.current[taskDetailCountCacheKey] || {}),
+        // 本模块精确 total 覆盖 size=1 探测值（按筛选签名分键，与原 cacheRef 语义一致）。
+        taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
+          ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
           [module.id]: currentTotal,
         };
       }
@@ -1136,6 +1027,38 @@ export function TableModuleView({
     () => (isAiDenoiseModule(module.id) ? module.id : null),
     [module.id]
   );
+
+  // AI 去噪配置读取：与 AiConsoleView 共享同一 query key（['ai-console-config', token]），
+  // AI 管理页保存后 invalidate 会同步到这里；快照按 moduleId 派生，不再维护 per-module cacheRef。
+  const aiConfigSharedQuery = useQuery({
+    queryKey: ['ai-console-config', token],
+    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
+    enabled: Boolean(aiDenoiseModuleId),
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const aiDenoiseConfig = useMemo<AiDenoiseConfigSnapshot>(() => {
+    const fallback: AiDenoiseConfigSnapshot = { enable: true, moduleEnabled: true, promptId: '' };
+    if (!aiDenoiseModuleId) return fallback;
+    // 失败时 react-query 保留上一成功 data（等价原 cached 回退）；无缓存则 fallback。
+    const result = aiConfigSharedQuery.data;
+    if (!result) return fallback;
+    const aiConfig = (result?.data?.ai_config && typeof result.data.ai_config === 'object')
+      ? result.data.ai_config
+      : {};
+    const moduleConfig = (aiConfig?.ai_denoise_modules && typeof aiConfig.ai_denoise_modules === 'object')
+      ? aiConfig.ai_denoise_modules
+      : {};
+    const modulePromptIds = (aiConfig?.ai_denoise_prompt_ids && typeof aiConfig.ai_denoise_prompt_ids === 'object')
+      ? aiConfig.ai_denoise_prompt_ids
+      : {};
+    return {
+      enable: aiConfig?.ai_denoise_enable !== false,
+      moduleEnabled: moduleConfig[aiDenoiseModuleId] !== false,
+      promptId: sanitizeUiMessage(String(modulePromptIds[aiDenoiseModuleId] || ''), 80),
+    };
+  }, [aiConfigSharedQuery.data, aiDenoiseModuleId]);
+  const aiDenoiseConfigLoading = Boolean(aiDenoiseModuleId) && aiConfigSharedQuery.isPending;
   const normalizeAiDenoiseResultLevel = useCallback((value: any): AiDenoiseResultItem['result_level'] => {
     const normalized = String(value || '').trim().toLowerCase();
     if (normalized === 'safe' || normalized === 'suspicious' || normalized === 'danger' || normalized === 'disabled') {
@@ -1571,64 +1494,6 @@ export function TableModuleView({
       row,
     });
   }, [getRowId]);
-
-  useEffect(() => {
-    if (!aiDenoiseModuleId) {
-      setAiDenoiseConfig({ enable: true, moduleEnabled: true, promptId: '' });
-      setAiDenoiseConfigLoading(false);
-      return;
-    }
-
-    const cached = aiDenoiseConfigCacheRef.current[aiDenoiseModuleId];
-    if (cached) {
-      setAiDenoiseConfig(cached);
-    }
-
-    let cancelled = false;
-    const loadAiDenoiseConfig = async () => {
-      setAiDenoiseConfigLoading(true);
-      try {
-        const result = await requestApi(token, '/api_console/ai_config/', { method: 'GET' });
-        if (cancelled) return;
-        const aiConfig = (result?.data?.ai_config && typeof result.data.ai_config === 'object')
-          ? result.data.ai_config
-          : {};
-        const moduleConfig = (aiConfig?.ai_denoise_modules && typeof aiConfig.ai_denoise_modules === 'object')
-          ? aiConfig.ai_denoise_modules
-          : {};
-        const modulePromptIds = (aiConfig?.ai_denoise_prompt_ids && typeof aiConfig.ai_denoise_prompt_ids === 'object')
-          ? aiConfig.ai_denoise_prompt_ids
-          : {};
-        const nextSnapshot: AiDenoiseConfigSnapshot = {
-          enable: aiConfig?.ai_denoise_enable !== false,
-          moduleEnabled: moduleConfig[aiDenoiseModuleId] !== false,
-          promptId: sanitizeUiMessage(String(modulePromptIds[aiDenoiseModuleId] || ''), 80),
-        };
-        aiDenoiseConfigCacheRef.current[aiDenoiseModuleId] = nextSnapshot;
-        setAiDenoiseConfig(nextSnapshot);
-      } catch {
-        if (cancelled) return;
-        if (cached) {
-          setAiDenoiseConfig(cached);
-        } else {
-          const fallbackSnapshot: AiDenoiseConfigSnapshot = {
-            enable: true,
-            moduleEnabled: true,
-            promptId: '',
-          };
-          aiDenoiseConfigCacheRef.current[aiDenoiseModuleId] = fallbackSnapshot;
-          setAiDenoiseConfig(fallbackSnapshot);
-        }
-      } finally {
-        if (!cancelled) setAiDenoiseConfigLoading(false);
-      }
-    };
-
-    void loadAiDenoiseConfig();
-    return () => {
-      cancelled = true;
-    };
-  }, [aiDenoiseModuleId, token]);
 
   useEffect(() => {
     if (!aiDenoiseModuleId) {
@@ -2476,14 +2341,19 @@ export function TableModuleView({
     const taskName = String(taskNameRaw || '').trim();
     if (!taskName) return [];
 
-    const response = await requestApi(token, '/task/', {
-      method: 'GET',
-      query: {
-        page: 1,
-        size: 10000,
-        name: taskName,
-        order: '-_id',
-      },
+    // Phase 3 数据层：命令式一次性读取也走 React Query 缓存（同名任务查看去重）。
+    const response = await queryClient.fetchQuery({
+      queryKey: ['module-task-ids-by-name', token, taskName],
+      staleTime: 30_000,
+      queryFn: () => requestApi(token, '/task/', {
+        method: 'GET',
+        query: {
+          page: 1,
+          size: 10000,
+          name: taskName,
+          order: '-_id',
+        },
+      }),
     });
 
     const taskItems = normalizeListData(response).items || [];
@@ -2501,7 +2371,7 @@ export function TableModuleView({
           .filter((id: string) => Boolean(id))
       )
     );
-  }, [token]);
+  }, [queryClient, token]);
 
   const openTaskViewByName = async () => {
     if (module.id !== 'task') return;
