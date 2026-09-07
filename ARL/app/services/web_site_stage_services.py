@@ -199,19 +199,43 @@ class WebSiteResultPersistStageService(object):
                 task._result_writer.insert_one("vuln", result_item)
 
 
-class WebSitePostProcessStageService(object):
-    """执行兼容的 Web 专项阶段和 WAF 观测收尾。"""
+class WebSiteWafStageService(object):
+    """承载 WAF 目标过滤、观测摘要和任务级指标写回。"""
 
     def __init__(self, task):
         self.task = task
 
-    def run(self):
+    def filter_targets(self, targets, stage_name="") -> list:
         task = self.task
-        stage = WebSiteSingleStageService(task, logger=logger)
-        if task._nuclei_deferred_retry_needed:
-            task.run_deferred_nuclei_scan()
+        target_list = list(targets or [])
+        if not task.waf_guard:
+            return target_list
 
-        task._save_waf_skip_summary()
+        keep_targets, skipped = task.waf_guard.filter_targets(target_list)
+        stage_key = str(stage_name or "waf_filter").strip() or "waf_filter"
+        stage_stat = task._waf_stage_stats.setdefault(
+            stage_key,
+            {
+                "input_count": 0,
+                "output_count": 0,
+                "skipped_count": 0,
+                "invocation_count": 0,
+            },
+        )
+        stage_stat["input_count"] += len(target_list)
+        stage_stat["output_count"] += len(keep_targets)
+        stage_stat["skipped_count"] += int(skipped)
+        stage_stat["invocation_count"] += 1
+        if skipped > 0:
+            logger.info(
+                "task_id:{} waf smart skip stage:{} keep:{} skipped:{}".format(
+                    task.task_id,
+                    stage_name or "-",
+                    len(keep_targets),
+                    skipped,
+                )
+            )
+        return keep_targets
 
     def save_waf_skip_summary(self):
         task = self.task
@@ -280,3 +304,21 @@ class WebSitePostProcessStageService(object):
                 summary_text,
             )
         )
+
+
+class WebSitePostProcessStageService(object):
+    """执行兼容的 Web 专项阶段和 WAF 观测收尾。"""
+
+    def __init__(self, task):
+        self.task = task
+
+    def run(self):
+        task = self.task
+        stage = WebSiteSingleStageService(task, logger=logger)
+        if task._nuclei_deferred_retry_needed:
+            task.run_deferred_nuclei_scan()
+
+        task._save_waf_skip_summary()
+
+    def save_waf_skip_summary(self):
+        return WebSiteWafStageService(self.task).save_waf_skip_summary()

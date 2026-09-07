@@ -44,8 +44,8 @@ from app.services.web_site_scan_stage_services import (
 )
 from app.services import BaseUpdateTask
 from app.services.web_site_stage_services import (
-    WebSitePostProcessStageService,
     WebSiteResultPersistStageService,
+    WebSiteWafStageService,
 )
 from app.utils.log_safety import safe_error_text
 logger = utils.get_logger()
@@ -354,38 +354,10 @@ class WebSiteFetch(CommonTask):
             )
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
-        target_list = list(targets or [])
-        if not self.waf_guard:
-            return target_list
-
-        keep_targets, skipped = self.waf_guard.filter_targets(target_list)
-        stage_key = str(stage_name or "waf_filter").strip() or "waf_filter"
-        stage_stat = self._waf_stage_stats.setdefault(
-            stage_key,
-            {
-                "input_count": 0,
-                "output_count": 0,
-                "skipped_count": 0,
-                "invocation_count": 0,
-            },
-        )
-        stage_stat["input_count"] += len(target_list)
-        stage_stat["output_count"] += len(keep_targets)
-        stage_stat["skipped_count"] += int(skipped)
-        stage_stat["invocation_count"] += 1
-        if skipped > 0:
-            logger.info(
-                "task_id:{} waf smart skip stage:{} keep:{} skipped:{}".format(
-                    self.task_id,
-                    stage_name or "-",
-                    len(keep_targets),
-                    skipped,
-                )
-            )
-        return keep_targets
+        return WebSiteWafStageService(self).filter_targets(targets, stage_name)
 
     def _save_waf_skip_summary(self):
-        return WebSitePostProcessStageService(self).save_waf_skip_summary()
+        return WebSiteWafStageService(self).save_waf_skip_summary()
 
     @property
     def task_domain_set(self):
