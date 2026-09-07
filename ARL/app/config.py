@@ -412,6 +412,7 @@ def refresh_runtime_config_best_effort(force=False):
             "SEARCH_PROVIDER_CIRCUIT_BREAKER_THRESHOLD",
             "PORT_SCAN_BATCH_CONCURRENCY",
             "PORT_SCAN_BATCH_TIMEOUT_SEC",
+            "API_ENDPOINT_CLAIM_LEASE_SEC",
         ]
         for key_name in positive_keys:
             value = arl_conf.get(key_name)
@@ -525,6 +526,9 @@ def refresh_runtime_config_best_effort(force=False):
                 arl_conf.get("RUST_ACCEL_API_UNIFIED_MODE"),
                 ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
             )
+        if arl_conf.get("RUST_ACCEL_API_UNIFIED_RUST_STAGES") is not None:
+            Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = str(
+                arl_conf.get("RUST_ACCEL_API_UNIFIED_RUST_STAGES") or "")
         if arl_conf.get("PROGRESSIVE_SCAN_ENABLE") is not None:
             Config.PROGRESSIVE_SCAN_ENABLE = _safe_runtime_bool(
                 arl_conf.get("PROGRESSIVE_SCAN_ENABLE"), Config.PROGRESSIVE_SCAN_ENABLE
@@ -601,6 +605,9 @@ def refresh_runtime_config_best_effort(force=False):
             "ARL_RUST_ACCEL_API_UNIFIED_MODE",
             ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
         )
+        Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = env_str(
+            "ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES",
+            Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES)
         Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
             "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
         )
@@ -785,10 +792,15 @@ class Config(object):
     RUST_ACCEL_ENABLE = True
     # Rust 加速不可用时是否按当前批次回退 Python
     RUST_ACCEL_FALLBACK_ENABLE = True
-    # 统一 API 面 Rust 批量通道模式（off|shadow|rust，计划 6 §9.3/附录A §4.18）：
+    # 统一 API 面 Rust 批量通道模式（off|shadow|rust，计划 6 §9.3/附录A §4.19）：
     # shadow=双跑比对输出恒取 Python 基线（默认观察态）；rust 需过 CPU 闸后经
     # 发布流程启用；off=kill-switch（native 在场也零开销）。非法值回退默认。
     RUST_ACCEL_API_UNIFIED_MODE = "shadow"
+    # P1-01（第 11 批 Review）：全局 rust 模式的 stage 级白名单（逗号分隔
+    # stats_prefix 名，附录A §4.20）。默认只列已过 CPU 闸且 native 环境复跑
+    # 的 normalize/method——`hint`/`dedupe` 不过闸，即使全局切 rust 也保持
+    # shadow 语义；白名单外 stage 在 rust 模式下被收敛为 shadow 并告警一次。
+    RUST_ACCEL_API_UNIFIED_RUST_STAGES = "unified_normalize,unified_method"
     # URLFinder URL 可达性探测单次最多目标数
     URLFINDER_URL_PROBE_MAX_TARGETS = 800
     # URLFinder URL 可达性探测并发
@@ -910,6 +922,9 @@ class Config(object):
     TASK_FINALIZER_DRAIN_ROUNDS = 1
     # 每个策略收尾时最多落账的 pending 条目数（计数不受限，仅限制写账本）
     TASK_FINALIZER_PENDING_MAX = 200
+    # P1-03（第 11 批 Review）：Endpoint claim lease 秒数（附录A §4.17 承诺
+    # "可配"，本行为兑现）。非正数在 Registry 读取处回退代码常量 900。
+    API_ENDPOINT_CLAIM_LEASE_SEC = 900
     # A5：账本 fail-open 累计（unavailable+dedup_degraded）达到该阈值时，
     # 收尾阶段标 degraded、终态升为 done_degraded 并写 pending_backlog|ledger
     # 证据（数据一致性降级须可复核，不得伪装干净 done）。
@@ -1715,6 +1730,9 @@ try:
             y["ARL"]["RUST_ACCEL_API_UNIFIED_MODE"],
             ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
         )
+    if y["ARL"].get("RUST_ACCEL_API_UNIFIED_RUST_STAGES") is not None:
+        Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = str(
+            y["ARL"]["RUST_ACCEL_API_UNIFIED_RUST_STAGES"] or "")
     if y["ARL"].get("PROGRESSIVE_SCAN_ENABLE") is not None:
         Config.PROGRESSIVE_SCAN_ENABLE = bool(y["ARL"]["PROGRESSIVE_SCAN_ENABLE"])
 
@@ -2037,6 +2055,7 @@ try:
         "TASK_FINALIZER_DRAIN_ROUNDS",
         "TASK_FINALIZER_PENDING_MAX",
         "LEDGER_DEGRADED_THRESHOLD",
+        "API_ENDPOINT_CLAIM_LEASE_SEC",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
@@ -2439,6 +2458,9 @@ try:
         "ARL_RUST_ACCEL_API_UNIFIED_MODE",
         ("off", "shadow", "rust"), Config.RUST_ACCEL_API_UNIFIED_MODE,
     )
+    Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = env_str(
+        "ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES",
+        Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES)
     Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
         "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
     )

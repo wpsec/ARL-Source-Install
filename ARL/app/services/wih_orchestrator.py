@@ -205,13 +205,18 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
             if record_item is None:
                 continue
             status = str(record_item.get("verification_status") or "")
+            degraded_reason = ""
             if str(record_item.get("degraded_reason") or "") == "host_waf_blocked":
                 # 第 9 批 §8.2：主机级封禁资产收口 degraded（区别于普通 skip）。
+                # P2-01：原因随回报进资产面（受控枚举），快照可稳定归因。
                 status = "degraded"
+                degraded_reason = "host_waf_blocked"
             if status == "error":
                 error_count += 1
             try:
-                registry.probe_report(endpoint, status, claim_token=claim_token)
+                registry.probe_report(
+                    endpoint, status, claim_token=claim_token,
+                    degraded_reason=degraded_reason)
             except Exception as exc:
                 logger.debug(
                     "wih registry endpoint report failed error_type:{}".format(

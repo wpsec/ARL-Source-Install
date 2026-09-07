@@ -134,6 +134,10 @@ UNIFIED_API_CONFIG_DEFAULTS: Dict[str, Any] = {
     "WSDL_PARSE_ENABLE": True,
     "WSDL_MAX_SIZE_BYTES": 5242880,
     "API_ENDPOINT_PROBE_MAX_TARGETS": 500,
+    # 第 11 批 Review P1-03：claim lease 时长入统一默认表（Registry 软读优先
+    # context config/Config，本表值与代码常量为同值兜底）；Config 侧有类默认 +
+    # YAML(_ARL_POSITIVE_INT_KEYS) + env(ARL_API_ENDPOINT_CLAIM_LEASE_SEC) 接线。
+    "API_ENDPOINT_CLAIM_LEASE_SEC": 900,
 }
 
 # ---------------------------------------------------------------------------
@@ -545,6 +549,25 @@ def _validated_status(value: Any, allowed: Tuple[str, ...], label: str) -> str:
     return text
 
 
+# 第 11 批 Review P2-01：degraded 原因的资产面受控枚举（附录A §4.20）。
+# 原因字段只承载归因类别，不得携带响应/报文/URL 值；未知值收敛 "other"，
+# 超长截断前白名单匹配（白名单值都很短，截断不影响枚举判定）。
+ENDPOINT_DEGRADED_REASONS = (
+    "host_waf_blocked",      # 主机级封禁（第 9 批 §8.2 口径）
+    "waf_blocked",           # 类别级熔断（探测类）
+    "probe_error",           # 探测请求失败
+    "claim_lease_expired",   # lease 过期回收后仍未回报
+    "other",
+)
+
+
+def sanitize_endpoint_degraded_reason(value) -> str:
+    text = str(value or "").strip()[:64]
+    if not text:
+        return ""
+    return text if text in ENDPOINT_DEGRADED_REASONS else "other"
+
+
 # ---------------------------------------------------------------------------
 # UnifiedApiEndpoint（计划 6 §4.3）
 # ---------------------------------------------------------------------------
@@ -580,6 +603,7 @@ _UNIFIED_ENDPOINT_FIELDS: Tuple[str, ...] = (
     "confidence",
     "status",
     "input_signature",
+    "degraded_reason",
 )
 
 
@@ -617,6 +641,8 @@ class UnifiedApiEndpoint:
     # R6-P2-01：增量字段追加在旧字段之后，保持 `UnifiedApiEndpoint(url, method,
     # api_type, endpoint_id, ...)` 旧位置参数语义不漂移。
     observed_url: str = ""
+    # P2-01（第 11 批 Review）：degraded 归因原因，受控枚举（见 sanitizer）。
+    degraded_reason: str = ""
 
     def __post_init__(self) -> None:
         # 三层数据契约（附录A §4.16）：url 为非破坏性规范化值（供 endpoint_id/去重键
@@ -637,6 +663,7 @@ class UnifiedApiEndpoint:
         if self.graphql_operation not in GRAPHQL_OPERATIONS:
             raise ValueError("unsupported graphql_operation: {}".format(self.graphql_operation))
         self.confidence = min(100, max(0, int(self.confidence or 0)))
+        self.degraded_reason = sanitize_endpoint_degraded_reason(self.degraded_reason)
         self.source = str(self.source or "").strip()
         self.parent_document = str(self.parent_document or "").strip()
         self.parent_target = str(self.parent_target or "").strip()
@@ -731,6 +758,7 @@ class UnifiedApiEndpoint:
             "confidence": self.confidence,
             "status": self.status,
             "input_signature": self.input_signature,
+            "degraded_reason": self.degraded_reason,
         }
 
     def to_legacy_records(self) -> List[Dict[str, str]]:
@@ -868,6 +896,8 @@ __all__ = [
     "UNIFIED_API_CONFIG_DEFAULTS",
     "API_DOCUMENT_SCHEMA_FIELDS",
     "API_ENDPOINT_SCHEMA_FIELDS",
+    "ENDPOINT_DEGRADED_REASONS",
+    "sanitize_endpoint_degraded_reason",
     "PARSE_DIAGNOSTICS_FIELDS",
     "PARSE_RESULT_OUTPUT_KEYS",
     "ParameterSpec",

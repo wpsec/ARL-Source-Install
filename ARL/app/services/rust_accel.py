@@ -415,7 +415,7 @@ def _netloc_of_https_subset(text: str) -> str:
 
 
 def unified_url_is_safe(text: str) -> bool:
-    """normalize 批量通道安全子集判定（附录A §4.18）。
+    """normalize 批量通道安全子集判定（附录A §4.19）。
 
     正则粗筛后做结构复核，排除 CPython 补丁版本间行为漂移的形态：
     - port 含 '+'/'_'/字母（≤3.10.0 的 int(port,10) 接受并规范化，≥3.10.13
@@ -456,12 +456,45 @@ def _unified_mode() -> str:
     return mode
 
 
+# P1-01（第 11 批 Review）：rust 模式的 stage 级硬门禁。全局
+# RUST_ACCEL_API_UNIFIED_MODE=rust 不再等于全体 stage 采纳 native——只有
+# RUST_ACCEL_API_UNIFIED_RUST_STAGES 显式列出的 stats_prefix 才允许，其余
+# 收敛为 shadow（双跑观察保留、输出取基线）。"不过闸不升级"由代码保证。
+_UNIFIED_RUST_STAGE_PREFIXES = (
+    "unified_normalize", "unified_hint", "unified_method", "unified_dedupe",
+)
+_GATE_WARNED = set()
+
+
+def _unified_rust_stage_allowlist():
+    raw = str(getattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "") or "")
+    allowed = set()
+    for token in raw.replace(";", ",").split(","):
+        token = token.strip().lower()
+        if not token:
+            continue
+        if token in _UNIFIED_RUST_STAGE_PREFIXES:
+            allowed.add(token)
+        elif token not in _GATE_WARNED:
+            _GATE_WARNED.add(token)
+            logger.warning(
+                "unknown RUST_ACCEL_API_UNIFIED_RUST_STAGES entry %r ignored "
+                "(expected one of %s)", token, ",".join(_UNIFIED_RUST_STAGE_PREFIXES),
+            )
+    return allowed
+
+
 def _unified_metrics(stage, mode, batch_size, safe_count, mismatch, elapsed,
-                     used_native, is_fallback=False):
+                     used_native, is_fallback=False, requested_mode="",
+                     stage_gate=""):
     return {
         "stage": stage,
         "backend": "rust" if used_native else "python",
         "mode": mode,
+        # 门禁证据位：requested_mode=配置请求值、stage_gate=本 stage 判定结果
+        # （rust_allowed / rust_denied_by_stage_gate / 空=非 rust 请求）。
+        "requested_mode": requested_mode or mode,
+        "stage_gate": stage_gate,
         "used_native": bool(used_native),
         # fallback 只在 native 调用失败路径显式置位——shadow 成功批（输出取基线、
         # used_native=False）不是 fallback，不得污染第 11 批门禁证据流。
@@ -499,6 +532,19 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
     started_at = time.monotonic()
     _increment_stat("{}_calls".format(stats_prefix))
     mode = _unified_mode()
+    requested_mode = mode
+    stage_gate = ""
+    if mode == "rust":
+        if stats_prefix in _unified_rust_stage_allowlist():
+            stage_gate = "rust_allowed"
+        else:
+            mode = "shadow"
+            stage_gate = "rust_denied_by_stage_gate"
+            if stats_prefix not in _GATE_WARNED:
+                _GATE_WARNED.add(stats_prefix)
+                logger.warning(
+                    "rust mode denied for stage %s: not listed in "
+                    "RUST_ACCEL_API_UNIFIED_RUST_STAGES, kept shadow", stats_prefix)
     count = len(items)
     native_indices = [index for index, flag in enumerate(safe_flags) if flag]
     safe_count = len(native_indices)
@@ -512,6 +558,7 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             values,
             metrics=_unified_metrics(
                 stage, mode, count, safe_count, 0, time.monotonic() - started_at, False,
+                requested_mode=requested_mode, stage_gate=stage_gate,
             ),
         )
 
@@ -555,7 +602,7 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             values,
             metrics=_unified_metrics(
                 stage, mode, count, safe_count, 0, time.monotonic() - started_at, False,
-                is_fallback=True,
+                is_fallback=True, requested_mode=requested_mode, stage_gate=stage_gate,
             ),
         )
 
@@ -581,6 +628,7 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
             metrics=_unified_metrics(
                 stage, mode, count, safe_count, mismatch,
                 time.monotonic() - started_at, False,
+                requested_mode=requested_mode, stage_gate=stage_gate,
             ),
         )
 
@@ -600,6 +648,7 @@ def _unified_batch(stage, items, safe_flags, python_batch_fn, native_fn, stats_p
         values,
         metrics=_unified_metrics(
             stage, mode, count, safe_count, 0, time.monotonic() - started_at, True,
+            requested_mode=requested_mode, stage_gate=stage_gate,
         ),
         used_native=True,
     )

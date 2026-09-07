@@ -206,6 +206,7 @@ class _FakeApiRegistry(object):
         self._claimable = list(claimable)
         self.registered = []
         self.reported = []
+        self.reported_reasons = []
         self.requeued = []
         self.expired = 0
 
@@ -224,8 +225,11 @@ class _FakeApiRegistry(object):
             return [(ep, idx + 1) for idx, ep in enumerate(picked)]
         return picked
 
-    def probe_report(self, endpoint, verification_status, *, claim_token=None):
+    def probe_report(self, endpoint, verification_status, *, claim_token=None,
+                     degraded_reason=""):
         self.reported.append((endpoint.url, endpoint.method, verification_status))
+        # P2-01：单独记录回报原因，验证编排层把 host_waf_blocked 透传给资产面。
+        self.reported_reasons.append((endpoint.url, degraded_reason))
         return endpoint
 
     def requeue_unreported(self, claims):
@@ -386,6 +390,11 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
             ("https://api.example.test/g", "GET", "degraded"),
             {(u, m, s) for u, m, s in registry.reported},
             "host_waf_blocked 回报映射为 degraded 终态")
+        # P2-01（第 11 批 Review）：原因必须随回报进入资产面（受控枚举）。
+        self.assertIn(
+            ("https://api.example.test/g", "host_waf_blocked"),
+            registry.reported_reasons,
+            "degraded_reason 必须透传给 probe_report")
 
     def test_browser_stage_ingests_registry_only_when_all_gates_on(self):
         # P0-05 接线：API_UNIFIED_ENABLE 且 BROWSER_INTEL_ENABLE 且 Registry 已

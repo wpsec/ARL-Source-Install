@@ -536,7 +536,7 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   unified_method`(逐元素,重复输出值合法)、`unified_dedupe`(聚合分组);
   既有 extract/html/js_endpoint/rank kind 的去重语义门禁不变。
 
-### 4.18 第 10 批 Review 整改轮契约增量(2026-09-06 登记,已实施)
+### 4.19 第 10 批 Review 整改轮契约增量(2026-09-06 登记,已实施;编号修正:原文误标 §4.18 与上一节重号,2026-09-07 更正)
 
 - **配置键接线补全**:`RUST_ACCEL_API_UNIFIED_MODE` 不再仅 getattr 软读——
   config.py 四路径接线(类默认 "shadow"/runtime yaml ARL 节两处/env 两处
@@ -560,6 +560,42 @@ P1-06~P1-09/P1-11 + P2-13,并附带链分发前置修复;P0-05 事件接入与 P
   (+派生 `API_DOC_CANDIDATE_KEYWORDS`);registry `_TYPE_HINT_KEYWORDS`、
   js_intel `_is_api_doc_candidate` 改引用(名称保留为兼容入口),钉测试断言
   引用关系与 Rust 两数组的**有序对**一致(顺序=优先级)。
+
+### 4.20 第 11 批 T11-0 契约增量(2026-09-07 登记,已实施;来源:当前 HEAD 复核 P1-01/P1-02/P1-03/P2-01/P2-03)
+
+- **rust 模式 stage 级硬门禁(P1-01)**:`RUST_ACCEL_API_UNIFIED_MODE=rust` 不再
+  全体生效——新增 `RUST_ACCEL_API_UNIFIED_RUST_STAGES`(逗号分隔 stats_prefix,
+  类默认 `unified_normalize,unified_method` = 已过 CPU 闸且有 native 环境实测的
+  stage;`unified_hint`/`unified_dedupe` 不过闸不得入列)。白名单外 stage 在
+  rust 模式下**收敛为 shadow**(双跑观察保留、输出取基线、used_native=False),
+  每 stage 首拒 warning 一次;未知白名单 token 忽略并告警。metrics 增
+  `requested_mode`(配置请求值)与 `stage_gate`(`rust_allowed`/
+  `rust_denied_by_stage_gate`/空)——第 11 批门禁证据流区分"请求 rust"与
+  "本 stage 实际采纳"。
+- **network wait 口径修正(P1-02)**:`fetch_text` 新增可选出参 `timing_out`,
+  只写真实 `utils.http_req` 挂钟 `timing_out["http_req_sec"]`(成功与拒连/
+  超时两路径都写;缓存命中/singleflight follower/DNS 拦截/调度等待不写)。
+  `ApiDocumentQueue.network_wait_sec` 只累计该值——`api_stage_network_wait_time`
+  自此可作为 40/64 对照的网络等待事实源。旧口径(整段 fetch_text 计时)废弃。
+- **阶段 metrics 收口与水位 flush(P2-03)**:`ApiDocumentQueue.run()` 全退出路径
+  (正常/空范围提前返回/阶段级异常)经 finally 调 `_flush_stage_metrics()`;
+  累计型事实源(registry 计数/queue 总量/by_type/by_method)按**水位增量** flush,
+  首次恒产出(含 0,"观测到零"≠"未观测"),重复 run 不双计;
+  `api_document_schema_diagnostics_total` 事实源改为 `schema_diagnostics_inserted_count`
+  (插入累计计数;原 len 为 gauge,重复 run/驱逐下失真);wall/cpu 每 run 一段并复位窗口。
+- **lease 配置接线兑现(P1-03)**:`API_ENDPOINT_CLAIM_LEASE_SEC` 入
+  `UNIFIED_API_CONFIG_DEFAULTS`(900)+Config 类默认+config.yaml
+  `_ARL_POSITIVE_INT_KEYS`+runtime yaml 正值表+env `ARL_API_ENDPOINT_CLAIM_LEASE_SEC`
+  (两处);读取链 context config dict > Config > 代码常量,**非正数/非法值一律
+  回退常量**(lease=0 等价关闭 lease 保护,fail-safe)。§4.17 的"可配"承诺自此成立。
+- **degraded_reason 资产面(P2-01)**:`UnifiedApiEndpoint` 尾位增量字段
+  `degraded_reason`(`API_ENDPOINT_SCHEMA_FIELDS` 同步尾项),受控枚举
+  `ENDPOINT_DEGRADED_REASONS = (host_waf_blocked, waf_blocked, probe_error,
+  claim_lease_expired, other)`,构造/回报统一过 `sanitize_endpoint_degraded_reason`
+  (截断 64→白名单判定→枚举外收敛 other;不得携带响应/报文/URL 值)。
+  `probe_report`/`mark_endpoint` 增 `degraded_reason` 透传:wih_orchestrator 在
+  host_waf_blocked 路径传入,资产快照可稳定归因;任何非 degraded 迁移清除旧原因
+  (pending 重排队不带轮次残留,终态不留过期归因)。legacy 记录面词汇不变。
 
 ## 五、现状缺口清单(目标期望与基线的差异面,即第 4-7 批验收项)
 

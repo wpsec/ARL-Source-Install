@@ -30,6 +30,7 @@ assert_no_shell_pollution()
 _models = _captured["app.services.api_unified_models"]
 _registry = _captured["app.services.api_candidate_registry"]
 _discovery = _captured["app.services.discovery_context"]
+_intel_utils = _captured["app.services.web_info_intel_utils"]
 
 
 def _load_rust_accel_module():
@@ -160,6 +161,7 @@ class TestUnifiedSafeSubset(unittest.TestCase):
 class TestUnifiedBatchModes(unittest.TestCase):
     def setUp(self):
         self.saved_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+        self.saved_stages = getattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", None)
 
     def tearDown(self):
         if self.saved_mode is None:
@@ -167,6 +169,11 @@ class TestUnifiedBatchModes(unittest.TestCase):
                 delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
         else:
             setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", self.saved_mode)
+        if self.saved_stages is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES")
+        else:
+            setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", self.saved_stages)
 
     def test_off_mode_uses_python_baseline(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "off")
@@ -196,6 +203,8 @@ class TestUnifiedBatchModes(unittest.TestCase):
 
     def test_rust_mode_adopts_native_for_safe_subset_only(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+        # P1-01 门禁：本用例测 native 采纳/失败路径，显式放行该 stage。
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_hint")
         fake = _FakeUnifiedNative()
         # 第二条含控制字符：hint 安全子集要求纯可打印 ASCII → 子集外走基线
         mixed = ["https://a.b/graphql", "https://a.b/graphql\x01"]
@@ -209,6 +218,8 @@ class TestUnifiedBatchModes(unittest.TestCase):
 
     def test_native_failure_falls_back_per_batch(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+        # P1-01 门禁：本用例测 native 采纳/失败路径，显式放行该 stage。
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_hint")
         fake = _FakeUnifiedNative(fail=True)
         with patch.object(rust_accel, "_NATIVE_MODULE", fake):
             result = rust_accel.unified_document_type_hints(["https://a.b/wsdl"])
@@ -218,6 +229,8 @@ class TestUnifiedBatchModes(unittest.TestCase):
 
     def test_native_failure_raises_when_fallback_disabled(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+        # P1-01 门禁：本用例测 native 采纳/失败路径，显式放行该 stage。
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_hint")
         fake = _FakeUnifiedNative(fail=True)
         with patch.object(Config, "RUST_ACCEL_FALLBACK_ENABLE", False):
             with patch.object(rust_accel, "_NATIVE_MODULE", fake):
@@ -245,6 +258,8 @@ class TestUnifiedBatchModes(unittest.TestCase):
 
     def test_dedupe_rust_mode_output_matches_baseline(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+        # P1-01 门禁：本用例测 native 采纳/失败路径，显式放行该 stage。
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_dedupe")
         fake = _FakeUnifiedNative(match_baseline=True)
         records = [
             ("https://a.b/u", "GET", "rest", "", "js"),
@@ -254,6 +269,165 @@ class TestUnifiedBatchModes(unittest.TestCase):
             result = rust_accel.unified_dedupe_endpoints(records)
         self.assertEqual(_models.merge_endpoint_records(records), list(result))
         self.assertTrue(result.used_native)
+
+
+class TestUnifiedStageGate(unittest.TestCase):
+    """P1-01（第 11 批 Review）：全局 rust 模式的 stage 级硬门禁。
+
+    默认白名单只含已过闸且 native 环境复跑的 normalize/method；hint/dedupe
+    在全局 rust 下也必须保持 shadow（输出取基线、双跑观察不采纳）。
+    """
+
+    def setUp(self):
+        self._saved_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
+        self._saved_stages = getattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", None)
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
+
+    def tearDown(self):
+        if self._saved_mode is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_MODE"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_MODE")
+        else:
+            setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", self._saved_mode)
+        if self._saved_stages is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES")
+        else:
+            setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", self._saved_stages)
+
+    def test_default_gate_keeps_hint_shadow_under_global_rust(self):
+        # 默认白名单（unified_normalize,unified_method）不含 hint：native 双跑
+        # 照旧观测（stub 值偏离基线计 mismatch），但输出与采纳位必须是基线。
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES",
+                "unified_normalize,unified_method")
+        fake = _FakeUnifiedNative()
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_document_type_hints(["https://a.b/swagger"])
+        self.assertFalse(result.used_native)
+        self.assertEqual(["swagger"], list(result))
+        self.assertEqual(1, len(fake.calls), "shadow 双跑观察不得被门禁跳过")
+        self.assertEqual("shadow", result.metrics["mode"])
+        self.assertEqual("rust", result.metrics["requested_mode"])
+        self.assertEqual("rust_denied_by_stage_gate", result.metrics["stage_gate"])
+        self.assertFalse(result.metrics["used_native"])
+
+    def test_default_gate_keeps_dedupe_shadow_under_global_rust(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES",
+                "unified_normalize,unified_method")
+        fake = _FakeUnifiedNative()
+        records = [
+            ("https://a.b/u", "GET", "rest", "", "js"),
+            ("https://a.b/u", "GET", "rest", "", "browser"),
+        ]
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_dedupe_endpoints(records)
+        self.assertFalse(result.used_native)
+        self.assertEqual(
+            _models.merge_endpoint_records(records), [tuple(r) for r in
+                                                      (list(item) for item in result)])
+        self.assertEqual("rust_denied_by_stage_gate", result.metrics["stage_gate"])
+
+    def test_allowlisted_normalize_adopts_native(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_normalize")
+        fake = _FakeUnifiedNative()
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_normalize_urls(["https://a.b"])
+        self.assertTrue(result.used_native)
+        self.assertEqual(["rust:https://a.b"], list(result))
+        self.assertEqual("rust", result.metrics["mode"])
+        self.assertEqual("rust_allowed", result.metrics["stage_gate"])
+
+    def test_empty_allowlist_denies_everything(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "")
+        fake = _FakeUnifiedNative()
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_normalize_urls(["https://a.b"])
+        self.assertFalse(result.used_native)
+        self.assertEqual(["https://a.b/"], list(result))
+        self.assertEqual("rust_denied_by_stage_gate", result.metrics["stage_gate"])
+
+    def test_unknown_tokens_ignored_and_valid_ones_apply(self):
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES",
+                " unified_bogus , unified_hint ,")
+        fake = _FakeUnifiedNative()
+        with patch.object(rust_accel, "_NATIVE_MODULE", fake):
+            result = rust_accel.unified_document_type_hints(["https://a.b/swagger"])
+        self.assertTrue(result.used_native)
+        self.assertEqual(["rust:https://a.b/swagger"], list(result))
+
+
+class TestFlushTextTimingOut(unittest.TestCase):
+    """P1-02：timing_out 只写真实 http_req 挂钟（缓存/等待路径不写）。"""
+
+    def test_real_request_writes_http_req_sec(self):
+        class _Resp:
+            status_code = 200
+            content = b'{"x":1}'
+            headers = {}
+
+        saved_http_req = _intel_utils.utils.http_req
+        saved_dns = _intel_utils.utils.check_dns_policy_for_url
+        try:
+            _intel_utils.utils.http_req = lambda *a, **k: _Resp()
+            _intel_utils.utils.check_dns_policy_for_url = lambda url, cache_map=None: (True, {})
+            timing = {}
+            text, _resp = _intel_utils.fetch_text(
+                "https://api.example.com/openapi.json",
+                discovery_context=None,
+                timing_out=timing,
+            )
+        finally:
+            _intel_utils.utils.http_req = saved_http_req
+            _intel_utils.utils.check_dns_policy_for_url = saved_dns
+        self.assertEqual(text, '{"x":1}')
+        self.assertIn("http_req_sec", timing)
+        self.assertGreaterEqual(float(timing["http_req_sec"]), 0.0)
+
+    def test_failed_request_still_times_network(self):
+        saved_http_req = _intel_utils.utils.http_req
+        saved_dns = _intel_utils.utils.check_dns_policy_for_url
+        try:
+            def _boom(*a, **k):
+                raise RuntimeError("connect timeout")
+
+            _intel_utils.utils.http_req = _boom
+            _intel_utils.utils.check_dns_policy_for_url = lambda url, cache_map=None: (True, {})
+            timing = {}
+            text, resp = _intel_utils.fetch_text(
+                "https://api.example.com/x.json",
+                discovery_context=None,
+                timing_out=timing,
+            )
+        finally:
+            _intel_utils.utils.http_req = saved_http_req
+            _intel_utils.utils.check_dns_policy_for_url = saved_dns
+        self.assertEqual(text, "")
+        self.assertIsNone(resp)
+        self.assertIn("http_req_sec", timing, "拒连/超时同样是真实网络等待")
+
+    def test_cache_hit_path_writes_nothing(self):
+        class _Hit:
+            status_code = 200
+            body = b'{"x":1}'
+            body_truncated = False
+
+            def __init__(self):
+                self.headers = {}
+                self.content_type = ""
+
+        class _Ctx:
+            def get_response(self, url, request_profile=None, consumer=None):
+                return _Hit()
+
+        timing = {}
+        text, _resp = _intel_utils.fetch_text(
+            "https://api.example.com/cached.json",
+            discovery_context=_Ctx(),
+            request_profile="api_doc",
+            timing_out=timing,
+        )
+        self.assertEqual(text, '{"x":1}')
+        self.assertNotIn("http_req_sec", timing, "缓存命中零网络时间")
 
 
 class TestMergeEndpointRecordsBaseline(unittest.TestCase):
@@ -371,6 +545,18 @@ class TestUnifiedAggregateValidation(unittest.TestCase):
         else:
             setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", self.saved)
 
+    def setUp(self):
+        # P1-01 门禁：本类全部是 dedupe 聚合用例，显式放行 unified_dedupe。
+        self._saved_stages = getattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", None)
+        setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", "unified_dedupe")
+
+    def tearDown(self):
+        if self._saved_stages is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES")
+        else:
+            setattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", self._saved_stages)
+
     def test_rust_mode_rejects_out_of_range_group_index(self):
         setattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", "rust")
 
@@ -427,6 +613,10 @@ class TestBackflowHintWhitelist(unittest.TestCase):
         self._saved_native = rust_accel._NATIVE_MODULE
         self._saved_mode = getattr(Config, "RUST_ACCEL_API_UNIFIED_MODE", None)
         self._saved_fallback = Config.RUST_ACCEL_FALLBACK_ENABLE
+        # 本类测的是 rust 采纳路径上的白名单闸/hard-fail——必须放行 hint stage，
+        # 否则 P1-01 门禁会把 mode 收敛为 shadow，测不到采纳分支。
+        self._saved_stages = getattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES", None)
+        Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = "unified_hint"
 
     def tearDown(self):
         rust_accel._NATIVE_MODULE = self._saved_native
@@ -436,6 +626,11 @@ class TestBackflowHintWhitelist(unittest.TestCase):
         else:
             Config.RUST_ACCEL_API_UNIFIED_MODE = self._saved_mode
         Config.RUST_ACCEL_FALLBACK_ENABLE = self._saved_fallback
+        if self._saved_stages is None:
+            if hasattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES"):
+                delattr(Config, "RUST_ACCEL_API_UNIFIED_RUST_STAGES")
+        else:
+            Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES = self._saved_stages
         if self._saved_slot is None:
             sys.modules.pop(self._slot, None)
         else:

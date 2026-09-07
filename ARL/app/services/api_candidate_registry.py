@@ -44,6 +44,7 @@ from .api_unified_models import (
     ApiDocumentCandidate,
     UnifiedApiEndpoint,
     compute_input_signature,
+    sanitize_endpoint_degraded_reason,
 )
 from .discovery_context import LedgerEntry, normalize_url, url_host
 from .api_unified_shadow import (
@@ -226,6 +227,9 @@ class ApiCandidateRegistry:
         # 不落 Mongo、不进 legacy 记录面）；stage metrics 只放整数计数。
         # 消费方经 context.api_candidate_registry 挂载点读取本清单。
         self.schema_diagnostics: List[Dict[str, Any]] = []
+        # 诊断面累计插入数（P2-03 flush 口径：len 是 gauge 会随驱逐回缩，
+        # 增量的事实源必须是插入计数，否则重复 run 重复加计）。
+        self.schema_diagnostics_inserted_count = 0
 
     # -- 文档候选 ---------------------------------------------------------
 
@@ -480,6 +484,7 @@ class ApiCandidateRegistry:
 
     def mark_endpoint(
         self, endpoint: UnifiedApiEndpoint, status: str, *, claim_token=None,
+        degraded_reason: str = "",
     ) -> Optional[UnifiedApiEndpoint]:
         """按 `_ENDPOINT_TRANSITIONS` 合法边改态；非法边返回 None 不改态不抛错。
 
@@ -501,6 +506,14 @@ class ApiCandidateRegistry:
             if status not in API_ENDPOINT_STATUSES:
                 return None
             stored.status = status
+            if status == "degraded":
+                # P2-01：降级原因进资产面（受控枚举，未知值收敛 other）。
+                stored.degraded_reason = (
+                    sanitize_endpoint_degraded_reason(degraded_reason) or "other")
+            else:
+                # 其余任何迁移都清除旧原因：pending 不带入上轮 degraded 的归因，
+                # 终态（covered/failed/skipped）不留过期原因。
+                stored.degraded_reason = ""
             if status != "queued":
                 self._claim_deadlines.pop(key, None)
                 self._claim_tokens.pop(key, None)
@@ -592,7 +605,10 @@ class ApiCandidateRegistry:
             if raw is None:
                 from app.config import Config as _Config
                 raw = getattr(_Config, "API_ENDPOINT_CLAIM_LEASE_SEC", None)
-            return float(raw) if raw else float(ENDPOINT_CLAIM_LEASE_SEC)
+            value = float(raw) if raw else 0.0
+            # 非正数（含 0/负值/None 与字符串 "0"）一律回退常量：lease=0 会让
+            # claim 即刻可被抢占，等价关闭 lease 保护，必须 fail-safe。
+            return value if value > 0 else float(ENDPOINT_CLAIM_LEASE_SEC)
         except (TypeError, ValueError, AttributeError):
             return float(ENDPOINT_CLAIM_LEASE_SEC)
 
@@ -650,6 +666,7 @@ class ApiCandidateRegistry:
 
     def probe_report(
         self, endpoint: UnifiedApiEndpoint, verification_status: str, *, claim_token=None,
+        degraded_reason: str = "",
     ) -> Optional[UnifiedApiEndpoint]:
         """探测回报词表映射：probe 结果(probed/error/skipped/observed)→资产终态。
 
@@ -669,7 +686,8 @@ class ApiCandidateRegistry:
         target = mapping.get(word)
         if target is None:
             return None
-        updated = self.mark_endpoint(endpoint, target, claim_token=claim_token)
+        updated = self.mark_endpoint(
+            endpoint, target, claim_token=claim_token, degraded_reason=degraded_reason)
         if updated is not None and target == "probed":
             # probed 后直接收口 covered：Registry 不再区分"发了请求"与"结果被消费"，
             # 请求观察证据在 probe 侧 verification_* 字段与旧记录面上。
@@ -688,6 +706,7 @@ class ApiCandidateRegistry:
         dropped = False
         with self._lock:
             self.schema_diagnostics.append(entry)
+            self.schema_diagnostics_inserted_count += 1
             while len(self.schema_diagnostics) > SCHEMA_DIAGNOSTICS_MAX_ENTRIES:
                 self.schema_diagnostics.pop(0)
                 dropped = True
@@ -749,6 +768,10 @@ class ApiDocumentQueue:
         self.network_wait_sec = 0.0
         self._stage_wall_started = None
         self._stage_cpu_started = None
+        # P1-02/P2-03：flush 水位（record_metric 累加语义下，累计型来源只 flush
+        # 未 flush 增量；同一 Queue 多次 run 不双计）。
+        self._flushed_counters: Dict[str, int] = {}
+        self._flushed_residual_peak = 0
 
     # -- 预算与获取 --------------------------------------------------------
 
@@ -774,7 +797,10 @@ class ApiDocumentQueue:
         self._fetch_blocked = False
         block_signal: Dict[str, Any] = {}
         max_bytes = max(1024, int(self.config.get("API_DOCUMENT_MAX_SIZE_BYTES", 5242880) or 5242880))
-        wait_started = self._clock()
+        # P1-02：网络等待只计真实 `utils.http_req` 挂钟——缓存命中、singleflight
+        # follower、DNS 拦截、调度等待与响应写入都不是网络时间（此前整段
+        # fetch_text 区间计时会系统性高估 network_wait，污染性能对照）。
+        timing: Dict[str, float] = {}
         try:
             text, _resp = fetch_text(
                 doc.url,
@@ -789,9 +815,10 @@ class ApiDocumentQueue:
                 # 熔断不暂停文档获取，反之亦然；主机级封禁仍整站暂停。
                 traffic_class="api_doc",
                 block_signal=block_signal,
+                timing_out=timing,
             )
         finally:
-            self.network_wait_sec += max(0.0, self._clock() - wait_started)
+            self.network_wait_sec += max(0.0, float(timing.get("http_req_sec") or 0.0))
         if block_signal.get("waf_blocked"):
             self._fetch_blocked = True
         shadow_document_fetch_result(self.context, doc.url, bool(text))
@@ -1368,156 +1395,198 @@ class ApiDocumentQueue:
         max_targets = max(1, int(self.config.get("API_DOCUMENT_MAX_TARGETS", 200) or 200))
         self._stage_wall_started = self._clock()
         self._stage_cpu_started = time.process_time()
+        try:
+            if not self.scanner.allowed_hosts:
+                logger.info("api doc unified skip, no allowed hosts")
+                return []
 
-        if not self.scanner.allowed_hosts:
-            logger.info("api doc unified skip, no allowed hosts")
-            return []
+            for seed_url in self.scanner.collect_seed_candidates():
+                self._register_within_budget(
+                    seed_url, source="seed", priority=_DOC_PRIORITY_SEED, max_targets=max_targets)
+            self._collect_backflow(list(wih_records or []))
 
-        for seed_url in self.scanner.collect_seed_candidates():
-            self._register_within_budget(
-                seed_url, source="seed", priority=_DOC_PRIORITY_SEED, max_targets=max_targets)
-        self._collect_backflow(list(wih_records or []))
+            deadline = self._stage_deadline()
+            fetch_fn = self._fetch_fn or self._default_fetch
 
-        if self.context is not None:
-            try:
-                self.context.record_metric(
-                    "api_document_candidates_total", self.registry.created_document_count)
-                self.context.record_metric(
-                    "api_document_sources_merged_total", self.registry.merged_source_count)
-            except Exception:
-                pass
+            while self.fetch_count < max_targets:
+                pending = self.registry.pending_documents(limit=1)
+                if not pending:
+                    break
+                if self._clock() >= deadline:
+                    self.stage_timeout_stopped = True
+                    break
+                doc = pending[0]
 
-        deadline = self._stage_deadline()
-        fetch_fn = self._fetch_fn or self._default_fetch
+                if self.registry.mark_document(doc.url, "queued") is None:
+                    # 迁移边被并发破坏时收敛退出而不是原地打转（pending_documents
+                    # 只回 discovered，理论不可达；到达即说明状态面已不一致）。
+                    logger.warning("api doc queue inconsistent state url:%s", str(doc.url)[:160])
+                    break
+                entry = self._ledger_entry(doc)
+                if entry is not None and getattr(entry, "status", "") == "covered":
+                    # worker 重投：上一轮已完整解析过的文档直接跳过（WIH 主扫描先例同窗口口径）。
+                    self.registry.mark_document(doc.url, "skipped")
+                    self.resumed_skip_count += 1
+                    continue
+                # 发起请求前的最后一道范围闸（执行版 P0-2：不能只在注册/解析侧校验，
+                # 真正 fetch 前必须再过同一 gate——防未来新增注册通道绕过入队闸）。
+                if not self._url_in_scope(doc.url):
+                    self.registry.mark_document(doc.url, "skipped")
+                    self.skipped_scope_count += 1
+                    self._record_metric("api_document_out_of_scope_total")
+                    continue
+                if self.registry.mark_document(doc.url, "fetching") is None:
+                    continue
 
-        while self.fetch_count < max_targets:
-            pending = self.registry.pending_documents(limit=1)
-            if not pending:
-                break
-            if self._clock() >= deadline:
-                self.stage_timeout_stopped = True
-                break
-            doc = pending[0]
-
-            if self.registry.mark_document(doc.url, "queued") is None:
-                # 迁移边被并发破坏时收敛退出而不是原地打转（pending_documents
-                # 只回 discovered，理论不可达；到达即说明状态面已不一致）。
-                logger.warning("api doc queue inconsistent state url:%s", str(doc.url)[:160])
-                break
-            entry = self._ledger_entry(doc)
-            if entry is not None and getattr(entry, "status", "") == "covered":
-                # worker 重投：上一轮已完整解析过的文档直接跳过（WIH 主扫描先例同窗口口径）。
-                self.registry.mark_document(doc.url, "skipped")
-                self.resumed_skip_count += 1
-                continue
-            # 发起请求前的最后一道范围闸（执行版 P0-2：不能只在注册/解析侧校验，
-            # 真正 fetch 前必须再过同一 gate——防未来新增注册通道绕过入队闸）。
-            if not self._url_in_scope(doc.url):
-                self.registry.mark_document(doc.url, "skipped")
-                self.skipped_scope_count += 1
-                self._record_metric("api_document_out_of_scope_total")
-                continue
-            if self.registry.mark_document(doc.url, "fetching") is None:
-                continue
-
-            self.fetch_count += 1
-            self._fetch_blocked = False
-            try:
-                text = fetch_fn(doc) or ""
-            except Exception as exc:
-                self.registry.mark_document(doc.url, "failed", error_type=type(exc).__name__)
-                self.parse_failed_count += 1
-                self._ledger_finish(doc, "failed")
-                self._record_metric("api_document_parse_failed_total")
-                logger.debug(
-                    "api doc unified fetch failed url:%s error_type:%s",
-                    str(doc.url)[:160], type(exc).__name__)
-                continue
-
-            if not text:
-                # P1-08：空响应与 fetch 异常、Parser 显式 failed 同属统一失败收口。
-                # 两处都要计数（counter + 指标）的原因：parse_failed_count 是队列
-                # 局部运行事实（stage 完成日志的 failed 分母），api_document_parse_failed_total
-                # 是跨进程观测面（context 指标），二者消费方不同、缺一即失真；
-                # 此前只标态不计数（Review 探针：fetch_count=1 而 parse_failed_count=0），
-                # 消费文档数与 success+failed 分母出现无法归因缺口。error_type 保持
-                # empty_response 以区分失败性质；状态机迁移与账本收口不变。
-                if self._fetch_blocked:
-                    # 第 9 批 §8.2：WAF 类别熔断与"抓到空"分开归因——文档标
-                    # failed/waf_blocked（不伪装"无 API"），且不因请求未发出而
-                    # 影响其他类别；api_document_parse_failed_total 照常双计。
-                    self.registry.mark_document(doc.url, "failed", error_type="waf_blocked")
+                self.fetch_count += 1
+                self._fetch_blocked = False
+                try:
+                    text = fetch_fn(doc) or ""
+                except Exception as exc:
+                    self.registry.mark_document(doc.url, "failed", error_type=type(exc).__name__)
                     self.parse_failed_count += 1
-                    self._record_metric("api_document_waf_blocked_total")
+                    self._ledger_finish(doc, "failed")
+                    self._record_metric("api_document_parse_failed_total")
+                    logger.debug(
+                        "api doc unified fetch failed url:%s error_type:%s",
+                        str(doc.url)[:160], type(exc).__name__)
+                    continue
+
+                if not text:
+                    # P1-08：空响应与 fetch 异常、Parser 显式 failed 同属统一失败收口。
+                    # 两处都要计数（counter + 指标）的原因：parse_failed_count 是队列
+                    # 局部运行事实（stage 完成日志的 failed 分母），api_document_parse_failed_total
+                    # 是跨进程观测面（context 指标），二者消费方不同、缺一即失真；
+                    # 此前只标态不计数（Review 探针：fetch_count=1 而 parse_failed_count=0），
+                    # 消费文档数与 success+failed 分母出现无法归因缺口。error_type 保持
+                    # empty_response 以区分失败性质；状态机迁移与账本收口不变。
+                    if self._fetch_blocked:
+                        # 第 9 批 §8.2：WAF 类别熔断与"抓到空"分开归因——文档标
+                        # failed/waf_blocked（不伪装"无 API"），且不因请求未发出而
+                        # 影响其他类别；api_document_parse_failed_total 照常双计。
+                        self.registry.mark_document(doc.url, "failed", error_type="waf_blocked")
+                        self.parse_failed_count += 1
+                        self._record_metric("api_document_waf_blocked_total")
+                        self._record_metric("api_document_parse_failed_total")
+                        self._ledger_finish(doc, "failed")
+                        continue
+                    self.registry.mark_document(doc.url, "failed", error_type="empty_response")
+                    self.parse_failed_count += 1
                     self._record_metric("api_document_parse_failed_total")
                     self._ledger_finish(doc, "failed")
                     continue
-                self.registry.mark_document(doc.url, "failed", error_type="empty_response")
-                self.parse_failed_count += 1
-                self._record_metric("api_document_parse_failed_total")
-                self._ledger_finish(doc, "failed")
-                continue
 
-            signature = compute_input_signature(
-                hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest())
-            parsed = self._parse_one(doc, text, signature)
-            if parsed:
-                self.parse_success_count += 1
-                self._record_metric("api_document_parse_success_total")
-                self._ledger_finish(doc, "covered")
-            else:
-                self.parse_failed_count += 1
-                self._record_metric("api_document_parse_failed_total")
-                self._ledger_finish(doc, "failed")
+                signature = compute_input_signature(
+                    hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest())
+                parsed = self._parse_one(doc, text, signature)
+                if parsed:
+                    self.parse_success_count += 1
+                    self._record_metric("api_document_parse_success_total")
+                    self._ledger_finish(doc, "covered")
+                else:
+                    self.parse_failed_count += 1
+                    self._record_metric("api_document_parse_failed_total")
+                    self._ledger_finish(doc, "failed")
 
-        open_docs = self.registry.open_documents()
-        if open_docs:
-            # 预算耗尽的残余候选保持 discovered/queued：finalizer 的
-            # pending_backlog|api|* 下一轮周期显影通道不受本批影响。
-            self._record_metric("api_document_pending_residual_total", len(open_docs))
-            logger.info(
-                "api doc queue budget exhausted task_id:%s residual:%s timeout:%s",
-                self.registry.task_id, len(open_docs), self.stage_timeout_stopped)
-        if self.context is not None:
-            try:
-                # 第 9 批 §十二：api_doc 阶段 wall/cpu/network_wait 时长（毫秒，
-                # 跨多次 run 累加）；网络等待只计真实 fetch 挂钟，不含解析/队列等待。
-                if self._stage_wall_started is not None:
-                    self.context.record_metric(
-                        "api_stage_wall_time",
-                        int(max(0.0, self._clock() - self._stage_wall_started) * 1000))
-                    self.context.record_metric(
-                        "api_stage_cpu_time",
-                        int(max(0.0, time.process_time() - (self._stage_cpu_started or 0.0)) * 1000))
-                    self.context.record_metric(
-                        "api_stage_network_wait_time", int(self.network_wait_sec * 1000))
-                self.context.record_metric("api_endpoint_discovered_total", self.registry.endpoint_created_count)
-                self.context.record_metric("api_endpoint_deduplicated_total", self.registry.endpoint_deduplicated_count)
-                self.context.record_metric("api_document_budget_skipped_total", self.skipped_budget_count)
-                self.context.record_metric("api_document_resumed_skip_total", self.resumed_skip_count)
-                self.context.record_metric("api_document_skipped_scope_total", self.skipped_scope_count)
-                # 第 10 批 Rust 门禁观测面：hint 批量通道调用量与输入量。
-                self.context.record_metric(
-                    "api_unified_hint_batch_total", self.backflow_hint_batch_count)
-                self.context.record_metric(
-                    "api_unified_hint_input_total", self.backflow_hint_input_count)
-                # P0-04 透出：诊断面驻留条数（整数计数；摘要本体不进 metrics）。
-                self.context.record_metric(
-                    "api_document_schema_diagnostics_total",
-                    len(self.registry.schema_diagnostics))
-                # §十二 Endpoint 观测面（第 8 批）：类型/方法分布与来源合并数。
-                for api_type, count in sorted(self.registry.endpoint_by_type.items()):
-                    self.context.record_metric(
-                        "api_endpoint_by_type.{}".format(api_type), count)
-                for method, count in sorted(self.registry.endpoint_by_method.items()):
-                    self.context.record_metric(
-                        "api_endpoint_by_method.{}".format(method), count)
-                self.context.record_metric(
-                    "api_endpoint_sources_merged_total",
-                    self.registry.endpoint_sources_merged_count)
-            except Exception:
-                pass
-        return list(self.scanner.records)
+            open_docs = self.registry.open_documents()
+            if open_docs:
+                # 预算耗尽的残余候选保持 discovered/queued：finalizer 的
+                # pending_backlog|api|* 下一轮周期显影通道不受本批影响。
+                # 计数 flush 在 _flush_stage_metrics（峰值水位增量，P2-03）。
+                logger.info(
+                    "api doc queue budget exhausted task_id:%s residual:%s timeout:%s",
+                    self.registry.task_id, len(open_docs), self.stage_timeout_stopped)
+            return list(self.scanner.records)
+        finally:
+            self._flush_stage_metrics()
+
+    def _flush_cumulative(self, name: str, total: Any) -> None:
+        """累计型事实源按水位 flush：只记未 flush 增量，重复 run 不双计（P1-02）。
+
+        首次调用恒产出（含 0）——P2-03 口径"观测到零"≠"未观测"；此后只 flush
+        增长增量。
+        """
+
+        try:
+            value = int(total or 0)
+        except (TypeError, ValueError):
+            return
+        if name not in self._flushed_counters:
+            self._flushed_counters[name] = value
+            self._record_metric(name, value)
+            return
+        previous = int(self._flushed_counters.get(name, 0) or 0)
+        if value > previous:
+            self._flushed_counters[name] = value
+            self._record_metric(name, value - previous)
+
+    def _flush_stage_metrics(self) -> None:
+        """阶段 metrics 统一收口（P2-03）：run() 的 finally 调用，幂等。
+
+        - wall/cpu 每 run 一段（flush 后复位窗口，重复调用只出一次）；
+        - network_wait 只含真实 http_req 挂钟（P1-02），按水位增量 flush；
+        - registry/queue 累计计数走 `_flush_cumulative`；
+        - 残余候选按峰值水位推进（集合缩回不回冲，不虚增双计）；
+        - 观测失败不得反噬主路径：整体 try/except 后 debug 留痕。
+        """
+
+        if self.context is None:
+            self._stage_wall_started = None
+            self._stage_cpu_started = None
+            return
+        try:
+            if self._stage_wall_started is not None:
+                self._record_metric(
+                    "api_stage_wall_time",
+                    int(max(0.0, self._clock() - self._stage_wall_started) * 1000))
+                self._record_metric(
+                    "api_stage_cpu_time",
+                    int(max(0.0, time.process_time() - (self._stage_cpu_started or 0.0)) * 1000))
+                self._stage_wall_started = None
+                self._stage_cpu_started = None
+            self._flush_cumulative(
+                "api_stage_network_wait_time", int(self.network_wait_sec * 1000))
+            self._flush_cumulative(
+                "api_document_candidates_total", self.registry.created_document_count)
+            self._flush_cumulative(
+                "api_document_sources_merged_total", self.registry.merged_source_count)
+            self._flush_cumulative(
+                "api_endpoint_discovered_total", self.registry.endpoint_created_count)
+            self._flush_cumulative(
+                "api_endpoint_deduplicated_total", self.registry.endpoint_deduplicated_count)
+            self._flush_cumulative(
+                "api_endpoint_sources_merged_total",
+                self.registry.endpoint_sources_merged_count)
+            self._flush_cumulative(
+                "api_document_budget_skipped_total", self.skipped_budget_count)
+            self._flush_cumulative(
+                "api_document_resumed_skip_total", self.resumed_skip_count)
+            self._flush_cumulative(
+                "api_document_skipped_scope_total", self.skipped_scope_count)
+            # 第 10 批 Rust 门禁观测面：hint 批量通道调用量与输入量。
+            self._flush_cumulative(
+                "api_unified_hint_batch_total", self.backflow_hint_batch_count)
+            self._flush_cumulative(
+                "api_unified_hint_input_total", self.backflow_hint_input_count)
+            # P0-04 透出：按"累计插入条数"flush（驻留数是 gauge，累计进
+            # additively 语义的 metric 会随驱逐/重复 run 失真）。
+            self._flush_cumulative(
+                "api_document_schema_diagnostics_total",
+                self.registry.schema_diagnostics_inserted_count)
+            for api_type, count in sorted(self.registry.endpoint_by_type.items()):
+                self._flush_cumulative(
+                    "api_endpoint_by_type.{}".format(api_type), count)
+            for method, count in sorted(self.registry.endpoint_by_method.items()):
+                self._flush_cumulative(
+                    "api_endpoint_by_method.{}".format(method), count)
+            open_count = len(self.registry.open_documents())
+            if open_count > self._flushed_residual_peak:
+                self._flushed_residual_peak = open_count
+                self._record_metric("api_document_pending_residual_total", open_count)
+        except Exception as exc:
+            logger.debug(
+                "api stage metrics flush failed task_id:%s error_type:%s",
+                self.registry.task_id, type(exc).__name__)
 
     def _record_metric(self, name: str, amount: int = 1) -> None:
         if self.context is None:

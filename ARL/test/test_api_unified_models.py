@@ -533,5 +533,35 @@ class GraphQLHashTest(unittest.TestCase):
             )
 
 
+
+class EndpointDegradedReasonContractTest(unittest.TestCase):
+    """P2-01：degraded_reason 的模型面契约（受控枚举/尾位增量/to_dict 键）。"""
+
+    def _ep(self, **kwargs):
+        return m.UnifiedApiEndpoint(
+            url="https://api.example.com/r", method="GET", api_type="rest",
+            input_signature="sig", source="seed", **kwargs)
+
+    def test_to_dict_carries_field_at_tail(self):
+        payload = self._ep().to_dict()
+        self.assertEqual(list(payload.keys())[-1], "degraded_reason")
+        self.assertEqual(payload["degraded_reason"], "")
+
+    def test_enum_sanitization(self):
+        self.assertEqual(
+            m.sanitize_endpoint_degraded_reason("host_waf_blocked"), "host_waf_blocked")
+        self.assertEqual(m.sanitize_endpoint_degraded_reason("token=abc leaked"), "other")
+        self.assertEqual(m.sanitize_endpoint_degraded_reason(None), "")
+        self.assertEqual(m.sanitize_endpoint_degraded_reason("x" * 200), "other",
+                         "超长值不得进入枚举（先截断再判成员=other）")
+
+    def test_positional_legacy_slots_unchanged(self):
+        # R6-P2-01 同型钉：新字段追加在 observed_url 之后，旧位置参数语义不漂移。
+        ep = m.UnifiedApiEndpoint(
+            "https://api.example.com/r", "GET", "rest", "eid-1", "/r")
+        self.assertEqual(ep.endpoint_id, "eid-1")
+        self.assertEqual(ep.path_template, "/r")
+        self.assertEqual(ep.degraded_reason, "")
+
 if __name__ == "__main__":
     unittest.main()

@@ -1626,6 +1626,197 @@ class BrowserIngestGateTest(unittest.TestCase):
         self.assertIsNone(again, "终态不被观察事件回写")
 
 
+class EndpointDegradedReasonTest(unittest.TestCase):
+    """P2-01（第 11 批 Review）：降级原因的资产面受控枚举与快照可见。"""
+
+    @staticmethod
+    def _ep(url="https://api.example.com/x"):
+        return UnifiedApiEndpoint(
+            url=url, method="GET", api_type="rest", input_signature="sig-dr",
+            source="seed", parent_document="https://api.example.com/openapi.json")
+
+    def _claimed(self, task_id="dr-1"):
+        registry = reg.ApiCandidateRegistry(task_id=task_id)
+        registry.register_endpoint(self._ep())
+        ((endpoint, token),) = registry.claim_endpoints_for_probe(
+            limit=1, with_tokens=True)
+        return registry, endpoint, token
+
+    def test_probe_report_degraded_records_reason_in_snapshot(self):
+        registry, endpoint, token = self._claimed()
+        updated = registry.probe_report(
+            endpoint, "degraded", claim_token=token,
+            degraded_reason="host_waf_blocked")
+        self.assertEqual(updated.status, "degraded")
+        self.assertEqual(updated.degraded_reason, "host_waf_blocked")
+        blob = json.dumps(registry.snapshot_endpoints(), ensure_ascii=False)
+        self.assertIn("host_waf_blocked", blob, "资产快照必须可稳定归因降级原因")
+
+    def test_out_of_enum_reason_collapses_other(self):
+        registry, endpoint, token = self._claimed("dr-2")
+        registry.probe_report(
+            endpoint, "degraded", claim_token=token,
+            degraded_reason="响应体 token=abc 等自由文本")
+        self.assertEqual(endpoint.degraded_reason, "other",
+                         "枚举外/带值原因收敛 other，原因字段不得携带响应内容")
+
+    def test_requeue_clears_stale_reason(self):
+        registry, endpoint, token = self._claimed("dr-3")
+        registry.probe_report(endpoint, "degraded", claim_token=token,
+                              degraded_reason="host_waf_blocked")
+        # degraded 为终态不回收；用带 reason 的资产走 queued→pending 回收路径验证清除：
+        registry2 = reg.ApiCandidateRegistry(task_id="dr-4")
+        registry2.register_endpoint(self._ep("https://api.example.com/y"))
+        ((ep2, token2),) = registry2.claim_endpoints_for_probe(limit=1, with_tokens=True)
+        ep2.degraded_reason = "waf_blocked"
+        self.assertEqual(registry2.requeue_unreported([(ep2, token2)]), 1)
+        self.assertEqual(ep2.status, "pending")
+        self.assertEqual(ep2.degraded_reason, "",
+                         "重新排队不得带上轮降级原因")
+
+
+class ConfigLeaseWiringTest(unittest.TestCase):
+    """P1-03（第 11 批 Review）：lease 键的默认表/上下文/Config 读取链。"""
+
+    class _Ctx:
+        def __init__(self, config):
+            self.config = config
+
+    def test_defaults_table_contains_lease(self):
+        self.assertEqual(
+            UNIFIED_API_CONFIG_DEFAULTS["API_ENDPOINT_CLAIM_LEASE_SEC"], 900)
+
+    def test_context_config_takes_precedence(self):
+        registry = reg.ApiCandidateRegistry("lease-1", context=self._Ctx(
+            {"API_ENDPOINT_CLAIM_LEASE_SEC": 45}))
+        self.assertEqual(registry.config_lease_sec(), 45.0)
+
+    def test_non_positive_or_invalid_falls_back_to_constant(self):
+        for raw in (0, -5, "0", "", None, "abc"):
+            registry = reg.ApiCandidateRegistry("lease-2", context=self._Ctx(
+                {"API_ENDPOINT_CLAIM_LEASE_SEC": raw}))
+            self.assertEqual(
+                registry.config_lease_sec(), float(reg.ENDPOINT_CLAIM_LEASE_SEC),
+                "非正数/非法值必须回退常量（lease=0 等价关闭保护）")
+
+    def test_config_attribute_used_when_context_absent(self):
+        import app.config as _app_config
+        saved = getattr(_app_config.Config, "API_ENDPOINT_CLAIM_LEASE_SEC", None)
+        try:
+            _app_config.Config.API_ENDPOINT_CLAIM_LEASE_SEC = 60
+            registry = reg.ApiCandidateRegistry("lease-3")
+            self.assertEqual(registry.config_lease_sec(), 60.0)
+        finally:
+            if saved is None:
+                delattr(_app_config.Config, "API_ENDPOINT_CLAIM_LEASE_SEC")
+            else:
+                _app_config.Config.API_ENDPOINT_CLAIM_LEASE_SEC = saved
+
+    def test_claim_deadline_uses_configured_lease(self):
+        now = [1000.0]
+
+        class _ScopedCtx:
+            config = {"API_ENDPOINT_CLAIM_LEASE_SEC": 30}
+            allowed_hosts = {"api.example.com"}
+
+        registry = reg.ApiCandidateRegistry(
+            "lease-4", context=_ScopedCtx(), clock=lambda: now[0])
+        registry.register_endpoint(UnifiedApiEndpoint(
+            url="https://api.example.com/lease", method="GET", api_type="rest",
+            input_signature="sig-l", source="seed",
+            parent_document="https://api.example.com/openapi.json"))
+        registry.claim_endpoints_for_probe(limit=1)
+        (deadline,) = list(registry._claim_deadlines.values())
+        self.assertEqual(deadline, 1030.0)
+
+
+class QueueStageFlushTest(unittest.TestCase):
+    """P1-02/P2-03：阶段 metrics 水位增量 flush，所有退出路径收口。
+
+    构造链（ApiDocScanner→collect_allowed_flds→is_valid_domain 惰性 import）
+    统一放进 `_safe_domain_fns()` 守卫内：合跑收集期他人 fake app.utils
+    不还原时，域函数被桩替换即不再触达 `domain_parsed`（既有交错存量机制）。
+    """
+
+    def test_double_run_does_not_double_flush_cumulative(self):
+        context = DiscoveryContext(task_id="fx-1")
+        with _safe_domain_fns():
+            queue, _calls = _make_queue(
+                context=context, fetch_map={DOC_URL: OPENAPI_TEXT}, records=[])
+            queue.run()
+            endpoints_first = int(context.metrics.get(
+                "api_endpoint_discovered_total", 0) or 0)
+            candidates_first = int(context.metrics.get(
+                "api_document_candidates_total", 0) or 0)
+            self.assertGreater(endpoints_first, 0)
+            queue.run()
+        self.assertEqual(
+            endpoints_first,
+            int(context.metrics.get("api_endpoint_discovered_total", 0) or 0),
+            "第二次 run 不得重复累计同一注册计数")
+        self.assertEqual(
+            candidates_first,
+            int(context.metrics.get("api_document_candidates_total", 0) or 0))
+
+    def test_early_return_still_flushes_stage_window(self):
+        # 空范围（无 allowed_hosts）提前返回：跳过 ≠ 未观测，wall/cpu/network 仍要产出。
+        context = DiscoveryContext(task_id="fx-2")
+        with _safe_domain_fns():
+            scanner = ApiDocScanner(sites=[], wih_records=[], waf_guard=None,
+                                    discovery_context=context)
+            registry = reg.ApiCandidateRegistry(task_id="fx-2", context=context)
+            queue = reg.ApiDocumentQueue(
+                scanner=scanner, registry=registry, context=context,
+                config=_full_config(), fetch_fn=lambda doc: "")
+            self.assertEqual(queue.run(), [])
+        for key in ("api_stage_wall_time", "api_stage_cpu_time",
+                    "api_stage_network_wait_time"):
+            self.assertIn(key, context.metrics, "%s 必须在提前返回时 flush" % key)
+
+    def test_stage_exception_flushes_then_propagates(self):
+        # 阶段级异常：观测收口不得吞原始异常（finally 语义）。
+        context = DiscoveryContext(task_id="fx-3")
+        with _safe_domain_fns():
+            queue, _calls = _make_queue(context=context,
+                                        fetch_map={DOC_URL: OPENAPI_TEXT})
+
+            def _boom(_records):
+                raise RuntimeError("stage boom")
+
+            queue._collect_backflow = _boom
+            with self.assertRaises(RuntimeError):
+                queue.run()
+        self.assertIn("api_stage_wall_time", context.metrics)
+
+    def test_network_wait_counts_only_http_req(self):
+        # P1-02：queue 只累计 timing_out["http_req_sec"]；非网络区间恒 0。
+        saved = _intel_utils.fetch_text
+        try:
+            def fake_fetch_text(url, **kwargs):
+                timing = kwargs.get("timing_out")
+                if isinstance(timing, dict):
+                    timing["http_req_sec"] = 1.25
+                return "", None
+
+            _intel_utils.fetch_text = fake_fetch_text
+            with _safe_domain_fns():
+                queue, _calls = _make_queue(context=None)
+            queue._default_fetch(ApiDocumentCandidate(
+                task_id="t", url=DOC_URL, source="seed"))
+            self.assertAlmostEqual(queue.network_wait_sec, 1.25)
+
+            def fake_cache_hit(url, **kwargs):
+                return "", None  # 不写 timing → 网络时间恒 0
+
+            _intel_utils.fetch_text = fake_cache_hit
+            queue._default_fetch(ApiDocumentCandidate(
+                task_id="t", url="https://api.example.com/other.json", source="seed"))
+            self.assertAlmostEqual(queue.network_wait_sec, 1.25,
+                                   msg="缓存命中路径不得计入网络等待")
+        finally:
+            _intel_utils.fetch_text = saved
+
+
 class UrlRecordDocHintBackflowTest(unittest.TestCase):
     """第 8 批：页面/JS 的 urlfinder_url/page_link 记录按 URL 形态升级文档候选。
 

@@ -7,6 +7,7 @@ Web 信息增强辅助函数。
 """
 import hashlib
 import re
+import time
 from typing import Dict, Iterable, Optional, Set, Tuple
 from urllib.parse import unquote, urljoin, urlparse
 
@@ -173,6 +174,7 @@ def fetch_text(
     request_profile: str = "html_get",
     mirror_html_get: bool = False,
     block_signal: Optional[Dict] = None,
+    timing_out: Optional[Dict] = None,
 ):
     """统一响应缓存感知的 GET 工具。
 
@@ -183,6 +185,10 @@ def fetch_text(
     `block_signal`（第 9 批 §8.2）：调用方传入空 dict 时，WAF 流量类别熔断
     导致跳过请求的路径会写 `block_signal["waf_blocked"]=True`——返回空串与
     "被熔断"不再混同（文档队列据此把 waf_blocked 与 empty_response 分开归因）。
+
+    `timing_out`（第 11 批 Review P1-02）：传入 dict 时只写真实 `utils.http_req`
+    调用的挂钟 `timing_out["http_req_sec"]`——缓存命中、singleflight follower、
+    DNS/调度等待一律不写，网络等待指标不再被非网络区间污染。
     """
     profile = str(request_profile or "html_get")
 
@@ -288,6 +294,7 @@ def fetch_text(
                 "{} over capacity, continue request url:{}".format(waf_module, url)
             )
 
+    network_started_at = time.monotonic()
     try:
         conn = utils.http_req(
             url,
@@ -307,6 +314,13 @@ def fetch_text(
     finally:
         if lease is not None:
             lease.release()
+        # 成功与异常路径都写：超时/拒连同样是真实网络往返时间（P1-02 只排除
+        # 非网络区间，不排除失败的请求）。观测写入不得反噬主路径。
+        if timing_out is not None:
+            try:
+                timing_out["http_req_sec"] = max(0.0, time.monotonic() - network_started_at)
+            except Exception:
+                pass
 
     status_code = int(getattr(conn, "status_code", 0) or 0)
     if status_code >= 400:
