@@ -1,10 +1,10 @@
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   ChevronDown,
@@ -150,7 +150,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
 
   const [configPath, setConfigPath] = useState('');
   const [updatedAt, setUpdatedAt] = useState('');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nucleiPocUpdating, setNucleiPocUpdating] = useState(false);
   const [afrogPocUpdating, setAfrogPocUpdating] = useState(false);
@@ -363,62 +362,68 @@ export function ConfigConsoleView({ token }: { token: string }) {
   }, [scanProfiles, matchedScanProfileId]);
   const isCustomScanProfileMatched = !matchedScanProfileId;
 
-  const loadScanConfig = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const result = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
-      const data = result?.data || {};
-      const scanConfig = data?.scan_config || {};
-      const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
-      const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
-      const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
-
-      setDomainDict(String(scanConfig.domain_dict || ''));
-      setFileLeakDict(String(scanConfig.file_leak_dict || ''));
-      setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 360));
-      setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 1400));
-      setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 6));
-      setCeleryTaskWorkerConcurrency(Number(scanConfig.celery_task_worker_concurrency || 3));
-      setCeleryGithubWorkerConcurrency(Number(scanConfig.celery_github_worker_concurrency || 2));
-      setCeleryHeavyWorkerConcurrency(Number(scanConfig.celery_heavy_worker_concurrency || 3));
-      setCeleryWebWorkerConcurrency(Number(scanConfig.celery_web_worker_concurrency || 3));
-      setCeleryPrefetchMultiplier(Number(scanConfig.celery_prefetch_multiplier || 1));
-      setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 32));
-      setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 720000));
-      setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 900));
-      setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 50));
-      setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 24));
-      setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 30));
-      setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 30));
-      setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 30));
-      setPocUpdateProxy(String(scanConfig.poc_update_proxy || ''));
-      setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
-      setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 800));
-      setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 20));
-      setHostTimeoutType(String(scanConfig.host_timeout_type || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
-      setHostTimeout(Number(scanConfig.host_timeout || 1500));
-      setPortParallelism(Number(scanConfig.port_parallelism || 64));
-      setPortMinRate(Number(scanConfig.port_min_rate || 260));
-      setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
-      setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
-
-      setDomainDictOptions(nextDomainOptions);
-      setFileLeakDictOptions(nextFileLeakOptions);
-      setScanProfiles(nextScanProfiles);
-      setConfigPath(String(data.config_path || ''));
-      setUpdatedAt(String(data.updated_at || ''));
-    } catch (err: any) {
-      setError(err?.message || '加载扫描配置失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+  // 初始化配置读取迁移 React Query（计划 4）：快照数据源唯一、同 key 挂载去重、
+  // 手动“重新加载”显式 refetch。保存/上传/PoC 更新仍按自身响应回写表单且不失效
+  // 本查询——避免后台重取覆盖用户刚提交的结果（mutation 行为与迁移前一致）。
+  const scanConfigQuery = useQuery({
+    queryKey: ['config-console-scan-config', token],
+    queryFn: () => requestApi(token, '/api_console/scan_config/', { method: 'GET' }),
+    retry: 0,
+  });
+  const loading = scanConfigQuery.isPending;
 
   useEffect(() => {
-    void loadScanConfig();
-  }, [loadScanConfig]);
+    if (scanConfigQuery.isPending) {
+      // 与迁移前 loadScanConfig 开头一致：每次（重）取先清空上一条消息。
+      setError('');
+      setSuccess('');
+      return;
+    }
+    if (scanConfigQuery.isError) {
+      setError((scanConfigQuery.error as Error)?.message || '加载扫描配置失败');
+      return;
+    }
+    const data = scanConfigQuery.data?.data || {};
+    const scanConfig = data?.scan_config || {};
+    const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+    const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
+    const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
+
+    setDomainDict(String(scanConfig.domain_dict || ''));
+    setFileLeakDict(String(scanConfig.file_leak_dict || ''));
+    setDomainBruteConcurrent(Number(scanConfig.domain_brute_concurrent || 360));
+    setAltDnsConcurrent(Number(scanConfig.alt_dns_concurrent || 1400));
+    setWebGunicornWorkers(Number(scanConfig.web_gunicorn_workers || 6));
+    setCeleryTaskWorkerConcurrency(Number(scanConfig.celery_task_worker_concurrency || 3));
+    setCeleryGithubWorkerConcurrency(Number(scanConfig.celery_github_worker_concurrency || 2));
+    setCeleryHeavyWorkerConcurrency(Number(scanConfig.celery_heavy_worker_concurrency || 3));
+    setCeleryWebWorkerConcurrency(Number(scanConfig.celery_web_worker_concurrency || 3));
+    setCeleryPrefetchMultiplier(Number(scanConfig.celery_prefetch_multiplier || 1));
+    setCeleryMaxTasksPerChild(Number(scanConfig.celery_max_tasks_per_child || 32));
+    setCeleryMaxMemoryPerChild(Number(scanConfig.celery_max_memory_per_child || 720000));
+    setNucleiSingleTargetTimeoutSec(Number(scanConfig.nuclei_single_target_timeout_sec || 900));
+    setNucleiRateLimit(Number(scanConfig.nuclei_rate_limit || 50));
+    setNucleiConcurrency(Number(scanConfig.nuclei_concurrency || 24));
+    setNucleiBulkSize(Number(scanConfig.nuclei_bulk_size || 30));
+    setAfrogConcurrency(Number(scanConfig.afrog_concurrency || 30));
+    setAfrogRateLimit(Number(scanConfig.afrog_rate_limit || 30));
+    setPocUpdateProxy(String(scanConfig.poc_update_proxy || ''));
+    setUrlfinderUrlProbeEnable(Boolean(scanConfig.urlfinder_url_probe_enable ?? true));
+    setUrlfinderUrlProbeMaxTargets(Number(scanConfig.urlfinder_url_probe_max_targets || 800));
+    setUrlfinderUrlProbeConcurrency(Number(scanConfig.urlfinder_url_probe_concurrency || 20));
+    setHostTimeoutType(String(scanConfig.host_timeout_type || 'default').toLowerCase() === 'custom' ? 'custom' : 'default');
+    setHostTimeout(Number(scanConfig.host_timeout || 1500));
+    setPortParallelism(Number(scanConfig.port_parallelism || 64));
+    setPortMinRate(Number(scanConfig.port_min_rate || 260));
+    setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
+    setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
+
+    setDomainDictOptions(nextDomainOptions);
+    setFileLeakDictOptions(nextFileLeakOptions);
+    setScanProfiles(nextScanProfiles);
+    setConfigPath(String(data.config_path || ''));
+    setUpdatedAt(String(data.updated_at || ''));
+  }, [scanConfigQuery.isPending, scanConfigQuery.isError, scanConfigQuery.data]);
 
   const saveScanConfig = async () => {
     const normalizedDomainDict = domainDict.trim();
@@ -758,7 +763,9 @@ export function ConfigConsoleView({ token }: { token: string }) {
           <div className="text-sm font-bold tracking-wide">扫描配置</div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => void loadScanConfig()}
+              onClick={() => {
+                void scanConfigQuery.refetch();
+              }}
               className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
               disabled={isConfigActionBusy}
             >
