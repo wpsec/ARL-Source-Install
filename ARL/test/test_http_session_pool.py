@@ -4,7 +4,7 @@
 - 共享适配器单例：连续请求复用同一 HTTPAdapter(同一 urllib3 连接池);
 - pooled Session 永不 close()：close 会连带摧毁共享适配器;
 - cookie 隔离语义保持：每请求新建 Session(独立 cookiejar);
-- connect_ip 直连路径不受池化影响，仍用即建即关的临时 Session。
+- connect_ip 直连路径按流量模块和直连目标复用适配器，但仍保持 Session 隔离。
 """
 
 import unittest
@@ -21,10 +21,13 @@ class TestHttpSessionPool(unittest.TestCase):
     def setUp(self):
         # 重置模块级单例，避免用例间串扰。
         self._saved_adapter = conn_mod._PLAIN_POOL_ADAPTER
+        self._saved_direct_adapters = conn_mod._DIRECT_POOL_ADAPTERS
         conn_mod._PLAIN_POOL_ADAPTER = None
+        conn_mod._DIRECT_POOL_ADAPTERS = conn_mod.OrderedDict()
 
     def tearDown(self):
         conn_mod._PLAIN_POOL_ADAPTER = self._saved_adapter
+        conn_mod._DIRECT_POOL_ADAPTERS = self._saved_direct_adapters
 
     class _FakeResponse(object):
         def __init__(self):
@@ -95,7 +98,7 @@ class TestHttpSessionPool(unittest.TestCase):
         self.assertIs(adapter, conn_mod._plain_pool_adapter())
         self.assertGreaterEqual(adapter._pool_maxsize, 1)
 
-    def test_connect_ip_path_uses_ephemeral_session_and_closes(self):
+    def test_connect_ip_path_shares_adapter_and_keeps_sessions_open(self):
         from unittest.mock import patch
 
         sessions = []
@@ -128,12 +131,20 @@ class TestHttpSessionPool(unittest.TestCase):
                 connect_ip="192.0.2.7",
                 timeout=(1, 2),
             )
+            conn_mod.http_req(
+                "http://target.example.com/",
+                "get",
+                connect_ip="192.0.2.7",
+                timeout=(1, 2),
+            )
         finally:
             conn_mod.requests.Session = original_session
             conn_mod.DirectIPHTTPAdapter = original_direct
 
-        self.assertEqual(1, len(sessions))
-        self.assertTrue(sessions[0].closed)
+        self.assertEqual(2, len(sessions))
+        self.assertIs(sessions[0].mounted["http://"], sessions[1].mounted["http://"])
+        self.assertFalse(sessions[0].closed)
+        self.assertFalse(sessions[1].closed)
 
 
 if __name__ == "__main__":

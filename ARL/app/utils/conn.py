@@ -5,6 +5,7 @@ import urllib3
 import threading
 import time
 import requests
+from collections import OrderedDict
 from urllib.parse import urlparse
 from app.config import Config
 from pymongo import MongoClient
@@ -55,6 +56,20 @@ class DirectIPHTTPAdapter(HTTPAdapter):
 
 _PLAIN_POOL_ADAPTER = None
 _PLAIN_POOL_LOCK = threading.Lock()
+_DIRECT_POOL_ADAPTERS = OrderedDict()
+_DIRECT_POOL_LOCK = threading.Lock()
+
+
+def _http_pool_sizes():
+    try:
+        pool_connections = int(getattr(Config, "HTTP_POOL_CONNECTIONS", 10) or 10)
+    except (TypeError, ValueError):
+        pool_connections = 10
+    try:
+        pool_maxsize = int(getattr(Config, "HTTP_POOL_MAXSIZE", 64) or 64)
+    except (TypeError, ValueError):
+        pool_maxsize = 64
+    return max(1, pool_connections), max(1, pool_maxsize)
 
 
 def _plain_pool_adapter():
@@ -65,8 +80,8 @@ def _plain_pool_adapter():
       与既有 `requests.get()` 语义一致，不会把上一个目标的 Set-Cookie 带给新目标;
     - 半读错误(读超时/断流)由 urllib3 `_error_catcher` 关闭并丢弃底层连接，池自愈，
       不会把脏连接归还后造成响应错位;
-    - 直连 IP(connect_ip)与 provider 分支不经过此池：其连接目标与 DNS policy
-      钉定语义强相关，按 `(类别 × 直连IP)` 分池需另行方案评审。
+    - 直连 IP 使用单独的 `(类别 × 直连IP × SNI/端口)` 池，避免不同目标共享连接；
+      provider 分支仍保持独立 Session。
 
     注意：使用本适配器的 Session 不得调用 close()——requests 会连带关闭挂载的
     适配器从而摧毁共享连接池。
@@ -75,19 +90,47 @@ def _plain_pool_adapter():
     if _PLAIN_POOL_ADAPTER is None:
         with _PLAIN_POOL_LOCK:
             if _PLAIN_POOL_ADAPTER is None:
-                try:
-                    pool_connections = int(getattr(Config, "HTTP_POOL_CONNECTIONS", 10) or 10)
-                except (TypeError, ValueError):
-                    pool_connections = 10
-                try:
-                    pool_maxsize = int(getattr(Config, "HTTP_POOL_MAXSIZE", 64) or 64)
-                except (TypeError, ValueError):
-                    pool_maxsize = 64
+                pool_connections, pool_maxsize = _http_pool_sizes()
                 _PLAIN_POOL_ADAPTER = HTTPAdapter(
-                    pool_connections=max(1, pool_connections),
-                    pool_maxsize=max(1, pool_maxsize),
+                    pool_connections=pool_connections,
+                    pool_maxsize=pool_maxsize,
                 )
     return _PLAIN_POOL_ADAPTER
+
+
+def _direct_pool_adapter(connect_ip, server_hostname, url, waf_module=""):
+    parsed = urlparse(str(url or ""))
+    scheme = str(parsed.scheme or "http").strip().lower() or "http"
+    port = parsed.port or (443 if scheme == "https" else 80)
+    traffic_key = str(waf_module or "normal").strip().lower() or "normal"
+    key = (
+        traffic_key,
+        str(connect_ip or "").strip(),
+        str(server_hostname or "").strip().lower(),
+        scheme,
+        port,
+    )
+    with _DIRECT_POOL_LOCK:
+        adapter = _DIRECT_POOL_ADAPTERS.get(key)
+        if adapter is not None:
+            _DIRECT_POOL_ADAPTERS.move_to_end(key)
+            return adapter
+
+        pool_connections, pool_maxsize = _http_pool_sizes()
+        adapter = DirectIPHTTPAdapter(
+            connect_ip=connect_ip,
+            server_hostname=server_hostname,
+            pool_connections=pool_connections,
+            pool_maxsize=pool_maxsize,
+        )
+        _DIRECT_POOL_ADAPTERS[key] = adapter
+        try:
+            cache_max = int(getattr(Config, "HTTP_DIRECT_POOL_MAX_ADAPTERS", 128) or 128)
+        except (TypeError, ValueError):
+            cache_max = 128
+        while len(_DIRECT_POOL_ADAPTERS) > max(1, cache_max):
+            _DIRECT_POOL_ADAPTERS.popitem(last=False)
+        return adapter
 
 
 def _remember_response_meta(response):
@@ -252,9 +295,15 @@ def http_req(url, method='get', **kwargs):
                 session = requests.Session()
                 session.trust_env = False
                 if connect_ip:
-                    adapter = DirectIPHTTPAdapter(connect_ip=connect_ip, server_hostname=server_hostname)
+                    adapter = _direct_pool_adapter(
+                        connect_ip,
+                        server_hostname,
+                        url,
+                        waf_module=waf_module,
+                    )
                     session.mount("http://", adapter)
                     session.mount("https://", adapter)
+                    pooled_session = True
                 conn = session.request(request_method, url, **attempt_kwargs)
             else:
                 session = requests.Session()
