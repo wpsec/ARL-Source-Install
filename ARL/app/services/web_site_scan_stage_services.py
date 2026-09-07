@@ -55,9 +55,137 @@ class WebSiteIdentifyStageService(object):
         self.task = task
         self.services = services_module or services
 
+    def _site_identify_score(self, site_info):
+        task = self.task
+        info = site_info if isinstance(site_info, dict) else {}
+        site = str(info.get("site", "") or "").strip()
+        parsed = urlparse(site)
+        hostname = str(parsed.hostname or "").strip().lower()
+        path = str(parsed.path or "").strip()
+        title = str(info.get("title", "") or "").strip().lower()
+        headers = str(info.get("headers", "") or "").strip().lower()
+        http_server = str(info.get("http_server", "") or "").strip().lower()
+
+        try:
+            status = int(info.get("status"))
+        except (TypeError, ValueError):
+            status = 0
+
+        score = 0
+        force_pick = status in task.SITE_IDENTIFY_FORCE_STATUS_SET
+        if force_pick:
+            score += 120
+        elif 200 <= status < 400:
+            score += 8
+
+        if any(keyword in title for keyword in task.SITE_IDENTIFY_TITLE_KEYWORDS):
+            score += 70
+        if any(keyword in hostname for keyword in task.SITE_IDENTIFY_HOST_KEYWORDS):
+            score += 45
+        if "www-authenticate" in headers:
+            score += 30
+        if "set-cookie:" in headers:
+            score += 8
+        if path and path != "/":
+            score += 16
+        if parsed.port and parsed.port not in {80, 443}:
+            score += 18
+
+        try:
+            body_length = int(info.get("body_length", 0))
+        except (TypeError, ValueError):
+            body_length = 0
+        if body_length > 32 * 1024:
+            score += 12
+        elif body_length > 8 * 1024:
+            score += 6
+
+        finger_list = info.get("finger", [])
+        finger_count = len(finger_list) if isinstance(finger_list, list) else 0
+        if finger_count > 0:
+            score += min(30, finger_count * 4)
+        if any(
+            token in http_server
+            for token in ("kong", "apisix", "openresty", "weblogic", "tomcat", "jetty")
+        ):
+            score += 22
+        return score, force_pick
+
+    def _build_site_identify_targets(self):
+        task = self.task
+        candidate_sites = list(dict.fromkeys(task.available_sites))
+        total_count = len(candidate_sites)
+        if total_count <= 0:
+            return []
+
+        site_info_map = {}
+        for site_info in task.site_info_list:
+            if not isinstance(site_info, dict):
+                continue
+            site = str(site_info.get("site", "") or "").strip()
+            if site:
+                site_info_map[site] = site_info
+
+        scored_items = []
+        for site in candidate_sites:
+            score, force_pick = self._site_identify_score(
+                site_info_map.get(site, {"site": site})
+            )
+            scored_items.append((site, score, force_pick))
+        scored_items.sort(key=lambda item: (-item[1], item[0]))
+
+        if total_count <= task.SITE_IDENTIFY_AUTO_MIN_SELECT:
+            target_count = total_count
+        else:
+            target_count = int(total_count * task.SITE_IDENTIFY_AUTO_RATIO)
+            target_count = max(task.SITE_IDENTIFY_AUTO_MIN_SELECT, target_count)
+            target_count = min(
+                task.SITE_IDENTIFY_AUTO_MAX_SELECT,
+                target_count,
+                total_count,
+            )
+
+        selected = []
+        selected_set = set()
+        for site, _, force_pick in scored_items:
+            if force_pick:
+                selected.append(site)
+                selected_set.add(site)
+
+        for site, score, _ in scored_items:
+            if score < 40 or site in selected_set:
+                continue
+            selected.append(site)
+            selected_set.add(site)
+            if len(selected) >= target_count:
+                break
+
+        if len(selected) < target_count:
+            for site, _, _ in scored_items:
+                if site in selected_set:
+                    continue
+                selected.append(site)
+                selected_set.add(site)
+                if len(selected) >= target_count:
+                    break
+
+        logger.info(
+            "task_id:{} site_identify staged select:{}/{} threshold:{} force:{} ratio:{} min:{} max:{}".format(
+                task.task_id,
+                len(selected),
+                total_count,
+                40,
+                len([1 for _, _, force_pick in scored_items if force_pick]),
+                task.SITE_IDENTIFY_AUTO_RATIO,
+                task.SITE_IDENTIFY_AUTO_MIN_SELECT,
+                task.SITE_IDENTIFY_AUTO_MAX_SELECT,
+            )
+        )
+        return selected
+
     def run(self):
         task = self.task
-        identify_targets = task._build_site_identify_targets()
+        identify_targets = self._build_site_identify_targets()
         identify_targets = task._filter_waf_blocked_targets(
             identify_targets,
             stage_name="site_identify",
