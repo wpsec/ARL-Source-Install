@@ -186,6 +186,12 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 
 ## 当前状态（2026-09-08 DataTable 与滚动模型发布说明更新后）
 
+### 2026-09-08 本地 UI smoke
+
+- [已完成] 离线构建链：`tsc --noEmit` 通过，Vitest `17` 个测试文件、`111` 项测试通过，Vite production build 通过，dist 入口资产和 SHA-256 清单自洽。
+- [待环境] 双架构容器 serve 未执行：当前 Docker daemon socket 无权限；真实执行入口为 `ARL/docker/frontend-src/scripts/ui-smoke.sh`。
+- [待环境] Playwright 浏览器行为未执行：仓库未安装 Playwright，不隐式拉包；真实 Chromium/Safari 证据留给用户环境统一 review。
+
 - [已完成] UI 契约冻结、daisyUI 主题与组件层、页面骨架拆分、模块化路由、列表缓存、懒加载、主 chunk 压缩和 TypeScript/Vite 构建门禁已完成。
 - [已完成] 两轮 Review 修复已落地：敏感 define 注入移除、列表失效/轮询、ErrorBoundary、Modal 无障碍标题、稳定行键和全局新建任务刷新。
 - [已完成]（2026-09-05 终态修复轮）done 家族（done/done_pending/done_degraded）前端源码兼容：`normalizeTaskStatus` 既有 "done" 子串规则天然归类完成，另修正 `getTaskProgressPercent` 与 `TableModuleView.isTaskTerminalStatus`/终态展示对家族值的判定；`tsc --noEmit` 通过。
