@@ -481,6 +481,14 @@ class TestDomainStageServices(unittest.TestCase):
             DomainNetworkStageService,
             "run_save_ip_info",
             side_effect=lambda: task.calls.append("save_ip_info"),
+        ), patch.object(
+            DomainNetworkStageService,
+            "run_port_scan",
+            side_effect=lambda: task.calls.append("port_scan"),
+        ), patch.object(
+            DomainNetworkStageService,
+            "run_ssl_cert",
+            side_effect=lambda: task.calls.append("ssl_cert"),
         ), patch.object(Config, "CERT_PIVOT_QUERY_ENABLE", False):
             DomainNetworkStageService(task).run()
 

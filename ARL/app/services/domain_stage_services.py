@@ -12,9 +12,11 @@ from urllib.parse import urlparse
 from app import modules, services, utils
 from app.config import Config
 from app.modules import CollectSource
+from app.services import fetchCert
 from app.services.dns_query import run_query_plugin
 from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
+from app.utils.log_safety import safe_error_text
 from app.utils.provider_http import stage_execution_context
 
 
@@ -135,6 +137,21 @@ def domain_brute(base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_i
     if wildcard_domain_ip is None:
         wildcard_domain_ip = []
     return DomainBrute(base_domain, word_file, wildcard_domain_ip).run()
+
+
+def scan_port(domain_info_list, option=None):
+    """保留端口扫描公共入口，延迟读取任务模块避免循环导入。"""
+    from app.tasks.domain import ScanPort
+
+    return ScanPort(domain_info_list, option).run()
+
+
+def ssl_cert(ip_info_list, base_domain):
+    try:
+        return fetchCert.SSLCert(ip_info_list, base_domain).run()
+    except Exception as exc:
+        logger.error("ssl certificate stage failed error:{}".format(safe_error_text(exc)))
+        return {}
 
 
 class AltDNS(object):
@@ -837,6 +854,172 @@ class DomainNetworkStageService(object):
     def __init__(self, task):
         self.task = task
 
+    def run_port_scan(self):
+        task = self.task
+        ip_info_list = scan_port(task.domain_info_list, task.scan_port_option)
+        task._last_port_scan_metrics = dict(getattr(ip_info_list, "metrics", {}) or {})
+
+        for ip_info_obj in ip_info_list:
+            ip_info = ip_info_obj.dump_json(flag=False)
+            ip_info["task_id"] = task.task_id
+            utils.conn_db("ip").update_one(
+                {"task_id": task.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
+
+        task.ip_info_list.extend(ip_info_list)
+        return ip_info_list
+
+    def run_ssl_cert(self):
+        task = self.task
+        if task.options.get("port_scan"):
+            task.cert_map = ssl_cert(task.ip_info_list, task.base_domain)
+        else:
+            fake_targets = []
+            for ip in sorted(task.ip_set):
+                domains = list(task.ipv4_map.get(ip, set()))
+                fake_targets.append(
+                    modules.IPInfo(
+                        ip=ip,
+                        domain=domains,
+                        port_info=[modules.PortInfo(port_id=443, service_name="https")],
+                        os_info={},
+                        cdn_name="",
+                    )
+                )
+            task.cert_map = ssl_cert(fake_targets, task.base_domain)
+
+        sni_success_endpoints = set()
+        for target in task.cert_map:
+            cert_obj = task.cert_map.get(target, {})
+            if not isinstance(cert_obj, dict):
+                continue
+
+            cert_data = dict(cert_obj)
+            scan_meta = cert_data.pop("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
+            ip, port = fetchCert.split_host_port(endpoint)
+            if not ip or port <= 0:
+                continue
+
+            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
+            if scan_mode != "sni":
+                continue
+
+            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
+            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
+            if not sni_domain:
+                sni_domain = legacy_server_name
+            if not sni_domain:
+                continue
+
+            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
+            if sni_domain not in domains:
+                domains = fetchCert.normalize_domains(domains + [sni_domain])
+
+            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
+            if domains and not matched_domains:
+                continue
+            if matched_domains and sni_domain not in matched_domains:
+                continue
+
+            sni_success_endpoints.add(endpoint)
+
+        for target in task.cert_map:
+            cert_obj = task.cert_map.get(target, {})
+            if not isinstance(cert_obj, dict):
+                continue
+
+            cert_data = dict(cert_obj)
+            scan_meta = cert_data.pop("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
+            ip, port = fetchCert.split_host_port(endpoint)
+            if not ip or port <= 0:
+                continue
+
+            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
+            if scan_mode not in ["default", "sni"]:
+                scan_mode = "default"
+
+            if scan_mode == "default" and endpoint in sni_success_endpoints:
+                continue
+
+            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
+            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
+            if not sni_domain and scan_mode == "sni":
+                sni_domain = legacy_server_name
+
+            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
+            if sni_domain and sni_domain not in domains:
+                domains = fetchCert.normalize_domains(domains + [sni_domain])
+
+            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
+            if domains and not matched_domains:
+                continue
+
+            if scan_mode == "sni" and sni_domain and matched_domains and sni_domain not in matched_domains:
+                continue
+
+            domains = matched_domains if matched_domains else domains
+            if scan_mode == "sni" and sni_domain and sni_domain in domains:
+                domain = sni_domain
+            elif domains:
+                domain = domains[0]
+            else:
+                domain = ""
+
+            fingerprint = cert_data.get("fingerprint", {})
+            if not isinstance(fingerprint, dict):
+                fingerprint = {}
+            cert_sha256 = str(fingerprint.get("sha256", "")).strip().lower().replace(":", "")
+            cert_sha1 = str(fingerprint.get("sha1", "")).strip().lower().replace(":", "")
+            serial_number = str(cert_data.get("serial_number", "")).strip().lower().replace(" ", "")
+            cert_identity_key = cert_sha256 or cert_sha1 or serial_number or ""
+
+            validity = cert_data.get("validity", {})
+            if not isinstance(validity, dict):
+                validity = {}
+            cert_end_time = str(validity.get("end", "")).strip()
+            observe_id = str(scan_meta.get("observe_id", "")).strip()
+
+            item = {
+                "ip": ip,
+                "port": port,
+                "host": endpoint,
+                "domain": domain,
+                "domains": domains,
+                "sni_domain": sni_domain,
+                "scan_mode": scan_mode,
+                "observe_id": observe_id,
+                "cert_identity_key": cert_identity_key,
+                "cert_end_time": cert_end_time,
+                "cert": cert_data,
+                "task_id": task.task_id,
+            }
+
+            query = {
+                "task_id": task.task_id,
+                "ip": ip,
+                "port": port,
+                "scan_mode": scan_mode,
+                "sni_domain": sni_domain,
+            }
+            if cert_identity_key:
+                query["cert_identity_key"] = cert_identity_key
+            if cert_end_time:
+                query["cert_end_time"] = cert_end_time
+            if not cert_identity_key and not cert_end_time:
+                query["observe_id"] = observe_id or endpoint
+
+            utils.conn_db("cert").update_one(query, {"$setOnInsert": item}, upsert=True)
+
     def run_gen_ipv4_map(self):
         task = self.task
         ipv4_map = {}
@@ -973,12 +1156,12 @@ class DomainNetworkStageService(object):
         pipeline.run_many([
             {
                 "name": "port_scan",
-                "func": task.port_scan,
+                "func": self.run_port_scan,
                 "enabled": bool(task.options.get("port_scan")),
             },
             {
                 "name": "ssl_cert",
-                "func": task.ssl_cert,
+                "func": self.run_ssl_cert,
                 "enabled": bool(task.options.get("ssl_cert")),
             },
         ])

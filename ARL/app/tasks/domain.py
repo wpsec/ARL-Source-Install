@@ -996,21 +996,7 @@ class DomainTask(CommonTask):
         return DomainDiscoveryStageService(self).run_alt_dns()
 
     def port_scan(self):
-        ip_info_list = scan_port(self.domain_info_list, self.scan_port_option)
-        self._last_port_scan_metrics = dict(getattr(ip_info_list, "metrics", {}) or {})
-
-        for ip_info_obj in ip_info_list:
-            ip_info = ip_info_obj.dump_json(flag=False)
-            ip_info["task_id"] = self.task_id
-
-            utils.conn_db("ip").update_one(
-                {"task_id": self.task_id, "ip": ip_info_obj.ip},
-                {"$set": ip_info},
-                upsert=True,
-            )
-
-        self.ip_info_list.extend(ip_info_list)
-        return ip_info_list
+        return DomainNetworkStageService(self).run_port_scan()
 
     def find_site(self):
         if self.options.get("port_scan"):
@@ -1046,6 +1032,9 @@ class DomainTask(CommonTask):
         return DomainNetworkStageService(self).run_save_service_info()
 
     def ssl_cert(self):
+        return DomainNetworkStageService(self).run_ssl_cert()
+
+    def _legacy_ssl_cert(self):
         if self.options.get("port_scan"):
             self.cert_map = ssl_cert(self.ip_info_list, self.base_domain)
         else:
