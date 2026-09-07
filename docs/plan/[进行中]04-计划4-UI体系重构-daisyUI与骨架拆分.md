@@ -198,6 +198,7 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成]（2026-09-07）`ActionDialog` 的字典、策略和 PoC 选项改为直接派生 React Query data，仅保留表单默认值补齐副作用；TypeScript 检查和弹窗测试 3 项通过，提交 `958caa5f`。
 - [已完成]（2026-09-07）`DashboardView` 的聚合快照、资产趋势、最近任务和日志展示改为直接派生 React Query data，保留日志暂停与手动刷新交互；TypeScript 检查和现有 Dashboard 测试 5 项通过，提交 `38c6c97c`。
 - [已完成]（2026-09-07）`AiConsoleView` 的用量统计、场景选项、日志列表、总数、更新时间和错误信息改为直接派生 React Query data；`DingtalkIntegrationView` 的工作区/节点按需读取改为 React Query mutation，保留成功提示与调试结果回写。对应页面测试 4 项、6 项通过，提交 `b0e27e3f`、`8cc11172`。
+- [已完成]（2026-09-07）`ConfigConsoleView` 的字典选项、扫描档位、配置路径和更新时间改为 query 快照派生；保存、字典上传和 PoC 更新先合并响应到缓存再失效重取，保留表单编辑与成功反馈。该页测试 6 项通过，提交 `8867e31c`。
 - [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 尚未接入所有页面级主列表。
 - [未完成] 首行冻结下线属于用户可见行为变化，需在发布说明和回归清单中单独确认。
 
