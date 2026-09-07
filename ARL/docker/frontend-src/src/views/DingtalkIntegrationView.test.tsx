@@ -1,7 +1,7 @@
 // 钉钉集成页级测试（计划 4 控制台批次）：初始化水合、错误呈现、
 // 保存与连通性测试成功后的 query invalidation；workspaces/nodes 按需读不在本批。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installFetchMock } from '../test/fetchMock';
 import { DingtalkIntegrationView } from './DingtalkIntegrationView';
@@ -24,10 +24,13 @@ const DINGTALK_PAYLOAD = {
 };
 
 function renderView() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'tk-ding');
+}
+
+function renderViewWithClient(client: QueryClient, token: string) {
   return render(
     <QueryClientProvider client={client}>
-      <DingtalkIntegrationView token="tk-ding" />
+      <DingtalkIntegrationView token={token} />
     </QueryClientProvider>,
   );
 }
@@ -86,5 +89,58 @@ describe('DingtalkIntegrationView（React Query）', () => {
     );
     await vi.waitFor(() => expect(getConfigGets()).toBe(2));
     await screen.findByText('钉钉连通性测试完成');
+  });
+});
+
+describe('DingtalkIntegrationView reveal 与查询 key 覆盖', () => {
+  const ROUTES = {
+    '/dingtalk_api/config/': [200, DINGTALK_PAYLOAD],
+  } as Record<string, [number, unknown]>;
+
+  const countBy = (
+    calls: Array<{ url: string; method: string }>,
+    method: string,
+    fragment: string,
+  ) => calls.filter((c) => c.method === method && c.url.includes(fragment)).length;
+
+  it('reveal 鉴权读不触发 config 查询失效（行为锁定：明文展示不被脱敏重取冲掉）', async () => {
+    const calls = installFetchMock({
+      routes: {
+        ...ROUTES,
+        '/dingtalk_api/reveal/': [200, {
+          code: 200,
+          data: {
+            config: { ...DINGTALK_PAYLOAD.data.config, app_key: 'PLAIN-KEY-1' },
+            sensitive_configured: { app_key: true },
+          },
+        }],
+      },
+    });
+    renderView();
+    await screen.findByDisplayValue('45');
+    fireEvent.click(screen.getByRole('button', { name: '显示敏感配置' }));
+    fireEvent.change(screen.getByPlaceholderText('请输入当前登录账号'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByPlaceholderText('请输入当前登录密码'), { target: { value: 'pw-input' } });
+    fireEvent.click(screen.getByRole('button', { name: '验证并显示' }));
+    await vi.waitFor(() => expect(countBy(calls, 'POST', '/dingtalk_api/reveal/')).toBe(1));
+    // 关键断言：reveal 后 config GET 仍为 1——它刻意不走查询缓存。
+    await new Promise((resolve) => window.setTimeout(resolve, 60));
+    expect(countBy(calls, 'GET', '/dingtalk_api/config/')).toBe(1);
+  });
+
+  it('查询 key 含 token：双实例隔离拉取，保存只失效自身 key', async () => {
+    const calls = installFetchMock({ routes: ROUTES });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const a = renderViewWithClient(client, 'tk-A');
+    renderViewWithClient(client, 'tk-B');
+    await vi.waitFor(() => expect(countBy(calls, 'GET', '/dingtalk_api/config/')).toBe(2));
+    const saveA = within(a.container).getByRole('button', { name: '保存配置' });
+    await vi.waitFor(() => expect(saveA.hasAttribute('disabled')).toBe(false));
+    fireEvent.click(saveA);
+    await vi.waitFor(() => expect(countBy(calls, 'POST', '/dingtalk_api/config/')).toBe(1));
+    // 仅 tk-A 的 key 被 invalidate 重取；tk-B 不受影响（稳定在 3 总数：2 初始 + 1 重取）。
+    await vi.waitFor(() => expect(countBy(calls, 'GET', '/dingtalk_api/config/')).toBe(3));
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    expect(countBy(calls, 'GET', '/dingtalk_api/config/')).toBe(3);
   });
 });
