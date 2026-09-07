@@ -4,6 +4,7 @@
 不改变站点任务入口和结果语义的情况下，逐步把 CommonTask 的业务边界移出。
 """
 
+import json
 import time
 from urllib.parse import urlparse
 
@@ -11,6 +12,7 @@ from bson import ObjectId
 
 from app import utils
 from app.modules import WebSiteFetchOption, WebSiteFetchStatus
+from app.services.discovery_context import traffic_class_for_module
 from app.services.single_scan_stage_services import WebSiteSingleStageService
 
 
@@ -90,6 +92,72 @@ class WebSiteTargetStageService(object):
                 if cut_target:
                     task._poc_sites.add(cut_target)
         return task._poc_sites
+
+
+class WebSiteDiscoveryContextStageService(object):
+    """承载发现上下文的 WAF 回调和任务收尾观测。"""
+
+    def __init__(self, task):
+        self.task = task
+
+    def on_waf_guard_block(self, url, module, reason, block_scope=""):
+        task = self.task
+        context = getattr(task, "discovery_context", None)
+        if context is None:
+            return
+        try:
+            module_class = traffic_class_for_module(module)
+            context.record_waf_signal(
+                url,
+                module_class,
+                reason=str(reason or "waf_block")[:160],
+                host_wide=str(block_scope or "") == "host",
+                force=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "task_id:{} waf signal sink failed error_type:{}".format(
+                    task.task_id,
+                    type(exc).__name__,
+                )
+            )
+
+    def log_observation(self):
+        task = self.task
+        context = getattr(task, "discovery_context", None)
+        if context is None:
+            return
+        try:
+            snapshot = context.observation_snapshot()
+            waf_snapshot = snapshot.get("waf") or {}
+            logger.info(
+                "task_id:{} discovery observation:{}".format(
+                    task.task_id,
+                    json.dumps(
+                        {
+                            "metrics": snapshot.get("metrics"),
+                            "events": snapshot.get("events"),
+                            "responses": snapshot.get("responses"),
+                            "candidates": snapshot.get("candidates"),
+                            "waf_classes": list(
+                                (waf_snapshot.get("traffic_class_blocks") or {}).keys()
+                            )[:20],
+                            "waf_hosts": list(
+                                (waf_snapshot.get("host_blocks") or {}).keys()
+                            )[:20],
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )[:3000],
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "task_id:{} discovery observation failed error_type:{}".format(
+                    task.task_id,
+                    type(exc).__name__,
+                )
+            )
 
 
 class WebSiteExternalScanStageService(object):

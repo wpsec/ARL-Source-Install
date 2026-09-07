@@ -4,7 +4,6 @@
 import time
 import re
 import os
-import json
 import yaml
 import subprocess
 import base64
@@ -26,7 +25,7 @@ from app.services.task_lifecycle_service import TaskLifecycleService
 from app.services.task_result_write_service import TaskResultWriteService
 from app.services.task_result_item_service import TaskResultItemService
 from app.services.web_site_fetch_orchestrator import WebSiteFetchOrchestrator
-from app.services.discovery_context import DiscoveryContext, DiscoveryLedger, traffic_class_for_module
+from app.services.discovery_context import DiscoveryContext, DiscoveryLedger
 from app.services.discovery_ledger_store import MongoLedgerBackend
 from app.services.discovery_context import url_host
 from app.services.discovery_queue import NewHostQueue
@@ -44,6 +43,7 @@ from app.services.web_site_scan_stage_services import (
 )
 from app.services import BaseUpdateTask
 from app.services.web_site_stage_services import (
+    WebSiteDiscoveryContextStageService,
     WebSiteResultPersistStageService,
     WebSiteTargetStageService,
     WebSiteWafStageService,
@@ -297,62 +297,15 @@ class WebSiteFetch(CommonTask):
                     self.task_id, type(exc).__name__))
 
     def _on_waf_guard_block(self, url, module, reason, block_scope=""):
-        """WAF 守卫确认阻断时回流类别化熔断状态。
-
-        仅 host 级强证据做主机级熔断；其余一律按来源流量类别暂停，避免弱证据连坐。
-        回调内部异常只记录不抛出，避免污染守卫的锁内路径。
-        """
-
-        context = getattr(self, "discovery_context", None)
-        if context is None:
-            return
-        try:
-            module_class = traffic_class_for_module(module)
-            context.record_waf_signal(
-                url,
-                module_class,
-                reason=str(reason or "waf_block")[:160],
-                host_wide=str(block_scope or "") == "host",
-                force=True,
-            )
-        except Exception as exc:
-            logger.warning(
-                "task_id:{} waf signal sink failed error_type:{}".format(
-                    self.task_id, type(exc).__name__
-                )
-            )
+        return WebSiteDiscoveryContextStageService(self).on_waf_guard_block(
+            url,
+            module,
+            reason,
+            block_scope,
+        )
 
     def _log_discovery_observation(self):
-        """任务收尾输出一行共享上下文观测，仅进日志，不改 Mongo 结果字段。"""
-
-        context = getattr(self, "discovery_context", None)
-        if context is None:
-            return
-        try:
-            snapshot = context.observation_snapshot()
-            logger.info(
-                "task_id:{} discovery observation:{}".format(
-                    self.task_id,
-                    json.dumps(
-                        {
-                            "metrics": snapshot.get("metrics"),
-                            "events": snapshot.get("events"),
-                            "responses": snapshot.get("responses"),
-                            "candidates": snapshot.get("candidates"),
-                            "waf_classes": list((snapshot.get("waf") or {}).get("traffic_class_blocks", {}).keys())[:20],
-                            "waf_hosts": list((snapshot.get("waf") or {}).get("host_blocks", {}).keys())[:20],
-                        },
-                        ensure_ascii=False,
-                        default=str,
-                    )[:3000],
-                )
-            )
-        except Exception as exc:
-            logger.warning(
-                "task_id:{} discovery observation failed error_type:{}".format(
-                    self.task_id, type(exc).__name__
-                )
-            )
+        return WebSiteDiscoveryContextStageService(self).log_observation()
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         return WebSiteWafStageService(self).filter_targets(targets, stage_name)
