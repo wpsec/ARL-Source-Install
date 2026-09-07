@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -148,8 +149,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
     },
   ];
 
-  const [configPath, setConfigPath] = useState('');
-  const [updatedAt, setUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [nucleiPocUpdating, setNucleiPocUpdating] = useState(false);
   const [afrogPocUpdating, setAfrogPocUpdating] = useState(false);
@@ -158,9 +157,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [domainDictOptions, setDomainDictOptions] = useState<DomainDictOption[]>([]);
-  const [fileLeakDictOptions, setFileLeakDictOptions] = useState<DomainDictOption[]>([]);
-  const [scanProfiles, setScanProfiles] = useState<ScanProfile[]>(fallbackScanProfiles);
   const [uploadDomainFile, setUploadDomainFile] = useState<File | null>(null);
   const [uploadFileLeakFile, setUploadFileLeakFile] = useState<File | null>(null);
   const domainUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -343,6 +339,45 @@ export function ConfigConsoleView({ token }: { token: string }) {
     ]
   );
 
+  // 初始化配置读取迁移 React Query（计划 4）：快照数据源唯一、同 key 挂载去重、
+  // 手动“重新加载”显式 refetch。保存/上传/PoC 更新先合并服务端响应到缓存，再失效重取；
+  // 表单水合仍只消费查询快照，成功提示和重启 Modal 不由水合 effect 改写。
+  const queryClient = useQueryClient();
+  const scanConfigQueryKey = useMemo(() => ['config-console-scan-config', token] as const, [token]);
+  const scanConfigQuery = useQuery({
+    queryKey: scanConfigQueryKey,
+    queryFn: () => requestApi(token, '/api_console/scan_config/', { method: 'GET' }),
+    retry: 0,
+  });
+  const loading = scanConfigQuery.isPending;
+  const scanConfigData = scanConfigQuery.data?.data || {};
+  const domainDictOptions = Array.isArray(scanConfigData?.available_domain_dicts)
+    ? scanConfigData.available_domain_dicts
+    : [];
+  const fileLeakDictOptions = Array.isArray(scanConfigData?.available_file_leak_dicts)
+    ? scanConfigData.available_file_leak_dicts
+    : [];
+  const scanProfiles = normalizeScanProfiles(scanConfigData?.scan_profiles);
+  const configPath = String(scanConfigData?.config_path || '');
+  const updatedAt = String(scanConfigData?.updated_at || '');
+  const mergeScanConfigQueryData = useCallback((nextData: any) => {
+    if (!nextData || typeof nextData !== 'object') return;
+    const normalizedData = {
+      ...nextData,
+      ...(nextData.updated_at || !nextData.saved_at ? {} : { updated_at: nextData.saved_at }),
+    };
+    queryClient.setQueryData(scanConfigQueryKey, (current: any) => {
+      if (!current || typeof current !== 'object') return current;
+      return {
+        ...current,
+        data: {
+          ...(current.data || {}),
+          ...normalizedData,
+        },
+      };
+    });
+  }, [queryClient, scanConfigQueryKey]);
+
   const matchedScanProfileId = useMemo(() => {
     for (const profile of scanProfiles) {
       const values = profile.values || {};
@@ -362,18 +397,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
   }, [scanProfiles, matchedScanProfileId]);
   const isCustomScanProfileMatched = !matchedScanProfileId;
 
-  // 初始化配置读取迁移 React Query（计划 4）：快照数据源唯一、同 key 挂载去重、
-  // 手动“重新加载”显式 refetch。保存/上传/PoC 更新仍按自身响应回写表单且不失效
-  // 本查询——避免后台重取覆盖用户刚提交的结果（mutation 行为与迁移前一致）。
-  const queryClient = useQueryClient();
-  const scanConfigQueryKey = ['config-console-scan-config', token] as const;
-  const scanConfigQuery = useQuery({
-    queryKey: scanConfigQueryKey,
-    queryFn: () => requestApi(token, '/api_console/scan_config/', { method: 'GET' }),
-    retry: 0,
-  });
-  const loading = scanConfigQuery.isPending;
-
   useEffect(() => {
     if (scanConfigQuery.isPending) {
       // 与迁移前 loadScanConfig 开头一致：每次（重）取先清空上一条消息。
@@ -387,9 +410,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
     }
     const data = scanConfigQuery.data?.data || {};
     const scanConfig = data?.scan_config || {};
-    const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
-    const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
-    const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
 
     setDomainDict(String(scanConfig.domain_dict || ''));
     setFileLeakDict(String(scanConfig.file_leak_dict || ''));
@@ -420,11 +440,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
     setBlackIpsText(Array.isArray(scanConfig.black_ips) ? scanConfig.black_ips.join('\n') : '');
     setDnsResolversText(Array.isArray(scanConfig.dns_resolvers) ? scanConfig.dns_resolvers.join('\n') : '');
 
-    setDomainDictOptions(nextDomainOptions);
-    setFileLeakDictOptions(nextFileLeakOptions);
-    setScanProfiles(nextScanProfiles);
-    setConfigPath(String(data.config_path || ''));
-    setUpdatedAt(String(data.updated_at || ''));
   }, [scanConfigQuery.isPending, scanConfigQuery.isError, scanConfigQuery.data]);
 
   const saveScanConfig = async () => {
@@ -578,9 +593,6 @@ export function ConfigConsoleView({ token }: { token: string }) {
 
       const data = result?.data || {};
       const savedConfig = data?.scan_config || {};
-      const nextDomainOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
-      const nextFileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
-      const nextScanProfiles = normalizeScanProfiles(data?.scan_profiles);
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
 
       setDomainDict(String(savedConfig.domain_dict || normalizedDomainDict));
@@ -612,13 +624,9 @@ export function ConfigConsoleView({ token }: { token: string }) {
       setBlackIpsText(Array.isArray(savedConfig.black_ips) ? savedConfig.black_ips.join('\n') : blackIpsText);
       setDnsResolversText(Array.isArray(savedConfig.dns_resolvers) ? savedConfig.dns_resolvers.join('\n') : dnsResolversText);
 
-      setDomainDictOptions(nextDomainOptions);
-      setFileLeakDictOptions(nextFileLeakOptions);
-      setScanProfiles(nextScanProfiles);
-      setConfigPath(String(data.config_path || configPath));
-      setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`扫描配置已保存${backupPath}`);
       setShowRestartModal(true);
+      mergeScanConfigQueryData(data);
       // 读副作用收口：查询缓存为唯一数据源，写成功后以服务端权威快照失效重取
       // （水合 effect 不触碰 success/restart Modal，展示结果不被覆盖）。
       void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
@@ -647,19 +655,17 @@ export function ConfigConsoleView({ token }: { token: string }) {
       });
       const data = result?.data || {};
       const uploadedPath = String(data?.domain_dict_path || '');
-      const nextOptions = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
 
       if (uploadedPath) {
         setDomainDict(uploadedPath);
       }
-      setDomainDictOptions(nextOptions);
-      setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`字典上传成功: ${uploadDomainFile.name}`);
 
       setUploadDomainFile(null);
       if (domainUploadInputRef.current) {
         domainUploadInputRef.current.value = '';
       }
+      mergeScanConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '字典上传失败');
@@ -686,19 +692,17 @@ export function ConfigConsoleView({ token }: { token: string }) {
       });
       const data = result?.data || {};
       const uploadedPath = String(data?.file_leak_dict_path || '');
-      const nextOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
 
       if (uploadedPath) {
         setFileLeakDict(uploadedPath);
       }
-      setFileLeakDictOptions(nextOptions);
-      setUpdatedAt(String(data.saved_at || updatedAt));
       setSuccess(`字典上传成功: ${uploadFileLeakFile.name}`);
 
       setUploadFileLeakFile(null);
       if (fileLeakUploadInputRef.current) {
         fileLeakUploadInputRef.current.value = '';
       }
+      mergeScanConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '字典上传失败');
@@ -742,8 +746,8 @@ export function ConfigConsoleView({ token }: { token: string }) {
         .filter((item) => item)
         .join('，');
 
-      setUpdatedAt(String(data?.updated_at || updatedAt));
       setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
+      mergeScanConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
       const baseMsg = err?.message || `${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新失败`;
