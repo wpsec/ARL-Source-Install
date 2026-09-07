@@ -1,9 +1,9 @@
 import base64
 import json
-import time
 import re
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -75,7 +75,7 @@ class Query(DNSQueryBase):
                     target, attempt, self.rate_limit_retry, sleep_time
                 )
             )
-            time.sleep(sleep_time)
+            provider_sleep(sleep_time)
 
     def sub_domains(self, target):
         # 文档 https://quake.360.net/quake/#/help?id=5e77423bcb9954d2f8a01656&title=%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E

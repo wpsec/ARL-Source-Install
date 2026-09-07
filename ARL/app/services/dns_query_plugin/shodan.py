@@ -8,10 +8,10 @@ Shodan 域名查询插件
 """
 
 import json
-import time
 
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -182,7 +182,7 @@ class Query(DNSQueryBase):
                     target, curr_page, attempt, self.rate_limit_retry, sleep_time
                 )
             )
-            time.sleep(sleep_time)
+            provider_sleep(sleep_time)
 
     def _request_search_page(self, search, curr_page):
         params = {
@@ -227,7 +227,7 @@ class Query(DNSQueryBase):
                     search, curr_page, attempt, self.rate_limit_retry, sleep_time
                 )
             )
-            time.sleep(sleep_time)
+            provider_sleep(sleep_time)
 
     def _query_dns_api(self, target):
         results = []
@@ -267,7 +267,7 @@ class Query(DNSQueryBase):
             if not has_more:
                 break
 
-            time.sleep(max(self.request_interval, 0.0))
+            provider_sleep(max(self.request_interval, 0.0))
             curr_page += 1
             if curr_page > self.max_page:
                 break
@@ -328,13 +328,13 @@ class Query(DNSQueryBase):
                 if total > 0 and curr_page * 100 >= total:
                     break
 
-                time.sleep(max(self.request_interval, 0.0))
+                provider_sleep(max(self.request_interval, 0.0))
                 curr_page += 1
                 if curr_page > self.max_page:
                     break
 
             if search != normalized_searches[-1]:
-                time.sleep(max(self.request_interval, 0.0))
+                provider_sleep(max(self.request_interval, 0.0))
 
         return list(set(results))
 

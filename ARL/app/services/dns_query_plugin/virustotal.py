@@ -1,9 +1,9 @@
 import base64
 import json
-import time
 import re
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -47,7 +47,6 @@ class Query(DNSQueryBase):
                 "{} count:{} next_url: {}".format(
                     self.source_name, data["meta"]["count"], next_url))
 
-            time.sleep(2)
+            provider_sleep(2)
 
         return list(set(results))
-

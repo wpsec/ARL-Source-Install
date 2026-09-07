@@ -13,6 +13,10 @@ _limiter_lock = threading.Lock()
 _next_request_at = {}
 
 
+class ProviderDeadlineExceeded(TimeoutError):
+    """provider 或阶段预算耗尽，停止后续重试和退避等待。"""
+
+
 def _current_context():
     return getattr(_state, "context", None)
 
@@ -129,6 +133,25 @@ def provider_deadline_exceeded():
         stage_context = _current_stage_context()
         deadline = stage_context.get("deadline") if stage_context else None
     return bool(deadline is not None and time.monotonic() >= deadline)
+
+
+def provider_sleep(seconds):
+    """让 provider/搜索引擎退避等待服从当前阶段 deadline。"""
+    try:
+        delay = max(0.0, float(seconds or 0.0))
+    except (TypeError, ValueError):
+        delay = 0.0
+
+    remaining = current_provider_remaining_sec()
+    if remaining is not None:
+        if remaining <= 0:
+            raise ProviderDeadlineExceeded("provider stage deadline exceeded")
+        delay = min(delay, remaining)
+
+    if delay > 0:
+        time.sleep(delay)
+    if provider_deadline_exceeded():
+        raise ProviderDeadlineExceeded("provider stage deadline exceeded")
 
 
 def record_request(success=False, timeout=False, retry=False, proxy_fallback=False, elapsed_sec=0.0):

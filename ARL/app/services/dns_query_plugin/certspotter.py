@@ -1,7 +1,7 @@
 import json
-import time
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -46,7 +46,7 @@ class Query(DNSQueryBase):
                 sleep_time = int(retry_after) + 5
                 self.logger.info("{}: Retry-After {}s".format(self.source_name, sleep_time))
                 if sleep_time < 300:
-                    time.sleep(sleep_time)
+                    provider_sleep(sleep_time)
                     # 前面是频率限制重试一下
                     conn = utils.http_req(self.api_url, 'get', params=param, timeout=(30.1, 50.1))
                     data = conn.json()

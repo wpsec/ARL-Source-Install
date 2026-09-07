@@ -8,6 +8,7 @@ import time
 from app.config import Config
 from app import utils
 from app.utils.log_safety import safe_error_text
+from app.utils.provider_http import provider_sleep
 from celery.utils.log import get_task_logger
 logger = get_task_logger(__name__)
 
@@ -60,7 +61,7 @@ class FofaClient:
             elapsed = time.monotonic() - cls._last_request_at
             wait_time = max(0.0, cls.request_interval - elapsed)
             if wait_time > 0:
-                time.sleep(wait_time)
+                provider_sleep(wait_time)
             cls._last_request_at = time.monotonic()
 
     @staticmethod
@@ -94,7 +95,7 @@ class FofaClient:
                         sleep_time,
                     )
                 )
-                time.sleep(sleep_time)
+                provider_sleep(sleep_time)
                 continue
 
             if data.get("error") and data.get("errmsg"):

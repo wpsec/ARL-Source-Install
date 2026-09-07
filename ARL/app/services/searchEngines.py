@@ -10,7 +10,7 @@ from urllib.parse import quote, urljoin, urlparse
 from app import utils
 from app.config import Config
 from app.utils.log_safety import safe_error_text
-from app.utils.provider_http import provider_request_context
+from app.utils.provider_http import provider_request_context, provider_sleep
 
 logger = utils.get_logger()
 
@@ -154,7 +154,7 @@ class BaiduSearch(object):
                 urls.extend(_urls)
                 logger.info("baidu firsturl result {}".format(len(_urls)))
             else:
-                time.sleep(self._page_interval())
+                provider_sleep(self._page_interval())
                 url = self.search_url.format(page=(page - 1) * 10, keyword=quote(self.keyword))
                 html = utils.http_req(url, headers=self.headers).text
                 _urls = self.match_urls(html)
@@ -234,7 +234,7 @@ class BingSearch(object):
                 urls.extend(_urls)
                 logger.info("bing search first url result {}".format(len(_urls)))
             else:
-                time.sleep(self._page_interval())
+                provider_sleep(self._page_interval())
                 url = self.search_url.format(page=(page - 1) * 10, keyword=quote(self.keyword))
                 html = utils.http_req(url, headers=self.headers).text
                 _urls = self.match_urls(html)
@@ -269,7 +269,7 @@ def bing_search(domain, page_num=5):
                     )
                 except (TypeError, ValueError):
                     expansion_interval = 1.0
-                time.sleep(expansion_interval)
+                provider_sleep(expansion_interval)
                 b = BingSearch(keyword, page_num=1)
                 urls.extend(b.run())
             except Exception as e:

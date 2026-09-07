@@ -1,8 +1,8 @@
 import json
-import time
 
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -55,7 +55,7 @@ class Query(DNSQueryBase):
                     self.source_name, target, attempt, self.rate_limit_retry, sleep_time
                 )
             )
-            time.sleep(sleep_time)
+            provider_sleep(sleep_time)
 
     @staticmethod
     def _extract_items(data):

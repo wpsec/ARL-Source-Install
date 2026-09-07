@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from app.services.dns_query import DNSQueryBase
 from app import utils
+from app.utils.provider_http import provider_sleep
 
 
 class Query(DNSQueryBase):
@@ -148,7 +149,7 @@ class Query(DNSQueryBase):
                     target, curr_page, attempt, self.rate_limit_retry, sleep_time
                 )
             )
-            time.sleep(sleep_time)
+            provider_sleep(sleep_time)
 
     def _query_domains_by_searches(self, searches, log_target=""):
         results = []
@@ -264,13 +265,13 @@ class Query(DNSQueryBase):
                 if len(items) < self.page_size and not has_more:
                     break
 
-                time.sleep(max(self.request_interval, 0.0))
+                provider_sleep(max(self.request_interval, 0.0))
                 curr_page += 1
                 if curr_page > self.max_page:
                     break
 
             if search != normalized_searches[-1]:
-                time.sleep(max(self.request_interval, 0.0))
+                provider_sleep(max(self.request_interval, 0.0))
 
         return list(set(results))
 
