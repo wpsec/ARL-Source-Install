@@ -573,16 +573,10 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   });
   const [showRestartModal, setShowRestartModal] = useState(false);
   const [aiTestDialogOpen, setAiTestDialogOpen] = useState(false);
-  const [usageError, setUsageError] = useState('');
-  const [usageStats, setUsageStats] = useState<AiUsageStatsPayload | null>(null);
-  const [usageLogs, setUsageLogs] = useState<AiUsageLogItem[]>([]);
-  const [usageLogsTotal, setUsageLogsTotal] = useState(0);
-  const [usageLogsUpdatedAt, setUsageLogsUpdatedAt] = useState('');
   const [usageLogStatus, setUsageLogStatus] = useState('');
   const [usageLogScene, setUsageLogScene] = useState('');
   const [usageLogLimit, setUsageLogLimit] = useState('10');
   const [usageLogDetail, setUsageLogDetail] = useState<AiUsageLogItem | null>(null);
-  const [usageSceneOptions, setUsageSceneOptions] = useState<Array<{ scene: string; scene_label: string }>>([]);
   const [providerConfigDialogOpen, setProviderConfigDialogOpen] = useState(false);
   const [providerConfigProviderId, setProviderConfigProviderId] = useState('deepseek');
   const [providerConfigProfileId, setProviderConfigProfileId] = useState('');
@@ -1057,6 +1051,15 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const loading = aiConfigQuery.isFetching;
   const usageLoading = usageQuery.isFetching;
   const isActionBusy = loading || saving || testing;
+  const usageSnapshot = usageQuery.data;
+  const usageStats = usageSnapshot?.stats || null;
+  const usageSceneOptions = usageSnapshot?.sceneOptions || [];
+  const usageLogs = usageSnapshot?.logs || [];
+  const usageLogsTotal = usageSnapshot?.total || 0;
+  const usageLogsUpdatedAt = usageSnapshot?.updatedAt || '';
+  const usageError = usageQuery.isError
+    ? (usageQuery.error as Error)?.message || '加载 AI 用量统计失败'
+    : '';
 
   useEffect(() => {
     if (aiConfigQuery.isPending) {
@@ -1095,24 +1098,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
     // normalizeForm 每轮重建（非稳定引用），放入 deps 会形成水合死循环——按原 loadAiConfig 口径省略。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiConfigQuery.isPending, aiConfigQuery.isError, aiConfigQuery.data, normalizeSensitiveConfigured, resetSensitiveState]);
-
-  useEffect(() => {
-    if (usageQuery.isPending) {
-      setUsageError('');
-      return;
-    }
-    if (usageQuery.isError) {
-      setUsageError((usageQuery.error as Error)?.message || '加载 AI 用量统计失败');
-      return;
-    }
-    const snapshot = usageQuery.data;
-    if (!snapshot) return;
-    setUsageStats(snapshot.stats);
-    setUsageSceneOptions(snapshot.sceneOptions);
-    setUsageLogs(snapshot.logs);
-    setUsageLogsTotal(snapshot.total);
-    setUsageLogsUpdatedAt(snapshot.updatedAt);
-  }, [usageQuery.isPending, usageQuery.isError, usageQuery.data]);
 
   useEffect(() => {
     if (!compatDialogOpen && !providerConfigDialogOpen && !showRestartModal && !aiTestDialogOpen && !usageLogDetail) return;
@@ -2292,7 +2277,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => {
-                setUsageError('');
                 void usageQuery.refetch();
               }}
               className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
