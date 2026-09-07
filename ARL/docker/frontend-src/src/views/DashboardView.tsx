@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity,
@@ -37,6 +37,21 @@ import { formatCpuSummary, formatUsageSummary } from '../domain/system';
 import type {OpenModuleHandler} from '../domain/types';
 import { PageHeader } from '../layout/PageHeader';
 
+const EMPTY_STATS = {
+  task: 0,
+  scheduler: 0,
+  asset_scope: 0,
+  asset_site: 0,
+  domain_total: 0,
+  ip_total: 0,
+  service_total: 0,
+  url_total: 0,
+  vuln: 0,
+  github_task: 0,
+  running_task: 0,
+  new_assets_today: 0,
+};
+
 export function DashboardView({
   token,
   onOpenModule,
@@ -46,28 +61,6 @@ export function DashboardView({
   onOpenModule: OpenModuleHandler;
   onQuickCreateTask: () => void;
 }) {
-  const [error, setError] = useState('');
-  const [lastUpdatedAt, setLastUpdatedAt] = useState('');
-  const [stats, setStats] = useState({
-    task: 0,
-    scheduler: 0,
-    asset_scope: 0,
-    asset_site: 0,
-    domain_total: 0,
-    ip_total: 0,
-    service_total: 0,
-    url_total: 0,
-    vuln: 0,
-    github_task: 0,
-    running_task: 0,
-    new_assets_today: 0,
-  });
-  const [deviceInfo, setDeviceInfo] = useState<any>({});
-  const [recentTasks, setRecentTasks] = useState<any[]>([]);
-  const [assetTrend, setAssetTrend] = useState<any[]>([]);
-  const [riskDistribution, setRiskDistribution] = useState<any[]>([]);
-  const [networkTrend, setNetworkTrend] = useState<any[]>([]);
-  const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [isLogPaused, setIsLogPaused] = useState(false);
 
   const resolveTaskStatus = (rawStatus: any): { text: string; type: 'success' | 'error' | 'info' } => {
@@ -243,49 +236,31 @@ export function DashboardView({
 
   const loading = dashboardQuery.isFetching;
 
-  // 快照 → 展示状态水合（与迁移前 load/loadFallback 的 setState 语义逐行对齐）。
-  useEffect(() => {
-    if (dashboardQuery.isPending) {
-      setError('');
-      return;
-    }
-    if (dashboardQuery.isError) {
-      const message = (dashboardQuery.error as Error)?.message || '';
-      setError(message || '加载仪表盘失败');
-      return;
-    }
-    const snapshot = dashboardQuery.data;
-    if (!snapshot) return;
-    if (snapshot.source === 'primary') {
-      setStats(snapshot.stats);
-      setDeviceInfo(snapshot.deviceInfo);
-      setAssetTrend(snapshot.assetTrend);
-      setRiskDistribution(snapshot.riskDistribution);
-      setNetworkTrend(snapshot.networkTrend);
-      if (!isLogPaused) {
-        setRecentLogs(snapshot.recentLogs);
+  const dashboardSnapshot = dashboardQuery.data;
+  const stats = dashboardSnapshot?.source === 'fallback'
+    ? {
+        ...EMPTY_STATS,
+        ...dashboardSnapshot.stats,
+        running_task: Number(dashboardSnapshot.stats.runningTaskFallback || 0),
       }
-    } else {
-      const { runningTaskFallback, ...statsPatch } = snapshot.stats;
-      setStats((prev) => ({
-        ...prev,
-        ...statsPatch,
-        running_task: Number(prev.running_task || 0) > 0 ? Number(prev.running_task || 0) : runningTaskFallback,
-      }));
-      setDeviceInfo(snapshot.deviceInfo);
-      setRecentTasks(snapshot.recentTasks);
-      setRecentLogs((prev) => (prev.length > 0 ? prev : [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }]));
-    }
-    setLastUpdatedAt(snapshot.lastUpdatedAt);
-  }, [dashboardQuery.isPending, dashboardQuery.isError, dashboardQuery.data, isLogPaused]);
-
-  useEffect(() => {
-    const logs = logsQuery.data;
-    if (Array.isArray(logs) && logs.length > 0) {
-      setRecentLogs(logs);
-    }
-    // 轮询失败静默（原 loadRecentLogs catch 语义）：不覆盖聚合快照的日志区。
-  }, [logsQuery.data]);
+    : dashboardSnapshot?.stats || EMPTY_STATS;
+  const deviceInfo = dashboardSnapshot?.deviceInfo || {};
+  const recentTasks = dashboardSnapshot?.recentTasks || [];
+  const assetTrend = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.assetTrend : [];
+  const riskDistribution = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.riskDistribution : [];
+  const networkTrend = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.networkTrend : [];
+  const fallbackLogs = [{ level: 'INFO', source: 'SCAN', msg: '当前为兼容模式，扫描日志接口不可用', time: '' }];
+  const recentLogs = logsQuery.data?.length
+    ? logsQuery.data
+    : dashboardSnapshot?.source === 'primary'
+      ? dashboardSnapshot.recentLogs
+      : dashboardSnapshot?.source === 'fallback'
+        ? fallbackLogs
+        : [];
+  const lastUpdatedAt = dashboardSnapshot?.lastUpdatedAt || '';
+  const error = dashboardQuery.isError
+    ? (dashboardQuery.error as Error)?.message || '加载仪表盘失败'
+    : '';
 
   // 兼容后端不同版本的字段命名
   const memoryInfo = deviceInfo?.memory || deviceInfo?.virtual_memory;
@@ -386,7 +361,6 @@ export function DashboardView({
             </button>
             <button
               onClick={() => {
-                setError('');
                 void dashboardQuery.refetch();
               }}
               className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
