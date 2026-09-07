@@ -1001,7 +1001,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 | dedupe | 1.0303 | FAIL | FAIL | **不过闸（双架构一致），维持 shadow** | 0.752 不过闸 |
 
 - 门禁裁定按**双架构交集**执行：`RUST_ACCEL_API_UNIFIED_RUST_STAGES` 默认保持 `unified_normalize,unified_method`，`hint` 仅 x86 过闸不满足 T11-1"已过闸且真机复跑"（aarch64 预检成本占比不同导致闸向分歧，交集判定是唯一稳态口径）；`dedupe` 双架构不过闸结论与 T10-E 一致。
-- amd64 功能面（同机 compose 等价全栈，镜像 `arl-regression:amd64`）：**Ran 875（与 arm64 计数持平），failures=31，errors=123，skipped=18**；hygiene 149 文件 148 clean + `test.test_wih` **timeout**（HYGIENE_JOBS=4 与生产栈争 CPU 所致，非槽位污染，单文件长超时复跑中）；native smoke 通过；corpus 复验 exit 码复跑中。
+- amd64 功能面（同机 compose 等价全栈，镜像 `arl-regression:amd64`）：**Ran 875（与 arm64 计数持平），failures=31，errors=123，skipped=18**；hygiene 148 clean + `test.test_wih` 裁定完成：隔离直跑 398.8s OK（真网 WIH 集成非污染），工具子进程路径 timeout 且 kill 失效→工具健壮性调查项；native smoke 通过；双 corpus `--run-native --strict-order` exit=0/0。
 - discover 架构差分定性：两架构 FAIL/ERROR 集差异成员（fetch_favicon/ip_excutor/fetch_site/asset_wih_task/asset_site_monitor 等）经 amd64 **逐文件独立复跑**确认失败原因=历史手写**真网/真实私有资产集成测试**（硬编码 `10.0.83.16`/真实 scope_id/qq.com favicon），属"网络依赖用例"登记桶的环境抖动（该机器内网无公网/无私有段路由），非 T11 或 amd64 产品缺陷；交错桶成员在两架构间 ERROR↔FAIL 翻转属收集期时序差异。
 - **production runtime smoke 前置捕获并修复 1 个真实缺陷**（提交 `be7d0605`）：x86 机起生产 compose 栈时 `arl_web` 重启循环——`config.py` 的 EFFECTIVE 诊断走 stdout 污染 `start_web.sh` 的 `$(python3 -c)` worker 数捕获 → gunicorn `-w` 收到 JSON。修复=诊断改 stderr + helper 整数校验兜底 + 源码回归钉；该发现同时是"生产 runtime smoke"门禁项的首次真实执行证据。
 

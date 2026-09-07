@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "platform": "Linux x86_64 python3.10.20",
+  "native_available": true,
+  "batch_sizes": {
+    "normalize": 20000,
+    "hint": 20000,
+    "method": 20000,
+    "dedupe": 40000
+  },
+  "python": {
+    "normalize": {
+      "repeats": 5,
+      "best_sec": 0.093303,
+      "median_sec": 0.095098,
+      "p95_sec": 0.096755
+    },
+    "hint": {
+      "repeats": 5,
+      "best_sec": 0.007385,
+      "median_sec": 0.007543,
+      "p95_sec": 0.007615
+    },
+    "method": {
+      "repeats": 5,
+      "best_sec": 0.002839,
+      "median_sec": 0.003218,
+      "p95_sec": 0.003422
+    },
+    "dedupe": {
+      "repeats": 5,
+      "best_sec": 0.018534,
+      "median_sec": 0.019271,
+      "p95_sec": 0.021192
+    }
+  },
+  "rust": {
+    "normalize": {
+      "repeats": 5,
+      "best_sec": 0.00456,
+      "median_sec": 0.00476,
+      "p95_sec": 0.005599
+    },
+    "hint": {
+      "repeats": 5,
+      "best_sec": 0.002417,
+      "median_sec": 0.002554,
+      "p95_sec": 0.002901
+    },
+    "method": {
+      "repeats": 5,
+      "best_sec": 0.001449,
+      "median_sec": 0.001473,
+      "p95_sec": 0.001551
+    },
+    "dedupe": {
+      "repeats": 5,
+      "best_sec": 0.018056,
+      "median_sec": 0.019855,
+      "p95_sec": 0.020457
+    }
+  },
+  "gates": {
+    "normalize": {
+      "rust_vs_python_median": 0.0501,
+      "cpu_reduction_gate_30pct": true,
+      "throughput_gate_1_5x": true,
+      "gate_passed": true
+    },
+    "hint": {
+      "rust_vs_python_median": 0.3386,
+      "cpu_reduction_gate_30pct": true,
+      "throughput_gate_1_5x": true,
+      "gate_passed": true
+    },
+    "method": {
+      "rust_vs_python_median": 0.4577,
+      "cpu_reduction_gate_30pct": true,
+      "throughput_gate_1_5x": true,
+      "gate_passed": true
+    },
+    "dedupe": {
+      "rust_vs_python_median": 1.0303,
+      "cpu_reduction_gate_30pct": false,
+      "throughput_gate_1_5x": false,
+      "gate_passed": false
+    }
+  },
+  "preflight_median_sec": 0.004777
+}
