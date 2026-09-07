@@ -56,28 +56,21 @@ from app.services.task_pipeline import TaskPipeline
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services.domain_stage_services import (
     AltDNS,
+    DomainBrute as _DomainBruteService,
     DomainDiscoveryStageService,
     DomainNetworkStageService,
     DomainPostProcessStageService,
     DomainSiteStageService,
+    _normalize_domain_target,
     alt_dns,
+    domain_brute,
 )
 
 logger = utils.get_logger()
 
 
-def _normalize_domain_target(value):
-    text = str(value or "").strip()
-    if not text:
-        return ""
-
-    if "{fuzz}" in text:
-        return utils.normalize_fuzz_domain(text) or text.lower().rstrip(".")
-
-    return utils.normalize_domain(text) or text.lower().rstrip(".")
-
-
-class DomainBrute(object):
+class _LegacyDomainBrute(object):
+    pass
     """
     域名爆破类
     
@@ -98,155 +91,7 @@ class DomainBrute(object):
     - resolver_map: 解析后的域名IP映射
     - wildcard_domain_ip: 泛解析IP列表
     """
-    
-    def __init__(self, base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
-        """
-        初始化域名爆破
-        
-        参数：
-            base_domain: 目标主域名（如example.com）
-            word_file: 字典文件路径（默认2万字典）
-            wildcard_domain_ip: 泛解析IP列表（用于过滤）
-        """
-        if wildcard_domain_ip is None:
-            wildcard_domain_ip = []
-        self.base_domain = _normalize_domain_target(base_domain)
-        self.base_domain_scope = "." + self.base_domain.strip(".")
-        self.dicts = utils.load_file(word_file)
-
-        self.brute_out = []  # massdns原始输出
-        self.resolver_map = {}  # 域名->IP映射
-        self.domain_info_list = []  # 域名信息列表
-        self.domain_cnames = []  # CNAME记录列表
-        self.brute_domain_map = {}  # 域名->DNS记录映射
-        self.wildcard_domain_ip = wildcard_domain_ip  # 泛解析IP
-
-    def _brute_domain(self):
-        """
-        使用massdns进行域名爆破
-        
-        说明：
-        - 调用services.mass_dns执行爆破
-        - 自动过滤泛解析结果
-        - 支持大批量字典（十万级）
-        """
-        self.brute_out = services.mass_dns(self.base_domain, self.dicts, self.wildcard_domain_ip)
-
-    def _resolver(self):
-        """
-        解析爆破结果的域名IP地址
-        
-        说明：
-        - 过滤非法域名
-        - 过滤黑名单域名
-        - 过滤过长的域名
-        - 处理CNAME记录
-        - 批量解析域名IP
-        """
-        domains = []
-        domain_cname_record = []
-        
-        # 第一轮：收集所有有效域名
-        for x in self.brute_out:
-            current_domain = utils.normalize_domain(x.get("domain", ""))
-            if not current_domain:
-                continue
-            
-            # 验证域名格式
-            if not utils.domain_parsed(current_domain):
-                continue
-
-            # 删除过长的域名（防止恶意字典）
-            if len(current_domain) - len(self.base_domain) >= Config.DOMAIN_MAX_LEN:
-                continue
-
-            # 检查域名黑名单
-            if utils.check_domain_black(current_domain):
-                continue
-
-            if current_domain not in domains:
-                domains.append(current_domain)
-
-            self.brute_domain_map[current_domain] = x["record"]
-
-            # 处理CNAME记录
-            if x["type"] == 'CNAME':
-                self.domain_cnames.append(current_domain)
-                current_record_domain = utils.normalize_domain(x.get("record", ""))
-                if not current_record_domain:
-                    continue
-
-                if not utils.domain_parsed(current_record_domain):
-                    continue
-
-                if utils.check_domain_black(current_record_domain):
-                    continue
-                    
-                if current_record_domain not in domain_cname_record:
-                    domain_cname_record.append(current_record_domain)
-
-        # 第二轮：处理CNAME指向的域名
-        for domain in domain_cname_record:
-            # 只处理同一主域名下的CNAME
-            if not domain.endswith(self.base_domain_scope):
-                continue
-            if domain not in domains:
-                domains.append(domain)
-
-        # 批量解析所有域名
-        start_time = time.time()
-        logger.info("start resolver {} {}".format(self.base_domain, len(domains)))
-        self.resolver_map = services.resolver_domain(domains)
-        elapse = time.time() - start_time
-        logger.info("end resolver {} result {}, elapse {}".format(self.base_domain,
-                                                                  len(self.resolver_map), elapse))
-
-    def run(self):
-        """
-        执行完整的域名爆破流程
-        
-        流程：
-        1. 使用massdns爆破子域名
-        2. 解析爆破结果的IP地址
-        
-        返回：
-        - brute_out: 爆破原始结果
-        - resolver_map: 域名->IP映射
-        """
-        start_time = time.time()
-        logger.info("start brute {} with dict {}".format(self.base_domain, len(self.dicts)))
-        
-        # 执行爆破
-        self._brute_domain()
-        
-        elapse = time.time() - start_time
-        logger.info("end brute {}, result {}, elapse {}".format(self.base_domain,
-                                                                len(self.brute_out), elapse))
-
-
-        self._resolver()
-
-        for domain in self.resolver_map:
-            ips = self.resolver_map[domain]
-            if ips:
-                if domain in self.domain_cnames:
-                    item = {
-                        "domain": domain,
-                        "type": "CNAME",
-                        "record": [self.brute_domain_map[domain]],
-                        "ips": ips
-                    }
-                else:
-                    item = {
-                        "domain": domain,
-                        "type": "A",
-                        "record": ips,
-                        "ips": ips
-                    }
-                self.domain_info_list.append(modules.DomainInfo(**item))
-
-        self.domain_info_list = list(set(self.domain_info_list))
-        return self.domain_info_list
+DomainBrute = _DomainBruteService
 
 
 class DomainScanResult(list):
@@ -500,14 +345,6 @@ class FindSite(object):
 '''
 域名智能组合
 '''
-
-
-def domain_brute(base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
-    if wildcard_domain_ip is None:
-        wildcard_domain_ip = []
-
-    b = DomainBrute(base_domain, word_file, wildcard_domain_ip)
-    return b.run()
 
 
 def scan_port(domain_info_list, option=None):
@@ -1043,15 +880,7 @@ class DomainTask(CommonTask):
         self.add_domain_source_names(domain_info_list, source)
 
     def domain_brute(self):
-        # 调用工具去进行域名爆破，如果存在泛解析，会把包含泛解析的IP的域名给删除
-        domain_info_list = domain_brute(self.base_domain, word_file=self.domain_word_file,
-                                        wildcard_domain_ip=self.not_found_domain_ips)
-
-        domain_info_list = self.clear_domain_info_by_record(domain_info_list)
-        self.add_domain_source_map(domain_info_list, CollectSource.DOMAIN_BRUTE)
-        if self.task_tag == "task":
-            self.save_domain_info_list(domain_info_list, source=CollectSource.DOMAIN_BRUTE)
-        self.domain_info_list.extend(domain_info_list)
+        return DomainDiscoveryStageService(self).run_domain_brute()
 
     def clear_domain_info_by_record(self, domain_info_list):
         self._prewarm_wildcard_profiles(domain_info_list)
@@ -1117,20 +946,7 @@ class DomainTask(CommonTask):
         return new_list
 
     def arl_search(self):
-        arl_t1 = time.time()
-        logger.info("start arl fetch {}".format(self.base_domain))
-        arl_all_domains = utils.arl_domain(self.base_domain)
-        self.add_domain_source_names(arl_all_domains, CollectSource.ARL)
-        domain_info_list = self.build_domain_info(arl_all_domains)
-        if self.task_tag == "task":
-            domain_info_list = self.clear_domain_info_by_record(domain_info_list)
-            self.save_domain_info_list(domain_info_list, source=CollectSource.ARL)
-
-        self.add_domain_source_map(domain_info_list, CollectSource.ARL)
-        self.domain_info_list.extend(domain_info_list)
-        elapse = time.time() - arl_t1
-        logger.info("end arl fetch {} {} elapse {}".format(
-            self.base_domain, len(domain_info_list), elapse))
+        return DomainDiscoveryStageService(self).run_arl_search()
 
     def build_domain_info(self, domains):
         """

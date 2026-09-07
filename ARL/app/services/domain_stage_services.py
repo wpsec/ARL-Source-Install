@@ -21,6 +21,122 @@ from app.utils.provider_http import stage_execution_context
 logger = utils.get_logger()
 
 
+def _normalize_domain_target(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    if "{fuzz}" in text:
+        return utils.normalize_fuzz_domain(text) or text.lower().rstrip(".")
+
+    return utils.normalize_domain(text) or text.lower().rstrip(".")
+
+
+class DomainBrute(object):
+    """执行域名爆破、解析和结果模型转换。"""
+
+    def __init__(self, base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
+        if wildcard_domain_ip is None:
+            wildcard_domain_ip = []
+        self.base_domain = _normalize_domain_target(base_domain)
+        self.base_domain_scope = "." + self.base_domain.strip(".")
+        self.dicts = utils.load_file(word_file)
+        self.brute_out = []
+        self.resolver_map = {}
+        self.domain_info_list = []
+        self.domain_cnames = []
+        self.brute_domain_map = {}
+        self.wildcard_domain_ip = wildcard_domain_ip
+
+    def _brute_domain(self):
+        self.brute_out = services.mass_dns(
+            self.base_domain,
+            self.dicts,
+            self.wildcard_domain_ip,
+        )
+
+    def _resolver(self):
+        domains = []
+        domain_cname_record = []
+        for item in self.brute_out:
+            current_domain = utils.normalize_domain(item.get("domain", ""))
+            if not current_domain or not utils.domain_parsed(current_domain):
+                continue
+            if len(current_domain) - len(self.base_domain) >= Config.DOMAIN_MAX_LEN:
+                continue
+            if utils.check_domain_black(current_domain):
+                continue
+
+            if current_domain not in domains:
+                domains.append(current_domain)
+            self.brute_domain_map[current_domain] = item["record"]
+
+            if item["type"] != "CNAME":
+                continue
+            self.domain_cnames.append(current_domain)
+            current_record_domain = utils.normalize_domain(item.get("record", ""))
+            if not current_record_domain:
+                continue
+            if not utils.domain_parsed(current_record_domain):
+                continue
+            if utils.check_domain_black(current_record_domain):
+                continue
+            if current_record_domain not in domain_cname_record:
+                domain_cname_record.append(current_record_domain)
+
+        for domain in domain_cname_record:
+            if domain.endswith(self.base_domain_scope) and domain not in domains:
+                domains.append(domain)
+
+        start_time = time.time()
+        logger.info("start resolver {} {}".format(self.base_domain, len(domains)))
+        self.resolver_map = services.resolver_domain(domains)
+        logger.info("end resolver {} result {}, elapse {}".format(
+            self.base_domain,
+            len(self.resolver_map),
+            time.time() - start_time,
+        ))
+
+    def run(self):
+        start_time = time.time()
+        logger.info("start brute {} with dict {}".format(
+            self.base_domain, len(self.dicts)))
+        self._brute_domain()
+        logger.info("end brute {}, result {}, elapse {}".format(
+            self.base_domain,
+            len(self.brute_out),
+            time.time() - start_time,
+        ))
+
+        self._resolver()
+        for domain, ips in self.resolver_map.items():
+            if not ips:
+                continue
+            if domain in self.domain_cnames:
+                item = {
+                    "domain": domain,
+                    "type": "CNAME",
+                    "record": [self.brute_domain_map[domain]],
+                    "ips": ips,
+                }
+            else:
+                item = {
+                    "domain": domain,
+                    "type": "A",
+                    "record": ips,
+                    "ips": ips,
+                }
+            self.domain_info_list.append(modules.DomainInfo(**item))
+
+        return list(set(self.domain_info_list))
+
+
+def domain_brute(base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
+    if wildcard_domain_ip is None:
+        wildcard_domain_ip = []
+    return DomainBrute(base_domain, word_file, wildcard_domain_ip).run()
+
+
 class AltDNS(object):
     """基于已发现域名生成 AltDNS 候选。"""
 
@@ -126,10 +242,45 @@ class DomainDiscoveryStageService(object):
     def __init__(self, task):
         self.task = task
 
+    def run_domain_brute(self):
+        task = self.task
+        domain_info_list = domain_brute(
+            task.base_domain,
+            word_file=task.domain_word_file,
+            wildcard_domain_ip=task.not_found_domain_ips,
+        )
+        domain_info_list = task.clear_domain_info_by_record(domain_info_list)
+        task.add_domain_source_map(domain_info_list, CollectSource.DOMAIN_BRUTE)
+        if task.task_tag == "task":
+            task.save_domain_info_list(
+                domain_info_list,
+                source=CollectSource.DOMAIN_BRUTE,
+            )
+        task.domain_info_list.extend(domain_info_list)
+
+    def run_arl_search(self):
+        task = self.task
+        started_at = time.time()
+        logger.info("start arl fetch {}".format(task.base_domain))
+        arl_all_domains = utils.arl_domain(task.base_domain)
+        task.add_domain_source_names(arl_all_domains, CollectSource.ARL)
+        domain_info_list = task.build_domain_info(arl_all_domains)
+        if task.task_tag == "task":
+            domain_info_list = task.clear_domain_info_by_record(domain_info_list)
+            task.save_domain_info_list(domain_info_list, source=CollectSource.ARL)
+
+        task.add_domain_source_map(domain_info_list, CollectSource.ARL)
+        task.domain_info_list.extend(domain_info_list)
+        logger.info("end arl fetch {} {} elapse {}".format(
+            task.base_domain,
+            len(domain_info_list),
+            time.time() - started_at,
+        ))
+
     def run(self):
         task = self.task
         if task.options.get("domain_brute"):
-            _run_measured_stage(task, "domain_brute", _domain_count_stage(task, task.domain_brute))
+            _run_measured_stage(task, "domain_brute", _domain_count_stage(task, self.run_domain_brute))
 
             # 用户输入的根域名始终作为后续阶段的保底种子。
             base_domain_info = task.build_single_domain_info(task.base_domain)
@@ -162,7 +313,7 @@ class DomainDiscoveryStageService(object):
             )
 
         if task.options.get("arl_search"):
-            _run_measured_stage(task, "arl_search", _domain_count_stage(task, task.arl_search))
+            _run_measured_stage(task, "arl_search", _domain_count_stage(task, self.run_arl_search))
 
         if task.options.get("alt_dns"):
             _run_measured_stage(task, "alt_dns", _domain_count_stage(task, self.run_alt_dns))

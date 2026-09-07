@@ -30,6 +30,7 @@ class _Executor(object):
 class _Task(object):
     def __init__(self, options=None):
         self.base_domain = "example.com"
+        self.domain_word_file = "domain.txt"
         self.task_id = "task-1"
         self.task_tag = "monitor"
         self.options = options or {}
@@ -114,6 +115,14 @@ class TestDomainStageServices(unittest.TestCase):
             side_effect=lambda: task.calls.append("dns_query_plugin"),
         ), patch.object(
             DomainDiscoveryStageService,
+            "run_domain_brute",
+            side_effect=lambda: task.calls.append("domain_brute"),
+        ), patch.object(
+            DomainDiscoveryStageService,
+            "run_arl_search",
+            side_effect=lambda: task.calls.append("arl_search"),
+        ), patch.object(
+            DomainDiscoveryStageService,
             "run_alt_dns",
             side_effect=lambda: task.calls.append("alt_dns"),
         ):
@@ -130,6 +139,45 @@ class TestDomainStageServices(unittest.TestCase):
         self.assertEqual(["domain_brute", "dns_query_plugin", "arl_search", "alt_dns"], [
             item[1] for item in task.calls if isinstance(item, tuple) and item[0] == "service"
         ])
+
+    def test_domain_brute_service_preserves_filter_sources_and_persistence(self):
+        task = _Task({"domain_brute": True})
+        task.task_tag = "task"
+        task.clear_domain_info_by_record = lambda values: ["clean-info"]
+
+        with patch.object(
+            _domain_stage_services,
+            "domain_brute",
+            return_value=["raw-info"],
+        ) as brute:
+            DomainDiscoveryStageService(task).run_domain_brute()
+
+        brute.assert_called_once_with(
+            "example.com",
+            word_file="domain.txt",
+            wildcard_domain_ip=[],
+        )
+        self.assertEqual(["clean-info"], task.domain_info_list)
+        self.assertIn(("source", CollectSource.DOMAIN_BRUTE), task.calls)
+        self.assertIn(("save_domain", CollectSource.DOMAIN_BRUTE), task.calls)
+
+    def test_arl_search_service_preserves_filter_sources_and_persistence(self):
+        task = _Task({"arl_search": True})
+        task.task_tag = "task"
+        task.build_domain_info = lambda values: ["arl-info"]
+        task.clear_domain_info_by_record = lambda values: values
+
+        with patch.object(
+            _domain_stage_services.utils,
+            "arl_domain",
+            return_value=["api.example.com"],
+        ):
+            DomainDiscoveryStageService(task).run_arl_search()
+
+        self.assertEqual(["arl-info"], task.domain_info_list)
+        self.assertIn(("source_names", CollectSource.ARL), task.calls)
+        self.assertIn(("save_domain", CollectSource.ARL), task.calls)
+        self.assertIn(("source", CollectSource.ARL), task.calls)
 
     def test_alt_dns_service_preserves_result_persistence_and_sources(self):
         task = _Task({"alt_dns": True})
