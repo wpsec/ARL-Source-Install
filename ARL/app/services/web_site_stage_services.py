@@ -8,6 +8,7 @@ import time
 from urllib.parse import urlparse
 
 from bson import ObjectId
+
 from app import utils
 from app.modules import WebSiteFetchOption, WebSiteFetchStatus
 from app.services.single_scan_stage_services import WebSiteSingleStageService
@@ -66,6 +67,29 @@ class WebSiteDiscoveryStageService(object):
                 fallback=None,
                 fallback_note="保留站点结果并继续后置阶段",
             )
+
+
+class WebSiteTargetStageService(object):
+    """统一生成站点任务的域名和 PoC 目标集合，并保持任务级缓存。"""
+
+    def __init__(self, task):
+        self.task = task
+
+    def task_domain_set(self):
+        task = self.task
+        if task._task_domain_set is None:
+            task._task_domain_set = set(utils.arl.get_domain_by_id(task.task_id))
+        return task._task_domain_set
+
+    def poc_sites(self):
+        task = self.task
+        if task._poc_sites is None:
+            task._poc_sites = set()
+            for site in task.available_sites:
+                cut_target = utils.url.cut_filename(site)
+                if cut_target:
+                    task._poc_sites.add(cut_target)
+        return task._poc_sites
 
 
 class WebSiteExternalScanStageService(object):

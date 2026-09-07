@@ -45,6 +45,7 @@ from app.services.web_site_scan_stage_services import (
 from app.services import BaseUpdateTask
 from app.services.web_site_stage_services import (
     WebSiteResultPersistStageService,
+    WebSiteTargetStageService,
     WebSiteWafStageService,
 )
 from app.utils.log_safety import safe_error_text
@@ -361,10 +362,7 @@ class WebSiteFetch(CommonTask):
 
     @property
     def task_domain_set(self):
-        if self._task_domain_set is None:
-            self._task_domain_set = set(utils.arl.get_domain_by_id(self.task_id))
-
-        return self._task_domain_set
+        return WebSiteTargetStageService(self).task_domain_set()
 
     def _site_identify_score(self, site_info: dict) -> tuple:
         return WebSiteIdentifyStageService(self)._site_identify_score(site_info)
@@ -417,14 +415,7 @@ class WebSiteFetch(CommonTask):
 
     @property
     def poc_sites(self):
-        if self._poc_sites is None:
-            self._poc_sites = set()
-            for x in self.available_sites:
-                cut_target = utils.url.cut_filename(x)
-                if cut_target:
-                    self._poc_sites.add(cut_target)
-
-        return self._poc_sites
+        return WebSiteTargetStageService(self).poc_sites()
 
     def risk_cruising(self, npoc_service_target_set: set):
         return WebSiteResultPersistStageService(self).risk_cruising(
