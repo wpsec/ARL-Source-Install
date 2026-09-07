@@ -1428,10 +1428,32 @@ class DomainSiteStageService(object):
     def __init__(self, task):
         self.task = task
 
+    def run_find_site(self):
+        task = self.task
+        if not hasattr(task, "ip_info_list"):
+            legacy_runner = getattr(task, "find_site", None)
+            if callable(legacy_runner):
+                return legacy_runner()
+
+        if task.options.get("port_scan"):
+            from app.tasks.domain import find_site
+
+            sites = find_site(task.ip_info_list)
+        else:
+            sites = services.probe_http(task.domain_info_list)
+
+        existing_sites = set(task.site_list)
+        for site in sites:
+            if site in existing_sites:
+                continue
+            existing_sites.add(site)
+            task.site_list.append(site)
+        return len(sites)
+
     def run(self):
         task = self.task
         pipeline = TaskPipeline(task)
-        pipeline.run_stage("find_site", task.find_site)
+        pipeline.run_stage("find_site", self.run_find_site)
         task.domain_info_list = []
 
         # 延迟导入避免把站点任务实现重新耦合到域名阶段服务的导入过程。

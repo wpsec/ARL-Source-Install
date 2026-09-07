@@ -999,18 +999,7 @@ class DomainTask(CommonTask):
         return DomainNetworkStageService(self).run_port_scan()
 
     def find_site(self):
-        if self.options.get("port_scan"):
-            '''***站点寻找***'''
-            sites = find_site(self.ip_info_list)
-        else:
-            sites = services.probe_http(self.domain_info_list)
-
-        existing_sites = set(self.site_list)
-        for site in sites:
-            if site in existing_sites:
-                continue
-            existing_sites.add(site)
-            self.site_list.append(site)
+        return DomainSiteStageService(self).run_find_site()
 
     def update_services(self, service_name, elapsed, metrics=None):
         self.base_update_task.update_services(
