@@ -136,8 +136,6 @@ export function TableModuleView({
   const [expandedSiteFingerRows, setExpandedSiteFingerRows] = useState<Record<string, boolean>>({});
   const [hyperlinkEnabled, setHyperlinkEnabled] = useState(false);
   const [taskCompactMode, setTaskCompactMode] = useState(true);
-  const [aiDenoiseLoading, setAiDenoiseLoading] = useState(false);
-  const [aiDenoiseResultMap, setAiDenoiseResultMap] = useState<Record<string, AiDenoiseResultItem>>({});
   const [aiDenoiseDetail, setAiDenoiseDetail] = useState<{
     rowId: string;
     rowTitle: string;
@@ -333,6 +331,124 @@ export function TableModuleView({
   const rows = moduleListQuery.data?.items || [];
   const total = Number(moduleListQuery.data?.total || 0);
   const loading = manualLoading || moduleListQuery.isFetching;
+
+  // 去噪批处理属于列表数据查询，结果跟随列表快照和配置进入 React Query cache。
+  const aiDenoiseModuleId = useMemo(
+    () => (isAiDenoiseModule(module.id) ? module.id : null),
+    [module.id]
+  );
+  const aiConfigSharedQuery = useQuery({
+    queryKey: ['ai-console-config', token],
+    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
+    enabled: Boolean(aiDenoiseModuleId),
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const aiDenoiseConfig = useMemo<AiDenoiseConfigSnapshot>(() => {
+    const fallback: AiDenoiseConfigSnapshot = { enable: true, moduleEnabled: true, promptId: '' };
+    if (!aiDenoiseModuleId) return fallback;
+    const result = aiConfigSharedQuery.data;
+    if (!result) return fallback;
+    const aiConfig = (result?.data?.ai_config && typeof result.data.ai_config === 'object')
+      ? result.data.ai_config
+      : {};
+    const moduleConfig = (aiConfig?.ai_denoise_modules && typeof aiConfig.ai_denoise_modules === 'object')
+      ? aiConfig.ai_denoise_modules
+      : {};
+    const modulePromptIds = (aiConfig?.ai_denoise_prompt_ids && typeof aiConfig.ai_denoise_prompt_ids === 'object')
+      ? aiConfig.ai_denoise_prompt_ids
+      : {};
+    return {
+      enable: aiConfig?.ai_denoise_enable !== false,
+      moduleEnabled: moduleConfig[aiDenoiseModuleId] !== false,
+      promptId: sanitizeUiMessage(String(modulePromptIds[aiDenoiseModuleId] || ''), 80),
+    };
+  }, [aiConfigSharedQuery.data, aiDenoiseModuleId]);
+  const aiDenoiseConfigLoading = Boolean(aiDenoiseModuleId) && aiConfigSharedQuery.isPending;
+  const aiDenoiseRowsSignature = useMemo(
+    () => JSON.stringify(rows),
+    [rows]
+  );
+  const aiDenoiseQuery = useQuery<Record<string, AiDenoiseResultItem>>({
+    queryKey: [
+      'module-ai-denoise',
+      token,
+      aiDenoiseModuleId,
+      aiDenoiseConfig.promptId,
+      aiDenoiseRowsSignature,
+    ],
+    enabled: Boolean(aiDenoiseModuleId && rows.length > 0 && !aiDenoiseConfigLoading),
+    staleTime: 30_000,
+    retry: 0,
+    queryFn: async () => {
+      const rowEntries = rows.map((row, rowIndex) => {
+        const rowKey = buildAiDenoiseRowKey(row, rowIndex);
+        return { rowKey, payload: buildAiDenoiseAnalyzeItem(row, rowKey) };
+      });
+      if (!aiDenoiseConfig.enable || !aiDenoiseConfig.moduleEnabled) {
+        const disabledMap: Record<string, AiDenoiseResultItem> = {};
+        rowEntries.forEach((entry) => {
+          disabledMap[entry.rowKey] = buildAiDenoiseDisabledResult(entry.rowKey);
+        });
+        return disabledMap;
+      }
+
+      try {
+        const mergedMap: Record<string, AiDenoiseResultItem> = {};
+        const chunkSize = 100;
+        for (let index = 0; index < rowEntries.length; index += chunkSize) {
+          const chunk = rowEntries.slice(index, index + chunkSize);
+          const result = await requestApi(token, '/api_console/ai_denoise/analyze/', {
+            method: 'POST',
+            body: {
+              module_id: aiDenoiseModuleId,
+              items: chunk.map((entry) => entry.payload),
+              prefer_ai: false,
+            },
+          });
+          const resultItems = Array.isArray(result?.data?.items) ? result.data.items : [];
+          resultItems.forEach((item: any, itemIndex: number) => {
+            const fallbackRowKey = chunk[itemIndex]?.rowKey || '';
+            const rowKey = String(item?.row_key || fallbackRowKey || '').trim();
+            if (rowKey) mergedMap[rowKey] = normalizeAiDenoiseResultItem(item, rowKey);
+          });
+        }
+        rowEntries.forEach((entry) => {
+          if (mergedMap[entry.rowKey]) return;
+          mergedMap[entry.rowKey] = normalizeAiDenoiseResultItem(
+            {
+              row_key: entry.rowKey,
+              result_level: 'safe',
+              risk_level: '低',
+              trust: '-',
+              display_text: aiDenoiseModuleId === 'url' ? '安全' : aiDenoiseModuleId === 'site' || aiDenoiseModuleId === 'fileleak' ? '正常' : '已分析',
+              summary: '本行暂未返回分析详情，请稍后刷新列表查看。',
+              evidence: ['批量分析未返回该行详细结果。'],
+              suggestions: ['稍后刷新列表或等待任务分析阶段完成后再查看。'],
+              source: 'rule',
+              prompt_id: aiDenoiseConfig.promptId,
+              note: '批量分析暂未返回该行完整详情，建议稍后刷新。',
+            },
+            entry.rowKey,
+          );
+        });
+        return mergedMap;
+      } catch (err: any) {
+        const errMessage = sanitizeUiMessage(err?.message || 'AI分析请求失败', 220) || 'AI分析请求失败';
+        const failedMap: Record<string, AiDenoiseResultItem> = {};
+        rowEntries.forEach((entry) => {
+          failedMap[entry.rowKey] = buildAiDenoiseDisabledResult(
+            entry.rowKey,
+            `AI分析接口异常：${errMessage}`,
+            '异常',
+          );
+        });
+        return failedMap;
+      }
+    },
+  });
+  const aiDenoiseResultMap = aiDenoiseQuery.data || {};
+  const aiDenoiseLoading = aiDenoiseConfigLoading || aiDenoiseQuery.isFetching;
 
   const displayRows = useMemo(() => {
     const filterableModule = isAiDenoiseModule(module.id);
@@ -621,7 +737,6 @@ export function TableModuleView({
     setHyperlinkEnabled(false);
     setTaskErrorDialog(null);
     setScreenshotPreview(null);
-    setAiDenoiseResultMap({});
     setAiDenoiseDetail(null);
     setWihEndpointDetail(null);
   }, [module.id]);
@@ -1091,42 +1206,6 @@ export function TableModuleView({
     }
     return '';
   }, [module.id, rowIdKey]);
-  const aiDenoiseModuleId = useMemo(
-    () => (isAiDenoiseModule(module.id) ? module.id : null),
-    [module.id]
-  );
-
-  // AI 去噪配置读取：与 AiConsoleView 共享同一 query key（['ai-console-config', token]），
-  // AI 管理页保存后 invalidate 会同步到这里；快照按 moduleId 派生，不再维护 per-module cacheRef。
-  const aiConfigSharedQuery = useQuery({
-    queryKey: ['ai-console-config', token],
-    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
-    enabled: Boolean(aiDenoiseModuleId),
-    staleTime: 30_000,
-    retry: 0,
-  });
-  const aiDenoiseConfig = useMemo<AiDenoiseConfigSnapshot>(() => {
-    const fallback: AiDenoiseConfigSnapshot = { enable: true, moduleEnabled: true, promptId: '' };
-    if (!aiDenoiseModuleId) return fallback;
-    // 失败时 react-query 保留上一成功 data（等价原 cached 回退）；无缓存则 fallback。
-    const result = aiConfigSharedQuery.data;
-    if (!result) return fallback;
-    const aiConfig = (result?.data?.ai_config && typeof result.data.ai_config === 'object')
-      ? result.data.ai_config
-      : {};
-    const moduleConfig = (aiConfig?.ai_denoise_modules && typeof aiConfig.ai_denoise_modules === 'object')
-      ? aiConfig.ai_denoise_modules
-      : {};
-    const modulePromptIds = (aiConfig?.ai_denoise_prompt_ids && typeof aiConfig.ai_denoise_prompt_ids === 'object')
-      ? aiConfig.ai_denoise_prompt_ids
-      : {};
-    return {
-      enable: aiConfig?.ai_denoise_enable !== false,
-      moduleEnabled: moduleConfig[aiDenoiseModuleId] !== false,
-      promptId: sanitizeUiMessage(String(modulePromptIds[aiDenoiseModuleId] || ''), 80),
-    };
-  }, [aiConfigSharedQuery.data, aiDenoiseModuleId]);
-  const aiDenoiseConfigLoading = Boolean(aiDenoiseModuleId) && aiConfigSharedQuery.isPending;
   const normalizeAiDenoiseResultLevel = useCallback((value: any): AiDenoiseResultItem['result_level'] => {
     const normalized = String(value || '').trim().toLowerCase();
     if (normalized === 'safe' || normalized === 'suspicious' || normalized === 'danger' || normalized === 'disabled') {
@@ -1562,127 +1641,6 @@ export function TableModuleView({
       row,
     });
   }, [getRowId]);
-
-  useEffect(() => {
-    if (!aiDenoiseModuleId) {
-      setAiDenoiseLoading(false);
-      setAiDenoiseResultMap({});
-      return;
-    }
-    if (rows.length === 0) {
-      setAiDenoiseLoading(false);
-      setAiDenoiseResultMap({});
-      return;
-    }
-
-    const rowEntries = rows.map((row, rowIndex) => {
-      const rowKey = buildAiDenoiseRowKey(row, rowIndex);
-      return {
-        row,
-        rowKey,
-        payload: buildAiDenoiseAnalyzeItem(row, rowKey),
-      };
-    });
-
-    if (!aiDenoiseConfig.enable || !aiDenoiseConfig.moduleEnabled) {
-      const disabledMap: Record<string, AiDenoiseResultItem> = {};
-      rowEntries.forEach((entry) => {
-        disabledMap[entry.rowKey] = buildAiDenoiseDisabledResult(entry.rowKey);
-      });
-      setAiDenoiseResultMap(disabledMap);
-      setAiDenoiseLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    const analyzeRowsByBatch = async () => {
-      setAiDenoiseLoading(true);
-      try {
-        const mergedMap: Record<string, AiDenoiseResultItem> = {};
-        const chunkSize = 100;
-        for (let index = 0; index < rowEntries.length; index += chunkSize) {
-          const chunk = rowEntries.slice(index, index + chunkSize);
-          const result = await requestApi(token, '/api_console/ai_denoise/analyze/', {
-            method: 'POST',
-            body: {
-              module_id: aiDenoiseModuleId,
-              items: chunk.map((entry) => entry.payload),
-              prefer_ai: false,
-            },
-          });
-          if (cancelled) return;
-          const resultItems = Array.isArray(result?.data?.items) ? result.data.items : [];
-          resultItems.forEach((item: any, itemIndex: number) => {
-            const fallbackRowKey = chunk[itemIndex]?.rowKey || '';
-            const rowKey = String(item?.row_key || fallbackRowKey || '').trim();
-            if (!rowKey) return;
-            mergedMap[rowKey] = normalizeAiDenoiseResultItem(item, rowKey);
-          });
-        }
-        if (cancelled) return;
-        rowEntries.forEach((entry) => {
-          if (!mergedMap[entry.rowKey]) {
-            mergedMap[entry.rowKey] = normalizeAiDenoiseResultItem(
-              {
-                row_key: entry.rowKey,
-                result_level: 'safe',
-                risk_level: '低',
-                trust: '-',
-                display_text:
-                  aiDenoiseModuleId === 'site'
-                    ? '正常'
-                    : aiDenoiseModuleId === 'fileleak'
-                      ? '正常'
-                      : aiDenoiseModuleId === 'url'
-                        ? '安全'
-                        : '已分析',
-                summary: '本行暂未返回分析详情，请稍后刷新列表查看。',
-                evidence: ['批量分析未返回该行详细结果。'],
-                suggestions: ['稍后刷新列表或等待任务分析阶段完成后再查看。'],
-                source: 'rule',
-                prompt_id: aiDenoiseConfig.promptId,
-                prompt_name: '',
-                note: '批量分析暂未返回该行完整详情，建议稍后刷新。',
-                analyzed_at: '',
-              },
-              entry.rowKey
-            );
-          }
-        });
-        setAiDenoiseResultMap(mergedMap);
-      } catch (err: any) {
-        if (cancelled) return;
-        const errMessage = sanitizeUiMessage(err?.message || 'AI分析请求失败', 220) || 'AI分析请求失败';
-        const failedMap: Record<string, AiDenoiseResultItem> = {};
-        rowEntries.forEach((entry) => {
-          failedMap[entry.rowKey] = buildAiDenoiseDisabledResult(
-            entry.rowKey,
-            `AI分析接口异常：${errMessage}`,
-            '异常'
-          );
-        });
-        setAiDenoiseResultMap(failedMap);
-      } finally {
-        if (!cancelled) setAiDenoiseLoading(false);
-      }
-    };
-
-    void analyzeRowsByBatch();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    aiDenoiseConfig.enable,
-    aiDenoiseConfig.moduleEnabled,
-    aiDenoiseConfig.promptId,
-    aiDenoiseModuleId,
-    buildAiDenoiseAnalyzeItem,
-    buildAiDenoiseDisabledResult,
-    buildAiDenoiseRowKey,
-    normalizeAiDenoiseResultItem,
-    rows,
-    token,
-  ]);
 
   const showIndexColumn = Boolean(module.showIndex);
   const getColumnLabel = (column: string) => module.columnLabels?.[column] || humanizeField(column);

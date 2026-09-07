@@ -16,7 +16,8 @@ from app.utils import conn_db as conn
 from app.utils.cache import build_cache_key, cached_call
 
 DEFAULT_QUERY_FIELD_NAMES = {"page", "size", "order", "_refresh"}
-EQUAL_FIELDS = {"task_id", "task_tag", "ip_type", "scope_id", "type"}
+EQUAL_FIELDS = {"task_id", "task_tag", "ip_type", "scope_id", "type", "classification"}
+QUERY_CLASSIFICATIONS = {"unknown", "business", "credential_like"}
 TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "done_pending", "done_degraded", "stop", "error"]
 TASK_STATUS_COLLECTIONS = {"task", "github_task"}
 
@@ -82,6 +83,13 @@ def parse_refresh_flag(value):
     return text in {"1", "true", "yes", "on", "refresh", "force"}
 
 
+def normalize_query_classification(value):
+    text = str(value or "").strip().lower()
+    if text not in QUERY_CLASSIFICATIONS:
+        raise ValueError("classification must be one of: {}".format(", ".join(sorted(QUERY_CLASSIFICATIONS))))
+    return text
+
+
 def build_db_query(args, ignored_fields=None):
     """
     构建 MongoDB 查询条件。
@@ -99,6 +107,10 @@ def build_db_query(args, ignored_fields=None):
             continue
 
         if args[key] is None:
+            continue
+
+        if key == "classification":
+            query_args[key] = normalize_query_classification(args[key])
             continue
 
         if key.endswith("__dgt"):

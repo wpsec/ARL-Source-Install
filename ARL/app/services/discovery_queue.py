@@ -8,10 +8,11 @@
 """
 
 from collections import deque
+from threading import RLock
 
 from app import utils
 
-from .discovery_context import DiscoveryEvent, url_host
+from .discovery_context import DiscoveryEvent, normalize_url, url_host
 
 
 logger = utils.get_logger()
@@ -97,3 +98,104 @@ class NewHostQueue(object):
             "pending": len(self._hosts),
             "wih_taken": len(self._wih_taken),
         }
+
+
+class DiscoveryEventConsumer(object):
+    """把站点和页面事件转换为阶段可消费的有界队列。"""
+
+    def __init__(self, context, max_events=2000, allowed_hosts=None):
+        self.context = context
+        self.max_events = max(0, int(max_events or 0))
+        self.allowed_hosts = set(allowed_hosts or set())
+        self._sites = deque()
+        self._pages = deque()
+        self._seen = set()
+        self._lock = RLock()
+        self.enabled = self.max_events > 0 and context is not None
+        if self.enabled:
+            context.subscribe_candidate_event("SiteDiscovered", self._on_site)
+            context.subscribe_candidate_event("PageFetched", self._on_page)
+
+    def _host_allowed(self, host):
+        if not self.allowed_hosts:
+            return True
+        return any(host == allowed or host.endswith("." + allowed) for allowed in self.allowed_hosts)
+
+    def _event_value(self, event):
+        value = normalize_url(event.candidate)
+        return value or str(event.candidate or "").strip()
+
+    def _enqueue(self, event, queue, metric_name):
+        if not self.enabled:
+            return
+        value = self._event_value(event)
+        host = url_host(value)
+        if not value or (host and not self._host_allowed(host)):
+            return
+        event_key = "{}|{}".format(event.event_type, event.candidate_key or value)
+        with self._lock:
+            if event_key in self._seen:
+                return
+            if len(queue) >= self.max_events:
+                self.context.record_metric("discovery_event_queue_dropped_count")
+                return
+            self._seen.add(event_key)
+            queue.append(event)
+        self.context.record_metric(metric_name)
+
+    def _on_site(self, event: DiscoveryEvent):
+        self._enqueue(event, self._sites, "site_discovered_event_queued_count")
+
+    def _on_page(self, event: DiscoveryEvent):
+        self._enqueue(event, self._pages, "page_fetched_event_queued_count")
+        # PageFetched 本身只表达响应已登记；镜像候选使用不同事件名，避免回调递归。
+        try:
+            self.context.register_candidate(
+                event_type="PageFetchedObserved",
+                candidate=self._event_value(event),
+                candidate_type="page",
+                source=str(event.source or "response_registry"),
+                parent_target=str(event.parent_target or ""),
+                status="fetched",
+                metadata={
+                    "request_profile": str((event.metadata or {}).get("request_profile") or "default"),
+                    "response_observed": True,
+                },
+            )
+        except Exception as exc:
+            self.context.record_metric("discovery_event_consumer_error_count")
+            logger.debug("page fetched candidate mirror failed error_type:%s", type(exc).__name__)
+
+    @staticmethod
+    def _drain(queue, limit=0):
+        count = len(queue) if not limit or limit < 0 else min(len(queue), int(limit))
+        return [queue.popleft() for _ in range(count)]
+
+    def drain_sites(self, limit=0):
+        with self._lock:
+            events = self._drain(self._sites, limit)
+        for event in events:
+            try:
+                self.context.mark_candidate_status(event.candidate, "site", "queued")
+            except Exception as exc:
+                logger.debug("site event status update failed error_type:%s", type(exc).__name__)
+        if events:
+            self.context.record_metric("site_discovered_event_consumed_count", len(events))
+        return events
+
+    def drain_pages(self, limit=0):
+        with self._lock:
+            events = self._drain(self._pages, limit)
+        if events:
+            self.context.record_metric("page_fetched_event_consumed_count", len(events))
+        return events
+
+    def snapshot(self):
+        with self._lock:
+            return {
+                "enabled": self.enabled,
+                "site_pending": len(self._sites),
+                "page_pending": len(self._pages),
+                "seen": len(self._seen),
+                "max_events": self.max_events,
+            }

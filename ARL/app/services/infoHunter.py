@@ -6,6 +6,7 @@ from app import utils
 from app.config import Config
 import os
 import json
+import importlib.util
 import subprocess
 import hashlib
 import base64
@@ -21,6 +22,25 @@ from .url_candidate_filter import (
     strip_url_annotation,
     strip_route_method_suffix,
 )
+try:
+    from .process_protocol import (
+        ProcessLease,
+        private_cache_path,
+        read_private_json,
+        stable_process_key,
+        write_private_json,
+    )
+except (ImportError, ValueError):
+    # 保持旧的按文件加载测试和工具脚本可用；生产路径始终使用正常 package import。
+    _protocol_path = os.path.join(os.path.dirname(__file__), "process_protocol.py")
+    _protocol_spec = importlib.util.spec_from_file_location("arl_process_protocol", _protocol_path)
+    _protocol_module = importlib.util.module_from_spec(_protocol_spec)
+    _protocol_spec.loader.exec_module(_protocol_module)
+    ProcessLease = _protocol_module.ProcessLease
+    private_cache_path = _protocol_module.private_cache_path
+    read_private_json = _protocol_module.read_private_json
+    stable_process_key = _protocol_module.stable_process_key
+    write_private_json = _protocol_module.write_private_json
 
 logger = utils.get_logger()
 
@@ -151,6 +171,8 @@ class InfoHunter(object):
 
         # wih 结果文件
         self.wih_result_path = os.path.join(tmp_path, "wih_result_{}.json".format(rand_str))
+        # 输入清单用于跨进程边界的可追踪协议，不把运行命令或完整配置写入清单。
+        self.wih_manifest_path = os.path.join(tmp_path, "wih_manifest_{}.json".format(rand_str))
 
         self.wih_bin_path = self._resolve_wih_binary()
         self.wih_timeout_sec = int(getattr(Config, "WIH_TIMEOUT_SEC", 10 * 60) or (10 * 60))
@@ -173,6 +195,20 @@ class InfoHunter(object):
         self.wih_light_runtime_max_requests = int(getattr(Config, "WIH_LIGHT_RUNTIME_MAX_REQUESTS", 60) or 60)
         self.wih_minimal_timeout_sec = int(getattr(Config, "WIH_MINIMAL_TIMEOUT_SEC", 2 * 60) or (2 * 60))
         self.wih_minimal_runtime_enable = bool(getattr(Config, "WIH_MINIMAL_RUNTIME_ENABLE", False))
+        try:
+            self.wih_cross_process_cache_ttl_sec = max(
+                0,
+                int(getattr(Config, "WIH_CROSS_PROCESS_CACHE_TTL_SEC", 600) or 600),
+            )
+        except (TypeError, ValueError):
+            self.wih_cross_process_cache_ttl_sec = 600
+        try:
+            self.wih_cross_process_lease_wait_sec = max(
+                0.0,
+                float(getattr(Config, "WIH_CROSS_PROCESS_LEASE_WAIT_SEC", 15) or 15),
+            )
+        except (TypeError, ValueError):
+            self.wih_cross_process_lease_wait_sec = 15.0
         if self.wih_timeout_sec < 60:
             self.wih_timeout_sec = 60
         if self.wih_total_budget_sec < 0:
@@ -788,10 +824,74 @@ class InfoHunter(object):
     def _get_target_file(self, sites=None):
         site_list = list(sites or self.sites or [])
         with open(self.wih_target_path, "w") as f:
+            os.fchmod(f.fileno(), 0o600)
             for site in site_list:
                 site = str(site or "").strip()
                 if site:
                     f.write(site + "\n")
+
+    def _wih_profile_cache_key(self, sites, profile):
+        runtime_command_digest = hashlib.sha256(
+            str(profile.get("runtime_command", "") or "").encode("utf-8", errors="ignore")
+        ).hexdigest()[:16]
+        profile_signature = {
+            "name": profile.get("name", ""),
+            "runtime_enable": bool(profile.get("runtime_enable")),
+            "runtime_driver": profile.get("runtime_driver", ""),
+            "runtime_timeout_sec": profile.get("runtime_timeout_sec", 0),
+            "runtime_max_pages": profile.get("runtime_max_pages", 0),
+            "runtime_max_actions": profile.get("runtime_max_actions", 0),
+            "runtime_max_requests": profile.get("runtime_max_requests", 0),
+            "runtime_command_digest": runtime_command_digest,
+        }
+        return stable_process_key(
+            "wih-result-v1",
+            sorted(set(str(site or "").strip() for site in sites if str(site or "").strip())),
+            profile_signature,
+            self._load_wih_version_text() or self.wih_bin_path,
+        )
+
+    def _read_cross_process_wih_result(self, cache_path, sites):
+        if self.wih_cross_process_cache_ttl_sec <= 0:
+            return ""
+        cached = read_private_json(cache_path, max_age_sec=self.wih_cross_process_cache_ttl_sec)
+        raw_text = str((cached or {}).get("raw_text") or "").strip()
+        if not raw_text:
+            return ""
+        completed_sites = set(self._summarize_payload(raw_text).get("completed_sites") or [])
+        if not set(sites).issubset(completed_sites):
+            return ""
+        self._increment_run_metric("cross_process_cache_hit_count")
+        return raw_text
+
+    def _write_wih_input_manifest(self, sites, profile, cache_key):
+        try:
+            write_private_json(
+                self.wih_manifest_path,
+                {
+                    "protocol_version": "wih-input-v1",
+                    "cache_key": cache_key,
+                    "target_count": len(sites),
+                    "target_hash": stable_process_key("wih-targets", sorted(sites)),
+                    "targets": list(sites),
+                    "profile": {
+                        "name": profile.get("name", ""),
+                        "runtime_enable": bool(profile.get("runtime_enable")),
+                        "runtime_driver": profile.get("runtime_driver", ""),
+                        "runtime_timeout_sec": profile.get("runtime_timeout_sec", 0),
+                        "runtime_max_pages": profile.get("runtime_max_pages", 0),
+                        "runtime_max_actions": profile.get("runtime_max_actions", 0),
+                        "runtime_max_requests": profile.get("runtime_max_requests", 0),
+                    },
+                    "target_path": self.wih_target_path,
+                    "result_path": self.wih_result_path,
+                    "created_at": time.time(),
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "wih input manifest failed stage:external error_type:{}".format(type(exc).__name__)
+            )
 
     def _clear_result_file(self):
         try:
@@ -807,6 +907,8 @@ class InfoHunter(object):
         try:
             if os.path.exists(self.wih_target_path):
                 os.unlink(self.wih_target_path)
+            if os.path.exists(self.wih_manifest_path):
+                os.unlink(self.wih_manifest_path)
             self._clear_result_file()
         except Exception as e:
             logger.warning(e)
@@ -1214,73 +1316,156 @@ class InfoHunter(object):
                 }
             profile_timeout_sec = min(profile_timeout_sec, max(1, int(remaining_deadline_sec)))
 
-        self._clear_result_file()
-        self._get_target_file(current_sites)
-
-        command = self._build_command(runtime_profile=profile)
-        logger.info(
-            "run wih batch stage:{} depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} runtime:{} cmd:{}".format(
-                stage_name,
-                depth,
-                len(current_sites),
-                profile_timeout_sec,
-                self.wih_concurrency,
-                self.wih_concurrency_per_site,
-                profile["runtime_enable"],
-                " ".join(command),
-            )
-        )
-        result = self._run_wih_command(
-            command,
-            current_sites,
-            stage_name,
-            timeout_sec=profile_timeout_sec,
-        )
-        if result.get("ok"):
-            raw_text = self._read_current_result_text()
+        cache_key = self._wih_profile_cache_key(current_sites, profile)
+        cache_path = private_cache_path(Config.TMP_PATH, "wih", cache_key)
+        cached_raw_text = self._read_cross_process_wih_result(cache_path, current_sites)
+        if cached_raw_text:
+            with open(self.wih_result_path, "w", encoding="utf-8") as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                stream.write(cached_raw_text)
             return {
                 "ok": True,
                 "timed_out": False,
                 "partial_saved": False,
                 "remaining_sites": [],
-                "raw_text": raw_text,
+                "raw_text": cached_raw_text,
+                "profile": profile,
+                "deadline_exhausted": False,
+                "cross_process_cache_hit": True,
+            }
+
+        lease = ProcessLease(Config.TMP_PATH, "wih", cache_key)
+        if not lease.acquire(wait_sec=self.wih_cross_process_lease_wait_sec):
+            self._increment_run_metric("cross_process_lease_busy_count")
+            logger.info(
+                "skip wih batch stage:{} depth:{} sites:{} reason:cross_process_lease_busy".format(
+                    stage_name,
+                    depth,
+                    len(current_sites),
+                )
+            )
+            return {
+                "ok": False,
+                "timed_out": False,
+                "partial_saved": False,
+                "remaining_sites": list(current_sites),
+                "raw_text": "",
+                "profile": profile,
+                "deadline_exhausted": False,
+                "lease_unavailable": True,
+            }
+
+        try:
+            # 等待期间其他 worker 可能刚完成；拿到 lease 后必须二次检查。
+            cached_raw_text = self._read_cross_process_wih_result(cache_path, current_sites)
+            if cached_raw_text:
+                with open(self.wih_result_path, "w", encoding="utf-8") as stream:
+                    os.fchmod(stream.fileno(), 0o600)
+                    stream.write(cached_raw_text)
+                return {
+                    "ok": True,
+                    "timed_out": False,
+                    "partial_saved": False,
+                    "remaining_sites": [],
+                    "raw_text": cached_raw_text,
+                    "profile": profile,
+                    "deadline_exhausted": False,
+                    "cross_process_cache_hit": True,
+                }
+
+            self._clear_result_file()
+            self._get_target_file(current_sites)
+            self._write_wih_input_manifest(current_sites, profile, cache_key)
+
+            command = self._build_command(runtime_profile=profile)
+            logger.info(
+                "run wih batch stage:{} depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} runtime:{} cmd:{}".format(
+                    stage_name,
+                    depth,
+                    len(current_sites),
+                    profile_timeout_sec,
+                    self.wih_concurrency,
+                    self.wih_concurrency_per_site,
+                    profile["runtime_enable"],
+                    " ".join(command),
+                )
+            )
+            result = self._run_wih_command(
+                command,
+                current_sites,
+                stage_name,
+                timeout_sec=profile_timeout_sec,
+            )
+            if result.get("ok"):
+                raw_text = self._read_current_result_text()
+                summary = self._summarize_payload(raw_text)
+                if (
+                    raw_text
+                    and self.wih_cross_process_cache_ttl_sec > 0
+                    and set(current_sites).issubset(set(summary.get("completed_sites") or []))
+                ):
+                    try:
+                        write_private_json(
+                            cache_path,
+                            {
+                                "protocol_version": "wih-result-v1",
+                                "cache_key": cache_key,
+                                "targets": list(current_sites),
+                                "raw_text": raw_text,
+                                "created_at": time.time(),
+                            },
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "wih cross process cache write failed error_type:{}".format(
+                                type(exc).__name__
+                            )
+                        )
+                return {
+                    "ok": True,
+                    "timed_out": False,
+                    "partial_saved": False,
+                    "remaining_sites": [],
+                    "raw_text": raw_text,
+                    "profile": profile,
+                    "deadline_exhausted": False,
+                }
+
+            partial_saved = False
+            remaining_sites = list(current_sites)
+            if result.get("timed_out"):
+                self._increment_run_metric("timeout_count")
+                completed_sites = self._salvage_partial_batch_results(
+                    aggregate_result_texts,
+                    current_sites,
+                    depth,
+                    stage_name,
+                )
+                if completed_sites:
+                    self._increment_run_metric("salvage_count")
+                    partial_saved = True
+                    completed_site_set = set(completed_sites)
+                    remaining_sites = [site for site in current_sites if site not in completed_site_set]
+                    logger.info(
+                        "wih {} timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
+                            stage_name,
+                            depth,
+                            len(remaining_sites),
+                            len(completed_sites),
+                        )
+                    )
+
+            return {
+                "ok": False,
+                "timed_out": bool(result.get("timed_out")),
+                "partial_saved": partial_saved,
+                "remaining_sites": remaining_sites,
+                "raw_text": "",
                 "profile": profile,
                 "deadline_exhausted": False,
             }
-
-        partial_saved = False
-        remaining_sites = list(current_sites)
-        if result.get("timed_out"):
-            self._increment_run_metric("timeout_count")
-            completed_sites = self._salvage_partial_batch_results(
-                aggregate_result_texts,
-                current_sites,
-                depth,
-                stage_name,
-            )
-            if completed_sites:
-                self._increment_run_metric("salvage_count")
-                partial_saved = True
-                completed_site_set = set(completed_sites)
-                remaining_sites = [site for site in current_sites if site not in completed_site_set]
-                logger.info(
-                    "wih {} timeout salvage depth:{} remaining_sites:{} completed_sites:{}".format(
-                        stage_name,
-                        depth,
-                        len(remaining_sites),
-                        len(completed_sites),
-                    )
-                )
-
-        return {
-            "ok": False,
-            "timed_out": bool(result.get("timed_out")),
-            "partial_saved": partial_saved,
-            "remaining_sites": remaining_sites,
-            "raw_text": "",
-            "profile": profile,
-            "deadline_exhausted": False,
-        }
+        finally:
+            lease.release()
 
     def _exec_wih_batch(self, batch_sites: list, aggregate_result_texts: list, depth: int = 0) -> bool:
         current_sites = [str(site or "").strip() for site in list(batch_sites or []) if str(site or "").strip()]
@@ -1318,6 +1503,10 @@ class InfoHunter(object):
                 aggregate_result_texts.append(primary["raw_text"])
             return True
         if primary.get("deadline_exhausted"):
+            return partial_saved
+        if primary.get("lease_unavailable"):
+            # 相同输入正在其他 worker 执行，保留 pending 语义，避免 fallback
+            # 以不同 profile 再次发起同一批外部网络扫描。
             return partial_saved
         if not current_sites:
             return partial_saved

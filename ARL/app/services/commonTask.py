@@ -28,7 +28,7 @@ from app.services.web_site_fetch_orchestrator import WebSiteFetchOrchestrator
 from app.services.discovery_context import DiscoveryContext, DiscoveryLedger
 from app.services.discovery_ledger_store import MongoLedgerBackend
 from app.services.discovery_context import url_host
-from app.services.discovery_queue import NewHostQueue
+from app.services.discovery_queue import DiscoveryEventConsumer, NewHostQueue
 from app.services.wih_result_persist_services import WihResultPersistService
 from app.services.web_site_poc_stage_services import (
     WebSiteNucleiScanStageService,
@@ -279,6 +279,17 @@ class WebSiteFetch(CommonTask):
             self.discovery_context,
             waf_guard=self.waf_guard,
             max_hosts=new_host_queue_max,
+            allowed_hosts={url_host(site) for site in self.sites if url_host(site)},
+        )
+        try:
+            discovery_event_queue_max = int(
+                getattr(Config, "DISCOVERY_EVENT_QUEUE_MAX", 2000) or 2000
+            )
+        except (TypeError, ValueError):
+            discovery_event_queue_max = 2000
+        self.discovery_event_consumer = DiscoveryEventConsumer(
+            self.discovery_context,
+            max_events=discovery_event_queue_max,
             allowed_hosts={url_host(site) for site in self.sites if url_host(site)},
         )
         try:

@@ -26,6 +26,7 @@ from app.config import Config
 from app.utils.log_safety import safe_error_text
 from .baseThread import BaseThread
 from .page_semantics import enrich_page_item
+from .process_protocol import ProcessLease, stable_process_key
 
 logger = utils.get_logger()
 DNS_POLICY_CACHE = {}
@@ -160,6 +161,8 @@ class HTTPReq():
             return None
         entry = self.response_cache.get(key)
         if not isinstance(entry, dict):
+            return None
+        if str(entry.get("request_profile") or "html_get") != "html_get":
             return None
         headers = dict(entry.get("headers") or {})
         if str(headers.get("X-ARL-WAF-SMART-SKIP", "")) == "1":
@@ -838,6 +841,7 @@ def _build_waf_guard_from_context(waf_guard_context):
 def _write_json_file(file_path: str, data):
     tmp_path = "{}.tmp".format(file_path)
     with open(tmp_path, "w", encoding="utf-8") as f:
+        os.fchmod(f.fileno(), 0o600)
         json.dump(data, f, ensure_ascii=False)
     os.replace(tmp_path, file_path)
 
@@ -977,6 +981,7 @@ def _scan_file_leak_site(
                         body = body.encode("utf-8", errors="ignore")
                     response_items.append({
                         "url": str(page.url),
+                        "response_profile": "file_leak_get",
                         "status_code": int(getattr(page, "status_code", 0) or 0),
                         "headers": {str(k): str(v) for k, v in
                                     dict(getattr(conn, "headers", {}) or {}).items()},
@@ -994,6 +999,7 @@ def _scan_file_leak_site(
                 pass
 
         return {
+            "protocol_version": "fileleak-result-v2",
             "ok": True,
             "pages": page_items,
             "responses": response_items,
@@ -1004,6 +1010,7 @@ def _scan_file_leak_site(
     except Exception as e:
         logger.warning("fileleak worker error target:{} error:{}".format(target, safe_error_text(e)))
         return {
+            "protocol_version": "fileleak-result-v2",
             "ok": False,
             "pages": [],
             "skip_by_policy": False,
@@ -1029,6 +1036,7 @@ def run_file_leak_worker_from_files(job_path: str, result_path: str, heartbeat_p
     except Exception as e:
         logger.warning("fileleak worker bootstrap error:{}".format(safe_error_text(e)))
         result = {
+            "protocol_version": "fileleak-result-v2",
             "ok": False,
             "pages": [],
             "skip_by_policy": False,
@@ -1084,6 +1092,7 @@ def _build_file_leak_response_cache(discovery_context, target_urls, max_entries=
         except Exception:
             continue
         cache[cache_key] = {
+            "request_profile": "html_get",
             "status_code": int(getattr(cached, "status_code", 0) or 0),
             "headers": headers,
             "body_b64": base64.b64encode(body).decode("ascii"),
@@ -1122,6 +1131,8 @@ def _apply_child_responses(discovery_context, result):
         return
     for item in list(result.get("responses") or []):
         if not isinstance(item, dict):
+            continue
+        if str(item.get("response_profile") or "file_leak_get") != "file_leak_get":
             continue
         url = str(item.get("url") or "").strip()
         if not url:
@@ -1195,12 +1206,42 @@ def _run_file_leak_site_with_watchdog(
         )
 
     response_cache = _build_file_leak_response_cache(discovery_context, urls)
+    lease_key = stable_process_key(
+        "fileleak-input-v1",
+        str(target or "").strip(),
+        sorted(normal_url(str(getattr(item, "url", item) or "").strip()) for item in urls),
+    )
+    try:
+        lease_wait_sec = max(
+            0.0,
+            float(getattr(Config, "FILE_LEAK_CROSS_PROCESS_LEASE_WAIT_SEC", 5) or 5),
+        )
+    except (TypeError, ValueError):
+        lease_wait_sec = 5.0
+    lease = ProcessLease(Config.TMP_PATH, "fileleak", lease_key)
+    if not lease.acquire(wait_sec=lease_wait_sec):
+        logger.info("fileleak lease busy target:{} input_count:{}".format(target, len(urls)))
+        return FileLeakResult(
+            [],
+            metrics={
+                "status": "partial",
+                "end_reason": "cross_process_lease_busy",
+                "input_count": len(urls),
+                "output_count": 0,
+                "pending_count": len(urls),
+                "degraded_count": 1,
+            },
+        )
 
     popen_factory = popen_factory or subprocess.Popen
     sleep_fn = sleep_fn or time.sleep
     time_fn = time_fn or time.time
 
-    temp_dir = tempfile.mkdtemp(prefix="fileleak_watchdog_", dir=Config.TMP_PATH)
+    try:
+        temp_dir = tempfile.mkdtemp(prefix="fileleak_watchdog_", dir=Config.TMP_PATH)
+    except Exception:
+        lease.release()
+        raise
     job_path = os.path.join(temp_dir, "job.json")
     result_path = os.path.join(temp_dir, "result.json")
     heartbeat_path = os.path.join(temp_dir, "heartbeat.txt")
@@ -1210,6 +1251,10 @@ def _run_file_leak_site_with_watchdog(
             job_path,
             {
                 "target": target,
+                "protocol_version": "fileleak-input-v2",
+                "lease_key": lease_key,
+                "request_profile": "file_leak_get",
+                "response_reuse_profile": "html_get",
                 "url_items": _serialize_urls(urls),
                 "concurrency": int(concurrency or Config.FILE_LEAK_CONCURRENCY),
                 "waf_guard_context": _build_waf_guard_context(waf_guard),
@@ -1354,6 +1399,7 @@ def _run_file_leak_site_with_watchdog(
         )
     finally:
         _cleanup_file_leak_watchdog_dir(temp_dir)
+        lease.release()
 
 
 def _calc_adaptive_timeout(base_sec: int, per_1000_urls_sec: int, max_sec: int, url_count: int) -> int:

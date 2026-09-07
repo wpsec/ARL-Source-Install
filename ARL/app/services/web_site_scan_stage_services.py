@@ -11,6 +11,7 @@ from app import services, utils
 from app.config import Config, normalize_dict_path_compat
 from app.modules import CollectSource, WebSiteFetchOption
 from app.utils.log_safety import safe_error_text
+from app.services.discovery_context import normalize_url, url_host
 
 
 logger = utils.get_logger()
@@ -233,6 +234,15 @@ class WebSiteSpiderStageService(object):
     def run(self):
         task = self.task
         entry_urls_list = []
+        event_pages_by_host = {}
+        event_consumer = getattr(task, "discovery_event_consumer", None)
+        if event_consumer is not None:
+            for event in event_consumer.drain_pages():
+                page_url = normalize_url(event.candidate)
+                host = url_host(page_url)
+                if not page_url or not host or not task._url_in_task_scope(page_url):
+                    continue
+                event_pages_by_host.setdefault(host, []).append(page_url)
         for site in task.available_sites:
             parsed_site = urlparse(site)
             if parsed_site.path != "":
@@ -240,6 +250,8 @@ class WebSiteSpiderStageService(object):
 
             entry_urls = [site]
             entry_urls.extend(task.search_engines_result.get(site, []))
+            entry_urls.extend(event_pages_by_host.get(url_host(site), []))
+            entry_urls = list(dict.fromkeys(entry_urls))
             entry_urls_list.append(entry_urls)
 
         spider_kwargs = {"waf_guard": task.waf_guard}
@@ -447,6 +459,20 @@ class WebSiteFileLeakStageService(object):
         task = self.task
         file_leak_dict_words = self.utils.load_file(self._dict_path())
         poc_sites = self._merge_new_host_targets(sorted(task.poc_sites))
+        event_consumer = getattr(task, "discovery_event_consumer", None)
+        if event_consumer is not None:
+            event_sites = event_consumer.drain_sites()
+            existing_hosts = {str(urlparse(str(site or "")).hostname or "").lower() for site in poc_sites}
+            for event in event_sites:
+                site = self.utils.url.cut_filename(str(event.candidate or "").strip())
+                host = str(urlparse(site).hostname or "").lower()
+                if not site or not host or host in existing_hosts:
+                    continue
+                if not task._url_in_task_scope(site):
+                    continue
+                poc_sites.append(site)
+                existing_hosts.add(host)
+            poc_sites = sorted(set(poc_sites))
         if not poc_sites:
             return []
 

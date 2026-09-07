@@ -47,16 +47,30 @@ base_query_fields = {
     'size': fields.Integer(description="页面大小", example=10),
     'order': fields.String(description="排序字段", example='_id'),
     '_refresh': fields.String(description="强制刷新缓存（1/true）", example='1'),
+    'classification': fields.String(
+        description="查询分类（unknown|business|credential_like）",
+        example='business',
+    ),
 }
 
 # 只能用等号进行 MongoDB 查询的字段
 # 这些字段不支持模糊匹配，只支持精确匹配
-EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type"]
+EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type", "classification"]
+API_QUERY_CLASSIFICATIONS = {"unknown", "business", "credential_like"}
 TASK_STATUS_RUNNING_EXCLUDE = ["waiting", "done", "done_pending", "done_degraded", "stop", "error"]
 TASK_STATUS_COLLECTIONS = {"task", "github_task"}
 TASK_SERVICE_PARENT_PREFIXES = {
     "web_info_hunter": ("wih_",),
 }
+
+
+def normalize_query_classification(value):
+    text = str(value or "").strip().lower()
+    if text not in API_QUERY_CLASSIFICATIONS:
+        raise ValueError(
+            "classification must be one of: {}".format(", ".join(sorted(API_QUERY_CLASSIFICATIONS)))
+        )
+    return text
 
 
 def build_task_service_summary(service_list):
@@ -199,9 +213,13 @@ class ARLResource(Resource):
         for name in model:
             curr_field = model[name]
 
+            parser_type = curr_field.format
+            if name == "classification":
+                parser_type = normalize_query_classification
+
             parser.add_argument(name,
                                 required=curr_field.required,
-                                type=curr_field.format,
+                                type=parser_type,
                                 help=curr_field.description,
                                 location=location)
         return parser
@@ -238,7 +256,8 @@ class ARLResource(Resource):
         返回：
             MongoDB 查询条件字典
         """
-        return build_db_query_service(args, ignored_fields=base_query_fields.keys())
+        ignored_fields = set(base_query_fields.keys()) - {"classification"}
+        return build_db_query_service(args, ignored_fields=ignored_fields)
 
     def build_return_items(self, data):
         """
