@@ -150,19 +150,8 @@ export function ActionDialog({
   const [policySearchKeyword, setPolicySearchKeyword] = useState('');
   const [policyPocKeyword, setPolicyPocKeyword] = useState('');
   const [policyBruteKeyword, setPolicyBruteKeyword] = useState('');
-  const [policyPluginError, setPolicyPluginError] = useState('');
-  const [policyPocOptions, setPolicyPocOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
-  const [policyBruteOptions, setPolicyBruteOptions] = useState<Array<{ plugin_name: string; vul_name: string }>>([]);
-  const [taskSchedulePolicyOptions, setTaskSchedulePolicyOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [taskSchedulePolicyError, setTaskSchedulePolicyError] = useState('');
   const [fofaTesting, setFofaTesting] = useState(false);
   const [fofaResultSize, setFofaResultSize] = useState<number | null>(null);
-  const [taskDomainDictOptions, setTaskDomainDictOptions] = useState<TaskDomainDictOption[]>([]);
-  const [taskDomainDictError, setTaskDomainDictError] = useState('');
-  const [taskDefaultDomainDictPath, setTaskDefaultDomainDictPath] = useState('');
-  const [taskFileLeakDictOptions, setTaskFileLeakDictOptions] = useState<TaskDomainDictOption[]>([]);
-  const [taskFileLeakDictError, setTaskFileLeakDictError] = useState('');
-  const [taskDefaultFileLeakDictPath, setTaskDefaultFileLeakDictPath] = useState('');
   const measureProviderOptions = [
     { label: 'FOFA', value: 'fofa' },
     { label: 'Hunter', value: 'hunter_qax' },
@@ -185,6 +174,117 @@ export function ActionDialog({
     quake_360: 'service:"nginx"\nport:443 AND country:"China"',
   };
   const currentMeasureProviderLabel = measureProviderLabelMap[fofaProvider] || 'FOFA';
+
+  const dictOptionsQuery = useQuery({
+    queryKey: ['action-dict-options', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
+      const data = response?.data || {};
+      const options = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
+      const fileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
+      const defaultPath = String(data?.scan_config?.domain_dict || '').trim();
+      const defaultFileLeakPath = String(data?.scan_config?.file_leak_dict || '').trim();
+      const normalizeDict = (list: any[]): TaskDomainDictOption[] =>
+        list
+          .map((item: any) => ({
+            label: String(item?.label || item?.path || '').trim(),
+            path: String(item?.path || '').trim(),
+            source: String(item?.source || 'custom').trim() || 'custom',
+            exists: Boolean(item?.exists),
+            size: Number(item?.size || 0),
+            selected: Boolean(item?.selected),
+          }))
+          .filter((item: TaskDomainDictOption) => item.path);
+      const normalizedOptions = normalizeDict(options);
+      const normalizedFileLeakOptions = normalizeDict(fileLeakOptions);
+      const preferredBigDictPath =
+        normalizedOptions.find((item) => /domain_2w\.txt$/i.test(item.path) || /domain_2w\.txt/i.test(item.label))?.path || '';
+      return {
+        domainOptions: normalizedOptions,
+        fileLeakOptions: normalizedFileLeakOptions,
+        effectiveDefaultPath: preferredBigDictPath || defaultPath,
+        defaultFileLeakPath,
+      };
+    },
+    enabled: shouldLoadDictOptions,
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const taskDomainDictOptions = dictOptionsQuery.data?.domainOptions ?? [];
+  const taskFileLeakDictOptions = dictOptionsQuery.data?.fileLeakOptions ?? [];
+  const taskDefaultDomainDictPath = dictOptionsQuery.data?.effectiveDefaultPath ?? '';
+  const taskDefaultFileLeakDictPath = dictOptionsQuery.data?.defaultFileLeakPath ?? '';
+  const taskDomainDictLoading = shouldLoadDictOptions && dictOptionsQuery.isFetching;
+  const taskDomainDictError = shouldLoadDictOptions && dictOptionsQuery.isError
+    ? (dictOptionsQuery.error as Error)?.message || '加载字典列表失败'
+    : '';
+  const taskFileLeakDictError = taskDomainDictError;
+
+  const policyIdsQuery = useQuery({
+    queryKey: ['action-policy-id-options', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/policy/', {
+        method: 'GET',
+        query: { page: 1, size: 1000, order: 'name' },
+      });
+      const items = normalizeListData(response).items || [];
+      return items
+        .map((item: any) => {
+          const policyId = String(item?._id || item?.policy_id || '').trim();
+          const policyName = String(item?.name || '').trim() || '未命名策略';
+          if (!policyId) return null;
+          return { label: policyName, value: policyId };
+        })
+        .filter((item: { label: string; value: string } | null): item is { label: string; value: string } => Boolean(item));
+    },
+    enabled: shouldLoadPolicyOptions,
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const taskSchedulePolicyOptions = policyIdsQuery.data ?? [];
+  const taskSchedulePolicyLoading = shouldLoadPolicyOptions && policyIdsQuery.isFetching;
+  const taskSchedulePolicyError = shouldLoadPolicyOptions && isPolicySelectionRequired
+    ? policyIdsQuery.isError
+      ? (policyIdsQuery.error as Error)?.message || '加载策略列表失败'
+      : !policyIdsQuery.isPending && taskSchedulePolicyOptions.length === 0
+        ? '未找到可用策略，请先在策略配置中创建策略'
+        : ''
+    : '';
+
+  const policyPluginsQuery = useQuery({
+    queryKey: ['action-policy-poc-plugins', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/poc/', {
+        method: 'GET',
+        query: { page: 1, size: 5000 },
+      });
+      const items = normalizeListData(response).items || [];
+      const normalized = items
+        .map((item: any) => ({
+          plugin_name: String(item?.plugin_name || '').trim(),
+          vul_name: String(item?.vul_name || '').trim(),
+          plugin_type: String(item?.plugin_type || '').trim().toLowerCase(),
+        }))
+        .filter((item: any) => item.plugin_name);
+      return {
+        poc: normalized
+          .filter((item: any) => item.plugin_type === 'poc')
+          .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
+        brute: normalized
+          .filter((item: any) => item.plugin_type === 'brute')
+          .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
+      };
+    },
+    enabled: isPolicyAction,
+    staleTime: 30_000,
+    retry: 0,
+  });
+  const policyPocOptions = policyPluginsQuery.data?.poc ?? [];
+  const policyBruteOptions = policyPluginsQuery.data?.brute ?? [];
+  const policyPluginLoading = isPolicyAction && policyPluginsQuery.isFetching;
+  const policyPluginError = isPolicyAction && policyPluginsQuery.isError
+    ? (policyPluginsQuery.error as Error)?.message || '加载 PoC 列表失败'
+    : '';
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -381,75 +481,9 @@ export function ActionDialog({
     }
   };
 
-  // Phase 3 数据层：弹窗所需选项读取统一 React Query（staleTime 30s，重复开弹窗命中缓存），
-  // 原 cancelled/一次性 load 模式删除；payload 补齐等副作用保留在水合 effect。
-  const dictOptionsQuery = useQuery({
-    queryKey: ['action-dict-options', token],
-    queryFn: async () => {
-      const response = await requestApi(token, '/api_console/scan_config/', { method: 'GET' });
-      const data = response?.data || {};
-      const options = Array.isArray(data?.available_domain_dicts) ? data.available_domain_dicts : [];
-      const fileLeakOptions = Array.isArray(data?.available_file_leak_dicts) ? data.available_file_leak_dicts : [];
-      const defaultPath = String(data?.scan_config?.domain_dict || '').trim();
-      const defaultFileLeakPath = String(data?.scan_config?.file_leak_dict || '').trim();
-      const normalizeDict = (list: any[]): TaskDomainDictOption[] =>
-        list
-          .map((item: any) => ({
-            label: String(item?.label || item?.path || '').trim(),
-            path: String(item?.path || '').trim(),
-            source: String(item?.source || 'custom').trim() || 'custom',
-            exists: Boolean(item?.exists),
-            size: Number(item?.size || 0),
-            selected: Boolean(item?.selected),
-          }))
-          .filter((item: TaskDomainDictOption) => item.path);
-      const normalizedOptions = normalizeDict(options);
-      const normalizedFileLeakOptions = normalizeDict(fileLeakOptions);
-      // 新建任务默认优先选择 domain_2w.txt，找不到时回退到扫描配置默认字典。
-      const preferredBigDictPath =
-        normalizedOptions.find((item) => /domain_2w\.txt$/i.test(item.path) || /domain_2w\.txt/i.test(item.label))?.path || '';
-      return {
-        domainOptions: normalizedOptions,
-        fileLeakOptions: normalizedFileLeakOptions,
-        effectiveDefaultPath: preferredBigDictPath || defaultPath,
-        defaultFileLeakPath,
-      };
-    },
-    enabled: shouldLoadDictOptions,
-    staleTime: 30_000,
-    retry: 0,
-  });
-  const taskDomainDictLoading = shouldLoadDictOptions && dictOptionsQuery.isFetching;
-
   useEffect(() => {
-    if (!shouldLoadDictOptions) {
-      setTaskDomainDictOptions([]);
-      setTaskDomainDictError('');
-      setTaskDefaultDomainDictPath('');
-      setTaskFileLeakDictOptions([]);
-      setTaskFileLeakDictError('');
-      setTaskDefaultFileLeakDictPath('');
-      return;
-    }
-    if (dictOptionsQuery.isPending) return;
+    if (!shouldLoadDictOptions || dictOptionsQuery.isPending || !dictOptionsQuery.data) return;
     const snapshot = dictOptionsQuery.data;
-    if (!snapshot) {
-      setTaskDomainDictOptions([]);
-      setTaskDefaultDomainDictPath('');
-      setTaskFileLeakDictOptions([]);
-      setTaskDefaultFileLeakDictPath('');
-      const message = (dictOptionsQuery.error as Error)?.message || '加载字典列表失败';
-      setTaskDomainDictError(message);
-      setTaskFileLeakDictError(message);
-      return;
-    }
-    setTaskDomainDictOptions(snapshot.domainOptions);
-    setTaskFileLeakDictOptions(snapshot.fileLeakOptions);
-    setTaskDefaultDomainDictPath(snapshot.effectiveDefaultPath);
-    setTaskDefaultFileLeakDictPath(snapshot.defaultFileLeakPath);
-    setTaskDomainDictError('');
-    setTaskFileLeakDictError('');
-
     setFormPayload((prev) => {
       let next = prev;
       if (isTaskCreate) {
@@ -482,118 +516,27 @@ export function ActionDialog({
   }, [
     dictOptionsQuery.data,
     dictOptionsQuery.isPending,
-    dictOptionsQuery.isError,
     isPolicyAction,
     isTaskCreate,
     policyRootPath,
     shouldLoadDictOptions,
   ]);
 
-  const policyIdsQuery = useQuery({
-    queryKey: ['action-policy-id-options', token],
-    queryFn: async () => {
-      const response = await requestApi(token, '/policy/', {
-        method: 'GET',
-        query: { page: 1, size: 1000, order: 'name' },
-      });
-      const items = normalizeListData(response).items || [];
-      return items
-        .map((item: any) => {
-          const policyId = String(item?._id || item?.policy_id || '').trim();
-          const policyName = String(item?.name || '').trim() || '未命名策略';
-          if (!policyId) return null;
-          return { label: policyName, value: policyId };
-        })
-        .filter((item: { label: string; value: string } | null): item is { label: string; value: string } => Boolean(item));
-    },
-    enabled: shouldLoadPolicyOptions,
-    staleTime: 30_000,
-    retry: 0,
-  });
-  const taskSchedulePolicyLoading = shouldLoadPolicyOptions && policyIdsQuery.isFetching;
-
   useEffect(() => {
-    if (!shouldLoadPolicyOptions) {
-      setTaskSchedulePolicyOptions([]);
-      setTaskSchedulePolicyError('');
-      return;
-    }
-    if (policyIdsQuery.isPending) return;
-    if (!policyIdsQuery.data) {
-      setTaskSchedulePolicyOptions([]);
-      setTaskSchedulePolicyError(
-        isPolicySelectionRequired
-          ? (policyIdsQuery.error as Error)?.message || '加载策略列表失败'
-          : ''
-      );
-      return;
-    }
+    if (!shouldLoadPolicyOptions || policyIdsQuery.isPending) return;
     const options = policyIdsQuery.data;
-    setTaskSchedulePolicyOptions(options);
-    if (options.length === 0) {
-      if (isPolicySelectionRequired) {
-        setTaskSchedulePolicyError('未找到可用策略，请先在策略配置中创建策略');
-      } else {
-        setTaskSchedulePolicyError('');
-      }
-    } else {
-      setTaskSchedulePolicyError('');
-      if (!isPolicySelectionRequired) return;
-      setFormPayload((prev) => {
-        const currentPolicyId = String(prev?.policy_id || '').trim();
-        if (currentPolicyId) return prev;
-        return updatePayloadValue(prev, 'policy_id', options[0].value);
-      });
-    }
+    if (!options || options.length === 0 || !isPolicySelectionRequired) return;
+    setFormPayload((prev) => {
+      const currentPolicyId = String(prev?.policy_id || '').trim();
+      if (currentPolicyId) return prev;
+      return updatePayloadValue(prev, 'policy_id', options[0].value);
+    });
   }, [
     isPolicySelectionRequired,
     policyIdsQuery.data,
     policyIdsQuery.isPending,
-    policyIdsQuery.isError,
     shouldLoadPolicyOptions,
   ]);
-
-  const policyPluginsQuery = useQuery({
-    queryKey: ['action-policy-poc-plugins', token],
-    queryFn: async () => {
-      const response = await requestApi(token, '/poc/', {
-        method: 'GET',
-        query: { page: 1, size: 5000 },
-      });
-      const items = normalizeListData(response).items || [];
-      const normalized = items
-        .map((item: any) => ({
-          plugin_name: String(item?.plugin_name || '').trim(),
-          vul_name: String(item?.vul_name || '').trim(),
-          plugin_type: String(item?.plugin_type || '').trim().toLowerCase(),
-        }))
-        .filter((item: any) => item.plugin_name);
-      return {
-        poc: normalized
-          .filter((item: any) => item.plugin_type === 'poc')
-          .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
-        brute: normalized
-          .filter((item: any) => item.plugin_type === 'brute')
-          .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
-      };
-    },
-    enabled: isPolicyAction,
-    staleTime: 30_000,
-    retry: 0,
-  });
-  const policyPluginLoading = isPolicyAction && policyPluginsQuery.isFetching;
-
-  useEffect(() => {
-    if (!isPolicyAction) return;
-    if (policyPluginsQuery.isPending) return;
-    if (!policyPluginsQuery.data) {
-      setPolicyPluginError((policyPluginsQuery.error as Error)?.message || '加载 PoC 列表失败');
-      return;
-    }
-    setPolicyPocOptions(policyPluginsQuery.data.poc);
-    setPolicyBruteOptions(policyPluginsQuery.data.brute);
-    setPolicyPluginError('');
-  }, [isPolicyAction, policyPluginsQuery.data, policyPluginsQuery.isPending, policyPluginsQuery.isError]);
 
   useEffect(() => {
     const handleEsc = (event: KeyboardEvent) => {
