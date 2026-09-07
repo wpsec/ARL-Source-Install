@@ -851,6 +851,49 @@ export function TableModuleView({
     setPage(1);
   }, [hasAdvancedSearch, module.searchFields]);
 
+  const buildModuleListQueryKey = useCallback(
+    (nextPage: number, nextSize: number, nextOrder: string, filters: JsonValue) => [
+      'module-list',
+      token,
+      module.id,
+      nextPage,
+      nextSize,
+      String(nextOrder || '').trim(),
+      buildFilterSignature(filters),
+    ] as const,
+    [module.id, token],
+  );
+  const fetchModuleList = useCallback(async ({
+    nextPage,
+    nextSize,
+    nextOrder,
+    filters,
+    forceRefresh = false,
+  }: {
+    nextPage: number;
+    nextSize: number;
+    nextOrder: string;
+    filters: JsonValue;
+    forceRefresh?: boolean;
+  }) => {
+    if (!module.listPath) return { items: [], total: 0 };
+    const query: JsonValue = {
+      page: nextPage,
+      size: nextSize,
+      ...filters,
+    };
+    const orderValue = String(nextOrder || '').trim();
+    if (orderValue) {
+      query.order = orderValue;
+    } else if (module.defaultOrder && !('order' in query)) {
+      query.order = module.defaultOrder;
+    }
+    if (forceRefresh) {
+      query._refresh = '1';
+    }
+    return normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query }));
+  }, [module.defaultOrder, module.listPath, token]);
+
   // 主列表由 React Query 负责生命周期；旧 loadRows 仍作为动作/分页的兼容命令式入口。
   const hasLiveTaskRows = useMemo(
     () =>
@@ -863,38 +906,19 @@ export function TableModuleView({
   );
   const listFilters = useMemo(() => buildFilters(), [buildFilters]);
   const listOrderValue = String(order || '').trim();
-  const listFilterSignature = buildFilterSignature(listFilters);
-  const listQueryKey = [
-    'module-list',
-    token,
-    module.id,
-    page,
-    size,
-    listOrderValue,
-    listFilterSignature,
-  ] as const;
+  const listQueryKey = buildModuleListQueryKey(page, size, listOrderValue, listFilters);
   const moduleListQuery = useQuery({
     queryKey: listQueryKey,
     enabled: Boolean(hasList && (shouldInitialLoad || hasLiveTaskRows)),
     staleTime: LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
     refetchInterval: hasLiveTaskRows ? 15_000 : false,
     retry: 0,
-    queryFn: async () => {
-      const query: JsonValue = {
-        page,
-        size,
-        ...listFilters,
-      };
-      if (listOrderValue) {
-        query.order = listOrderValue;
-      } else if (module.defaultOrder && !('order' in query)) {
-        query.order = module.defaultOrder;
-      }
-      return normalizeListData(await requestApi(token, module.listPath!, {
-        method: 'GET',
-        query,
-      }));
-    },
+    queryFn: () => fetchModuleList({
+      nextPage: page,
+      nextSize: size,
+      nextOrder: listOrderValue,
+      filters: listFilters,
+    }),
   });
 
   useEffect(() => {
@@ -953,29 +977,27 @@ export function TableModuleView({
     setError('');
     setSuccess('');
     try {
-      const query: JsonValue = {
-        page: nextPage,
-        size: nextSize,
-        ...filters,
-      };
-
       const orderValue = String(nextOrder || '').trim();
-      if (orderValue) {
-        query.order = orderValue;
-      } else if (module.defaultOrder && !('order' in query)) {
-        query.order = module.defaultOrder;
-      }
-      if (loadOptions.forceRefresh) {
-        query._refresh = '1';
-      }
-
       // react-query 只作读侧去重与短期缓存（docs/04 数据层规则）：
       // key 含 [token, 模块, page, size, order, 全量筛选签名]；forceRefresh/状态类模块 staleTime=0。
-      const listQueryKey = ['module-list', token, module.id, nextPage, nextSize, orderValue, buildFilterSignature(filters)];
+      const listQueryKey = buildModuleListQueryKey(nextPage, nextSize, orderValue, filters);
+      if (loadOptions.forceRefresh) {
+        queryClient.invalidateQueries({ queryKey: listQueryKey, refetchType: 'none' });
+        queryClient.invalidateQueries({
+          queryKey: ['module-task-detail-counts', token],
+          refetchType: 'none',
+        });
+      }
       const normalized = await queryClient.fetchQuery({
         queryKey: listQueryKey,
         staleTime: loadOptions.forceRefresh || LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
-        queryFn: async () => normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query })),
+        queryFn: () => fetchModuleList({
+          nextPage,
+          nextSize,
+          nextOrder,
+          filters,
+          forceRefresh: Boolean(loadOptions.forceRefresh),
+        }),
       });
       if (
         requestId !== latestLoadRowsRequestIdRef.current
@@ -994,6 +1016,10 @@ export function TableModuleView({
           ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
           [module.id]: currentTotal,
         };
+        queryClient.invalidateQueries({
+          queryKey: ['module-task-detail-counts', token],
+          refetchType: 'none',
+        });
       }
     } catch (err: any) {
       if (
@@ -1015,6 +1041,8 @@ export function TableModuleView({
     }
   }, [
     buildFilters,
+    buildModuleListQueryKey,
+    fetchModuleList,
     isTaskDetailModule,
     queryClient,
     module.defaultOrder,
@@ -2606,8 +2634,11 @@ export function TableModuleView({
   ) => {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
-      const result = await requestApi(token, `/export/job/${jobId}`, {
-        method: 'GET',
+      // 每个 job 轮询使用独立 query key，避免同一 job 的重入轮询产生并发请求。
+      const result = await queryClient.fetchQuery({
+        queryKey: ['module-export-job', token, jobId],
+        staleTime: 0,
+        queryFn: () => requestApi(token, `/export/job/${jobId}`, { method: 'GET' }),
       });
       const data = result?.data || {};
       const status = String(data?.status || '').trim().toLowerCase();
