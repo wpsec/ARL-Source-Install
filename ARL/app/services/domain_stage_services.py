@@ -4,10 +4,12 @@
 继续保留同名兼容方法，避免改变 Celery、历史重试和外部调用的入口。
 """
 
+import random
 import time
+from collections import Counter
 from urllib.parse import urlparse
 
-from app import services, utils
+from app import modules, services, utils
 from app.config import Config
 from app.modules import CollectSource
 from app.services.dns_query import run_query_plugin
@@ -17,6 +19,78 @@ from app.utils.provider_http import stage_execution_context
 
 
 logger = utils.get_logger()
+
+
+class AltDNS(object):
+    """基于已发现域名生成 AltDNS 候选。"""
+
+    def __init__(self, domain_info_list, base_domain, wildcard_domain_ip=None):
+        self.domain_info_list = domain_info_list
+        self.base_domain = utils.normalize_domain(base_domain) or str(base_domain or "").strip().lower().rstrip(".")
+        self.domains = []
+        self.subdomains = []
+        inner_dicts = "test adm admin api app beta demo dev front int internal intra ops pre pro prod qa sit staff stage test uat"
+        self.dicts = inner_dicts.split()
+        self.wildcard_domain_ip = wildcard_domain_ip
+
+    def _fetch_domains(self):
+        base_len = len(self.base_domain)
+        for item in self.domain_info_list:
+            if not item.domain.endswith("." + self.base_domain):
+                continue
+
+            if utils.check_domain_black("a." + item.domain):
+                continue
+
+            self.domains.append(item.domain)
+            subdomain = item.domain[:-(base_len + 1)]
+            if "." in subdomain:
+                self.subdomains.append(subdomain.split(".")[-1])
+
+        random.shuffle(self.subdomains)
+
+        most_cnt = 50
+        if len(self.domains) < 1000:
+            most_cnt = 30
+            self.dicts.extend(self._load_dict())
+
+        sub_dicts = list(dict(Counter(self.subdomains).most_common(most_cnt)).keys())
+        self.dicts.extend(sub_dicts)
+        self.dicts = list(set(self.dicts))
+
+    def _load_dict(self):
+        """加载内部字典。"""
+        words = set()
+        for value in utils.load_file(Config.altdns_dict_path):
+            value = value.strip()
+            if value:
+                words.add(value)
+        return list(words)
+
+    def run(self):
+        started_at = time.time()
+        self._fetch_domains()
+
+        logger.info("start {} AltDNS {}  dict {}".format(
+            self.base_domain, len(self.domains), len(self.dicts)))
+        result = services.alt_dns(
+            self.domains,
+            self.base_domain,
+            self.dicts,
+            wildcard_domain_ip=self.wildcard_domain_ip,
+        )
+        logger.info("end AltDNS result {}, elapse {}".format(
+            len(result), time.time() - started_at))
+        return result
+
+
+def alt_dns(domain_info_list, base_domain, wildcard_domain_ip=None):
+    """保留历史模块入口，实际实现归属 discovery service。"""
+    return AltDNS(
+        domain_info_list,
+        base_domain,
+        wildcard_domain_ip=wildcard_domain_ip,
+    ).run()
 
 def _run_measured_stage(task, name, func):
     """阶段统一经执行器产出独立 metrics（报告§4：禁止手工稀疏指标）。
@@ -91,7 +165,62 @@ class DomainDiscoveryStageService(object):
             _run_measured_stage(task, "arl_search", _domain_count_stage(task, task.arl_search))
 
         if task.options.get("alt_dns"):
-            _run_measured_stage(task, "alt_dns", _domain_count_stage(task, task.alt_dns))
+            _run_measured_stage(task, "alt_dns", _domain_count_stage(task, self.run_alt_dns))
+
+    def run_alt_dns_current(self):
+        task = self.task
+        primary_domain = utils.get_fld(task.base_domain)
+        if primary_domain == task.base_domain or primary_domain == "":
+            return []
+
+        fake_info = modules.DomainInfo(
+            domain=task.base_domain,
+            type="CNAME",
+            record=[],
+            ips=[],
+        )
+        logger.info("alt_dns_current {}, primary_domain:{}".format(
+            task.base_domain, primary_domain))
+        return alt_dns(
+            [fake_info],
+            primary_domain,
+            wildcard_domain_ip=task.not_found_domain_ips,
+        )
+
+    def run_alt_dns(self):
+        task = self.task
+        if task.task_tag == "monitor" and len(task.domain_info_list) >= 800:
+            logger.info("skip alt_dns on monitor {}".format(task.base_domain))
+            return
+
+        if len(task.domain_info_list) > 300 and len(task.not_found_domain_ips) > 0:
+            logger.warning("{} 域名泛解析, 当前子域名{}, 大于300, 不进行alt_dns".format(
+                task.base_domain, len(task.domain_info_list)))
+            return
+
+        alt_dns_current_out = self.run_alt_dns_current()
+        alt_dns_out = alt_dns(
+            task.domain_info_list,
+            task.base_domain,
+            wildcard_domain_ip=task.not_found_domain_ips,
+        )
+        alt_dns_out.extend(alt_dns_current_out)
+        if len(alt_dns_out) <= 0:
+            return
+
+        task.add_domain_source_names(alt_dns_out, CollectSource.ALTDNS)
+        alt_domain_info_list = task.build_domain_info(alt_dns_out)
+        if task.task_tag == "task":
+            alt_domain_info_list = task.clear_domain_info_by_record(alt_domain_info_list)
+            logger.info("alt_dns real result:{}".format(len(alt_domain_info_list)))
+            if len(alt_domain_info_list) > 0:
+                task.save_domain_info_list(
+                    alt_domain_info_list,
+                    source=CollectSource.ALTDNS,
+                )
+
+        task.add_domain_source_map(alt_domain_info_list, CollectSource.ALTDNS)
+        task.domain_info_list.extend(alt_domain_info_list)
 
     @staticmethod
     def _chunk_list(items, chunk_size):

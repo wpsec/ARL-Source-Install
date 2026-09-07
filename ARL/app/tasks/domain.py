@@ -55,10 +55,12 @@ from app.services.task_orchestrator import DomainTaskOrchestrator
 from app.services.task_pipeline import TaskPipeline
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services.domain_stage_services import (
+    AltDNS,
     DomainDiscoveryStageService,
     DomainNetworkStageService,
     DomainPostProcessStageService,
     DomainSiteStageService,
+    alt_dns,
 )
 
 logger = utils.get_logger()
@@ -500,68 +502,6 @@ class FindSite(object):
 '''
 
 
-class AltDNS(object):
-    def __init__(self, domain_info_list, base_domain, wildcard_domain_ip=None):
-        self.domain_info_list = domain_info_list
-        self.base_domain = utils.normalize_domain(base_domain) or str(base_domain or "").strip().lower().rstrip(".")
-        self.domains = []
-        self.subdomains = []
-        inner_dicts = "test adm admin api app beta demo dev front int internal intra ops pre pro prod qa sit staff stage test uat"
-        self.dicts = inner_dicts.split()
-        self.wildcard_domain_ip = wildcard_domain_ip
-
-    def _fetch_domains(self):
-        base_len = len(self.base_domain)
-        for item in self.domain_info_list:
-            if not item.domain.endswith("." + self.base_domain):
-                continue
-
-            if utils.check_domain_black("a." + item.domain):
-                continue
-
-            self.domains.append(item.domain)
-            subdomain = item.domain[:- (base_len + 1)]
-            if "." in subdomain:
-                self.subdomains.append(subdomain.split(".")[-1])
-
-        random.shuffle(self.subdomains)
-
-        most_cnt = 50
-        if len(self.domains) < 1000:
-            most_cnt = 30
-            self.dicts.extend(self._load_dict())
-
-        sub_dicts = list(dict(Counter(self.subdomains).most_common(most_cnt)).keys())
-        self.dicts.extend(sub_dicts)
-
-        self.dicts = list(set(self.dicts))
-
-    def _load_dict(self):
-        """加载内部字典"""
-        d = set()
-        for x in utils.load_file(Config.altdns_dict_path):
-            x = x.strip()
-            if x:
-                d.add(x)
-
-        return list(d)
-
-    def run(self):
-        t1 = time.time()
-        self._fetch_domains()
-
-        logger.info("start {} AltDNS {}  dict {}".format(self.base_domain,
-                                                         len(self.domains), len(self.dicts)))
-
-        out = services.alt_dns(self.domains, self.base_domain,
-                               self.dicts, wildcard_domain_ip=self.wildcard_domain_ip)
-
-        elapse = time.time() - t1
-        logger.info("end AltDNS result {}, elapse {}".format(len(out), elapse))
-
-        return out
-
-
 def domain_brute(base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
     if wildcard_domain_ip is None:
         wildcard_domain_ip = []
@@ -578,11 +518,6 @@ def scan_port(domain_info_list, option=None):
 def find_site(ip_info_list):
     f = FindSite(ip_info_list)
     return f.run()
-
-
-def alt_dns(domain_info_list, base_domain, wildcard_domain_ip=None):
-    a = AltDNS(domain_info_list, base_domain, wildcard_domain_ip=wildcard_domain_ip)
-    return a.run()
 
 
 def ssl_cert(ip_info_list, base_domain):
@@ -1239,55 +1174,10 @@ class DomainTask(CommonTask):
         return domain_info_list
 
     def alt_dns_current(self):
-        primary_domain = utils.get_fld(self.base_domain)
-        # 当前下发的是主域名，就跳过
-        if primary_domain == self.base_domain or primary_domain == "":
-            return []
-        fake = {
-            "domain": self.base_domain,
-            "type": "CNAME",
-            "record": [],
-            "ips": []
-        }
-        fake_info = modules.DomainInfo(**fake)
-
-        logger.info("alt_dns_current {}, primary_domain:{}".format(self.base_domain, primary_domain))
-        data = alt_dns([fake_info], primary_domain, wildcard_domain_ip=self.not_found_domain_ips)
-
-        return data
+        return DomainDiscoveryStageService(self).run_alt_dns_current()
 
     def alt_dns(self):
-        if self.task_tag == "monitor" and len(self.domain_info_list) >= 800:
-            logger.info("skip alt_dns on monitor {}".format(self.base_domain))
-            return
-
-        if len(self.domain_info_list) > 300 and len(self.not_found_domain_ips) > 0:
-            logger.warning("{} 域名泛解析, 当前子域名{}, 大于300, 不进行alt_dns".format(
-                self.base_domain, len(self.domain_info_list)))
-            return
-
-        alt_dns_current_out = self.alt_dns_current()
-
-        alt_dns_out = alt_dns(self.domain_info_list, self.base_domain, wildcard_domain_ip=self.not_found_domain_ips)
-
-        alt_dns_out.extend(alt_dns_current_out)
-        # 没有结果，直接返回
-        if len(alt_dns_out) <= 0:
-            return
-
-        self.add_domain_source_names(alt_dns_out, CollectSource.ALTDNS)
-        alt_domain_info_list = self.build_domain_info(alt_dns_out)
-        if self.task_tag == "task":
-            alt_domain_info_list = self.clear_domain_info_by_record(alt_domain_info_list)
-
-            logger.info("alt_dns real result:{}".format(len(alt_domain_info_list)))
-
-            if len(alt_domain_info_list) > 0:
-                self.save_domain_info_list(alt_domain_info_list,
-                                           source=CollectSource.ALTDNS)
-
-        self.add_domain_source_map(alt_domain_info_list, CollectSource.ALTDNS)
-        self.domain_info_list.extend(alt_domain_info_list)
+        return DomainDiscoveryStageService(self).run_alt_dns()
 
     def port_scan(self):
         ip_info_list = scan_port(self.domain_info_list, self.scan_port_option)

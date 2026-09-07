@@ -11,6 +11,7 @@ from test._api_unified_bootstrap import load_modules
 _captured = load_modules("app.services.domain_stage_services")
 _domain_stage_services = _captured["app.services.domain_stage_services"]
 Config = _domain_stage_services.Config
+CollectSource = _domain_stage_services.CollectSource
 DomainDiscoveryStageService = _domain_stage_services.DomainDiscoveryStageService
 DomainNetworkStageService = _domain_stage_services.DomainNetworkStageService
 DomainPostProcessStageService = _domain_stage_services.DomainPostProcessStageService
@@ -33,6 +34,7 @@ class _Task(object):
         self.task_tag = "monitor"
         self.options = options or {}
         self.domain_info_list = []
+        self.not_found_domain_ips = []
         self.discovery_context = None
         self._last_dns_query_metrics = {}
         self.executor = _Executor()
@@ -110,6 +112,10 @@ class TestDomainStageServices(unittest.TestCase):
             DomainDiscoveryStageService,
             "run_dns_query_plugin",
             side_effect=lambda: task.calls.append("dns_query_plugin"),
+        ), patch.object(
+            DomainDiscoveryStageService,
+            "run_alt_dns",
+            side_effect=lambda: task.calls.append("alt_dns"),
         ):
             DomainDiscoveryStageService(task).run()
 
@@ -124,6 +130,34 @@ class TestDomainStageServices(unittest.TestCase):
         self.assertEqual(["domain_brute", "dns_query_plugin", "arl_search", "alt_dns"], [
             item[1] for item in task.calls if isinstance(item, tuple) and item[0] == "service"
         ])
+
+    def test_alt_dns_service_preserves_result_persistence_and_sources(self):
+        task = _Task({"alt_dns": True})
+        task.task_tag = "task"
+        task.domain_info_list = ["seed"]
+        task.build_domain_info = lambda values: ["new-info"]
+        task.clear_domain_info_by_record = lambda values: values
+
+        with patch.object(
+            _domain_stage_services,
+            "alt_dns",
+            return_value=[{"domain": "new.example.com"}],
+        ):
+            DomainDiscoveryStageService(task).run_alt_dns()
+
+        self.assertEqual(["seed", "new-info"], task.domain_info_list)
+        self.assertEqual(
+            [("source_names", CollectSource.ALTDNS)],
+            [item for item in task.calls if item[0] == "source_names"],
+        )
+        self.assertEqual(
+            [("save_domain", CollectSource.ALTDNS)],
+            [item for item in task.calls if item[0] == "save_domain"],
+        )
+        self.assertEqual(
+            [("source", CollectSource.ALTDNS)],
+            [item for item in task.calls if item[0] == "source"],
+        )
 
     def test_dns_query_service_preserves_metrics_sources_and_candidates(self):
         task = _Task({"dns_query_plugin": True})
