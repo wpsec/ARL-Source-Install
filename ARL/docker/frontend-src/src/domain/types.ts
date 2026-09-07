@@ -58,8 +58,6 @@ export type ModuleConfig = {
 };
 
 export type ModuleListCacheEntry = {
-  rows: any[];
-  total: number;
   page: number;
   size: number;
   order: string;

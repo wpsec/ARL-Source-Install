@@ -196,6 +196,7 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成]（2026-09-07）ApiConsole 与 DingTalk 集成页面补齐 mutation 成功后的查询缓存失效、敏感配置 reveal 不误触发重取及 token 查询 key 跨实例隔离回归覆盖；提交 `8f1e58e1`。
 - [已完成]（2026-09-07）配置控制台批次继续收口：`ApiConsoleView`、`DingtalkIntegrationView`、`AiConsoleView` 的配置路径、更新时间、运行状态和 Provider presets 改为 query 快照派生；保存/SOP 上传成功后先合并响应到缓存再失效重取，敏感 reveal 继续与脱敏查询缓存隔离。三页配置查询重复本地镜像已清理；用户并行测试改动待合入。
 - [已完成]（2026-09-07）`TableModuleView` 主列表读取切换为 `useQuery`，保留动作/分页的命令式刷新兼容入口，并补充同一 `QueryClient` 重挂载缓存复用回归；页面级测试 6 项通过，提交 `cf0e65ac`。
+- [已完成]（2026-09-07）`TableModuleView` 主列表进一步收口：`rows/total/loading` 直接派生当前列表 query 快照，模块缓存仅保留分页、筛选、排序和滚动位置 UI 状态；移除列表同步 effect 与本地数据镜像，`loadRows` 继续复用统一 query key。用户并行测试改动待合入。
 - [已完成]（2026-09-07）`ActionDialog` 的字典、策略和 PoC 选项改为直接派生 React Query data，仅保留表单默认值补齐副作用；TypeScript 检查和弹窗测试 3 项通过，提交 `958caa5f`。
 - [已完成]（2026-09-07）`DashboardView` 的聚合快照、资产趋势、最近任务和日志展示改为直接派生 React Query data，保留日志暂停与手动刷新交互；TypeScript 检查和现有 Dashboard 测试 5 项通过，提交 `38c6c97c`。
 - [已完成]（2026-09-07）`AiConsoleView` 的用量统计、场景选项、日志列表、总数、更新时间和错误信息改为直接派生 React Query data；`DingtalkIntegrationView` 的工作区/节点按需读取改为 React Query mutation，保留成功提示与调试结果回写。对应页面测试 4 项、6 项通过，提交 `b0e27e3f`、`8cc11172`。

@@ -101,14 +101,12 @@ export function TableModuleView({
   /** 全局动作成功后的列表失效信号（App/MainShell 递增），变化即重跑激活取数。 */
   refreshSignal?: number;
 }) {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [manualLoading, setManualLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(() => getDefaultModulePageSize(module.id, externalFilters));
   const [order, setOrder] = useState(module.defaultOrder || '');
-  const [total, setTotal] = useState(0);
   const [quickFilter, setQuickFilter] = useState('');
   const [searchForm, setSearchForm] = useState<JsonValue>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -236,6 +234,106 @@ export function TableModuleView({
       return next;
     });
   };
+  const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
+  const buildFilters = useCallback((): JsonValue => {
+    const filters: JsonValue = {};
+    if (hasAdvancedSearch) {
+      (module.searchFields || []).forEach((field) => {
+        if (field.key === 'ai_analysis') return;
+        const raw = searchForm?.[field.key];
+        if (raw === undefined || raw === null) return;
+        const text = String(raw).trim();
+        if (!text) return;
+        if (field.inputType === 'number') {
+          const parsed = Number(text);
+          if (Number.isFinite(parsed)) {
+            filters[field.key] = parsed;
+          }
+          return;
+        }
+        filters[field.key] = text;
+      });
+      return { ...activeExternalFilters, ...filters };
+    }
+    if (module.quickFilterKey && quickFilter.trim()) {
+      filters[module.quickFilterKey] = quickFilter.trim();
+    }
+    return { ...activeExternalFilters, ...filters };
+  }, [activeExternalFilters, hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
+
+  const buildModuleListQueryKey = useCallback(
+    (nextPage: number, nextSize: number, nextOrder: string, filters: JsonValue) => [
+      'module-list',
+      token,
+      module.id,
+      nextPage,
+      nextSize,
+      String(nextOrder || '').trim(),
+      buildFilterSignature(filters),
+    ] as const,
+    [module.id, token],
+  );
+  const fetchModuleList = useCallback(async ({
+    nextPage,
+    nextSize,
+    nextOrder,
+    filters,
+    forceRefresh = false,
+  }: {
+    nextPage: number;
+    nextSize: number;
+    nextOrder: string;
+    filters: JsonValue;
+    forceRefresh?: boolean;
+  }) => {
+    if (!module.listPath) return { items: [], total: 0 };
+    const query: JsonValue = {
+      page: nextPage,
+      size: nextSize,
+      ...filters,
+    };
+    const orderValue = String(nextOrder || '').trim();
+    if (orderValue) {
+      query.order = orderValue;
+    } else if (module.defaultOrder && !('order' in query)) {
+      query.order = module.defaultOrder;
+    }
+    if (forceRefresh) {
+      query._refresh = '1';
+    }
+    return normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query }));
+  }, [module.defaultOrder, module.listPath, token]);
+
+  const listFilters = useMemo(() => buildFilters(), [buildFilters]);
+  const listOrderValue = String(order || '').trim();
+  const listQueryKey = buildModuleListQueryKey(page, size, listOrderValue, listFilters);
+  const cachedListSnapshot = queryClient.getQueryData<{ items: any[]; total: number }>(listQueryKey);
+  const hasLiveTaskRows = useMemo(
+    () =>
+      module.id === 'task' &&
+      (cachedListSnapshot?.items || []).some((row: any) => {
+        const status = normalizeTaskStatus(row?.status);
+        return status === 'running' || status === 'waiting';
+      }),
+    [cachedListSnapshot, module.id],
+  );
+  const moduleListQuery = useQuery({
+    queryKey: listQueryKey,
+    enabled: Boolean(hasList && (shouldInitialLoad || hasLiveTaskRows)),
+    staleTime: LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
+    refetchInterval: hasLiveTaskRows ? 15_000 : false,
+    retry: 0,
+    queryFn: () => fetchModuleList({
+      nextPage: page,
+      nextSize: size,
+      nextOrder: listOrderValue,
+      filters: listFilters,
+    }),
+  });
+  const rows = moduleListQuery.data?.items || [];
+  const total = Number(moduleListQuery.data?.total || 0);
+  const loading = manualLoading || moduleListQuery.isFetching;
+
   const displayRows = useMemo(() => {
     const filterableModule = isAiDenoiseModule(module.id);
     const preferredRowIdKey = module.rowIdKey || '_id';
@@ -342,8 +440,6 @@ export function TableModuleView({
     page,
     rows,
   ]);
-  const [shouldInitialLoad, setShouldInitialLoad] = useState(false);
-
   const buildUniqueTextOptions = useCallback((values: any[]): Array<{ label: string; value: string }> => {
     const uniqueValues = Array.from(
       new Set(
@@ -449,8 +545,6 @@ export function TableModuleView({
     const cachedState = moduleListStateCacheRef.current[moduleCacheKey];
     const shouldResetScrollPosition = Number(scrollResetToken || 0) > 0;
     if (cachedState) {
-      setRows(cachedState.rows || []);
-      setTotal(Number(cachedState.total || 0));
       setPage(Math.max(1, Number(cachedState.page || 1)));
       setSize(Math.max(1, Number(cachedState.size || defaultSize)));
       setOrder(String(cachedState.order || module.defaultOrder || ''));
@@ -465,8 +559,6 @@ export function TableModuleView({
             ? Math.max(0, Number(cachedState.scrollTop))
             : null);
     } else {
-      setRows([]);
-      setTotal(0);
       setPage(1);
       setSize(defaultSize);
       setOrder(module.defaultOrder || '');
@@ -475,7 +567,6 @@ export function TableModuleView({
       setShouldInitialLoad(Boolean(hasList));
       pendingRestoreScrollTopRef.current = shouldResetScrollPosition ? 0 : null;
     }
-    setLoading(false);
     setSelectedIds([]);
   }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, refreshSignal, scrollResetToken]);
 
@@ -483,8 +574,6 @@ export function TableModuleView({
     if (!hasList) return;
     const existingScrollTop = moduleListStateCacheRef.current[moduleCacheKey]?.scrollTop;
     moduleListStateCacheRef.current[moduleCacheKey] = {
-      rows,
-      total,
       page,
       size,
       order,
@@ -492,7 +581,7 @@ export function TableModuleView({
       searchForm: searchForm ? deepClone(searchForm) : {},
       scrollTop: Number.isFinite(Number(existingScrollTop)) ? Number(existingScrollTop) : 0,
     };
-  }, [hasList, moduleCacheKey, order, page, quickFilter, rows, searchForm, size, total]);
+  }, [hasList, moduleCacheKey, order, page, quickFilter, searchForm, size]);
 
   useEffect(() => {
     return () => {
@@ -500,8 +589,6 @@ export function TableModuleView({
       const container = resolveScrollableContainer();
       if (!container) return;
       const currentState = moduleListStateCacheRef.current[moduleCacheKey] || {
-        rows,
-        total,
         page,
         size,
         order,
@@ -513,7 +600,7 @@ export function TableModuleView({
         scrollTop: Math.max(0, Number(container.scrollTop || 0)),
       };
     };
-  }, [hasList, moduleCacheKey, order, page, quickFilter, resolveScrollableContainer, rows, searchForm, size, total]);
+  }, [hasList, moduleCacheKey, order, page, quickFilter, resolveScrollableContainer, searchForm, size]);
 
   useEffect(() => {
     setRiskDialogOpen(false);
@@ -812,32 +899,6 @@ export function TableModuleView({
     return [];
   };
 
-  const buildFilters = useCallback((): JsonValue => {
-    const filters: JsonValue = {};
-    if (hasAdvancedSearch) {
-      (module.searchFields || []).forEach((field) => {
-        if (field.key === 'ai_analysis') return;
-        const raw = searchForm?.[field.key];
-        if (raw === undefined || raw === null) return;
-        const text = String(raw).trim();
-        if (!text) return;
-        if (field.inputType === 'number') {
-          const parsed = Number(text);
-          if (Number.isFinite(parsed)) {
-            filters[field.key] = parsed;
-          }
-          return;
-        }
-        filters[field.key] = text;
-      });
-      return { ...activeExternalFilters, ...filters };
-    }
-    if (module.quickFilterKey && quickFilter.trim()) {
-      filters[module.quickFilterKey] = quickFilter.trim();
-    }
-    return { ...activeExternalFilters, ...filters };
-  }, [activeExternalFilters, hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
-
   const clearSearchFilters = useCallback(() => {
     if (hasAdvancedSearch) {
       const resetForm: JsonValue = {};
@@ -851,91 +912,16 @@ export function TableModuleView({
     setPage(1);
   }, [hasAdvancedSearch, module.searchFields]);
 
-  const buildModuleListQueryKey = useCallback(
-    (nextPage: number, nextSize: number, nextOrder: string, filters: JsonValue) => [
-      'module-list',
-      token,
-      module.id,
-      nextPage,
-      nextSize,
-      String(nextOrder || '').trim(),
-      buildFilterSignature(filters),
-    ] as const,
-    [module.id, token],
-  );
-  const fetchModuleList = useCallback(async ({
-    nextPage,
-    nextSize,
-    nextOrder,
-    filters,
-    forceRefresh = false,
-  }: {
-    nextPage: number;
-    nextSize: number;
-    nextOrder: string;
-    filters: JsonValue;
-    forceRefresh?: boolean;
-  }) => {
-    if (!module.listPath) return { items: [], total: 0 };
-    const query: JsonValue = {
-      page: nextPage,
-      size: nextSize,
-      ...filters,
-    };
-    const orderValue = String(nextOrder || '').trim();
-    if (orderValue) {
-      query.order = orderValue;
-    } else if (module.defaultOrder && !('order' in query)) {
-      query.order = module.defaultOrder;
-    }
-    if (forceRefresh) {
-      query._refresh = '1';
-    }
-    return normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query }));
-  }, [module.defaultOrder, module.listPath, token]);
-
-  // 主列表由 React Query 负责生命周期；旧 loadRows 仍作为动作/分页的兼容命令式入口。
-  const hasLiveTaskRows = useMemo(
-    () =>
-      module.id === 'task' &&
-      rows.some((row: any) => {
-        const status = normalizeTaskStatus(row?.status);
-        return status === 'running' || status === 'waiting';
-      }),
-    [module.id, rows],
-  );
-  const listFilters = useMemo(() => buildFilters(), [buildFilters]);
-  const listOrderValue = String(order || '').trim();
-  const listQueryKey = buildModuleListQueryKey(page, size, listOrderValue, listFilters);
-  const moduleListQuery = useQuery({
-    queryKey: listQueryKey,
-    enabled: Boolean(hasList && (shouldInitialLoad || hasLiveTaskRows)),
-    staleTime: LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
-    refetchInterval: hasLiveTaskRows ? 15_000 : false,
-    retry: 0,
-    queryFn: () => fetchModuleList({
-      nextPage: page,
-      nextSize: size,
-      nextOrder: listOrderValue,
-      filters: listFilters,
-    }),
-  });
-
   useEffect(() => {
     if (!hasList || (!shouldInitialLoad && !hasLiveTaskRows)) return;
     if (moduleListQuery.isFetching) {
-      setLoading(true);
       return;
     }
 
     if (moduleListQuery.error) {
       setError(moduleListQuery.error instanceof Error ? moduleListQuery.error.message : '加载失败');
-      setRows([]);
-      setTotal(0);
     } else if (moduleListQuery.data) {
       setError('');
-      setRows(moduleListQuery.data.items);
-      setTotal(moduleListQuery.data.total);
       setSelectedIds([]);
       if (isTaskDetailModule) {
         taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
@@ -945,7 +931,6 @@ export function TableModuleView({
       }
     }
 
-    setLoading(false);
     setShouldInitialLoad(false);
   }, [
     hasList,
@@ -973,7 +958,7 @@ export function TableModuleView({
     latestLoadRowsRequestIdRef.current = requestId;
     const requestModuleCacheKey = moduleCacheKey;
 
-    setLoading(true);
+    setManualLoading(true);
     setError('');
     setSuccess('');
     try {
@@ -1006,8 +991,6 @@ export function TableModuleView({
         // 忽略旧模块/旧筛选条件/旧请求的迟到响应，避免列表串数据。
         return;
       }
-      setRows(normalized.items);
-      setTotal(normalized.total);
       setSelectedIds([]);
       if (isTaskDetailModule) {
         const currentTotal = Number(normalized.total || 0);
@@ -1029,14 +1012,12 @@ export function TableModuleView({
         return;
       }
       setError(err?.message || '加载失败');
-      setRows([]);
-      setTotal(0);
     } finally {
       if (
         requestId === latestLoadRowsRequestIdRef.current
         && requestModuleCacheKey === activeModuleCacheKeyRef.current
       ) {
-        setLoading(false);
+        setManualLoading(false);
       }
     }
   }, [
