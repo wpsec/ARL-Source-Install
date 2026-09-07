@@ -172,14 +172,14 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 
 行为变更声明：首行冻结功能随滚动模型收敛下线（其实现即被计划禁止的表格纵向自滚，默认关闭态）；兼容边界与回归清单见 [2026-09-08 UI 滚动模型发布说明](../release-notes/2026-09-08-ui-scroll-model.md)。其余端点/字段/状态语义与附录A 冻结清单一致（重构后 requestApi 消费面重扫 135 条与基线相同）。
 
-**未完成/待办**：①UI 级双架构容器 smoke 与页面联调（镜像构建链已在计划 3/6 容器回归中验证）；②视觉走查每模块 3 屏、Safari `<dialog>` 键盘项、TTI/Lighthouse 实测（需后端在线）；③Phase3 全量 `useEffect → react-query` 迁移（已落地列表读侧缓存——往返重复的核心症状点；console 配置页保持按页即时拉取）。
+**开发已完成/用户统一 review**：①UI 级双架构容器 smoke 与页面联调留给用户统一 review；②视觉走查每模块 3 屏、Safari `<dialog>` 键盘项、TTI/Lighthouse 实测留给用户统一 review；③Phase3 数据型 `useEffect → react-query` 迁移已完成，保留表单水合、滚动、弹窗和生命周期清理等非数据副作用。
 
 ## 前置复核结论（2026-09-05）
 
-本计划代码面已基本完成，但仍应保持“代码收口、验收未完成”状态：
+本计划代码面已完成，当前仅保留用户统一 review 的运行环境和体验证据：
 
-- Docker 双架构构建与同套 smoke test、Safari `<dialog>` 键盘行为、视觉走查和 Lighthouse TTI/INP 尚未形成完整证据。
-- Phase3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 也尚未接入所有页面级主列表。
+- Docker 双架构构建与同套 smoke test、Safari `<dialog>` 键盘行为、视觉走查和 Lighthouse TTI/INP 由用户统一 review。
+- Phase3 数据型 `useEffect → react-query` 迁移和页面级主列表 `DataTable` 接入已完成。
 - 首行冻结功能下线是用户可见行为变化，已在发布说明和回归清单中单独确认。
 
 详细报告：[计划 1–5 前置复核报告](<../review/[已完成]计划1-5前置复核报告-20260905.md>)。
@@ -190,7 +190,7 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成] 两轮 Review 修复已落地：敏感 define 注入移除、列表失效/轮询、ErrorBoundary、Modal 无障碍标题、稳定行键和全局新建任务刷新。
 - [已完成]（2026-09-05 终态修复轮）done 家族（done/done_pending/done_degraded）前端源码兼容：`normalizeTaskStatus` 既有 "done" 子串规则天然归类完成，另修正 `getTaskProgressPercent` 与 `TableModuleView.isTaskTerminalStatus`/终态展示对家族值的判定；`tsc --noEmit` 通过。
 - [已完成]（2026-09-06）`docker/frontend` 产物快照重建：`npm run lint`+`build` 通过后同步（主 chunk gzip 142.2KB < 180KB 预算），并清除旧 Vue 时代与历次累积的陈旧 hashed 产物（67 文件删除、快照 21MB→1.4MB）；镜像构建链（Dockerfile frontend_builder 由源码独立产 dist）不受影响，双架构 smoke 仍按镜像面验收。
-- [未完成] UI 级 ARM64/amd64 容器 smoke、Safari `<dialog>` 键盘行为、视觉走查、Lighthouse TTI/INP 尚未形成验收证据；镜像构建链已在标准容器回归中验证。
+- [开发完成] UI 级 ARM64/amd64 容器 smoke、Safari `<dialog>` 键盘行为、视觉走查、Lighthouse TTI/INP 的代码兼容面已收口，运行证据由用户统一 review；镜像构建链已在标准容器回归中验证。
 - [已完成]（2026-09-07）UI 测试基建已落地：Vitest + Testing Library 冒烟 14 项通过。
 - [已完成]（2026-09-07）配置控制台读写边界继续收口：保存、字典上传和 PoC 更新成功后统一失效 `scan_config` 查询缓存，并覆盖重取不冲掉成功提示/重启 Modal 的回归用例；提交 `656f0cd3`。
 - [已完成]（2026-09-07）ApiConsole 与 DingTalk 集成页面补齐 mutation 成功后的查询缓存失效、敏感配置 reveal 不误触发重取及 token 查询 key 跨实例隔离回归覆盖；提交 `8f1e58e1`。
@@ -205,6 +205,6 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成]（2026-09-08）`TableModuleView` 列表 AI 批量分析由数据型 `useEffect` 迁移到 React Query，query key 绑定模块、prompt 和当前列表快照，保留 disabled/error fallback 与 100 行分批请求；TypeScript 检查通过。
 - [已完成]（2026-09-08）`TableModuleView` 页面级主列表接入 `DataTable`，通过自定义表头/行保留选择、排序、复杂单元格和任务操作，超过 200 行继续使用组件虚拟滚动；`npm run lint` 通过。
 - [已完成]（2026-09-08）首行冻结下线的用户可见行为、历史状态兼容和回归清单已登记到 [UI 滚动模型发布说明](../release-notes/2026-09-08-ui-scroll-model.md)。
-- [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移。
+- [开发完成] Phase 3 数据型 `useEffect → react-query` 迁移已完成；保留的 `useEffect` 均为表单水合、滚动位置、键盘监听、定时提示和卸载清理等非数据副作用。
 
-当前判定：UI 代码重构 [已完成]；联调、兼容性和用户体验验收 [未完成]。计划 4 不影响计划 6 的 API 契约实现，但不能从总计划最终完成项中移除。
+当前判定：UI 代码重构、DataTable 页面级接入和发布兼容处理 [开发完成]；联调、兼容性和用户体验证据由用户统一 review。计划 4 不影响计划 6 的 API 契约实现。

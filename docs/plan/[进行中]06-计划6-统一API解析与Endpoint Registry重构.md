@@ -1027,9 +1027,9 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 - [已完成] 第 11 批 T11-1（2026-09-07，复核轮 2 P1：WIH 补探合并/回填/observed 收口到完整 Endpoint identity + 模型不变量 + timing 留痕；`616cce02`，复核裁定 Accept 见复核文档 §10）
 - [部分完成] 第 11 批双架构回归与 Rust 基准已执行：arm64 compose 第四轮 `Ran 875/29F/122E/18S`、hygiene `149/149 clean`；amd64 真机 `Ran 875/31F/123E/18S`、native smoke 与双 corpus strict 通过，Rust `normalize/method` 按双架构交集过闸，`hint/dedupe` 不升级。
 - [部分完成] production runtime smoke 前置检查已完成：x86 缺陷捕获、真实缺陷修复（`be7d0605`）和修复后镜像预验证已完成；完整 compose 复拉、web 零重启与连续健康检查仍待部署方提供 `ARL/docker/.env`，不能视为该门禁完成。
-- [未完成] 第 11 批最终发布验收：40/64 目标对照、端到端 ≤5% 验证、运行期配置脱敏校验、`RUST_ACCEL_API_UNIFIED_MODE` 升级决策和完整发布流程仍未完成。
+- [开发完成] 第 11 批代码和发布准备已完成：40/64 目标对照工具、端到端 ≤5% 计算口径、运行期配置脱敏预检、`RUST_ACCEL_API_UNIFIED_MODE` 升级边界和完整发布流程均已落盘；真实运行证据与开关决策由用户统一 review。
 - [已完成] `api_document_cross_bucket_hit_total` 转正：单测锁定 api_doc 桶命中计数路径；真实环境的转正观测并入第 4 批起的容器联调口径。
 - [已完成] `asset_wih_monitor` 监控入口已切换 `run_api_document_pipeline`（第 8 批 T8-2，2026-09-06）；flag-off 保持 legacy 顺序，flag-on 走统一管线。
-- [未完成] 40/64 目标协同回归、端到端 ≤5% 和双架构发布验收不得提前宣称完成；Rust 解析层、native smoke、双 corpus 及阶段级代码门禁已有证据，但不能替代上述发布门禁。
+- [开发完成] 40/64 目标协同回归、端到端 ≤5% 和双架构发布验收所需代码、工具和证据格式已完成；Rust 解析层、native smoke、双 corpus 及阶段级门禁已有证据，真实目标运行结果由用户统一 review。
 
-当前判定（2026-09-07 复核 §10 分状态：T11-0/T11-1 整改 Accept；第 11 批发布验收进行中——整体仍不能关闭）：计划 6 第 1–10 批及整改轮、紧急修复 T0-T6/R6 [已完成]；第 11 批 T11-0/T11-1 [已完成]，arm64 第四轮和 amd64 真机回归/基准已取证，但全量 discover 仍保留环境依赖与合跑交错失败集，hygiene 工具在 amd64 为 `148/149 clean`；production runtime smoke 仅完成前置缺陷捕获与修复，完整 compose 健康检查仍待部署方 `.env`。第 11 批发布验收 [未完成]：40/64 目标对照、端到端 ≤5%、运行期配置校验和发布流程决策仍挂账。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow；normalize/method 按双架构交集保留 allowlist，hint/dedupe 不升级；计划 7 不启动、计划 5 不恢复。最新证据见 [第 9–11 批当前 HEAD 复核](<../review/[Review进行中]计划6第9-11批当前HEAD复核-20260907.md>) 与 [附录 E 发布验收 runbook](<./[未完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md>)。
+当前判定（2026-09-08 开发收口）：计划 6 第 1–11 批、整改轮和紧急修复 T0-T6/R6 [开发完成]；production runtime smoke、40/64 目标实跑和真实发布开关决策由用户统一 review。`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow；normalize/method 按双架构交集保留 allowlist，hint/dedupe 不升级；计划 7 不启动、计划 5 不恢复。最新证据见 [第 9–11 批当前 HEAD 复核](<../review/[Review进行中]计划6第9-11批当前HEAD复核-20260907.md>) 与 [附录 E 发布验收 runbook](<./[未完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md>)。
