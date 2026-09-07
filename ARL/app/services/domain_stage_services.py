@@ -22,6 +22,7 @@ from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
 from app.utils.log_safety import safe_error_text
 from app.utils.provider_http import stage_execution_context
+from app.repositories import DomainRepository
 
 
 logger = utils.get_logger()
@@ -262,6 +263,120 @@ class DomainDiscoveryStageService(object):
 
     def __init__(self, task):
         self.task = task
+
+    def run_load_saved_domain_info(self):
+        task = self.task
+        if task.domain_info_list:
+            return len(task.domain_info_list)
+
+        restored = []
+        source_map = {}
+        cursor = DomainRepository.find_by_task_id(
+            task.task_id,
+            projection={
+                "domain": 1,
+                "record": 1,
+                "type": 1,
+                "ips": 1,
+                "source": 1,
+                "sources": 1,
+            },
+            batch_size=500,
+        )
+        for item in cursor:
+            domain = utils.normalize_domain(item.get("domain"))
+            if not domain:
+                continue
+            restored.append(modules.DomainInfo(
+                domain=domain,
+                record=item.get("record") or [],
+                type=item.get("type") or "CNAME",
+                ips=item.get("ips") or [],
+            ))
+            sources = item.get("sources")
+            if not isinstance(sources, list):
+                sources = [item.get("source", "")]
+            source_map[domain] = {
+                str(source or "").strip()
+                for source in sources
+                if str(source or "").strip()
+            }
+
+        task.domain_info_list = restored
+        task.domain_source_map.update(source_map)
+        logger.info(
+            "restore domain info for deep scan task_id:{} count:{}".format(
+                task.task_id,
+                len(restored),
+            )
+        )
+        return len(restored)
+
+    def run_seed_base_domain(self):
+        task = self.task
+        base_domain_info = task.build_single_domain_info(task.base_domain)
+        if not base_domain_info:
+            return 0
+        if base_domain_info not in task.domain_info_list:
+            task.domain_info_list.append(base_domain_info)
+        task.add_domain_source_map([base_domain_info], CollectSource.DOMAIN_BRUTE)
+        if task.task_tag == "task":
+            task.save_domain_info_list(
+                [base_domain_info],
+                source=CollectSource.DOMAIN_BRUTE,
+            )
+        return 1
+
+    def run_discovery_preview(self):
+        task = self.task
+        started_at = time.time()
+        preview_ip_count = 0
+        preview_site_count = 0
+        try:
+            task.gen_ipv4_map()
+            preview_ip_count = len(task.ipv4_map)
+            task.save_ip_info()
+
+            preview_sites = services.probe_http(task.domain_info_list)
+            preview_sites = list(dict.fromkeys(
+                str(site).strip()
+                for site in preview_sites
+                if str(site).strip()
+            ))
+            if preview_sites:
+                from app.services.commonTask import WebSiteFetch
+
+                preview_fetch = WebSiteFetch(
+                    task_id=task.task_id,
+                    sites=preview_sites,
+                    options=task.options,
+                    scope_domain=[task.base_domain],
+                )
+                preview_fetch.fetch_site()
+                preview_fetch.save_site_info()
+                preview_site_count = len(preview_fetch.site_info_list)
+            task.update_services("discovery_preview", time.time() - started_at)
+            logger.info(
+                "discovery preview task_id:{} ips:{} sites:{} elapsed:{:.2f}s".format(
+                    task.task_id,
+                    preview_ip_count,
+                    preview_site_count,
+                    time.time() - started_at,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "discovery preview degraded task_id:{} ips:{} sites:{} error:{}".format(
+                    task.task_id,
+                    preview_ip_count,
+                    preview_site_count,
+                    safe_error_text(exc),
+                )
+            )
+            task.update_services(
+                "discovery_preview_degraded",
+                time.time() - started_at,
+            )
 
     def run_domain_brute(self):
         task = self.task

@@ -1320,102 +1320,13 @@ class DomainTask(CommonTask):
             )
 
     def _load_saved_domain_info(self):
-        """从当前任务已落库的域名记录恢复深度阶段输入，避免重跑发现阶段。"""
-        if self.domain_info_list:
-            return len(self.domain_info_list)
-
-        restored = []
-        source_map = {}
-        cursor = DomainRepository.find_by_task_id(
-            self.task_id,
-            projection={"domain": 1, "record": 1, "type": 1, "ips": 1, "source": 1, "sources": 1},
-            batch_size=500,
-        )
-        for item in cursor:
-            domain = utils.normalize_domain(item.get("domain"))
-            if not domain:
-                continue
-            restored.append(modules.DomainInfo(
-                domain=domain,
-                record=item.get("record") or [],
-                type=item.get("type") or "CNAME",
-                ips=item.get("ips") or [],
-            ))
-            sources = item.get("sources")
-            if not isinstance(sources, list):
-                sources = [item.get("source", "")]
-            source_map[domain] = {
-                str(source or "").strip()
-                for source in sources
-                if str(source or "").strip()
-            }
-
-        self.domain_info_list = restored
-        self.domain_source_map.update(source_map)
-        logger.info(
-            "restore domain info for deep scan task_id:{} count:{}".format(
-                self.task_id, len(restored)
-            )
-        )
-        return len(restored)
+        return DomainDiscoveryStageService(self).run_load_saved_domain_info()
 
     def _seed_base_domain(self):
-        """先落库用户目标，避免字典爆破或 provider 阻塞首批结果。"""
-        base_domain_info = self.build_single_domain_info(self.base_domain)
-        if not base_domain_info:
-            return 0
-        if base_domain_info not in self.domain_info_list:
-            self.domain_info_list.append(base_domain_info)
-        self.add_domain_source_map([base_domain_info], CollectSource.DOMAIN_BRUTE)
-        if self.task_tag == "task":
-            self.save_domain_info_list([base_domain_info], source=CollectSource.DOMAIN_BRUTE)
-        return 1
+        return DomainDiscoveryStageService(self).run_seed_base_domain()
 
     def _run_discovery_preview(self):
-        """为渐进式任务快速落库基础 IP/站点，不改变深度扫描范围。"""
-        started_at = time.time()
-        preview_ip_count = 0
-        preview_site_count = 0
-        try:
-            self.gen_ipv4_map()
-            preview_ip_count = len(self.ipv4_map)
-            self.save_ip_info()
-
-            preview_sites = services.probe_http(self.domain_info_list)
-            preview_sites = list(
-                dict.fromkeys(
-                    str(site).strip()
-                    for site in preview_sites
-                    if str(site).strip()
-                )
-            )
-            if preview_sites:
-                preview_fetch = WebSiteFetch(
-                    task_id=self.task_id,
-                    sites=preview_sites,
-                    options=self.options,
-                    scope_domain=[self.base_domain],
-                )
-                preview_fetch.fetch_site()
-                preview_fetch.save_site_info()
-                preview_site_count = len(preview_fetch.site_info_list)
-            self.update_services("discovery_preview", time.time() - started_at)
-            logger.info(
-                "discovery preview task_id:{} ips:{} sites:{} elapsed:{:.2f}s".format(
-                    self.task_id,
-                    preview_ip_count,
-                    preview_site_count,
-                    time.time() - started_at,
-                )
-            )
-        except Exception as exc:
-            # 预览失败不阻断后续完整深度链路，但必须留下 degraded 证据。
-            logger.warning(
-                "discovery preview degraded task_id:{} ips:{} sites:{} error:{}".format(
-                    self.task_id, preview_ip_count, preview_site_count, exc
-                )
-            )
-            self.update_services("discovery_preview_degraded", time.time() - started_at)
+        return DomainDiscoveryStageService(self).run_discovery_preview()
 
     def run_discovery(self, include_preview=False):
         """先完成可快速落库的基础发现，深度枚举由后续队列继续。"""
