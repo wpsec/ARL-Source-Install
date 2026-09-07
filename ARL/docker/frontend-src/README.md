@@ -10,7 +10,19 @@ npm ci          # 安装依赖（package-lock.json 随代码提交，构建以 c
 npm run dev     # 本地开发（:3000）
 npm run build   # 产出 dist/（容器构建后由 nginx/gunicorn 静态托管）
 npm run lint    # tsc --noEmit 类型检查
+npm test        # vitest：domain 纯函数 + Modal/DataTable 组件契约 + API/React Query 数据流
 ```
+
+## 验收脚本（计划 4，均支持离线诚实 SKIP）
+
+```bash
+bash scripts/ui-smoke.sh          # 构建链 + dist 清单 + amd64/arm64 容器 serve 字节一致
+                                  # + playwright 浏览器弹窗/键盘（未装依赖时 SKIP，不隐式下载）
+bash scripts/lighthouse-ui.sh     # 静态壳 Lighthouse 基线，阈值 lighthouse/budget.json
+                                  # 需外部 lighthouse CLI（npm i -g lighthouse），否则退出码 77=SKIP
+```
+
+证据输出到 `reports/`（已 gitignore）。浏览器阶段在线模式见脚本头注释（`UI_SMOKE_URL`，用于授权环境的 Modal 链路复验）。
 
 ## 目录结构（docs/plan/[进行中]04 计划4 重构后）
 

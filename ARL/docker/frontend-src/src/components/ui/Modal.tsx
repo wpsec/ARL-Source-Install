@@ -36,14 +36,15 @@ export function Modal({
   }, [open]);
 
   // 无障碍名：打开时把 box 内首个标题挂给 dialog，19 个调用点无需逐个传 labelledBy。
+  // 显式传入 labelledBy 代表调用方意图，自动挂载不得覆盖。
   useEffect(() => {
-    if (!open) return;
+    if (!open || labelledBy) return;
     const el = ref.current;
     const heading = boxRef.current?.querySelector('h4, h3, [data-modal-title]');
     if (!el || !heading) return;
     if (!heading.id) heading.id = `modal-title-${Math.random().toString(36).slice(2, 8)}`;
     el.setAttribute('aria-labelledby', heading.id);
-  }, [open]);
+  }, [open, labelledBy]);
 
   return (
     <dialog

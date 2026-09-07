@@ -28,7 +28,7 @@ services:
       - "80:80"
     environment:
       BASIC_AUTH_USERNAME: admin
-      BASIC_AUTH_PASSWORD: mypassword123
+      BASIC_AUTH_PASSWORD: <your-strong-password>  # 自设强密码，勿照抄示例
     depends_on:
       - arl_web
 ```
@@ -45,7 +45,7 @@ services:
 
    ```bash
    BASIC_AUTH_USERNAME=admin
-   BASIC_AUTH_PASSWORD=mypassword123
+   BASIC_AUTH_PASSWORD=<set-me>  # 必填强密码，占位值会被 start.sh 预检拒绝
    ```
 
 3. 在 `docker-compose.yml` 中引用：
@@ -80,7 +80,7 @@ docker-compose up -d
 进入容器并重新生成密码：
 
 ```bash
-docker exec arl_nginx htpasswd -b -B -c /etc/nginx/.htpasswd admin newpassword123
+docker exec -it arl_nginx sh -c 'read -s PW && printf "%s\n" "$PW" | htpasswd -i -B -c /etc/nginx/.htpasswd admin'
 docker exec arl_nginx nginx -s reload
 ```
 
@@ -119,7 +119,7 @@ curl http://your-server-ip/health
 
 ```bash
 # 追加新用户（不加 -c 参数）
-docker exec arl_nginx htpasswd -b -B /etc/nginx/.htpasswd user2 password2
+docker exec -it arl_nginx sh -c 'read -s PW && printf "%s\n" "$PW" | htpasswd -i -B /etc/nginx/.htpasswd <用户名>'
 docker exec arl_nginx nginx -s reload
 ```
 

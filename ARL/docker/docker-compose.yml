@@ -67,6 +67,12 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 凭据单源注入（计划 1 治理）：app/config.py 用这些 env 拼装 Mongo/AMQP 连接串，
+      # config-runtime.yaml 不再存放明文凭据；轮换只改 .env + 按 runbook 同步服务端。
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:?set rabbitmq credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:?set rabbitmq credentials in .env (see .env.example)}
 
   worker_1:
     # 与 web/scheduler 使用同一镜像标签，确保任务进程和 API 运行环境一致
@@ -118,6 +124,11 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 凭据单源注入：与 web 一致（见 web 段注释）
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:?set rabbitmq credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:?set rabbitmq credentials in .env (see .env.example)}
 
   worker_2:
     # 第二个 worker 实例：与 worker_1 共用镜像和队列，承担横向扩展分流
@@ -162,6 +173,11 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 凭据单源注入：与 web 一致（见 web 段注释）
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:?set rabbitmq credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:?set rabbitmq credentials in .env (see .env.example)}
 
   scheduler:
     # 与 build.sh 保持一致，统一使用本地构建镜像标签
@@ -196,6 +212,11 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      # 凭据单源注入：与 web 一致（见 web 段注释）
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:?set rabbitmq credentials in .env (see .env.example)}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:?set rabbitmq credentials in .env (see .env.example)}
 
   mongodb:
     image: mongo:7.0

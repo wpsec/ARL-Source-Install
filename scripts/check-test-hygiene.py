@@ -40,13 +40,18 @@ try:
         suite = unittest.defaultTestLoader.loadTestsFromName(name)
         for child in suite:
             if child.__class__.__name__ == "_FailedTest":
-                # 还原收集失败真因：直接再 import 一次取异常摘要（否则只能看到
-                # 无信息的 failed-test，无法区分"环境缺依赖"与"前缀/路径错误"）。
+                # unittest 已将收集异常保存在 _exception；优先读取它，避免
+                # 首次 import 的半加载模块残留在 sys.modules 后掩盖真因。
+                failure = getattr(child, "_exception", None)
                 detail = ""
-                try:
-                    __import__(name)
-                except BaseException as import_exc:  # noqa: BLE001
-                    detail = "%s:%s" % (type(import_exc).__name__, str(import_exc)[:90])
+                if failure is not None:
+                    lines = str(failure).strip().splitlines()
+                    detail = lines[-1][:120] if lines else type(failure).__name__
+                if not detail:
+                    try:
+                        __import__(name, fromlist=["*"])
+                    except BaseException as import_exc:  # noqa: BLE001
+                        detail = "%s:%s" % (type(import_exc).__name__, str(import_exc)[:90])
                 load_fail = "load-fail(%s)" % (detail or getattr(child, "_testMethodName", "?"))
         if not load_fail:
             result = unittest.TextTestRunner(stream=buf, verbosity=0).run(suite)

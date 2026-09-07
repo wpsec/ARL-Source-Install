@@ -30,9 +30,12 @@ print(value)
 PY
 )"
 
-  if [ -z "$value" ]; then
-    value="$default_value"
-  fi
+  # 与 start_web.sh 同源防御：取末行并做整数校验，即便上游 import 期有诊断
+  # 写入 stdout，也不会把非数字灌进 celery 参数（降级方向=默认值）。
+  value="$(printf '%s\n' "$value" | tail -n 1 | tr -d '[:space:]')"
+  case "$value" in
+    ''|*[!0-9]*) value="$default_value" ;;
+  esac
 
   echo "$value"
 }

@@ -1,5 +1,8 @@
+# 消息队列地址不内嵌凭据：compose 部署时 app/config.py 从容器环境变量
+# RABBITMQ_DEFAULT_USER/RABBITMQ_DEFAULT_PASS（唯一来源 ARL/docker/.env 或根 .env）注入；
+# 源码运行请自行在 config.yaml 写完整带凭据 URL。模板不得携带可登录的明文凭据。
 CELERY:
-  BROKER_URL: "amqp://arl:arlpassword@rabbitmq:5672/arlv2host"
+  BROKER_URL: "amqp://rabbitmq:5672/arlv2host"
 
 # Redis 配置（用于业务缓存，当前接入指纹规则缓存）
 REDIS:
@@ -10,8 +13,10 @@ REDIS:
   PASSWORD: ""
   CACHE_EXPIRE: 1800
 
+# Mongo URI 同样不内嵌凭据：由容器环境变量 MONGO_INITDB_ROOT_USERNAME/PASSWORD 注入。
+# 轮换凭据只改 .env（见 docs/reference 配置治理 runbook），不再依赖本模板字面值。
 MONGO:
-  URI: "mongodb://admin:admin@mongodb:27017/"
+  URI: "mongodb://mongodb:27017/"
   DB: "arl"
 
 #GeoIP 数据库文件配置项

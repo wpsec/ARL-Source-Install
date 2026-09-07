@@ -33,25 +33,9 @@ sync_runtime_config_from_template() {
     return 0
 }
 
-# 检查docker compose (支持v2和v1)
-if docker compose version &> /dev/null; then
-    COMPOSE_CMD="docker compose"
-    echo "✓ 使用 Docker Compose v2"
-elif command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-    echo "✓ 使用 Docker Compose v1"
-else
-    echo "❌ 错误: Docker Compose 未安装"
-    exit 1
-fi
-
-# 创建必要的目录和Volume
-echo "准备环境..."
-
-BASIC_AUTH_USER="admin"
-BASIC_AUTH_PASS="admin123456"
-ARL_APP_USER="admin"
-ARL_APP_PASS="arlpass"
+# 凭据治理（计划 1）：.env 是部署凭据唯一事实来源，必须存在且通过预检。
+# 本脚本不再内置任何默认账号/密码——“无 .env 时弱凭据启动”路径已移除；
+# 也不再回显密码明文。轮换步骤见 docs/reference 配置治理 runbook。
 ENV_FILE_ROOT="$SCRIPT_DIR/.env"
 ENV_FILE_DOCKER="$DOCKER_DIR/.env"
 ENV_FILE=""
@@ -61,24 +45,46 @@ elif [ -f "$ENV_FILE_DOCKER" ]; then
     ENV_FILE="$ENV_FILE_DOCKER"
 fi
 
-if [ -n "$ENV_FILE" ]; then
-    echo "✓ 加载环境变量: $ENV_FILE"
-    set -a
-    # shellcheck disable=SC1090
-    . "$ENV_FILE"
-    set +a
-    BASIC_AUTH_USER=$(grep -E '^BASIC_AUTH_USERNAME=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-    BASIC_AUTH_PASS=$(grep -E '^BASIC_AUTH_PASSWORD=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-    ARL_APP_USER=$(grep -E '^ARL_APP_USERNAME=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-    ARL_APP_PASS=$(grep -E '^ARL_APP_PASSWORD=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
-else
-    echo "⚠ 未找到 .env，使用默认账号密码"
+if [ -z "$ENV_FILE" ]; then
+    echo "❌ 未找到 .env：请复制 .env.example 为 .env 并填入自设凭据（.env 仅本地存在，已被 Git 忽略）"
+    exit 1
 fi
 
+if ! "$DOCKER_DIR/check-deploy-env.sh" "$ENV_FILE"; then
+    echo "❌ .env 预检未通过：请按 [ENV-CHECK] 列出的问题项逐条修复后重试"
+    exit 1
+fi
+
+echo "✓ 加载环境变量: $ENV_FILE"
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+# 用户名非敏感，可回退到约定默认；密码键已由预检保证存在且非弱值。
+BASIC_AUTH_USER=$(grep -E '^BASIC_AUTH_USERNAME=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
+ARL_APP_USER=$(grep -E '^ARL_APP_USERNAME=' "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' || true)
 [ -z "$BASIC_AUTH_USER" ] && BASIC_AUTH_USER="admin"
-[ -z "$BASIC_AUTH_PASS" ] && BASIC_AUTH_PASS="admin123456"
 [ -z "$ARL_APP_USER" ] && ARL_APP_USER="admin"
-[ -z "$ARL_APP_PASS" ] && ARL_APP_PASS="arlpass"
+
+# 检查docker compose (支持v2和v1)
+if docker compose version &> /dev/null; then
+    COMPOSE_CMD=(docker compose)
+    echo "✓ 使用 Docker Compose v2"
+elif command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD=(docker-compose)
+    echo "✓ 使用 Docker Compose v1"
+else
+    echo "❌ 错误: Docker Compose 未安装"
+    exit 1
+fi
+
+# 统一显式指向预检通过的 .env：根 .env 与 ARL/docker/.env 并存时避免 compose
+# 按默认规则加载后者，造成“预检的文件和实际启动用的凭据不是同一份”。
+COMPOSE_CMD+=(--env-file "$ENV_FILE")
+
+# 创建必要的目录和Volume
+echo "准备环境..."
 
 WORKER_REPLICAS_RAW="${ARL_WORKER_REPLICAS:-2}"
 if [ "$WORKER_REPLICAS_RAW" != "1" ] && [ "$WORKER_REPLICAS_RAW" != "2" ]; then
@@ -130,10 +136,10 @@ echo ""
 # 检查是否需要重新构建镜像
 if ! docker images | grep -q "arl.*local"; then
     echo "未找到 arl:local 镜像，开始构建..."
-    $COMPOSE_CMD build
-elif [ "$1" == "rebuild" ]; then
+    "${COMPOSE_CMD[@]}" build
+elif [ "${1:-}" == "rebuild" ]; then
     echo "开始重新构建镜像..."
-    $COMPOSE_CMD build --no-cache
+    "${COMPOSE_CMD[@]}" build --no-cache
 fi
 
 UP_SERVICES="nginx web worker_1 scheduler"
@@ -142,7 +148,7 @@ if [ "$WORKER_REPLICAS" = "2" ]; then
 fi
 
 echo "✓ 本次部署 worker 副本数: $WORKER_REPLICAS (服务: $UP_SERVICES)"
-$COMPOSE_CMD up -d $UP_SERVICES
+"${COMPOSE_CMD[@]}" up -d $UP_SERVICES
 
 # 启动后主动同步一次指纹，确保升级后运行中的容器使用最新 tools/finger.json
 if [ -x "$SCRIPT_DIR/scripts/sync-fingerprint.sh" ]; then
@@ -161,12 +167,12 @@ echo ""
 echo "访问地址 (通过 Nginx 反向代理 + Basic Auth):"
 echo "  Web: http://localhost (或 http://服务器IP)"
 echo "  Basic Auth 用户名: $BASIC_AUTH_USER"
-echo "  Basic Auth 密码: $BASIC_AUTH_PASS"
+echo "  Basic Auth 密码: 不回显，见 $ENV_FILE 的 BASIC_AUTH_PASSWORD"
 echo ""
 echo "ARL 应用登录账号:"
 echo "  用户名: $ARL_APP_USER"
-echo "  密码: $ARL_APP_PASS"
-echo "  注: ARL_APP_* 仅在 Mongo 数据首次初始化时生效"
+echo "  密码: 不回显，见 $ENV_FILE 的 ARL_APP_PASSWORD"
+echo "  注: ARL_APP_* 仅在 Mongo 数据首次初始化时生效；轮换见 docs/reference 配置治理 runbook"
 echo ""
 echo "后端直接访问 (仅本地可访问):"
 echo "  HTTPS: https://localhost:5003"
@@ -176,15 +182,15 @@ echo "  使用 ./start.dev.sh 启动开发环境（Dockerfile.dev, 快速构建�
 echo "  修改代码后运行: ./quick-build.sh quick"
 echo ""
 echo "查看日志:"
-echo "  $COMPOSE_CMD logs -f web"
-echo "  $COMPOSE_CMD logs -f worker_1"
+echo "  ${COMPOSE_CMD[*]} logs -f web"
+echo "  ${COMPOSE_CMD[*]} logs -f worker_1"
 if [ "$WORKER_REPLICAS" = "2" ]; then
-    echo "  $COMPOSE_CMD logs -f worker_2"
+    echo "  ${COMPOSE_CMD[*]} logs -f worker_2"
 fi
-echo "  $COMPOSE_CMD logs -f scheduler"
+echo "  ${COMPOSE_CMD[*]} logs -f scheduler"
 echo ""
 echo "停止服务:"
-echo "  $COMPOSE_CMD down"
+echo "  ${COMPOSE_CMD[*]} down"
 echo ""
 echo "重新构建镜像（清除缓存）:"
 echo "  ./start.sh rebuild"

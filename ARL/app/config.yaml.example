@@ -1,6 +1,7 @@
 
+# 复制为 config.yaml 后把 <user>/<password> 替换为自己的凭据；禁止把真实凭据提交入库。
 CELERY:
-  BROKER_URL : "amqp://arl:arlpassword@localhost:5672/arlv2host"
+  BROKER_URL : "amqp://<user>:<password>@localhost:5672/arlv2host"
 
 
 MONGO:

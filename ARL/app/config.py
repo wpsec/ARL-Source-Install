@@ -260,7 +260,8 @@ def refresh_runtime_config_best_effort(force=False):
             with open(config_path, "r", encoding="utf-8") as config_file:
                 loaded = yaml.load(config_file, Loader=yaml.SafeLoader) or {}
         except Exception as e:
-            print("refresh runtime config failed {}".format(e))
+            # 诊断走 stderr：本模块在命令替换中被 import，stdout 必须只含值。
+            print("refresh runtime config failed {}".format(e), file=sys.stderr)
             return False
 
         if not isinstance(loaded, dict):
@@ -642,7 +643,9 @@ class Config(object):
     # ==================== 消息队列配置 ====================
     # Celery消息队列连接地址，用于分布式任务调度
     # 格式：amqp://用户名:密码@主机:端口/虚拟主机
-    CELERY_BROKER_URL = "amqp://arl:arlpassword@localhost:5672/arlv2host"
+    # 代码默认不含凭据（计划 1 治理）：源码运行必须由 config.yaml 显式提供完整 URL，
+    # compose 部署则由 RABBITMQ_DEFAULT_* env 注入；不再分发可登录的默认口令。
+    CELERY_BROKER_URL = "amqp://localhost:5672/arlv2host"
     # Gunicorn worker 数（默认按高性能预设）
     WEB_GUNICORN_WORKERS = 6
     # Celery 主任务队列并发
@@ -1343,7 +1346,7 @@ try:
     dns_resolvers = y["ARL"].get("DNS_RESOLVERS")
     if dns_resolvers is not None:
         if not isinstance(dns_resolvers, list):
-            print("arl.dns_resolvers is not list")
+            print("arl.dns_resolvers is not list", file=sys.stderr)
             sys.exit(-1)
 
         config_dns_resolvers = []
@@ -1352,7 +1355,7 @@ try:
                 continue
 
             if not isinstance(resolver, str):
-                print("arl.dns_resolvers item is not string")
+                print("arl.dns_resolvers item is not string", file=sys.stderr)
                 sys.exit(-1)
 
             resolver = resolver.strip()
@@ -1882,7 +1885,7 @@ try:
         if os.path.isfile(file_leak_dict):
             Config.FILE_LEAK_TOP_2k = file_leak_dict
         else:
-            print("Warning {} is not file".format(file_leak_dict))
+            print("Warning {} is not file".format(file_leak_dict), file=sys.stderr)
 
     # --- 域名爆破字典自定义配置 ---
     if y["ARL"].get("DOMAIN_DICT"):
@@ -1890,7 +1893,7 @@ try:
         if os.path.isfile(domain_dict):
             Config.DOMAIN_DICT_2W = domain_dict
         else:
-            print("Warning {} is not file".format(domain_dict))
+            print("Warning {} is not file".format(domain_dict), file=sys.stderr)
 
     # --- 禁止扫描域名配置 ---
     forbidden_domains = y["ARL"].get("FORBIDDEN_DOMAINS")
@@ -1899,7 +1902,7 @@ try:
     else:
         Config.FORBIDDEN_DOMAINS = []
         if not isinstance(forbidden_domains, list):
-            print("arl.forbidden_domains is not list")
+            print("arl.forbidden_domains is not list", file=sys.stderr)
             sys.exit(-1)
         elif forbidden_domains:
             Config.FORBIDDEN_DOMAINS = forbidden_domains
@@ -2735,5 +2738,61 @@ try:
         file=sys.stderr)
 
 except Exception as e:
-    print("Parse config.yaml error {}".format(e))
+    print("Parse config.yaml error {}".format(e), file=sys.stderr)
     sys.exit(-1)
+
+
+# ==================== 部署凭据注入（计划 1 运行时配置治理） ====================
+# compose 部署的凭据以 .env 为唯一事实来源：docker-compose.yml 将
+# MONGO_INITDB_ROOT_* / RABBITMQ_DEFAULT_* 透传进 web/worker/scheduler 容器，
+# 由下方逻辑注入连接串——配置模板与 runtime 不再存放明文凭据，轮换只改 .env。
+# 优先级：显式 ARL_MONGO_URL / ARL_CELERY_BROKER_URL > 组件凭据 env > config.yaml > 代码默认。
+# env 缺失（源码运行）时保持既有行为，不破坏本地开发。
+
+
+def inject_url_credentials(url, username, password):
+    """把凭据注入 mongodb:// 或 amqp:// URL 的 netloc；已有凭据段则整体替换。
+
+    返回 None 表示 URL 形态不可处理（调用方保留原值），不做任何降级凭据拼接。
+    密码经 percent-encoding，支持 .env 中使用特殊字符。
+    """
+    from urllib.parse import quote_plus, urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in ("mongodb", "mongodb+srv", "amqp"):
+        return None
+    host_part = parts.netloc.rsplit("@", 1)[-1]
+    if not host_part:
+        return None
+    credentials = "{}:{}".format(quote_plus(username), quote_plus(password))
+    return urlunsplit(
+        (parts.scheme, "{}@{}".format(credentials, host_part), parts.path, parts.query, parts.fragment)
+    )
+
+
+def _apply_deployment_credentials():
+    if os.environ.get("ARL_MONGO_URL"):
+        Config.MONGO_URL = os.environ.get("ARL_MONGO_URL")
+    else:
+        mongo_user = env_str("MONGO_INITDB_ROOT_USERNAME", "")
+        mongo_pass = env_str("MONGO_INITDB_ROOT_PASSWORD", "")
+        if mongo_user and mongo_pass:
+            injected = inject_url_credentials(Config.MONGO_URL, mongo_user, mongo_pass)
+            if injected:
+                Config.MONGO_URL = injected
+
+    if os.environ.get("ARL_CELERY_BROKER_URL"):
+        Config.CELERY_BROKER_URL = os.environ.get("ARL_CELERY_BROKER_URL")
+    else:
+        amqp_user = env_str("RABBITMQ_DEFAULT_USER", "")
+        amqp_pass = env_str("RABBITMQ_DEFAULT_PASS", "")
+        if amqp_user and amqp_pass:
+            injected = inject_url_credentials(Config.CELERY_BROKER_URL, amqp_user, amqp_pass)
+            if injected:
+                Config.CELERY_BROKER_URL = injected
+
+
+_apply_deployment_credentials()

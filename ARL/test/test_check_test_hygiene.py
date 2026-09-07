@@ -2,6 +2,7 @@ import importlib.util
 import pathlib
 import signal
 import subprocess
+import sys
 import unittest
 from unittest import mock
 
@@ -13,6 +14,18 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CheckTestHygieneTest(unittest.TestCase):
+    def test_checker_reports_the_requested_module_import_error(self):
+        proc = subprocess.run(
+            [sys.executable, "-c", MODULE.CHECKER, "test.module_that_does_not_exist"],
+            cwd=str(MODULE.ARL_ROOT),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertIn("load-fail(ModuleNotFoundError:", proc.stdout)
+        self.assertNotIn("load-fail(test.module_that_does_not_exist)", proc.stdout)
+
     def test_run_one_starts_an_isolated_process_session_on_posix(self):
         with mock.patch.object(MODULE.subprocess, "Popen") as popen:
             MODULE.run_one("test.example", {})
