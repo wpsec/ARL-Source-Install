@@ -2727,8 +2727,12 @@ try:
             "PROGRESSIVE_SCAN_ENABLE",
         )
     }
+    # 诊断必须走 stderr：该模块在 `python3 -c` 命令替换中被广泛 import（start_web.sh
+    # 读取 worker 数等），stdout 混入非值行会直接破坏 gunicorn 启动参数解析
+    # （x86 真机 production smoke 实锤：arl_web 因 -w 收到整段 JSON 而重启循环）。
     print("EFFECTIVE_SCAN_CONFIG {}".format(
-        json.dumps(_effective_scan_config, ensure_ascii=False, sort_keys=True, default=str)))
+        json.dumps(_effective_scan_config, ensure_ascii=False, sort_keys=True, default=str)),
+        file=sys.stderr)
 
 except Exception as e:
     print("Parse config.yaml error {}".format(e))

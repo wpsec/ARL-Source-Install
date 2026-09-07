@@ -67,6 +67,9 @@ class EffectiveConfigLogTest(unittest.TestCase):
     def test_config_source_emits_whitelisted_effective_log(self):
         source = (ARL_ROOT / "app" / "config.py").read_text(encoding="utf-8")
         self.assertIn("EFFECTIVE_SCAN_CONFIG", source)
+        # 诊断只能走 stderr：`$(python3 -c "from app.config import ...")` 的
+        # 命令替换依赖 stdout 纯净（x86 真机 arl_web 重启循环的回归钉）。
+        self.assertIn("file=sys.stderr", source)
         for key in ("PORT_SCAN_ALL_TARGET_BATCH_SIZE", "PORT_SCAN_BATCH_CONCURRENCY",
                     "TASK_FINALIZER_ENABLE"):
             self.assertIn('"{}"'.format(key), source)

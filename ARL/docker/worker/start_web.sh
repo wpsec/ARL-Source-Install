@@ -30,6 +30,13 @@ print(value)
 PY
 )"
 
+  # 取末行并做整数校验：即便上游 import 期有诊断写入 stdout，也不会把
+  # 非数字灌进 gunicorn/celery 参数（配置读取失败的降级方向=默认值）。
+  value="$(printf '%s\n' "$value" | tail -n 1 | tr -d '[:space:]')"
+  case "$value" in
+    ''|*[!0-9]*) value="$default_value" ;;
+  esac
+
   if [ -z "$value" ]; then
     value="$default_value"
   fi
