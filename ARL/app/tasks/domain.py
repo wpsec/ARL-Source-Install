@@ -28,7 +28,6 @@ import random
 import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse
 from collections import Counter
 from app import utils
 from app.config import Config, normalize_dict_path_compat
@@ -36,7 +35,7 @@ from app import services
 from app import modules
 from app.modules import ScanPortType, CollectSource
 from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
-from app.services.commonTask import CommonTask, WebSiteFetch, build_url_item
+from app.services.commonTask import CommonTask, WebSiteFetch
 from app.services.wildcardDomain import (
     collect_wildcard_records_from_domains,
     collect_wildcard_profiles_from_roots,
@@ -51,7 +50,6 @@ from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
 from app.utils.provider_http import stage_execution_context
 from app.utils.log_safety import safe_error_text
-from app.services.searchEngines import search_engines
 from app.services.domainSiteUpdate import domain_site_update
 from app.repositories import DomainRepository
 from app.services.task_orchestrator import DomainTaskOrchestrator
@@ -2481,96 +2479,10 @@ class DomainTask(CommonTask):
 
     # 搜索引擎调用
     def search_engines(self):
-        if not self.options.get("search_engines"):
-            return
-
-        if "{fuzz}" in self.base_domain:
-            return
-
-        self.update_task_field("status", "search_engines")
-        t1 = time.time()
-        search_engines_urls = search_engines(self.base_domain)
-        search_engine_metrics = dict(getattr(search_engines_urls, "metrics", {}) or {})
-
-        urls = set()  # 保存通过搜索引擎获取到的URL
-        domains = set()
-        for url in search_engines_urls:
-            parse = urlparse(url)
-            netloc = parse.netloc
-            netloc_domain = utils.normalize_domain(netloc.split(":")[0])
-            if not netloc_domain:
-                continue
-
-            # 只是过滤有效URL
-            if netloc_domain.endswith("." + self.base_domain) or \
-                    self.base_domain == netloc_domain:
-                domains.add(netloc_domain)
-            else:
-                continue
-
-            # 过滤掉路径为首页的URL
-            if parse.path == "/" or parse.path == "":
-                continue
-
-            urls.add(url)
-
-        # 可能发现新的域名， 这里保存起来
-        domain_info_list = []
-        if len(domains) > 0:
-            self.add_domain_source_names(domains, CollectSource.SEARCHENGINE)
-            domain_info_list = self.build_domain_info(domains)
-            if self.task_tag == "task":
-                domain_info_list = self.clear_domain_info_by_record(domain_info_list)
-                self.save_domain_info_list(domain_info_list, source=CollectSource.SEARCHENGINE)
-            self.add_domain_source_map(domain_info_list, CollectSource.SEARCHENGINE)
-            self.domain_info_list.extend(domain_info_list)
-
-        elapse = time.time() - t1
-        self.update_services("search_engines", elapse, metrics=search_engine_metrics)
-
-        logger.info("search_engines {}, result domain:{} url:{}".format(self.base_domain,
-                                                                        len(domain_info_list),
-                                                                        len(urls)))
-
-        # 构建Page 信息
-        if len(urls) > 0:
-            # Review 20260905 P0.2：搜索引擎页面获取必须携带任务上下文（响应登记、
-            # 流量类别调度与 WAF 隔离），不再走 context 盲区；结果登记为统一候选。
-            page_map = services.page_fetch(
-                urls,
-                discovery_context=getattr(self, "discovery_context", None),
-                traffic_class="crawler",
-            )
-            self._register_search_page_candidates(urls, page_map)
-            for url in page_map:
-                item = build_url_item(url, self.task_id, source=CollectSource.SEARCHENGINE)
-                item.update(page_map[url])
-                utils.conn_db('url').insert_one(item)
+        return DomainDiscoveryStageService(self).run_search_engines()
 
     def _register_search_page_candidates(self, urls, page_map):
-        """搜索结果 URL 登记进共享候选图（P0.2）。
-
-        获取成功记 fetched：页面证据已在响应缓存与 url 集合，不再作为晚到候选
-        显影；获取失败保持 discovered：由后续 url_probe 阶段按统一候选协议领取。
-        登记异常只降级观测，不打断搜索引擎主链路。
-        """
-        context = getattr(self, "discovery_context", None)
-        if context is None:
-            return
-        fetched = set(page_map or {})
-        for url in urls:
-            try:
-                context.register_candidate(
-                    event_type="UrlCandidateDiscovered",
-                    candidate=url,
-                    candidate_type="page",
-                    source="search_engine",
-                    status="fetched" if url in fetched else "discovered",
-                    metadata={"collect_source": str(CollectSource.SEARCHENGINE)},
-                )
-            except Exception as exc:
-                logger.debug(
-                    "search page candidate register failed error_type:{}".format(type(exc).__name__))
+        return DomainDiscoveryStageService(self).register_search_page_candidates(urls, page_map)
 
     def start_wih_domain_update(self):
         if self.wih_domain_set:

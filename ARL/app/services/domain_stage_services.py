@@ -5,10 +5,16 @@
 """
 
 import time
+from urllib.parse import urlparse
 
+from app import services, utils
 from app.config import Config
 from app.modules import CollectSource
+from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
+
+
+logger = utils.get_logger()
 
 def _run_measured_stage(task, name, func):
     """阶段统一经执行器产出独立 metrics（报告§4：禁止手工稀疏指标）。
@@ -84,6 +90,104 @@ class DomainDiscoveryStageService(object):
 
         if task.options.get("alt_dns"):
             _run_measured_stage(task, "alt_dns", _domain_count_stage(task, task.alt_dns))
+
+    def run_search_engines(self):
+        """执行搜索引擎发现并把页面证据接入统一上下文。"""
+
+        task = self.task
+        if not task.options.get("search_engines") or "{fuzz}" in task.base_domain:
+            return
+
+        task.update_task_field("status", "search_engines")
+        started_at = time.time()
+        search_engines_urls = search_engines(task.base_domain)
+        search_engine_metrics = dict(getattr(search_engines_urls, "metrics", {}) or {})
+
+        urls = set()
+        domains = set()
+        for url in search_engines_urls:
+            parsed = urlparse(url)
+            netloc_domain = utils.normalize_domain(parsed.netloc.split(":")[0])
+            if not netloc_domain:
+                continue
+            if not (
+                netloc_domain.endswith("." + task.base_domain)
+                or task.base_domain == netloc_domain
+            ):
+                continue
+            domains.add(netloc_domain)
+            # 首页只作为站点种子，不进入 URL 结果面，保持历史结果语义。
+            if parsed.path in ("", "/"):
+                continue
+            urls.add(url)
+
+        domain_info_list = []
+        if domains:
+            task.add_domain_source_names(domains, CollectSource.SEARCHENGINE)
+            domain_info_list = task.build_domain_info(domains)
+            if task.task_tag == "task":
+                domain_info_list = task.clear_domain_info_by_record(domain_info_list)
+                task.save_domain_info_list(
+                    domain_info_list,
+                    source=CollectSource.SEARCHENGINE,
+                )
+            task.add_domain_source_map(domain_info_list, CollectSource.SEARCHENGINE)
+            task.domain_info_list.extend(domain_info_list)
+
+        task.update_services(
+            "search_engines",
+            time.time() - started_at,
+            metrics=search_engine_metrics,
+        )
+        logger.info(
+            "search_engines {} result domain:{} url:{}".format(
+                task.base_domain,
+                len(domain_info_list),
+                len(urls),
+            )
+        )
+
+        if not urls:
+            return
+
+        # 页面获取必须带任务上下文，避免搜索结果绕过响应复用、流量类别调度
+        # 和 WAF 隔离；失败候选留给后续 url_probe 显式收口。
+        page_map = services.page_fetch(
+            urls,
+            discovery_context=getattr(task, "discovery_context", None),
+            traffic_class="crawler",
+        )
+        self.register_search_page_candidates(urls, page_map)
+        from app.services.commonTask import build_url_item
+
+        for url in page_map:
+            item = build_url_item(url, task.task_id, source=CollectSource.SEARCHENGINE)
+            item.update(page_map[url])
+            utils.conn_db("url").insert_one(item)
+
+    def register_search_page_candidates(self, urls, page_map):
+        """将搜索结果页面登记为统一候选，保留失败候选的后续处理入口。"""
+
+        task = self.task
+        context = getattr(task, "discovery_context", None)
+        if context is None:
+            return
+        fetched = set(page_map or {})
+        for url in urls:
+            try:
+                context.register_candidate(
+                    event_type="UrlCandidateDiscovered",
+                    candidate=url,
+                    candidate_type="page",
+                    source="search_engine",
+                    status="fetched" if url in fetched else "discovered",
+                    metadata={"collect_source": str(CollectSource.SEARCHENGINE)},
+                )
+            except Exception as exc:
+                logger.debug(
+                    "search page candidate register failed error_type:%s",
+                    type(exc).__name__,
+                )
 
 
 class DomainNetworkStageService(object):

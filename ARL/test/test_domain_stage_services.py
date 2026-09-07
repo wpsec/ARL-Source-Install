@@ -1,15 +1,20 @@
 """域名阶段服务的边界回归测试。"""
 
+import sys
+import types
 import unittest
 from unittest.mock import patch
 
-from app.config import Config
-from app.services.domain_stage_services import (
-    DomainDiscoveryStageService,
-    DomainNetworkStageService,
-    DomainPostProcessStageService,
-    DomainSiteStageService,
-)
+from test._api_unified_bootstrap import load_modules
+
+
+_captured = load_modules("app.services.domain_stage_services")
+_domain_stage_services = _captured["app.services.domain_stage_services"]
+Config = _domain_stage_services.Config
+DomainDiscoveryStageService = _domain_stage_services.DomainDiscoveryStageService
+DomainNetworkStageService = _domain_stage_services.DomainNetworkStageService
+DomainPostProcessStageService = _domain_stage_services.DomainPostProcessStageService
+DomainSiteStageService = _domain_stage_services.DomainSiteStageService
 
 
 class _Executor(object):
@@ -24,9 +29,11 @@ class _Executor(object):
 class _Task(object):
     def __init__(self, options=None):
         self.base_domain = "example.com"
+        self.task_id = "task-1"
         self.task_tag = "monitor"
         self.options = options or {}
         self.domain_info_list = []
+        self.discovery_context = None
         self._last_dns_query_metrics = {}
         self.executor = _Executor()
         self.calls = []
@@ -49,6 +56,17 @@ class _Task(object):
 
     def add_domain_source_map(self, values, source):
         self.calls.append(("source", source))
+
+    def add_domain_source_names(self, values, source):
+        self.calls.append(("source_names", source))
+
+    def build_domain_info(self, domains):
+        self.calls.append(("build_domains", sorted(domains)))
+        return []
+
+    def clear_domain_info_by_record(self, values):
+        self.calls.append("clear_domain_info")
+        return values
 
     def save_domain_info_list(self, values, source=None):
         self.calls.append(("save_domain", source))
@@ -98,6 +116,74 @@ class TestDomainStageServices(unittest.TestCase):
             item[1] for item in task.calls if isinstance(item, tuple) and item[0] == "service"
         ])
 
+    def test_discovery_service_owns_search_engine_stage_and_page_context(self):
+        task = _Task({"search_engines": True})
+        inserted = []
+        events = []
+
+        class _SearchResults(list):
+            metrics = {"provider_status": "success", "request_count": 1}
+
+        class _Context(object):
+            def register_candidate(self, **kwargs):
+                events.append(kwargs)
+
+        class _Collection(object):
+            def insert_one(self, item):
+                inserted.append(item)
+
+        task.discovery_context = _Context()
+        search_results = _SearchResults([
+            "https://example.com/api/list",
+            "https://sub.example.com/",
+            "https://outside.example.net/ignored",
+        ])
+        fake_common_task = types.ModuleType("app.services.commonTask")
+        fake_common_task.build_url_item = (
+            lambda site, task_id, source: {
+                "site": site,
+                "task_id": task_id,
+                "source": source,
+            }
+        )
+        with patch.dict(
+            sys.modules,
+            {"app.services.commonTask": fake_common_task},
+        ), patch.object(
+            _domain_stage_services,
+            "search_engines",
+            return_value=search_results,
+        ), patch.object(
+            _domain_stage_services.services,
+            "page_fetch",
+            return_value={"https://example.com/api/list": {"status": 200}},
+            create=True,
+        ) as page_fetch, patch.object(
+            _domain_stage_services.utils,
+            "conn_db",
+            return_value=_Collection(),
+        ):
+            DomainDiscoveryStageService(task).run_search_engines()
+
+        self.assertEqual("search_engines", task.calls[0][2])
+        self.assertEqual(
+            [("build_domains", ["example.com", "sub.example.com"])],
+            [item for item in task.calls if isinstance(item, tuple) and item[0] == "build_domains"],
+        )
+        page_fetch.assert_called_once_with(
+            {"https://example.com/api/list"},
+            discovery_context=task.discovery_context,
+            traffic_class="crawler",
+        )
+        self.assertEqual(1, len(events))
+        self.assertEqual("fetched", events[0]["status"])
+        self.assertEqual(1, len(inserted))
+        self.assertEqual("https://example.com/api/list", inserted[0]["site"])
+        self.assertEqual(
+            {"provider_status": "success", "request_count": 1},
+            next(item[2] for item in task.calls if isinstance(item, tuple) and item[0] == "service"),
+        )
+
     def test_network_service_keeps_port_and_certificate_as_separate_stages(self):
         task = _Task({"port_scan": True, "ssl_cert": True})
         with patch.object(Config, "CERT_PIVOT_QUERY_ENABLE", False):
@@ -135,7 +221,9 @@ class TestDomainStageServices(unittest.TestCase):
                 self.flag_at_run = getattr(self, "terminal_finalize_host_owned", False)
 
         try:
-            with patch("app.services.commonTask.WebSiteFetch", _FakeSiteFetch):
+            fake_common_task = types.ModuleType("app.services.commonTask")
+            fake_common_task.WebSiteFetch = _FakeSiteFetch
+            with patch.dict(sys.modules, {"app.services.commonTask": fake_common_task}):
                 DomainSiteStageService(task).run()
             self.assertEqual(1, len(_FakeSiteFetch.instances))
             self.assertTrue(
