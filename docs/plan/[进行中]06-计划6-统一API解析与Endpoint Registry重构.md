@@ -985,7 +985,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 | P2-03 阶段 metrics 退出路径收口 | `run()` 全程 try/finally→幂等 `_flush_stage_metrics()`：空范围提前返回与阶段级异常也 flush；wall/cpu 每 run 一段复位窗口；累计源全部走**水位增量**（首次恒产出含 0，重复 run 不双计）；`api_document_schema_diagnostics_total` 事实源改插入累计计数（原 len 为 gauge 会双计/驱逐失真） | `QueueStageFlushTest` 4 项（双 run 不双计/提前返回 flush/异常路径 flush 且异常传播/网络等待口径）+ 既有 waf-blocked 收口用例改断言 `api_stage_network_wait_time` 必在 |
 | 契约登记 | 附录A §4.19 重号修正（原两个 §4.18）+ 新增 **§4.20** 记录本批全部口径变更；计划 6 内 3 处"附录 D"误指向改 **附录 E 发布验收 runbook**（`docs/plan/[未完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md`：revision/image digest/目标集 sha/非敏感配置指纹/四类计数报表/集合 hash 对账/三组对照/回滚表/完成定义） | 本文档 + 附录A + runbook 文件 |
 
-宿主门禁：api 九件合跑 **309 项全绿**（261→+48：registry 74/models 41/parser 86/shadow 8/rust_batch 33/finalizer 31/discovery 15/orchestrator 11/url_probe 8 口径合并）；golden `--check` 无漂移；compileall/diff-check/hygiene(4 改动测试文件 clean) 通过。容器面复核（arm64 compose 全栈重跑含本批代码）见计划 3 登记。`API_UNIFIED_ENABLE` 默认 False、Rust 默认 shadow 不变——T11-0 修复的是"未来切 rust 也不会误升级"与观测口径，不触碰生产默认路径。
+宿主门禁：api 九件合跑 **309 项全绿**（261→+48：registry 74/models 41/parser 86/shadow 8/rust_batch 33/finalizer 31/discovery 15/orchestrator 11/url_probe 8 口径合并）；golden `--check` 无漂移；compileall/diff-check/hygiene(4 改动测试文件 clean) 通过。容器面复核完成（2026-09-07 arm64 compose 全栈第三轮）：Ran 871、T11-0 新增测试全量 discover 0 失败、hygiene 149/149 clean、镜像内双 corpus strict exit=0，登记于计划 3 第三轮条目。`API_UNIFIED_ENABLE` 默认 False、Rust 默认 shadow 不变——T11-0 修复的是"未来切 rust 也不会误升级"与观测口径，不触碰生产默认路径。
 
 ## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批后）
 
