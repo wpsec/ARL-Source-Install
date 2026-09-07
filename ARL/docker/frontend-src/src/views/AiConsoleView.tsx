@@ -530,9 +530,6 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
 
   const defaultForm: AiConfigForm = normalizeForm({});
   const [form, setForm] = useState<AiConfigForm>(defaultForm);
-  const [providerPresets, setProviderPresets] = useState<AiProviderPreset[]>(defaultProviderPresets);
-  const [configPath, setConfigPath] = useState('');
-  const [updatedAt, setUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
@@ -602,6 +599,51 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       api_key: '',
     }));
   }, []);
+
+  const queryClient = useQueryClient();
+  const aiConfigQueryKey = useMemo(() => ['ai-console-config', token] as const, [token]);
+  const aiConfigQuery = useQuery({
+    queryKey: aiConfigQueryKey,
+    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
+    retry: 0,
+  });
+  const aiConfigData = aiConfigQuery.data?.data || {};
+  const providerPresets = useMemo(() => {
+    const remotePresets = Array.isArray(aiConfigData?.provider_presets) ? aiConfigData.provider_presets : [];
+    const normalizedPresets = remotePresets
+      .map((item: any) => {
+        const id = String(item?.id || '').trim();
+        if (!id) return null;
+        return {
+          id,
+          label: String(item?.label || id),
+          base_url: String(item?.base_url || ''),
+          default_model: String(item?.default_model || ''),
+          default_reasoning_model: String(item?.default_reasoning_model || ''),
+        };
+      })
+      .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
+    return normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets;
+  }, [aiConfigData?.provider_presets]);
+  const configPath = String(aiConfigData?.config_path || '');
+  const updatedAt = String(aiConfigData?.updated_at || '');
+  const mergeAiConfigQueryData = useCallback((nextData: any) => {
+    if (!nextData || typeof nextData !== 'object') return;
+    const normalizedData = {
+      ...nextData,
+      ...(nextData.updated_at || !nextData.saved_at ? {} : { updated_at: nextData.saved_at }),
+    };
+    queryClient.setQueryData(aiConfigQueryKey, (current: any) => {
+      if (!current || typeof current !== 'object') return current;
+      return {
+        ...current,
+        data: {
+          ...(current.data || {}),
+          ...normalizedData,
+        },
+      };
+    });
+  }, [aiConfigQueryKey, queryClient]);
 
   const providerPresetMap = useMemo(() => {
     const map: Record<string, AiProviderPreset> = {};
@@ -1032,17 +1074,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       };
   }, [normalizeAiUsageStatsValue, token, usageLogLimit, usageLogScene, usageLogStatus]);
 
-  const queryClient = useQueryClient();
-  const aiConfigQueryKey = ['ai-console-config', token] as const;
-  const aiUsageQueryKey = ['ai-console-usage', token, usageLogLimit, usageLogStatus, usageLogScene] as const;
+  const aiUsageQueryKey = useMemo(
+    () => ['ai-console-usage', token, usageLogLimit, usageLogStatus, usageLogScene] as const,
+    [token, usageLogLimit, usageLogScene, usageLogStatus]
+  );
 
   // 配置查询只负责“数据字段”水合；测试弹窗/重启 Modal 的收敛属于显式“重新加载”
   // 与脱敏切换语义，保留在调用点——避免保存后后台 invalidate 冲掉刚打开的弹窗。
-  const aiConfigQuery = useQuery({
-    queryKey: aiConfigQueryKey,
-    queryFn: () => requestApi(token, '/api_console/ai_config/', { method: 'GET' }),
-    retry: 0,
-  });
   const usageQuery = useQuery({
     queryKey: aiUsageQueryKey,
     queryFn: fetchAiUsageSnapshot,
@@ -1073,28 +1111,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
     }
     resetSensitiveState();
     const data = aiConfigQuery.data?.data || {};
-    const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
-    const normalizedPresets = remotePresets
-      .map((item: any) => {
-        const id = String(item?.id || '').trim();
-        if (!id) return null;
-        return {
-          id,
-          label: String(item?.label || id),
-          base_url: String(item?.base_url || ''),
-          default_model: String(item?.default_model || ''),
-        };
-      })
-      .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
-
-    setProviderPresets(normalizedPresets.length > 0 ? normalizedPresets : defaultProviderPresets);
     const normalizedForm = normalizeForm(data?.ai_config || {});
     setForm(normalizedForm);
     setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedForm));
     setModelDraft((prev) => ({ ...prev, provider: normalizedForm.provider || 'openai' }));
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
-    setConfigPath(String(data?.config_path || ''));
-    setUpdatedAt(String(data?.updated_at || ''));
     // normalizeForm 每轮重建（非稳定引用），放入 deps 会形成水合死循环——按原 loadAiConfig 口径省略。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiConfigQuery.isPending, aiConfigQuery.isError, aiConfigQuery.data, normalizeSensitiveConfigured, resetSensitiveState]);
@@ -1485,14 +1506,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       const normalizedSavedForm = normalizeForm(data?.ai_config || {});
       setForm(normalizedSavedForm);
       setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedSavedForm));
-      setConfigPath(String(data?.config_path || configPath));
-      setUpdatedAt(String(data?.saved_at || updatedAt));
       const moduleLabel = String(data?.module_label || aiSopModuleConfigs.find((item) => item.id === sopUploadModuleId)?.label || sopUploadModuleId);
       const sopFilePath = String(data?.sop_file || '');
       setSuccess(`SOP 上传成功：${moduleLabel}${sopFilePath ? `（${sopFilePath}）` : ''}`);
       setShowRestartModal(data?.runtime_refreshed === false);
 
       clearSopUploadSelection();
+      mergeAiConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: aiConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || 'SOP 上传失败');
@@ -1571,28 +1591,10 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         },
       });
       const data = result?.data || {};
-      const remotePresets = Array.isArray(data?.provider_presets) ? data.provider_presets : [];
-      const normalizedPresets = remotePresets
-        .map((item: any) => {
-          const id = String(item?.id || '').trim();
-          if (!id) return null;
-          return {
-            id,
-            label: String(item?.label || id),
-            base_url: String(item?.base_url || ''),
-            default_model: String(item?.default_model || ''),
-          };
-        })
-        .filter((item: AiProviderPreset | null): item is AiProviderPreset => Boolean(item));
-      if (normalizedPresets.length > 0) {
-        setProviderPresets(normalizedPresets);
-      }
       const normalizedSavedForm = normalizeForm(data?.ai_config || payload);
       setForm(normalizedSavedForm);
       setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured, normalizedSavedForm));
       setModelDraft((prev) => ({ ...prev, provider: normalizedSavedForm.provider || 'openai' }));
-      setConfigPath(String(data?.config_path || configPath));
-      setUpdatedAt(String(data?.saved_at || updatedAt));
       const backupText = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       const runtimeRefreshed = data?.runtime_refreshed !== false;
       setSuccess(runtimeRefreshed ? `AI 管理配置已保存${backupText}` : `AI 管理配置已保存${backupText}，需重启容器生效`);
@@ -1601,6 +1603,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingModelProfileIds(new Set());
+      mergeAiConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: aiConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存 AI 管理配置失败');

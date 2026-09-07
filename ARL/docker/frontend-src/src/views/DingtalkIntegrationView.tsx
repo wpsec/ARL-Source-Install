@@ -75,9 +75,6 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   };
 
   const [form, setForm] = useState<DingtalkConfigForm>(defaultForm);
-  const [runtimeStatus, setRuntimeStatus] = useState<any>({});
-  const [configPath, setConfigPath] = useState('');
-  const [updatedAt, setUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState('');
@@ -150,8 +147,8 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   }, [sensitiveFieldSet]);
 
   // 数据层迁移（计划 4 控制台批次）：初始化读取 = useQuery 快照 + 水合。
-  // 保存/连通性测试成功后 invalidate；reveal/workspaces/nodes 为按需操作读，
-  // 保持自身响应回写、不触碰缓存（与 ApiConsoleView 同一口径）。
+  // 运行状态和文件元数据只从快照派生；保存先合并服务端响应再失效重取。
+  // reveal/workspaces/nodes 为按需操作读，保持自身响应回写、不触碰配置缓存。
   const queryClient = useQueryClient();
   const dingtalkConfigQueryKey = ['dingtalk-integration-config', token] as const;
   const dingtalkConfigQuery = useQuery({
@@ -175,6 +172,27 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
     }),
   });
   const loading = dingtalkConfigQuery.isPending;
+  const dingtalkConfigData = dingtalkConfigQuery.data?.data || {};
+  const runtimeStatus = dingtalkConfigData.runtime_status || {};
+  const configPath = String(dingtalkConfigData.config_path || '');
+  const updatedAt = String(dingtalkConfigData.updated_at || '');
+  const mergeDingtalkConfigQueryData = useCallback((nextData: any) => {
+    if (!nextData || typeof nextData !== 'object') return;
+    const normalizedData = {
+      ...nextData,
+      ...(nextData.updated_at || !nextData.saved_at ? {} : { updated_at: nextData.saved_at }),
+    };
+    queryClient.setQueryData(dingtalkConfigQueryKey, (current: any) => {
+      if (!current || typeof current !== 'object') return current;
+      return {
+        ...current,
+        data: {
+          ...(current.data || {}),
+          ...normalizedData,
+        },
+      };
+    });
+  }, [dingtalkConfigQueryKey, queryClient]);
   const loadingWorkspaces = workspacesMutation.isPending;
   const loadingNodes = nodesMutation.isPending;
 
@@ -192,9 +210,6 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
     const data = dingtalkConfigQuery.data?.data || {};
     setForm(normalizeForm(data?.config));
     setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-    setRuntimeStatus(data?.runtime_status || {});
-    setConfigPath(String(data.config_path || ''));
-    setUpdatedAt(String(data.updated_at || ''));
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
   }, [
     dingtalkConfigQuery.isPending,
@@ -334,15 +349,13 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
       const data = result?.data || {};
       setForm(normalizeForm(data?.config));
       setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-      setRuntimeStatus(data?.runtime_status || {});
-      setConfigPath(String(data.config_path || configPath));
-      setUpdatedAt(String(data.saved_at || updatedAt));
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       setSuccess(`钉钉集成配置已保存${backupPath}`);
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingFieldSet(new Set());
+      mergeDingtalkConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: dingtalkConfigQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存钉钉集成配置失败');

@@ -155,8 +155,6 @@ export function ApiConsoleView({ token }: { token: string }) {
     github_token: '',
   };
 
-  const [configPath, setConfigPath] = useState('');
-  const [updatedAt, setUpdatedAt] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -281,8 +279,8 @@ export function ApiConsoleView({ token }: { token: string }) {
   };
 
   // 数据层迁移（计划 4 控制台批次）：初始化读取 = useQuery 快照，到达后水合表单。
-  // 保存/单测/批量测试成功后 invalidate 本查询取服务端权威快照；reveal 属鉴权读
-  // （不改服务端状态），按自身响应回写且不触碰缓存——避免脱敏 refetch 冲掉明文展示。
+  // 配置元数据只从快照派生，保存/单测/批量测试先合并服务端响应再失效重取；reveal
+  // 属鉴权读（不改服务端状态），按自身响应回写且不触碰缓存，避免脱敏 refetch 冲掉明文展示。
   const queryClient = useQueryClient();
   const serviceApiQueryKey = ['api-console-service-api', token] as const;
   const serviceApiQuery = useQuery({
@@ -291,6 +289,26 @@ export function ApiConsoleView({ token }: { token: string }) {
     retry: 0,
   });
   const loading = serviceApiQuery.isPending;
+  const serviceApiData = serviceApiQuery.data?.data || {};
+  const configPath = String(serviceApiData.config_path || '');
+  const updatedAt = String(serviceApiData.updated_at || '');
+  const mergeServiceApiQueryData = useCallback((nextData: any) => {
+    if (!nextData || typeof nextData !== 'object') return;
+    const normalizedData = {
+      ...nextData,
+      ...(nextData.updated_at || !nextData.saved_at ? {} : { updated_at: nextData.saved_at }),
+    };
+    queryClient.setQueryData(serviceApiQueryKey, (current: any) => {
+      if (!current || typeof current !== 'object') return current;
+      return {
+        ...current,
+        data: {
+          ...(current.data || {}),
+          ...normalizedData,
+        },
+      };
+    });
+  }, [queryClient, serviceApiQueryKey]);
 
   useEffect(() => {
     if (serviceApiQuery.isPending) {
@@ -306,8 +324,6 @@ export function ApiConsoleView({ token }: { token: string }) {
     const data = serviceApiQuery.data?.data || {};
     setForm(normalizeForm(data?.service_api));
     setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-    setConfigPath(String(data.config_path || ''));
-    setUpdatedAt(String(data.updated_at || ''));
     setSensitiveVerifyUsername(localStorage.getItem(USERNAME_KEY) || '');
   }, [
     serviceApiQuery.isPending,
@@ -436,14 +452,13 @@ export function ApiConsoleView({ token }: { token: string }) {
       const data = result?.data || {};
       setForm(normalizeForm(data?.service_api));
       setSensitiveConfiguredMap(normalizeSensitiveConfigured(data?.sensitive_configured));
-      setConfigPath(String(data.config_path || configPath));
-      setUpdatedAt(String(data.saved_at || updatedAt));
       const backupPath = data?.backup_path ? `，备份: ${data.backup_path}` : '';
       setSuccess(`API 配置已保存${backupPath}`);
       setSensitiveVisible(false);
       setSensitiveVerifyPassword('');
       setSensitiveVerifyError('');
       setSensitiveEditingFieldSet(new Set());
+      mergeServiceApiQueryData(data);
       void queryClient.invalidateQueries({ queryKey: serviceApiQueryKey });
     } catch (err: any) {
       setError(err?.message || '保存 API 配置失败');
