@@ -10,15 +10,21 @@ from app import utils
 class TaskResultWriteService(object):
     """提供受控的任务结果写入入口。"""
 
-    def __init__(self, task_id):
+    def __init__(self, task_id, utils_module=None):
         self.task_id = str(task_id or "")
+        self.utils = utils_module or utils
 
-    @staticmethod
-    def _collection(collection_name):
-        return utils.conn_db(collection_name)
+    def _collection(self, collection_name):
+        return self.utils.conn_db(collection_name)
 
     def insert_one(self, collection_name, document):
         return self._collection(collection_name).insert_one(document)
+
+    def insert_many(self, collection_name, documents, ordered=False):
+        return self._collection(collection_name).insert_many(
+            documents,
+            ordered=ordered,
+        )
 
     def bulk_write(self, collection_name, operations, ordered=False):
         return self._collection(collection_name).bulk_write(

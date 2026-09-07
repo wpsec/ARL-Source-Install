@@ -10,6 +10,7 @@ IPTask 仍通过同名方法提供兼容入口。
 
 from app import utils
 from app.services import fetchCert
+from app.services.task_result_write_service import TaskResultWriteService
 
 
 def fetch_cert_map(ip_info_list):
@@ -183,7 +184,11 @@ class IPCertStageService(object):
             if not cert_identity_key and not cert_end_time:
                 query["observe_id"] = observe_id or endpoint
 
-            self.utils.conn_db("cert").update_one(query, {"$setOnInsert": item}, upsert=True)
+            writer = getattr(task, "_result_writer", None) or TaskResultWriteService(
+                task.task_id,
+                utils_module=self.utils,
+            )
+            writer.update_one("cert", query, {"$setOnInsert": item}, upsert=True)
 
         return task.cert_map
 
@@ -291,9 +296,13 @@ class IPServiceSummaryStageService(object):
             })
 
         # 同任务重跑时先清理旧数据，避免重复堆积
-        self.utils.conn_db("service").delete_many({"task_id": task.task_id})
+        writer = getattr(task, "_result_writer", None) or TaskResultWriteService(
+            task.task_id,
+            utils_module=self.utils,
+        )
+        writer.delete_many("service", {"task_id": task.task_id})
         if task.service_info_list:
-            self.utils.conn_db("service").insert_many(task.service_info_list)
+            writer.insert_many("service", task.service_info_list)
 
         logger.info(
             "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(

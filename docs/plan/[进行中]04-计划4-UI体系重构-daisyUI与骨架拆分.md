@@ -170,9 +170,9 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 | largest_js_bytes | 1197046（gzip 328KB） | 461983（gzip 141.6KB）+ 视图异步分割 | 首屏 gzip <180KB ✓ |
 | 主题 AA（6 主题 × 12 配对） | — | 全 PASS（最低 4.58:1，详见 `scripts/check-theme-contrast.py` 输出） | ≥4.5/≥3 ✓ |
 
-行为变更声明：首行冻结功能随滚动模型收敛下线（其实现即被计划禁止的表格纵向自滚，默认关闭态）；其余端点/字段/状态语义与附录A 冻结清单一致（重构后 requestApi 消费面重扫 135 条与基线相同）。
+行为变更声明：首行冻结功能随滚动模型收敛下线（其实现即被计划禁止的表格纵向自滚，默认关闭态）；兼容边界与回归清单见 [2026-09-08 UI 滚动模型发布说明](../release-notes/2026-09-08-ui-scroll-model.md)。其余端点/字段/状态语义与附录A 冻结清单一致（重构后 requestApi 消费面重扫 135 条与基线相同）。
 
-**未完成/待办**：①UI 级双架构容器 smoke 与页面联调（镜像构建链已在计划 3/6 容器回归中验证）；②视觉走查每模块 3 屏、Safari `<dialog>` 键盘项、TTI/Lighthouse 实测（需后端在线）；③Phase3 全量 `useEffect → react-query` 迁移（已落地列表读侧缓存——往返重复的核心症状点；console 配置页保持按页即时拉取）；④DataTable 页面级接入（组件+虚拟滚动就绪，接线随 Phase2b/后续）；⑤首行冻结下线的用户可见行为变更需在发布说明和回归清单中确认。
+**未完成/待办**：①UI 级双架构容器 smoke 与页面联调（镜像构建链已在计划 3/6 容器回归中验证）；②视觉走查每模块 3 屏、Safari `<dialog>` 键盘项、TTI/Lighthouse 实测（需后端在线）；③Phase3 全量 `useEffect → react-query` 迁移（已落地列表读侧缓存——往返重复的核心症状点；console 配置页保持按页即时拉取）。
 
 ## 前置复核结论（2026-09-05）
 
@@ -180,11 +180,11 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 
 - Docker 双架构构建与同套 smoke test、Safari `<dialog>` 键盘行为、视觉走查和 Lighthouse TTI/INP 尚未形成完整证据。
 - Phase3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 也尚未接入所有页面级主列表。
-- 首行冻结功能下线是用户可见行为变化，不应仅作为滚动模型实现细节；需要在发布说明和回归清单中单独确认。
+- 首行冻结功能下线是用户可见行为变化，已在发布说明和回归清单中单独确认。
 
 详细报告：[计划 1–5 前置复核报告](<../review/[已完成]计划1-5前置复核报告-20260905.md>)。
 
-## 当前状态（2026-09-07 UI 测试基建与容器回归证据更新后）
+## 当前状态（2026-09-08 DataTable 与滚动模型发布说明更新后）
 
 - [已完成] UI 契约冻结、daisyUI 主题与组件层、页面骨架拆分、模块化路由、列表缓存、懒加载、主 chunk 压缩和 TypeScript/Vite 构建门禁已完成。
 - [已完成] 两轮 Review 修复已落地：敏感 define 注入移除、列表失效/轮询、ErrorBoundary、Modal 无障碍标题、稳定行键和全局新建任务刷新。
@@ -203,7 +203,8 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 - [已完成]（2026-09-07）`ConfigConsoleView` 的字典选项、扫描档位、配置路径和更新时间改为 query 快照派生；保存、字典上传和 PoC 更新先合并响应到缓存再失效重取，保留表单编辑与成功反馈。该页测试 6 项通过，提交 `8867e31c`。
 - [已完成]（2026-09-07）`TableModuleView` 主列表 queryFn 与兼容 `loadRows` 共用取数函数和缓存 key；force refresh 同步标记列表/任务详情计数缓存，导出 job 轮询纳入独立 query key 并支持重入去重。现有模块测试 6 项通过，提交 `712bde9c`。
 - [已完成]（2026-09-08）`TableModuleView` 列表 AI 批量分析由数据型 `useEffect` 迁移到 React Query，query key 绑定模块、prompt 和当前列表快照，保留 disabled/error fallback 与 100 行分批请求；TypeScript 检查通过。
-- [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移，DataTable 尚未接入所有页面级主列表。
-- [未完成] 首行冻结下线属于用户可见行为变化，需在发布说明和回归清单中单独确认。
+- [已完成]（2026-09-08）`TableModuleView` 页面级主列表接入 `DataTable`，通过自定义表头/行保留选择、排序、复杂单元格和任务操作，超过 200 行继续使用组件虚拟滚动；`npm run lint` 通过。
+- [已完成]（2026-09-08）首行冻结下线的用户可见行为、历史状态兼容和回归清单已登记到 [UI 滚动模型发布说明](../release-notes/2026-09-08-ui-scroll-model.md)。
+- [未完成] Phase 3 尚未完成全量 `useEffect → react-query` 迁移。
 
 当前判定：UI 代码重构 [已完成]；联调、兼容性和用户体验验收 [未完成]。计划 4 不影响计划 6 的 API 契约实现，但不能从总计划最终完成项中移除。

@@ -208,6 +208,8 @@ def main():
         if not args.no_backup:
             backup_path = _build_backup_path(runtime_path)
             backup_path.write_text(runtime_path.read_text(encoding="utf-8"), encoding="utf-8")
+            # 备份同样可能包含 provider 配置，不能因升级同步而放宽敏感文件权限。
+            os.chmod(backup_path, 0o600)
             if not args.quiet:
                 print("backup created: {}".format(backup_path))
 

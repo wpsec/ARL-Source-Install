@@ -5,9 +5,17 @@
 
 from app import utils
 from app.services import run_risk_cruising, run_sniffer
+from app.services.task_result_write_service import TaskResultWriteService
 
 
 logger = utils.get_logger()
+
+
+def _task_result_writer(task, utils_module=utils):
+    return getattr(task, "_result_writer", None) or TaskResultWriteService(
+        task.task_id,
+        utils_module=utils_module,
+    )
 
 
 class IPNPOCServiceDetectionStageService(object):
@@ -49,7 +57,7 @@ class IPNPOCServiceDetectionStageService(object):
             item["task_id"] = task.task_id
             item["save_date"] = self.utils.curr_date()
             item["source"] = "npoc_sniffer"
-            self.utils.conn_db("npoc_service").insert_one(item)
+            _task_result_writer(task, self.utils).insert_one("npoc_service", item)
         return result
 
 
@@ -76,5 +84,5 @@ class IPBruteConfigStageService(object):
         for item in result:
             item["task_id"] = task.task_id
             item["save_date"] = self.utils.curr_date()
-            self.utils.conn_db("vuln").insert_one(item)
+            _task_result_writer(task, self.utils).insert_one("vuln", item)
         return result

@@ -63,6 +63,11 @@ echo "Syncing runtime config from template (missing keys only)..."
 if ! PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet; then
   echo "[WARN] runtime config sync failed, continue startup with existing config"
 fi
+if ! PYTHONPATH=/code python3 -m app.tools.check_runtime_config \
+  --runtime /code/app/config.yaml --quiet; then
+  echo "[ERROR] runtime config security check failed, abort startup"
+  exit 1
+fi
 
 echo "Starting gen_crt.sh..."
 gen_crt.sh && echo "gen_crt.sh completed"

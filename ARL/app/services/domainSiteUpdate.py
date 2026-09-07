@@ -14,6 +14,7 @@ from app.services.wildcardDomain import (
     domain_info_hits_wildcard_records,
     domain_info_hits_wildcard_profile,
 )
+from app.services.task_result_write_service import TaskResultWriteService
 
 from app import utils
 
@@ -29,6 +30,7 @@ class DomainSiteUpdate(object):
         self.domain_info_list = []
         self.available_sites = []
         self.base_update_task = BaseUpdateTask(self.task_id)
+        self._result_writer = TaskResultWriteService(self.task_id)
         self._wildcard_profile_cache = {}
 
     def save_domain_info(self):
@@ -130,7 +132,7 @@ class DomainSiteUpdate(object):
             site_info.setdefault("update_date", curr_date)
 
         if site_info_list:
-            utils.conn_db('site').insert_many(site_info_list)
+            self._result_writer.insert_many("site", site_info_list)
 
     # 对域名进行检查，如果域名不在任务范围内，就不进行更新
     def set_and_check_domains(self):

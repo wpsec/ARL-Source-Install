@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { Fragment, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
@@ -29,6 +29,8 @@ export function DataTable<Row extends object>({
   dense = false,
   tableClass = '',
   virtualizedMaxHeightClass = 'max-h-[72vh]',
+  renderHeader,
+  renderRow,
 }: {
   columns: Array<DataTableColumn<Row>>;
   rows: Row[];
@@ -41,6 +43,10 @@ export function DataTable<Row extends object>({
   tableClass?: string;
   /** 虚拟模式下的内部滚动高度来源（白名单要求确定高度）。 */
   virtualizedMaxHeightClass?: string;
+  /** 页面级表格需要保留列排序、选择和业务操作时，自定义表头。 */
+  renderHeader?: () => ReactNode;
+  /** 页面级表格需要保留复杂单元格交互时，自定义行；仍由 DataTable 统一承载列表和虚拟滚动。 */
+  renderRow?: (row: Row, index: number) => ReactNode;
 }) {
   const cellPad = dense ? 'px-3 py-2' : 'px-4 py-3';
   const parentRef = useRef<HTMLDivElement>(null);
@@ -75,18 +81,20 @@ export function DataTable<Row extends object>({
     >
       <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
         <thead className="bg-base-100/40 border-b border-base-300">
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                className={`${cellPad} text-sm font-black whitespace-nowrap ${
-                  column.headerClass ?? 'text-content-muted text-center'
-                }`}
-              >
-                {column.header}
-              </th>
-            ))}
-          </tr>
+          {renderHeader ? renderHeader() : (
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  className={`${cellPad} text-sm font-black whitespace-nowrap ${
+                    column.headerClass ?? 'text-content-muted text-center'
+                  }`}
+                >
+                  {column.header}
+                </th>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
           {loading ? (
@@ -111,6 +119,7 @@ export function DataTable<Row extends object>({
               {virtualItems.map((virtualRow) => {
                 const index = virtualRow.index;
                 const row = rows[index];
+                if (renderRow) return <Fragment key={rowKey(row, index)}>{renderRow(row, index)}</Fragment>;
                 return (
                   <tr
                     key={rowKey(row, index)}
@@ -129,7 +138,9 @@ export function DataTable<Row extends object>({
               ) : null}
             </>
           ) : (
-            rows.map((row, index) => (
+            rows.map((row, index) => renderRow ? (
+              <Fragment key={rowKey(row, index)}>{renderRow(row, index)}</Fragment>
+            ) : (
               <tr key={rowKey(row, index)} className="border-b border-base-300/50">
                 {renderCells(row, index)}
               </tr>

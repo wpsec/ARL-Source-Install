@@ -99,6 +99,8 @@ tmp_capture/
 .idea/
 
 config.yaml
+docker/config-runtime.yaml
+docker/config-runtime.yaml.bak.*
 supervisord.conf
 
 node_modules/

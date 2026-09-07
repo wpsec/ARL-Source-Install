@@ -200,7 +200,7 @@ services:
       [
         "sh",
         "-c",
-        "wait-for-it.sh -t 0 mongodb:27017; wait-for-it.sh -t 0 rabbitmq:5672; wait-for-it.sh -t 0 redis:6379; PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet || { echo '[ERROR] scheduler runtime config sync failed'; exit 1; }; python3 -m app.scheduler",
+        "wait-for-it.sh -t 0 mongodb:27017; wait-for-it.sh -t 0 rabbitmq:5672; wait-for-it.sh -t 0 redis:6379; PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet || { echo '[ERROR] scheduler runtime config sync failed'; exit 1; }; PYTHONPATH=/code python3 -m app.tools.check_runtime_config --runtime /code/app/config.yaml --quiet || { echo '[ERROR] scheduler runtime config security check failed'; exit 1; }; python3 -m app.scheduler",
       ]
     environment:
       - LANG=en_US.UTF-8

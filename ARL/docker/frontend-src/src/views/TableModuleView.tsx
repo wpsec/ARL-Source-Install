@@ -30,6 +30,7 @@ import {
   sleep,
 } from '../api/client';
 import { Modal } from '../components/ui/Modal';
+import { DataTable } from '../components/ui/DataTable';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
   AI_DENOISE_MODULE_LABEL_MAP,
@@ -3314,10 +3315,24 @@ export function TableModuleView({
 
       {hasList ? (
         <div className="bg-base-200/35 border border-base-300 rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="w-full border-collapse text-sm md:text-[15px]">
-              <thead className="bg-base-100/40 border-b border-base-300">
-                <tr>
+          <DataTable
+            columns={[
+              { key: '__select', header: '' },
+              ...(showIndexColumn ? [{ key: '__index', header: '序号' }] : []),
+              ...columns.map((column) => ({ key: column, header: getColumnLabel(column) })),
+              ...(hasRowOperate ? [{ key: '__operate', header: '操作' }] : []),
+            ]}
+            rows={displayRows}
+            rowKey={(row, rowIndex) => getRowId(row) || `row-${page}-${rowIndex}`}
+            loading={loading}
+            emptyText={
+              module.id === 'fileleak'
+                ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
+                : '暂无数据'
+            }
+            tableClass="w-full border-collapse text-sm md:text-[15px]"
+            renderHeader={() => (
+              <tr>
                   <th className="px-4 py-3 w-12 text-center">
                     <input
                       type="checkbox"
@@ -3374,9 +3389,8 @@ export function TableModuleView({
                     <th className={`px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>操作</th>
                   ) : null}
                 </tr>
-              </thead>
-              <tbody>
-                {displayRows.map((row, rowIndex) => {
+              )}
+            renderRow={(row, rowIndex) => {
                   const id = getRowId(row);
                   const checked = selectedIds.includes(id);
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
@@ -4376,22 +4390,8 @@ export function TableModuleView({
                       ) : null}
                     </tr>
                   );
-                })}
-                {displayRows.length === 0 && !loading ? (
-                  <tr>
-                    <td
-                      colSpan={Math.max(columns.length + 1 + (showIndexColumn ? 1 : 0) + (hasRowOperate ? 1 : 0), 2)}
-                      className="px-4 py-10 text-center text-content-muted"
-                    >
-                      {module.id === 'fileleak'
-                        ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
-                        : '暂无数据'}
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
+                }}
+          />
 
           <div className="px-4 py-3 border-t border-base-300 bg-base-100/30 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="text-xs text-content-muted font-semibold">

@@ -33,6 +33,18 @@ sync_runtime_config_from_template() {
     return 0
 }
 
+check_runtime_config() {
+    local check_script="$SCRIPT_DIR/ARL/app/tools/check_runtime_config.py"
+    if ! python3 "$check_script" \
+        --runtime "$DOCKER_DIR/config-runtime.yaml" \
+        --template "$DOCKER_DIR/config-docker.yaml" \
+        --fix-permissions \
+        --quiet; then
+        echo "❌ 运行配置安全预检未通过：请检查配置文件中的连接串凭据和文件权限"
+        return 1
+    fi
+}
+
 # 凭据治理（计划 1）：.env 是部署凭据唯一事实来源，必须存在且通过预检。
 # 本脚本不再内置任何默认账号/密码——“无 .env 时弱凭据启动”路径已移除；
 # 也不再回显密码明文。轮换步骤见 docs/reference 配置治理 runbook。
@@ -132,6 +144,7 @@ else
     echo "✓ 检测到 config-runtime.yaml，将复用用户运行配置"
 fi
 sync_runtime_config_from_template
+check_runtime_config
 echo "✓ 配置文件已准备"
 
 # 启动服务

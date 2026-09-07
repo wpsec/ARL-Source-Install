@@ -34,7 +34,7 @@ from app.config import Config, normalize_dict_path_compat
 from app import services
 from app import modules
 from app.modules import ScanPortType, CollectSource
-from app.services import fetchCert, run_risk_cruising, run_sniffer, BaseUpdateTask
+from app.services import fetchCert, BaseUpdateTask
 from app.services.service_detection import (
     apply_npoc_service_result,
     build_sniffer_targets,
@@ -52,14 +52,11 @@ from app.services.wildcardDomain import (
     domain_info_hits_wildcard_profile_with_details,
     build_wildcard_probe_roots,
 )
-from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by_task_id
-from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin, run_query_plugin_by_ip, run_query_plugin_by_cert
 from app.utils.log_safety import safe_error_text
 from app.services.domainSiteUpdate import domain_site_update
 from app.repositories import DomainRepository
 from app.services.task_orchestrator import DomainTaskOrchestrator
-from app.services.task_pipeline import TaskPipeline
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services.domain_stage_services import (
     AltDNS,
@@ -391,9 +388,6 @@ ssl_cert
 skip_scan_cdn_ip
 dns_query_plugin
 '''
-
-MAX_MAP_COUNT = 35
-
 
 class DomainTask(CommonTask):
     def __init__(self, base_domain=None, task_id=None, options=None):
@@ -770,111 +764,13 @@ class DomainTask(CommonTask):
         return DomainDiscoveryStageService(self).run_domain_brute()
 
     def clear_domain_info_by_record(self, domain_info_list):
-        self._prewarm_wildcard_profiles(domain_info_list)
-        self._prewarm_wildcard_candidate_details(domain_info_list)
-        new_list = []
-        for info in domain_info_list:
-            if not info.record_list:
-                continue
-
-            domain = utils.normalize_domain(getattr(info, "domain", ""))
-            if not domain:
-                continue
-
-            if domain in self._dns_policy_cache:
-                allow_scan, policy_detail = self._dns_policy_cache[domain]
-            else:
-                allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
-                self._dns_policy_cache[domain] = (allow_scan, policy_detail)
-
-            if not allow_scan:
-                logger.info(
-                    "skip domain by dns policy domain:{} reason:{} resolver_ips:{} system_ips:{}".format(
-                        domain,
-                        policy_detail.get("reason", ""),
-                        policy_detail.get("resolver_ips", []),
-                        policy_detail.get("system_ips", []),
-                    )
-                )
-                continue
-
-            if domain in self._wildcard_domain_hit_cache:
-                if self._wildcard_domain_hit_cache[domain]:
-                    continue
-            else:
-                wildcard_profile_map = self._get_wildcard_profile_map_for_domain(domain)
-                wildcard_hit = False
-                if wildcard_profile_map:
-                    candidate_details = self._wildcard_candidate_detail_cache.get(domain)
-                    if candidate_details is None:
-                        wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
-                    else:
-                        wildcard_hit = domain_info_hits_wildcard_profile_with_details(
-                            info,
-                            wildcard_profile_map,
-                            candidate_details,
-                        )
-                elif domain_info_hits_wildcard_records(info, self.wildcard_domain_records):
-                    wildcard_hit = True
-
-                self._wildcard_domain_hit_cache[domain] = wildcard_hit
-                if wildcard_hit:
-                    continue
-
-            record = info.record_list[0]
-            cnt = self.record_map.get(record, 0)
-            cnt += 1
-            self.record_map[record] = cnt
-            if cnt > MAX_MAP_COUNT:
-                continue
-
-            new_list.append(info)
-
-        return new_list
+        return DomainDiscoveryStageService(self).clear_domain_info_by_record(domain_info_list)
 
     def arl_search(self):
         return DomainDiscoveryStageService(self).run_arl_search()
 
     def build_domain_info(self, domains):
-        """
-        构建domain_info_list 带去重功能
-        """
-        fake_list = []
-        domains_set = set()
-        for item in domains:
-            domain = item
-            if isinstance(item, dict):
-                domain = item["domain"]
-
-            domain = utils.normalize_domain(domain)
-            if not domain:
-                continue
-
-            if domain in domains_set:
-                continue
-            domains_set.add(domain)
-
-            if utils.check_domain_black(domain):
-                continue
-
-            fake = {
-                "domain": domain,
-                "type": "CNAME",
-                "record": [],
-                "ips": []
-            }
-            fake_info = modules.DomainInfo(**fake)
-            if fake_info not in self.domain_info_list:
-                fake_list.append(fake_info)
-
-        if self.task_tag == "monitor":
-            return fake_list
-        domain_info_list = services.build_domain_info(
-            fake_list,
-            dns_policy_cache=self._dns_policy_cache,
-        )
-
-        return domain_info_list
+        return DomainDiscoveryStageService(self).build_domain_info(domains)
 
     def alt_dns_current(self):
         return DomainDiscoveryStageService(self).run_alt_dns_current()
@@ -911,203 +807,10 @@ class DomainTask(CommonTask):
         return DomainNetworkStageService(self).run_ssl_cert()
 
     def _legacy_ssl_cert(self):
-        if self.options.get("port_scan"):
-            self.cert_map = ssl_cert(self.ip_info_list, self.base_domain)
-        else:
-            # 未启用端口扫描时，仍构建 443 目标并携带域名上下文，保证 CDN 场景优先拿到业务域名证书
-            fake_targets = []
-            for ip in sorted(self.ip_set):
-                domains = list(self.ipv4_map.get(ip, set()))
-                fake_targets.append(
-                    modules.IPInfo(
-                        ip=ip,
-                        domain=domains,
-                        port_info=[modules.PortInfo(port_id=443, service_name="https")],
-                        os_info={},
-                        cdn_name="",
-                    )
-                )
-            self.cert_map = ssl_cert(fake_targets, self.base_domain)
-
-        # 同一 endpoint 若已经命中 SNI 证书，则 default 结果仅作兜底不再入库，
-        # 避免 CDN 场景下“默认证书”覆盖业务观感。
-        sni_success_endpoints = set()
-        for target in self.cert_map:
-            cert_obj = self.cert_map.get(target, {})
-            if not isinstance(cert_obj, dict):
-                continue
-
-            cert_data = dict(cert_obj)
-            scan_meta = cert_data.pop("_scan_meta", {})
-            if not isinstance(scan_meta, dict):
-                scan_meta = {}
-
-            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
-            ip, port = fetchCert.split_host_port(endpoint)
-            if not ip or port <= 0:
-                continue
-
-            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
-            if scan_mode != "sni":
-                continue
-
-            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
-            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
-            if not sni_domain:
-                sni_domain = legacy_server_name
-            if not sni_domain:
-                continue
-
-            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
-            if sni_domain not in domains:
-                domains = fetchCert.normalize_domains(domains + [sni_domain])
-
-            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
-            if domains and not matched_domains:
-                continue
-            if matched_domains and sni_domain not in matched_domains:
-                continue
-
-            sni_success_endpoints.add(endpoint)
-
-        for target in self.cert_map:
-            cert_obj = self.cert_map.get(target, {})
-            if not isinstance(cert_obj, dict):
-                continue
-
-            cert_data = dict(cert_obj)
-            scan_meta = cert_data.pop("_scan_meta", {})
-            if not isinstance(scan_meta, dict):
-                scan_meta = {}
-
-            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(target).strip()
-            ip, port = fetchCert.split_host_port(endpoint)
-            if not ip or port <= 0:
-                continue
-
-            scan_mode = str(scan_meta.get("scan_mode", "default") or "default").strip().lower()
-            if scan_mode not in ["default", "sni"]:
-                scan_mode = "default"
-
-            if scan_mode == "default" and endpoint in sni_success_endpoints:
-                continue
-
-            sni_domain = utils.normalize_domain(scan_meta.get("sni_domain", ""))
-            # 兼容旧结构：历史扫描元数据只有 server_name 字段。
-            legacy_server_name = utils.normalize_domain(scan_meta.get("server_name", ""))
-            if not sni_domain and scan_mode == "sni":
-                sni_domain = legacy_server_name
-
-            domains = fetchCert.normalize_domains(scan_meta.get("domains", []))
-            if sni_domain and sni_domain not in domains:
-                domains = fetchCert.normalize_domains(domains + [sni_domain])
-
-            matched_domains = fetchCert.match_cert_domains(cert_data, domains)
-            # domain 任务仅保留与目标域上下文命中的证书，避免将 CDN 默认证书映射到业务域名。
-            if domains and not matched_domains:
-                continue
-
-            if scan_mode == "sni" and sni_domain and matched_domains and sni_domain not in matched_domains:
-                continue
-
-            domains = matched_domains if matched_domains else domains
-
-            if scan_mode == "sni" and sni_domain and sni_domain in domains:
-                domain = sni_domain
-            elif domains:
-                domain = domains[0]
-            else:
-                domain = ""
-
-            fingerprint = cert_data.get("fingerprint", {}) if isinstance(cert_data.get("fingerprint"), dict) else {}
-            cert_sha256 = str(fingerprint.get("sha256", "")).strip().lower().replace(":", "")
-            cert_sha1 = str(fingerprint.get("sha1", "")).strip().lower().replace(":", "")
-            serial_number = str(cert_data.get("serial_number", "")).strip().lower().replace(" ", "")
-            cert_identity_key = cert_sha256 or cert_sha1 or serial_number or ""
-
-            validity = cert_data.get("validity", {}) if isinstance(cert_data.get("validity"), dict) else {}
-            cert_end_time = str(validity.get("end", "")).strip()
-            observe_id = str(scan_meta.get("observe_id", "")).strip()
-
-            item = {
-                "ip": ip,
-                "port": port,
-                "host": endpoint,
-                "domain": domain,
-                "domains": domains,
-                "sni_domain": sni_domain,
-                "scan_mode": scan_mode,
-                "observe_id": observe_id,
-                "cert_identity_key": cert_identity_key,
-                "cert_end_time": cert_end_time,
-                "cert": cert_data,
-                "task_id": self.task_id,
-            }
-
-            # 多SNI扫描后按任务维度做轻量去重，避免重复落库同一观测。
-            query = {
-                "task_id": self.task_id,
-                "ip": ip,
-                "port": port,
-                "scan_mode": scan_mode,
-                "sni_domain": sni_domain,
-            }
-            if cert_identity_key:
-                query["cert_identity_key"] = cert_identity_key
-            if cert_end_time:
-                query["cert_end_time"] = cert_end_time
-            if not cert_identity_key and not cert_end_time:
-                query["observe_id"] = observe_id or endpoint
-
-            utils.conn_db('cert').update_one(query, {"$setOnInsert": item}, upsert=True)
-
+        """历史私有入口保留兼容性，证书阶段由 DomainNetworkStageService 持有。"""
+        return self.ssl_cert()
     def build_single_domain_info(self, domain):
-        domain = utils.normalize_domain(domain)
-        if not domain:
-            return
-
-        if domain in self._dns_policy_cache:
-            allow_scan, policy_detail = self._dns_policy_cache[domain]
-        else:
-            allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
-            self._dns_policy_cache[domain] = (allow_scan, policy_detail)
-
-        if not allow_scan:
-            logger.info(
-                "skip build_single_domain_info by dns policy domain:{} reason:{} resolver_ips:{} system_ips:{}".format(
-                    domain,
-                    policy_detail.get("reason", ""),
-                    policy_detail.get("resolver_ips", []),
-                    policy_detail.get("system_ips", []),
-                )
-            )
-            return
-
-        _type = "A"
-        cname = utils.get_cname(domain)
-        if cname:
-            _type = 'CNAME'
-        preferred_ips = list(policy_detail.get("preferred_ips", []) or [])
-        if preferred_ips:
-            ips = preferred_ips
-        else:
-            ips = utils.get_ip(domain)
-        if _type == "A":
-            record = ips
-        else:
-            record = cname
-
-        if not ips:
-            return
-
-        item = {
-            "domain": domain,
-            "type": _type,
-            "record": record,
-            "ips": ips
-        }
-
-        return modules.DomainInfo(**item)
+        return DomainDiscoveryStageService(self).build_single_domain_info(domain)
 
     @staticmethod
     def _chunk_list(items, chunk_size):

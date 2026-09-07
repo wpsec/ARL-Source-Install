@@ -20,12 +20,27 @@ from app.services.dns_query import (
 )
 from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
+from app.services.task_result_write_service import TaskResultWriteService
+from app.services.wildcardDomain import (
+    domain_info_hits_wildcard_profile,
+    domain_info_hits_wildcard_profile_with_details,
+    domain_info_hits_wildcard_records,
+)
 from app.utils.log_safety import safe_error_text
 from app.utils.provider_http import stage_execution_context
 from app.repositories import DomainRepository
 
 
 logger = utils.get_logger()
+MAX_MAP_COUNT = 35
+
+
+def _task_result_writer(task, utils_module=utils):
+    """阶段结果写入统一走任务 Writer；兼容轻量测试任务和历史调用方。"""
+    return getattr(task, "_result_writer", None) or TaskResultWriteService(
+        getattr(task, "task_id", ""),
+        utils_module=utils_module,
+    )
 
 
 def _normalize_domain_target(value):
@@ -263,6 +278,134 @@ class DomainDiscoveryStageService(object):
 
     def __init__(self, task):
         self.task = task
+
+    def build_single_domain_info(self, domain):
+        """构建单个域名的 DNS 资产，保留任务级 DNS policy 缓存。"""
+        task = self.task
+        domain = utils.normalize_domain(domain)
+        if not domain:
+            return None
+
+        if domain in task._dns_policy_cache:
+            allow_scan, policy_detail = task._dns_policy_cache[domain]
+        else:
+            allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
+            task._dns_policy_cache[domain] = (allow_scan, policy_detail)
+
+        if not allow_scan:
+            logger.info(
+                "skip build_single_domain_info by dns policy domain:{} reason:{} "
+                "resolver_ips:{} system_ips:{}".format(
+                    domain,
+                    policy_detail.get("reason", ""),
+                    policy_detail.get("resolver_ips", []),
+                    policy_detail.get("system_ips", []),
+                )
+            )
+            return None
+
+        cname = utils.get_cname(domain)
+        preferred_ips = list(policy_detail.get("preferred_ips", []) or [])
+        ips = preferred_ips or utils.get_ip(domain)
+        if not ips:
+            return None
+
+        return modules.DomainInfo(
+            domain=domain,
+            type="CNAME" if cname else "A",
+            record=cname if cname else ips,
+            ips=ips,
+        )
+
+    def build_domain_info(self, domains):
+        """构建域名资产并完成任务内去重，监控任务保留未解析的兼容语义。"""
+        task = self.task
+        fake_list = []
+        domains_set = set()
+        for item in domains or []:
+            domain = item.get("domain", "") if isinstance(item, dict) else item
+            domain = utils.normalize_domain(domain)
+            if not domain or domain in domains_set:
+                continue
+            domains_set.add(domain)
+            if utils.check_domain_black(domain):
+                continue
+
+            fake_info = modules.DomainInfo(
+                domain=domain,
+                type="CNAME",
+                record=[],
+                ips=[],
+            )
+            if fake_info not in task.domain_info_list:
+                fake_list.append(fake_info)
+
+        if task.task_tag == "monitor":
+            return fake_list
+        return services.build_domain_info(
+            fake_list,
+            dns_policy_cache=task._dns_policy_cache,
+        )
+
+    def clear_domain_info_by_record(self, domain_info_list):
+        """过滤 DNS policy、泛解析和异常共享记录，收口域名发现准入。"""
+        task = self.task
+        task._prewarm_wildcard_profiles(domain_info_list)
+        task._prewarm_wildcard_candidate_details(domain_info_list)
+        new_list = []
+        for info in domain_info_list or []:
+            if not info.record_list:
+                continue
+
+            domain = utils.normalize_domain(getattr(info, "domain", ""))
+            if not domain:
+                continue
+
+            if domain in task._dns_policy_cache:
+                allow_scan, policy_detail = task._dns_policy_cache[domain]
+            else:
+                allow_scan, policy_detail = utils.check_dns_policy_for_host(domain)
+                task._dns_policy_cache[domain] = (allow_scan, policy_detail)
+            if not allow_scan:
+                logger.info(
+                    "skip domain by dns policy domain:{} reason:{} resolver_ips:{} "
+                    "system_ips:{}".format(
+                        domain,
+                        policy_detail.get("reason", ""),
+                        policy_detail.get("resolver_ips", []),
+                        policy_detail.get("system_ips", []),
+                    )
+                )
+                continue
+
+            if domain in task._wildcard_domain_hit_cache:
+                if task._wildcard_domain_hit_cache[domain]:
+                    continue
+            else:
+                wildcard_profile_map = task._get_wildcard_profile_map_for_domain(domain)
+                wildcard_hit = False
+                if wildcard_profile_map:
+                    candidate_details = task._wildcard_candidate_detail_cache.get(domain)
+                    if candidate_details is None:
+                        wildcard_hit = domain_info_hits_wildcard_profile(info, wildcard_profile_map)
+                    else:
+                        wildcard_hit = domain_info_hits_wildcard_profile_with_details(
+                            info,
+                            wildcard_profile_map,
+                            candidate_details,
+                        )
+                elif domain_info_hits_wildcard_records(info, task.wildcard_domain_records):
+                    wildcard_hit = True
+                task._wildcard_domain_hit_cache[domain] = wildcard_hit
+                if wildcard_hit:
+                    continue
+
+            record = info.record_list[0]
+            task.record_map[record] = task.record_map.get(record, 0) + 1
+            if task.record_map[record] > MAX_MAP_COUNT:
+                continue
+            new_list.append(info)
+        return new_list
 
     def run_load_saved_domain_info(self):
         task = self.task
@@ -940,7 +1083,7 @@ class DomainDiscoveryStageService(object):
         for url in page_map:
             item = build_url_item(url, task.task_id, source=CollectSource.SEARCHENGINE)
             item.update(page_map[url])
-            utils.conn_db("url").insert_one(item)
+            _task_result_writer(task).insert_one("url", item)
 
     def register_search_page_candidates(self, urls, page_map):
         """将搜索结果页面登记为统一候选，保留失败候选的后续处理入口。"""
@@ -981,7 +1124,8 @@ class DomainNetworkStageService(object):
         for ip_info_obj in ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = task.task_id
-            utils.conn_db("ip").update_one(
+            _task_result_writer(task).update_one(
+                "ip",
                 {"task_id": task.task_id, "ip": ip_info_obj.ip},
                 {"$set": ip_info},
                 upsert=True,
@@ -1137,7 +1281,9 @@ class DomainNetworkStageService(object):
             if not cert_identity_key and not cert_end_time:
                 query["observe_id"] = observe_id or endpoint
 
-            utils.conn_db("cert").update_one(query, {"$setOnInsert": item}, upsert=True)
+            _task_result_writer(task).update_one(
+                "cert", query, {"$setOnInsert": item}, upsert=True
+            )
 
     def run_gen_ipv4_map(self):
         task = self.task
@@ -1167,7 +1313,8 @@ class DomainNetworkStageService(object):
         for ip_info_obj in fake_ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = task.task_id
-            utils.conn_db("ip").update_one(
+            _task_result_writer(task).update_one(
+                "ip",
                 {"task_id": task.task_id, "ip": ip_info_obj.ip},
                 {"$set": ip_info},
                 upsert=True,
@@ -1253,9 +1400,10 @@ class DomainNetworkStageService(object):
                 "task_id": task.task_id,
             })
 
-        utils.conn_db("service").delete_many({"task_id": task.task_id})
+        writer = _task_result_writer(task)
+        writer.delete_many("service", {"task_id": task.task_id})
         if task.service_info_list:
-            utils.conn_db("service").insert_many(task.service_info_list)
+            writer.insert_many("service", task.service_info_list)
 
         logger.info(
             "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(
@@ -1407,7 +1555,8 @@ class DomainNetworkStageService(object):
         for ip_info_obj in ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = task.task_id
-            utils.conn_db("ip").update_one(
+            _task_result_writer(task).update_one(
+                "ip",
                 {"task_id": task.task_id, "ip": ip_info_obj.ip},
                 {"$set": ip_info},
                 upsert=True,
@@ -1433,7 +1582,8 @@ class DomainNetworkStageService(object):
                 continue
 
             ip_info_obj.domain = merged_domain
-            utils.conn_db("ip").update_one(
+            _task_result_writer(task).update_one(
+                "ip",
                 {"task_id": task.task_id, "ip": ip_info_obj.ip},
                 {"$set": {"domain": merged_domain}},
             )
@@ -1780,7 +1930,7 @@ class DomainPostProcessStageService(object):
             item["task_id"] = task.task_id
             item["save_date"] = utils.curr_date()
             item["source"] = "npoc_sniffer"
-            utils.conn_db("npoc_service").insert_one(item)
+            _task_result_writer(task).insert_one("npoc_service", item)
         return len(result)
 
     def run_brute_config(self):
@@ -1810,7 +1960,7 @@ class DomainPostProcessStageService(object):
                 continue
             item["task_id"] = task.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db("vuln").insert_one(item)
+            _task_result_writer(task).insert_one("vuln", item)
             saved_count += 1
         return saved_count
 
@@ -1849,7 +1999,7 @@ class DomainPostProcessStageService(object):
                 "task_id": task.task_id,
                 "save_date": utils.curr_date(),
             }
-            utils.conn_db("vuln").insert_one(save_item)
+            _task_result_writer(task).insert_one("vuln", save_item)
             saved_count += 1
         return saved_count
 

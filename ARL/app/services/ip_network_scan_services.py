@@ -7,6 +7,7 @@
 from app import services, utils
 from app.config import Config
 from app.modules import ScanPortType
+from app.services.task_result_write_service import TaskResultWriteService
 
 
 logger = utils.get_logger()
@@ -79,7 +80,11 @@ class IPPortScanStageService(object):
                 ip_info["geo_city"] = self.utils.get_ip_city(curr_ip)
 
             if task.task_tag == "task":
-                self.utils.conn_db("ip").insert_one(ip_info)
+                writer = getattr(task, "_result_writer", None) or TaskResultWriteService(
+                    task.task_id,
+                    utils_module=self.utils,
+                )
+                writer.insert_one("ip", ip_info)
 
         if task.task_tag == "monitor":
             task.async_ip_info()

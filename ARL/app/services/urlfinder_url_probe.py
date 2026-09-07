@@ -15,6 +15,7 @@ from app import utils
 from app.config import Config
 from app.modules import CollectSource, WihRecord
 from app.services.pageFetch import page_fetch
+from app.services.task_result_write_service import TaskResultWriteService
 from app.services.url_candidate_filter import normalize_http_url_candidate
 
 logger = utils.get_logger()
@@ -57,6 +58,7 @@ class UrlfinderUrlProbeService:
         self.page_url_set = page_url_set if isinstance(page_url_set, set) else None
         self.waf_guard = waf_guard
         self.discovery_context = discovery_context
+        self._result_writer = TaskResultWriteService(self.task_id)
 
         self.enable = bool(getattr(Config, "URLFINDER_URL_PROBE_ENABLE", True))
         self.max_targets = int(getattr(Config, "URLFINDER_URL_PROBE_MAX_TARGETS", 300) or 300)
@@ -240,7 +242,8 @@ class UrlfinderUrlProbeService:
             item = self._build_url_item(url, self.task_id, source=CollectSource.WIH_URL_PROBE)
             item.update(page_data)
             # worker 恢复/重试路径幂等：(task_id, source, url) 唯一。
-            utils.conn_db("url").update_one(
+            self._result_writer.update_one(
+                "url",
                 {
                     "task_id": self.task_id,
                     "source": item.get("source", CollectSource.WIH_URL_PROBE),
