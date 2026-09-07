@@ -44,6 +44,31 @@ class CheckTestHygieneTest(unittest.TestCase):
         proc.wait.assert_called_once_with(timeout=5)
         proc.communicate.assert_called_once_with(timeout=1)
 
+    def test_collect_output_reaps_descendant_holding_pipe_after_parent_exit(self):
+        proc = mock.Mock(pid=1234)
+        proc.communicate.side_effect = subprocess.TimeoutExpired("checker", 10)
+
+        with mock.patch.object(MODULE, "terminate_process_tree", return_value=True) as terminate:
+            record = MODULE.collect_output("test.example", proc)
+
+        self.assertEqual("test.example\ttimeout\t?", record)
+        terminate.assert_called_once_with(proc)
+
+    @unittest.skipUnless(MODULE.os.name == "posix", "进程组回收仅在 POSIX 下验证")
+    def test_timeout_escalates_to_sigkill_and_still_drains_output(self):
+        proc = mock.Mock(pid=1234)
+        proc.wait.side_effect = [subprocess.TimeoutExpired("checker", 5), None]
+
+        with mock.patch.object(MODULE.os, "killpg") as killpg:
+            self.assertTrue(MODULE.terminate_process_tree(proc))
+
+        self.assertEqual(
+            [mock.call(1234, signal.SIGTERM), mock.call(1234, signal.SIGKILL)],
+            killpg.call_args_list,
+        )
+        proc.wait.assert_has_calls([mock.call(timeout=5), mock.call(timeout=5)])
+        proc.communicate.assert_called_once_with(timeout=1)
+
 
 if __name__ == "__main__":
     unittest.main()

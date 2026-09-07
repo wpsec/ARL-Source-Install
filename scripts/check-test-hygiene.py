@@ -98,30 +98,76 @@ def run_one(name, env):
     return proc
 
 
-def terminate_process_tree(proc):
-    """终止超时测试及其子进程，避免残留进程继续占用资源。"""
+def _signal_process_tree(proc, sig):
+    """向隔离的测试进程组发信号，并返回是否成功发出。"""
     try:
         if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGTERM)
+            os.killpg(proc.pid, sig)
+        elif sig == signal.SIGKILL:
+            proc.kill()
         else:
             proc.terminate()
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            if os.name == "posix":
-                os.killpg(proc.pid, signal.SIGKILL)
-            else:
-                proc.kill()
-            proc.wait(timeout=5)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            pass
     except ProcessLookupError:
-        pass
-    finally:
+        # 父进程可能已自然退出；后续仍需 drain 管道确认子进程是否残留。
+        return False
+    except OSError:
+        # 进程组状态变化或权限异常时交给后续 drain 逻辑判定是否仍可回收。
+        return False
+    return True
+
+
+def _drain_process_output(proc):
+    """回收父进程及其后代可能持有的管道；必要时升级为 SIGKILL。"""
+    try:
+        proc.communicate(timeout=1)
+    except subprocess.TimeoutExpired:
+        _signal_process_tree(proc, signal.SIGKILL)
         try:
             proc.communicate(timeout=1)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            pass
+        except subprocess.TimeoutExpired:
+            return False
+        except (OSError, ProcessLookupError):
+            return True
+    except (OSError, ProcessLookupError):
+        return True
+    return True
+
+
+def terminate_process_tree(proc):
+    """终止超时测试及其子进程，避免残留进程继续占用资源。"""
+    force_wait_failed = False
+    _signal_process_tree(proc, signal.SIGTERM)
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        _signal_process_tree(proc, signal.SIGKILL)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            force_wait_failed = True
+    except ProcessLookupError:
+        # 父进程已经退出，仍需继续 drain，不能因此跳过子进程清理。
+        force_wait_failed = False
+    drained = _drain_process_output(proc)
+    return drained and not force_wait_failed
+
+
+def collect_output(name, proc):
+    """收集测试输出；父进程退出但后代持有管道时也必须进入回收路径。"""
+    try:
+        out, _ = proc.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        cleaned = terminate_process_tree(proc)
+        marker = "timeout" if cleaned else "timeout-cleanup-failed"
+        return "%s\t%s\t?" % (name, marker)
+    except (OSError, ProcessLookupError) as exc:
+        return "%s\tcollect-error:%s:%s" % (
+            name,
+            type(exc).__name__,
+            str(exc)[:80],
+        )
+    lines = (out or "").strip().splitlines()
+    return lines[-1] if lines else "%s\tno-output\t?" % name
 
 
 def main(argv):
@@ -152,9 +198,7 @@ def main(argv):
                     continue
                 still.append((name, proc, started))
                 continue
-            out, _ = proc.communicate(timeout=10)
-            lines = (out or "").strip().splitlines()
-            record = lines[-1] if lines else "%s\tno-output\t?" % name
+            record = collect_output(name, proc)
             if record.endswith("\tclean"):
                 continue
             dirty.append(record)
