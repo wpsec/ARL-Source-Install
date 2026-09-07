@@ -899,7 +899,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 |---|---|
 | 独立流量类别 | `TRAFFIC_CLASSES` +`api_doc`(并发 6)/`endpoint_probe`(8)；`traffic_class_for_module` 把 `api_doc_scan`、`wih_endpoint_probe` 从 wih 词根拆出（先于泛 wih 判定）；`WafPolicy.is_host_blocked` 主机级封禁查询 |
 | 互不连坐 | 文档获取走 `api_doc` 类，`fetch_text` 新 `block_signal` 出参（默认 None 既有调用零变化）：类别熔断空结果标 `failed/waf_blocked`，与 `empty_response` 分开归因、不伪装"无 API"、照常入 P1-08 收口；探测走 `endpoint_probe` 类：类别熔断只停 probe（skipped），主机级封禁才整站暂停并标 `degraded/host_waf_blocked`（legacy 面保持 skipped 词汇，Registry 资产经 `queued→degraded` 新合法边收口，`probe_report` 词表 +degraded） |
-| 阶段/批次 metrics | `api_stage_wall_time`/`api_stage_cpu_time`/`api_stage_network_wait_time`（毫秒，queue 收口 flush；network_wait 只计真实 fetch 挂钟）；`api_probe_pending_total`；`api_probe_waf_blocked_total`/`api_probe_host_waf_blocked_total`；`api_document_waf_blocked_total`；`external_network_browser_intel`（Playwright 外部边界，T5/A8 口径）；配置新增 `API_ENDPOINT_CLAIM_LEASE_SEC`（900s，R6 fencing 配套），登记附录A §4.17 |
+| 阶段/批次 metrics | `api_stage_wall_time`/`api_stage_cpu_time`/`api_stage_network_wait_time`（毫秒，queue 收口 flush；network_wait 只计真实 fetch 挂钟）；`api_probe_pending_total`；`api_probe_waf_blocked_total`/`api_probe_host_waf_blocked_total`；`api_document_waf_blocked_total`；`external_network_browser_intel`（Playwright 外部边界，T5/A8 口径）；配置新增 `API_ENDPOINT_CLAIM_LEASE_SEC`（900s，R6 fencing 配套；键当时登记附录A §4.17，**标准接线兑现于 §4.20 P1-03**） |
 | 预算联动 | `API_DOCUMENT_STAGE_TIMEOUT_SEC` 与 provider_http 剩余预算取小的机制自第 3 批即在，本批未改；"文档解析不拖垮普通爬虫"进程面保障=类别独立并发闸+阶段预算，端到端度量归第 11 批 |
 
 验证：九件合跑 **261 项**全绿（R6 后 257 + 本批 4）；独立进程 parser 86/registry 62/models 38/shadow 8/browser 5/orchestrator 11/finalizer 26/url_probe 8；golden `--check` 无漂移；compileall、`git diff --check` 干净；probe_cache/web_info_intel 的合跑顺序污染经 stash 基线对照确认既有。`API_UNIFIED_ENABLE` 默认 False 不变。
@@ -987,7 +987,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 
 宿主门禁：api 九件合跑 **309 项全绿**（261→+48：registry 74/models 41/parser 86/shadow 8/rust_batch 33/finalizer 31/discovery 15/orchestrator 11/url_probe 8 口径合并）；golden `--check` 无漂移；compileall/diff-check/hygiene(4 改动测试文件 clean) 通过。容器面复核完成（2026-09-07 arm64 compose 全栈第三轮）：Ran 871、T11-0 新增测试全量 discover 0 失败、hygiene 149/149 clean、镜像内双 corpus strict exit=0，登记于计划 3 第三轮条目。`API_UNIFIED_ENABLE` 默认 False、Rust 默认 shadow 不变——T11-0 修复的是"未来切 rust 也不会误升级"与观测口径，不触碰生产默认路径。
 
-## 当前状态（2026-09-06 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批后）
+## 当前状态（2026-09-07 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批 + 第 11 批 T11-0/11-1 后）
 
 - [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
 - [已完成] 第 2 批 shadow metrics、ResponseRegistry 无副作用读取和 API 文档/Endpoint 探测观测接线已完成；该批不改变运行时输出。

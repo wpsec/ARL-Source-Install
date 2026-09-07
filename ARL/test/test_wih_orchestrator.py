@@ -21,6 +21,9 @@ from test._api_unified_bootstrap import load_modules  # noqa: E402
 _REAL_MODULES = load_modules(
     "app.services.discovery_context", "app.services.api_unified_models")
 _REAL_DISCOVERY_CONTEXT = _REAL_MODULES["app.services.discovery_context"]
+UnifiedApiEndpoint = _REAL_MODULES["app.services.api_unified_models"].UnifiedApiEndpoint
+compute_input_signature = _REAL_MODULES[
+    "app.services.api_unified_models"].compute_input_signature
 
 _MODULE_PATH = ARL_ROOT / "app" / "services" / "wih_orchestrator.py"
 _SPEC = importlib.util.spec_from_file_location("wih_orchestrator_test_module", _MODULE_PATH)
@@ -242,6 +245,120 @@ class _FakeApiRegistry(object):
         return list(self._claimable)[1:2]  # 模拟 1 个低置信度 pending 资产
 
 
+class EndpointProbeIdentityT111Test(unittest.TestCase):
+    """T11-1（第 11 批 Review P1）：补探合并/回填按完整 Endpoint identity。
+
+    同 (url, method) 的 rest/graphql、同 rest 不同 input_signature 是不同资产：
+    不得共享 observed 免探，结果也不得按 pair 猜测归因（WAF/失败会回填错资产）。
+    """
+
+    def _harness(self, claimable, first_round_endpoints=()):
+        ctx = _FakeDiscoveryContext([])
+        registry = _FakeApiRegistry(claimable)
+        ctx.api_candidate_registry = registry
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+        batches = []
+
+        def probe_spy(endpoints, **_kwargs):
+            batches.append([dict(e) for e in endpoints])
+            return endpoints
+
+        original_wih = fake_services.run_wih
+        original_probe = fake_services.run_wih_endpoint_probe
+        try:
+            fake_services.run_wih = lambda *_a, **_k: (
+                ["raw-record"], [dict(e) for e in first_round_endpoints])
+            fake_services.run_wih_endpoint_probe = probe_spy
+            WihOrchestrator(task).run()
+        finally:
+            fake_services.run_wih = original_wih
+            fake_services.run_wih_endpoint_probe = original_probe
+        return registry, batches
+
+    @staticmethod
+    def _ep(url, api_type="rest", signature="sig-a", graphql_operation="unknown",
+            source="page_intel"):
+        return UnifiedApiEndpoint(
+            url=url, method="GET", api_type=api_type,
+            graphql_operation=graphql_operation if api_type == "graphql" else "unknown",
+            input_signature=signature, source=source, confidence=60)
+
+    _U = "https://api.example.test/same"
+
+    def test_same_pair_different_api_type_both_probed(self):
+        # 模型层对 graphql+GET 的 url 直接拒绝（None）——identity 差异在
+        # Registry 资产面用两个不同 input_signature 的 REST 形态验证：
+        # 同 (url, method) 不同形态不得共享 observed 免探。
+        registry, batches = self._harness([
+            self._ep(self._U, api_type="rest", signature="sig-shape-a"),
+            self._ep(self._U, api_type="rest", signature="sig-shape-b"),
+        ])
+        followup = batches[-1]
+        self.assertEqual(2, len(followup),
+                         "同 (url,method) 不同 api_type 是不同资产，必须各自领取探测")
+        keys = {item["endpoint_key"] for item in followup}
+        self.assertEqual(2, len(keys))
+        statuses = [status for _u, _m, status in registry.reported]
+        self.assertNotIn("observed", statuses, "旧 pair 语义下的错误 observed 免探不得复现")
+
+    def test_same_pair_different_signature_results_map_by_identity(self):
+        ep_a = self._ep(self._U, signature="sig-shape-a")
+        ep_b = self._ep(self._U, signature="sig-shape-b")
+        identity_a = ep_a.idempotency_key
+        registry = _FakeApiRegistry([ep_a, ep_b])
+        ctx = _FakeDiscoveryContext([])
+        ctx.api_candidate_registry = registry
+        task = _EndpointTask(ctx)
+        task.assertEqual = self.assertEqual
+
+        def probe_spy(endpoints, **_kwargs):
+            out = []
+            for e in endpoints:
+                e = dict(e)
+                if e.get("endpoint_key") == identity_a:
+                    # A 命中的是类别熔断（skipped+host_waf_blocked→degraded），
+                    # B 必须独立拿到 probed——pair 语义下二者会串扰。
+                    e["verification_status"] = "skipped"
+                    e["degraded_reason"] = "host_waf_blocked"
+                else:
+                    e["verification_status"] = "probed"
+                out.append(e)
+            return out
+
+        original_wih = fake_services.run_wih
+        original_probe = fake_services.run_wih_endpoint_probe
+        try:
+            fake_services.run_wih = lambda *_a, **_k: (["raw"], [])
+            fake_services.run_wih_endpoint_probe = probe_spy
+            WihOrchestrator(task).run()
+        finally:
+            fake_services.run_wih = original_wih
+            fake_services.run_wih_endpoint_probe = original_probe
+        # 领取顺序即回报顺序：A→degraded(带原因)、B→probed(无原因)
+        self.assertEqual(
+            [("https://api.example.test/same", "GET", "degraded"),
+             ("https://api.example.test/same", "GET", "probed")],
+            registry.reported[:2])
+        self.assertEqual(
+            [(self._U, "host_waf_blocked"), (self._U, "")],
+            registry.reported_reasons[:2],
+            "WAF 降级归因只能落到被探测命中的那条 identity 资产")
+
+    def test_same_identity_first_round_merge_yields_observed_once(self):
+        # 首轮 (wih,url,method) 签名资产与 claim 资产 identity 完全一致
+        # （多来源合并到同一资产）→ 允许且仅一次 observed 免探。
+        signature = compute_input_signature("wih", self._U, "GET")
+        merged = self._ep(self._U, signature=signature, source="page_intel")
+        registry, batches = self._harness(
+            [merged], first_round_endpoints=[{"url": self._U, "method": "GET"}])
+        followup_items = [item for batch in batches for item in batch
+                          if "endpoint_key" in item]
+        self.assertEqual([], followup_items, "同 identity 已观察，不得再次探测")
+        observed = [r for r in registry.reported if r[2] == "observed"]
+        self.assertEqual(1, len(observed), observed)
+
+
 class TestWihOrchestratorEndpointOrder(unittest.TestCase):
     def _run_with_endpoints(self, task, probe_spy):
         original_wih = fake_services.run_wih
@@ -307,10 +424,17 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
         ctx = _FakeDiscoveryContext([
             _FakeCandidate("https://should-not-probe.test/x"),  # 图条目须被忽略
         ])
+        # T11-1 identity 语义："首轮已探测"必须按同一 Endpoint identity
+        # （url+method+api_type+input_signature）构造——pair 相同但签名不同
+        # 不再是同一资产，不得免探。
         registry = _FakeApiRegistry([
             _FakeEndpoint("https://api.example.test/g", "GET"),
             _FakeEndpoint("https://api.example.test/p", "POST"),
-            _FakeEndpoint("https://example.test/api/v1", "GET"),  # 首轮已探测
+            UnifiedApiEndpoint(
+                url="https://example.test/api/v1", method="GET", api_type="rest",
+                source="page_intel",
+                input_signature=compute_input_signature(
+                    "wih", "https://example.test/api/v1", "GET")),
         ])
         ctx.api_candidate_registry = registry
         task = _EndpointTask(ctx)
@@ -342,9 +466,16 @@ class TestWihOrchestratorEndpointOrder(unittest.TestCase):
                                 "领取前必须先回收 lease 超时项（执行版 P1-2）")
         # probed_batches[0] 为首轮 Go 结果探测，[1] 为 Registry 补探。
         self.assertEqual(2, len(probed_batches))
+        # T11-1：补探 item 携带稳定内部 Endpoint key（结果按 identity 回映射）。
+        followup_items = probed_batches[1]
         self.assertEqual(
             [{"url": "https://api.example.test/g", "method": "GET"}],
-            probed_batches[1])
+            [{"url": item.get("url"), "method": item.get("method")}
+             for item in followup_items])
+        for item in followup_items:
+            self.assertTrue(
+                str(item.get("endpoint_key") or "").startswith("api_endpoint|"),
+                "探测 item 必须携带 endpoint_key（identity 收口）")
         # probe_report 记录的是编排层传入的回报词表（真实 Registry 的
         # 状态机映射由 test_api_candidate_registry 锁定）：POST→skipped、
         # 探测成功→probed、首轮已观察→observed。

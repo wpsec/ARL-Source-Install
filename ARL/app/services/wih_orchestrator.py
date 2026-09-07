@@ -90,17 +90,50 @@ def _legacy_endpoint_followup(task, wih_endpoints, discovery_context):
                     type(exc).__name__))
 
 
+def _endpoint_identity(endpoint, item, method):
+    """T11-1：Endpoint 探测/回填/收口的稳定内部身份键。
+
+    事实源 = UnifiedApiEndpoint.idempotency_key（P1-12 冻结：
+    api_endpoint|url|method|api_type|input_signature）；非模型对象（桩/
+    旧记录）退化为按构造参数拼同形键，保证两侧可比。
+    """
+
+    key = getattr(endpoint, "idempotency_key", None)
+    if key:
+        return str(key)
+    if isinstance(endpoint, dict):
+        url = str(endpoint.get("url") or "").strip()
+        method_text = str(endpoint.get("method") or method or "GET").strip().upper() or "GET"
+        api_type = str(endpoint.get("api_type") or "rest")
+        signature = str(endpoint.get("input_signature") or "")
+    else:
+        url = str(getattr(endpoint, "url", "") or "").strip()
+        method_text = str(getattr(endpoint, "method", "") or method or "GET").strip().upper() or "GET"
+        api_type = str(getattr(endpoint, "api_type", "") or "rest")
+        signature = str(getattr(endpoint, "input_signature", "") or "")
+    if not url:
+        return ""
+    return "|".join(("api_endpoint", url, method_text, api_type, signature))
+
+
 def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context):
     """计划 6 第 8 批：统一 Registry 作为 Endpoint 探测的唯一候选入口（§7.3）。
 
     首轮 Go 引擎探测结果双写为 covered 的 `api_type=rest` 资产（§7.3 映射，
     只并证据不重复探测）；claimed 资产中 GET/HEAD 走轻量探测，POST/SOAP/
     GraphQL 等无法从文档摘要重建请求体的资产显式标 skipped——不发无 body 的
-    POST（§2.2 不构造业务请求体），首轮已观察到的 (url, method) 直接回报
-    observed。探测回报经 probe_report 词表映射收口状态机。
+    POST（§2.2 不构造业务请求体），首轮已观察到**同一 Endpoint identity**
+    （idempotency_key：url+method+api_type+input_signature，P1-12 冻结键）的
+    资产才回报 observed。探测回报经 probe_report 词表映射收口状态机。
+
+    T11-1（第 11 批 Review P1）：合并/回填/收口一律用完整 identity，不再按
+    (url, method)——同 url+method 的 rest/graphql 或不同请求形态（不同
+    input_signature）是不同资产，按 pair 合并会把未探测资产错误收口 observed、
+    把 WAF/失败/降级归因回填到错误资产。probe item 携带 `endpoint_key`，
+    结果按该键回映射（wih_endpoint_probe 全链路 dict 拷贝透传）。
     """
 
-    probed_pairs = set()
+    probed_identities = set()
     for item in list(wih_endpoints or []):
         if not isinstance(item, dict):
             continue
@@ -108,15 +141,18 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
         if not url:
             continue
         method = str(item.get("method") or "GET").strip().upper() or "GET"
-        probed_pairs.add((url, method))
         try:
-            registry.register_endpoint(UnifiedApiEndpoint(
+            stored, _created = registry.register_endpoint(UnifiedApiEndpoint(
                 url=url, method=method, api_type="rest",
                 source="wih",
                 parent_target=str(item.get("page_url") or item.get("target") or ""),
                 status="covered",
                 input_signature=compute_input_signature("wih", url, method),
             ))
+            # identity 取注册后的权威对象键（合并命中既有资产时同为该 identity）。
+            probed_identities.add(
+                getattr(stored, "idempotency_key", "")
+                or _endpoint_identity(stored, item, method))
         except Exception as exc:
             # 首轮观察证据登记失败只丢观测面，不影响补探。
             logger.debug(
@@ -143,20 +179,25 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
     claimed = registry.claim_endpoints_for_probe(limit=max_probe, with_tokens=True)
     items = []
     pairs = []  # (endpoint, claim_token)——token 用于回报/回收的代际校验
-    seen_probe_keys = set()
+    seen_probe_identities = set()
+    identity_of = {}
     skipped_count = 0
     for endpoint, claim_token in claimed:
-        pair = (endpoint.url, endpoint.method)
-        if pair in probed_pairs or pair in seen_probe_keys:
-            # 首轮/同 (url,method) 已观察：走无代际的 observed 收口。
+        identity = _endpoint_identity(endpoint, None, "")
+        if identity in probed_identities or identity in seen_probe_identities:
+            # 仅"同一 Endpoint identity 已被观察"才走无代际 observed 收口
+            # （T11-1：(url,method) 相同但 api_type/input_signature 不同不是
+            # 同一资产，不得据此免探）。
             registry.probe_report(endpoint, "observed")
             continue
         if endpoint.method not in ("GET", "HEAD"):
             registry.probe_report(endpoint, "skipped", claim_token=claim_token)
             skipped_count += 1
             continue
-        seen_probe_keys.add(pair)
-        items.append({"url": endpoint.url, "method": endpoint.method})
+        seen_probe_identities.add(identity)
+        identity_of[identity] = endpoint
+        items.append({"url": endpoint.url, "method": endpoint.method,
+                      "endpoint_key": identity})
         pairs.append((endpoint, claim_token))
 
     try:
@@ -190,18 +231,24 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
             input_count=len(items),
         ) or []
         task._save_wih_endpoints(results)
-        by_pair = {}
+        by_key = {}
         error_count = 0
         for record_item in results:
             if not isinstance(record_item, dict):
                 continue
-            pair_key = (
-                str(record_item.get("url") or "").strip(),
-                str(record_item.get("method") or "GET").strip().upper() or "GET",
-            )
-            by_pair.setdefault(pair_key, record_item)
+            probe_key = str(record_item.get("endpoint_key") or "").strip()
+            if not probe_key:
+                # 探测结果必须回携带的内部键；缺失说明透传面被破坏——
+                # 不回退 (url,method) 猜测归因（那正是 T11-1 关闭的错误面），
+                # 让该资产留在 queued 由 lease/finally 回收，下轮重探。
+                logger.warning(
+                    "task_id:{} endpoint probe result missing endpoint_key; "
+                    "result not applied (identity attribution unsafe)".format(
+                        task.task_id))
+                continue
+            by_key.setdefault(probe_key, record_item)
         for endpoint, claim_token in pairs:
-            record_item = by_pair.get((endpoint.url, endpoint.method))
+            record_item = by_key.get(_endpoint_identity(endpoint, None, ""))
             if record_item is None:
                 continue
             status = str(record_item.get("verification_status") or "")

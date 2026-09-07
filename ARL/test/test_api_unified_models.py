@@ -555,6 +555,16 @@ class EndpointDegradedReasonContractTest(unittest.TestCase):
         self.assertEqual(m.sanitize_endpoint_degraded_reason("x" * 200), "other",
                          "超长值不得进入枚举（先截断再判成员=other）")
 
+    def test_invariant_reason_requires_degraded_status(self):
+        # P2-2（T11-1 复核）：covered+原因是非法组合，模型构造期归零，
+        # 不依赖调用方在迁移处自觉清除。
+        bad = self._ep(status="covered", degraded_reason="host_waf_blocked")
+        self.assertEqual("", bad.degraded_reason)
+        good = self._ep(status="degraded", degraded_reason="host_waf_blocked")
+        self.assertEqual("host_waf_blocked", good.degraded_reason)
+        weird = self._ep(status="degraded", degraded_reason="token=abc leaked")
+        self.assertEqual("other", weird.degraded_reason)
+
     def test_positional_legacy_slots_unchanged(self):
         # R6-P2-01 同型钉：新字段追加在 observed_url 之后，旧位置参数语义不漂移。
         ep = m.UnifiedApiEndpoint(

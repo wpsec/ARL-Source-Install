@@ -319,8 +319,11 @@ def fetch_text(
         if timing_out is not None:
             try:
                 timing_out["http_req_sec"] = max(0.0, time.monotonic() - network_started_at)
-            except Exception:
-                pass
+            except Exception as timing_exc:
+                # 观测写入失败不得静默（开发指南 §4）：丢一个计时点可以，丢证据不行。
+                utils.get_logger().debug(
+                    "fetch_text timing write failed url:%s error_type:%s",
+                    url[:160], type(timing_exc).__name__)
 
     status_code = int(getattr(conn, "status_code", 0) or 0)
     if status_code >= 400:

@@ -663,7 +663,12 @@ class UnifiedApiEndpoint:
         if self.graphql_operation not in GRAPHQL_OPERATIONS:
             raise ValueError("unsupported graphql_operation: {}".format(self.graphql_operation))
         self.confidence = min(100, max(0, int(self.confidence or 0)))
-        self.degraded_reason = sanitize_endpoint_degraded_reason(self.degraded_reason)
+        # P2-2（T11-1 复核）：不变量——degraded_reason 只在 status=degraded 时
+        # 存在（构造 covered+host_waf_blocked 这类非法组合直接归零，
+        # 不依赖调用方自觉；mark_endpoint 迁移侧已对称清除）。
+        self.degraded_reason = (
+            sanitize_endpoint_degraded_reason(self.degraded_reason)
+            if self.status == "degraded" else "")
         self.source = str(self.source or "").strip()
         self.parent_document = str(self.parent_document or "").strip()
         self.parent_target = str(self.parent_target or "").strip()
