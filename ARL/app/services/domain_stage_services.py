@@ -1323,6 +1323,160 @@ class DomainNetworkStageService(object):
                 {"$set": {"domain": merged_domain}},
             )
 
+    def get_scope_domain_list(self):
+        task = self.task
+        scope_domains = [task.base_domain]
+        primary_domain = utils.get_fld(task.base_domain)
+        if primary_domain and primary_domain not in scope_domains:
+            scope_domains.append(primary_domain)
+        return scope_domains
+
+    @staticmethod
+    def normalize_cert_domain(value):
+        domain = utils.normalize_domain(value)
+        if not domain or not utils.is_valid_domain(domain):
+            return ""
+        return domain
+
+    def extract_cert_domain_candidates(self, cert_obj):
+        domains = set()
+        if not isinstance(cert_obj, dict):
+            return []
+
+        subject = cert_obj.get("subject") or {}
+        issuer = cert_obj.get("issuer") or {}
+        subject_cn = self.normalize_cert_domain(subject.get("common_name"))
+        if subject_cn:
+            domains.add(subject_cn)
+        issuer_cn = self.normalize_cert_domain(issuer.get("common_name"))
+        if issuer_cn:
+            domains.add(issuer_cn)
+
+        extensions = cert_obj.get("extensions") or {}
+        san_text = str(extensions.get("subjectAltName") or "").strip()
+        if san_text:
+            for raw_item in san_text.split(","):
+                raw_item = raw_item.strip()
+                if not raw_item:
+                    continue
+                if ":" in raw_item:
+                    prefix, value = raw_item.split(":", 1)
+                    if prefix.strip().lower() != "dns":
+                        continue
+                    domain = self.normalize_cert_domain(value)
+                else:
+                    domain = self.normalize_cert_domain(raw_item)
+                if domain:
+                    domains.add(domain)
+        return sorted(domains)
+
+    def match_cert_scope_domains(self, cert_obj):
+        cert_domains = self.extract_cert_domain_candidates(cert_obj)
+        if not cert_domains:
+            return []
+
+        matched = []
+        for cert_domain in cert_domains:
+            if any(
+                utils.is_in_scope(cert_domain, scope_domain)
+                for scope_domain in self.get_scope_domain_list()
+            ):
+                matched.append(cert_domain)
+        return sorted(set(matched))
+
+    @staticmethod
+    def build_cert_pivot_key(cert_obj):
+        if not isinstance(cert_obj, dict):
+            return ""
+
+        serial_number = str(cert_obj.get("serial_number") or "").strip()
+        fingerprint = cert_obj.get("fingerprint") or {}
+        cert_sha1 = ""
+        if isinstance(fingerprint, dict):
+            cert_sha1 = str(fingerprint.get("sha1") or "").strip().lower()
+
+        if serial_number and cert_sha1:
+            return "{}|{}".format(serial_number, cert_sha1)
+        if serial_number:
+            return "sn:{}".format(serial_number)
+        if cert_sha1:
+            return "sha1:{}".format(cert_sha1)
+        return ""
+
+    def get_cert_pivot_candidates(self):
+        task = self.task
+        cert_map = task.cert_map if isinstance(task.cert_map, dict) else {}
+        if not cert_map:
+            return []
+
+        ip_cdn_map = {}
+        for ip_info_obj in task.ip_info_list:
+            if ip_info_obj.cdn_name:
+                ip_cdn_map[ip_info_obj.ip] = ip_info_obj.cdn_name
+
+        skip_cdn = 0
+        skip_scope = 0
+        skip_no_key = 0
+        skip_dup = 0
+        seen_cert_key = set()
+        candidates = []
+        for observe_id in sorted(cert_map.keys()):
+            cert_obj = cert_map.get(observe_id)
+            if not isinstance(cert_obj, dict):
+                continue
+
+            scan_meta = cert_obj.get("_scan_meta", {})
+            if not isinstance(scan_meta, dict):
+                scan_meta = {}
+            endpoint = str(scan_meta.get("endpoint", "")).strip() or str(observe_id)
+            curr_ip, _ = fetchCert.split_host_port(endpoint)
+            if not curr_ip:
+                curr_ip = endpoint.split(":")[0] if ":" in endpoint else endpoint
+
+            if Config.CERT_PIVOT_QUERY_SKIP_CDN:
+                cdn_name = ip_cdn_map.get(curr_ip) or utils.get_cdn_name_by_ip(curr_ip)
+                if cdn_name:
+                    skip_cdn += 1
+                    continue
+
+            matched_domains = self.match_cert_scope_domains(cert_obj)
+            if not matched_domains:
+                skip_scope += 1
+                continue
+
+            cert_key = self.build_cert_pivot_key(cert_obj)
+            if not cert_key:
+                skip_no_key += 1
+                continue
+            if cert_key in seen_cert_key:
+                skip_dup += 1
+                continue
+
+            seen_cert_key.add(cert_key)
+            candidates.append({
+                "cert": cert_obj,
+                "cert_key": cert_key,
+                "endpoint": endpoint,
+                "observe_id": str(observe_id),
+                "match_domains": matched_domains,
+            })
+
+        max_certs = max(int(Config.CERT_PIVOT_QUERY_MAX_CERTS or 0), 0)
+        if max_certs > 0 and len(candidates) > max_certs:
+            candidates = candidates[:max_certs]
+
+        logger.info(
+            "cert pivot candidate total:{} selected:{} skip_cdn:{} skip_scope:{} skip_no_key:{} skip_dup:{}".format(
+                len(seen_cert_key),
+                len(candidates),
+                skip_cdn,
+                skip_scope,
+                skip_no_key,
+                skip_dup,
+            )
+        )
+        return candidates
+
     def run_cert_query_plugin_enhance(self):
         task = self.task
         if not Config.CERT_PIVOT_QUERY_ENABLE:
@@ -1336,7 +1490,7 @@ class DomainNetworkStageService(object):
         if "{fuzz}" in task.base_domain:
             return 0
 
-        cert_candidates = task.get_cert_pivot_candidates()
+        cert_candidates = self.get_cert_pivot_candidates()
         if not cert_candidates:
             logger.info("skip cert_query_plugin_enhance because no candidate cert")
             return 0
