@@ -46,8 +46,14 @@ elif [ -f "$ENV_FILE_DOCKER" ]; then
 fi
 
 if [ -z "$ENV_FILE" ]; then
-    echo "❌ 未找到 .env：请复制 .env.example 为 .env 并填入自设凭据（.env 仅本地存在，已被 Git 忽略）"
-    exit 1
+    # 首次安装：自动生成 Mongo/RabbitMQ 内部随机凭据并持久化到 ARL/docker/.env
+    # （与 compose 默认 env-file 路径一致）；Basic Auth 与 ARL 密码仍为用户填写项。
+    echo "未找到 .env，执行首次内部凭据初始化（交互终端会提示填写 Basic Auth/ARL 密码）..."
+    if ! "$DOCKER_DIR/init-deploy-env.sh"; then
+        echo "❌ 初始化失败，请检查上方 [INIT] 输出"
+        exit 1
+    fi
+    ENV_FILE="$ENV_FILE_DOCKER"
 fi
 
 if ! "$DOCKER_DIR/check-deploy-env.sh" "$ENV_FILE"; then

@@ -4,7 +4,8 @@
 1. 弱凭据使用路径清零：compose 模板、配置模板、mongo-init.js、start.sh、.env.example；
 2. 凭据 env 注入链：inject_url_credentials 纯函数 + 子进程端到端（不污染本进程 app.* 槽位）；
 3. 诊断不污染 stdout：import app.config 的 stdout 必须为空（gunicorn/celery 参数防灌）；
-4. 启动前必填检查：check-deploy-env.sh fixture 正负例 + docker compose config 负例（无 docker 时 skip）。
+4. 启动前必填检查：check-deploy-env.sh fixture 正负例 + docker compose config 负例（无 docker 时 skip）；
+5. 首次安装凭据初始化：init-deploy-env.sh 自动生成/幂等/用户项边界/600 权限/预检联动。
 
 卫生约定：不在本进程 monkeypatch os.environ / app.config 槽位；涉及环境变量的行为
 断言全部走 subprocess，结束后无残留。
@@ -381,6 +382,111 @@ class TestDeployEnvPreflight(unittest.TestCase):
         proc = self._run(env_file=str(DOCKER_DIR / "__no_such_env__.local"))
         self.assertEqual(proc.returncode, 1)
         self.assertIn(".env", proc.stderr)
+
+
+class TestInitDeployEnv(unittest.TestCase):
+    """init-deploy-env.sh：内部凭据自动生成、幂等持久化、用户项边界。"""
+
+    INIT_SCRIPT = DOCKER_DIR / "init-deploy-env.sh"
+
+    def _run_init(self, env_file, stdin_devnull=True):
+        if not shutil.which("bash"):
+            self.skipTest("bash 不可用")
+        return subprocess.run(
+            ["bash", str(self.INIT_SCRIPT), env_file],
+            stdin=subprocess.DEVNULL if stdin_devnull else None,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def _env_map(self, env_file):
+        parsed = {}
+        for line in read(pathlib.Path(env_file)).splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key, value = stripped.split("=", 1)
+                parsed[key.strip()] = value.strip()
+        return parsed
+
+    INTERNAL_KEYS = (
+        "MONGO_INITDB_ROOT_USERNAME",
+        "MONGO_INITDB_ROOT_PASSWORD",
+        "RABBITMQ_DEFAULT_USER",
+        "RABBITMQ_DEFAULT_PASS",
+    )
+
+    def test_fresh_init_generates_internal_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "sub", ".env")
+            proc = self._run_init(target)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertTrue(os.path.isfile(target), "非交互模式也应创建 .env")
+            parsed = self._env_map(target)
+            for key in self.INTERNAL_KEYS:
+                self.assertNotIn(parsed.get(key, ""), ("", "<set-me>"), f"{key} 应自动生成")
+            # 随机值特征：密码 32 位十六进制、用户名可读前缀、四个键互不相同。
+            self.assertRegex(parsed["MONGO_INITDB_ROOT_PASSWORD"], r"^[0-9a-f]{32}$")
+            self.assertRegex(parsed["RABBITMQ_DEFAULT_PASS"], r"^[0-9a-f]{32}$")
+            self.assertTrue(parsed["MONGO_INITDB_ROOT_USERNAME"].startswith("root_"))
+            self.assertTrue(parsed["RABBITMQ_DEFAULT_USER"].startswith("arl_"))
+            self.assertEqual(len({parsed[k] for k in self.INTERNAL_KEYS}), 4)
+            # 用户填写项不被自动生成（任务边界）：Basic Auth / ARL 密码保持占位。
+            self.assertEqual(parsed["BASIC_AUTH_PASSWORD"], "<set-me>")
+            self.assertEqual(parsed["ARL_APP_PASSWORD"], "<set-me>")
+            self.assertEqual(parsed["ARL_APP_USERNAME"], "admin")
+            mode = os.stat(target).st_mode & 0o777
+            self.assertEqual(oct(mode), oct(0o600), "凭据文件必须 600")
+            # 值不回显。
+            for key in self.INTERNAL_KEYS:
+                self.assertNotIn(parsed[key], proc.stdout + proc.stderr)
+
+    def test_init_is_idempotent_and_preserves_existing_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, ".env")
+            self._run_init(target)
+            first = self._env_map(target)
+            # 用户手工值不被二次运行覆盖。
+            with open(target, "a", encoding="utf-8") as fh:
+                fh.write("BASIC_AUTH_PASSWORD=user-persisted-1\n")
+            proc = self._run_init(target)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            second = self._env_map(target)
+            for key in self.INTERNAL_KEYS:
+                self.assertEqual(first[key], second[key], f"{key} 在重复执行中被重生成")
+            self.assertEqual(second["BASIC_AUTH_PASSWORD"], "user-persisted-1")
+            self.assertIn("保持不变", proc.stdout)
+
+    def test_init_backfills_missing_internal_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, ".env")
+            self._run_init(target)
+            kept = [
+                line for line in read(pathlib.Path(target)).splitlines()
+                if not line.startswith("RABBITMQ_DEFAULT_PASS=")
+            ]
+            pathlib.Path(target).write_text("\n".join(kept) + "\n", encoding="utf-8")
+            proc = self._run_init(target)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            parsed = self._env_map(target)
+            self.assertRegex(parsed.get("RABBITMQ_DEFAULT_PASS", ""), r"^[0-9a-f]{32}$")
+
+    def test_init_result_then_precheck_flags_user_keys_only(self):
+        # 联动：init 产物在用户补齐 Basic/ARL 密码前，预检必须只点名这两个键。
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, ".env")
+            self._run_init(target)
+            proc = subprocess.run(
+                ["bash", str(CHECK_SCRIPT), target],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(proc.returncode, 1)
+            self.assertIn("BASIC_AUTH_PASSWORD", proc.stderr)
+            self.assertIn("ARL_APP_PASSWORD", proc.stderr)
+            self.assertNotIn("MONGO_INITDB_ROOT", proc.stderr)
+            self.assertNotIn("RABBITMQ_DEFAULT", proc.stderr)
 
 
 @unittest.skipUnless(shutil.which("docker"), "docker CLI 不可用，跳过 compose 渲染级检查")
