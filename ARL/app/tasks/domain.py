@@ -1256,124 +1256,10 @@ class DomainTask(CommonTask):
         return DomainDiscoveryStageService(self).run_dns_query_plugin()
 
     def get_ip_pivot_candidates(self):
-        """
-        从已发现域名中提取公网A记录IP，作为三方IP反查候选
-        """
-        ip_map = {}
-        skip_non_a = 0
-        skip_non_public = 0
-        skip_black = 0
-        skip_cdn = 0
-        for domain_info in self.domain_info_list:
-            if domain_info.type != "A":
-                skip_non_a += 1
-                continue
-
-            for ip in domain_info.ip_list:
-                ip = str(ip or "").strip()
-                if not ip or not utils.is_vaild_ip_target(ip):
-                    continue
-
-                if utils.get_ip_type(ip) != "PUBLIC":
-                    skip_non_public += 1
-                    continue
-
-                if not utils.not_in_black_ips(ip):
-                    skip_black += 1
-                    continue
-
-                if Config.IP_PIVOT_QUERY_SKIP_CDN and utils.get_cdn_name_by_ip(ip):
-                    skip_cdn += 1
-                    continue
-
-                old_set = ip_map.get(ip, set())
-                old_set.add(domain_info.domain)
-                ip_map[ip] = old_set
-
-        all_ips = sorted(ip_map.keys())
-        max_ips = max(int(Config.IP_PIVOT_QUERY_MAX_IPS or 0), 0)
-        if max_ips > 0 and len(all_ips) > max_ips:
-            all_ips = all_ips[:max_ips]
-
-        logger.info(
-            "ip pivot candidate total:{} selected:{} skip_non_a:{} skip_non_public:{} skip_black:{} skip_cdn:{}".format(
-                len(ip_map), len(all_ips), skip_non_a, skip_non_public, skip_black, skip_cdn
-            )
-        )
-        return all_ips
+        return DomainNetworkStageService(self).get_ip_pivot_candidates()
 
     def ip_query_plugin_enhance(self):
-        """
-        公网A记录IP反查增强：通过三方API补充同域资产
-        """
-        if not Config.IP_PIVOT_QUERY_ENABLE:
-            return
-
-        # 与域名插件开关保持一致，避免用户关闭插件后仍触发三方调用
-        if not self.options.get("dns_query_plugin"):
-            logger.info("skip ip_query_plugin_enhance because dns_query_plugin=false")
-            return
-
-        if "{fuzz}" in self.base_domain:
-            return
-
-        candidate_ips = self.get_ip_pivot_candidates()
-        if not candidate_ips:
-            logger.info("skip ip_query_plugin_enhance because no candidate ip")
-            return
-
-        target_domain = self.base_domain if Config.IP_PIVOT_QUERY_REQUIRE_SCOPE else ""
-        max_domains = int(Config.IP_PIVOT_QUERY_MAX_DOMAINS or 0)
-        logger.info(
-            "start run ip_query_plugin_enhance base_domain:{} ip:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
-                self.base_domain, len(candidate_ips),
-                bool(Config.IP_PIVOT_QUERY_REQUIRE_SCOPE), max_domains
-            )
-        )
-
-        results = run_query_plugin_by_ip(
-            ip_list=candidate_ips,
-            target_domain=target_domain,
-            max_domains=max_domains,
-        )
-        self._last_ip_query_metrics = dict(getattr(results, "metrics", {}) or {})
-        if not results:
-            logger.info("end run ip_query_plugin_enhance {} result 0".format(self.base_domain))
-            return
-
-        sources_map = dict()
-        for result in results:
-            domain = result["domain"]
-            source = result["source"]
-            source_domains = sources_map.get(source, set())
-            source_domains.add(domain)
-            sources_map[source] = source_domains
-
-        cnt = 0
-        for source in sources_map:
-            source_domains = list(sources_map[source])
-            if not source_domains:
-                continue
-
-            # 与常规来源区分，便于排查“域名来源”
-            source_name = "{}_ip_pivot".format(source)
-            self.add_domain_source_names(source_domains, source_name)
-            logger.info("start build domain info, source:{}".format(source_name))
-            domain_info_list = self.build_domain_info(source_domains)
-            if self.task_tag == "task":
-                domain_info_list = self.clear_domain_info_by_record(domain_info_list)
-                if domain_info_list:
-                    self.save_domain_info_list(domain_info_list, source=source_name)
-
-            self.add_domain_source_map(domain_info_list, source_name)
-            cnt += len(domain_info_list)
-            self.domain_info_list.extend(domain_info_list)
-
-        logger.info(
-            "end run ip_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
-                self.base_domain, len(results), cnt
-            )
-        )
+        return DomainNetworkStageService(self).run_ip_query_plugin_enhance()
 
     def get_scope_domain_list(self):
         """
@@ -1569,82 +1455,18 @@ class DomainTask(CommonTask):
         return DomainSiteStageService(self).run()
 
     def npoc_service_detection(self, full_port=False):
-        targets, total_targets, low_conf_targets, mode = self._build_sniffer_targets(
+        return DomainPostProcessStageService(self).run_npoc_service_detection(
             full_port=full_port
         )
-        skip_common_http_ports = not full_port
-
-        logger.info(
-            "npoc_service_detection mode:{} selected:{} total:{} low_conf:{} skip_common_http_ports:{}".format(
-                mode, len(targets), total_targets, low_conf_targets, skip_common_http_ports
-            )
-        )
-
-        if not targets:
-            return
-
-        result = run_sniffer(targets, skip_common_http_ports=skip_common_http_ports)
-        enriched_count = self._apply_npoc_service_result(result)
-        logger.info(
-            "npoc_service_detection result:{} enriched_port:{}".format(
-                len(result), enriched_count
-            )
-        )
-        for item in result:
-            self.npoc_service_target_set.add(item["target"])
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            item["source"] = "npoc_sniffer"
-            utils.conn_db('npoc_service').insert_one(item)
 
     def start_poc_run(self):
         return DomainPostProcessStageService(self).run_poc()
 
     def brute_config(self):
-        plugins = []
-        brute_config = self.options.get("brute_config")
-        for x in brute_config:
-            if not x.get("enable"):
-                continue
-            plugins.append(x["plugin_name"])
-
-        if not plugins:
-            return
-        targets = self.site_list.copy()
-        targets += list(self.npoc_service_target_set)
-        result = run_risk_cruising(targets=targets, plugins=plugins)
-        for item in result:
-            target = str(item.get("target", "") or item.get("url", "") or "").strip()
-            if target and not self._url_in_task_scope(target, seed_sites=self.site_list, scope_domains=[self.base_domain]):
-                continue
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+        return DomainPostProcessStageService(self).run_brute_config()
 
     def find_vhost_vuln(self):
-        domains = find_private_domain_by_task_id(self.task_id)
-        if not domains:
-            return
-
-        ips = find_public_ip_by_task_id(self.task_id)
-        results = find_vhost(ips=ips, domains=domains)
-        for result in results:
-            if not self._url_in_task_scope(result.get("url", ""), seed_sites=self.site_list, scope_domains=[self.base_domain]):
-                continue
-            save_item = dict()
-            save_item["plg_name"] = "FindVhost"
-            save_item["plg_type"] = "scan"
-            save_item["vul_name"] = "发现Host碰撞漏洞"
-            save_item["app_name"] = "web"
-            save_item["target"] = result["url"]
-            save_item["verify_data"] = "{}-{}-{}-{}".format(result["domain"],
-                                                            result["title"],
-                                                            result["status_code"],
-                                                            result["body_length"])
-            save_item["verify_obj"] = result
-            save_item["task_id"] = self.task_id
-            save_item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(save_item)
+        return DomainPostProcessStageService(self).run_find_vhost_vuln()
 
     def start_find_vhost(self):
         return DomainPostProcessStageService(self).run_find_vhost()
