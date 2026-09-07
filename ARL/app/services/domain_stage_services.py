@@ -837,9 +837,138 @@ class DomainNetworkStageService(object):
     def __init__(self, task):
         self.task = task
 
+    def run_gen_ipv4_map(self):
+        task = self.task
+        ipv4_map = {}
+        for domain_info in task.domain_info_list:
+            for ip in domain_info.ip_list:
+                domains = ipv4_map.setdefault(ip, set())
+                domains.add(domain_info.domain)
+                task.ip_set.add(ip)
+        task.ipv4_map = ipv4_map
+
+    def run_save_ip_info(self):
+        task = self.task
+        fake_ip_info_list = []
+        for ip, domains in task.ipv4_map.items():
+            data = {
+                "ip": ip,
+                "domain": list(domains),
+                "port_info": [],
+                "os_info": {},
+                "cdn_name": utils.get_cdn_name_by_ip(ip),
+            }
+            info_obj = modules.IPInfo(**data)
+            if info_obj not in task.ip_info_list:
+                fake_ip_info_list.append(info_obj)
+
+        for ip_info_obj in fake_ip_info_list:
+            ip_info = ip_info_obj.dump_json(flag=False)
+            ip_info["task_id"] = task.task_id
+            utils.conn_db("ip").update_one(
+                {"task_id": task.task_id, "ip": ip_info_obj.ip},
+                {"$set": ip_info},
+                upsert=True,
+            )
+
+    def run_save_service_info(self):
+        task = self.task
+        task.service_info_list = []
+        service_map = {}
+        service_seen = set()
+        port_total = 0
+        merged_total = 0
+        nmap_merged = 0
+        npoc_merged = 0
+
+        def _append_item(service_name, ip, port_id, product="", version="", source=""):
+            nonlocal merged_total, nmap_merged, npoc_merged
+            raw_name = task._extract_detected_service(
+                service_name=service_name,
+                product=product,
+            )
+            service = task._normalize_scheme(raw_name)
+            if not service:
+                return
+
+            ip = str(ip or "").strip()
+            if not ip:
+                return
+
+            try:
+                port_id = int(port_id)
+            except Exception:
+                return
+
+            uniq_key = (service, ip, port_id)
+            if uniq_key in service_seen:
+                return
+            service_seen.add(uniq_key)
+
+            service_map.setdefault(service, [])
+            normalized_product = str(product or "").strip()
+            if not normalized_product:
+                normalized_product = service
+            service_map[service].append({
+                "ip": ip,
+                "port_id": port_id,
+                "product": normalized_product,
+                "version": str(version or "").strip(),
+            })
+            merged_total += 1
+            if source == "nmap":
+                nmap_merged += 1
+            elif source == "npoc":
+                npoc_merged += 1
+
+        for ip_item in task.ip_info_list:
+            port_info_list = getattr(ip_item, "port_info_list", [])
+            for port_item in port_info_list:
+                port_total += 1
+                _append_item(
+                    service_name=getattr(port_item, "service_name", ""),
+                    ip=getattr(ip_item, "ip", ""),
+                    port_id=getattr(port_item, "port_id", None),
+                    product=getattr(port_item, "product", ""),
+                    version=getattr(port_item, "version", ""),
+                    source="nmap",
+                )
+
+        for item in utils.conn_db("npoc_service").find({"task_id": task.task_id}):
+            _append_item(
+                service_name=item.get("scheme", ""),
+                ip=item.get("host", ""),
+                port_id=item.get("port", None),
+                product=item.get("scheme", ""),
+                version=item.get("version", ""),
+                source="npoc",
+            )
+
+        for service_name, info_list in service_map.items():
+            task.service_info_list.append({
+                "service_name": service_name,
+                "service_info": info_list,
+                "task_id": task.task_id,
+            })
+
+        utils.conn_db("service").delete_many({"task_id": task.task_id})
+        if task.service_info_list:
+            utils.conn_db("service").insert_many(task.service_info_list)
+
+        logger.info(
+            "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(
+                task.task_id,
+                port_total,
+                merged_total,
+                nmap_merged,
+                npoc_merged,
+                len(task.service_info_list),
+            )
+        )
+
     def run(self):
         task = self.task
-        task.gen_ipv4_map()
+        self.run_gen_ipv4_map()
         pipeline = TaskPipeline(task)
         pipeline.run_many([
             {
@@ -866,7 +995,7 @@ class DomainNetworkStageService(object):
 
             pipeline.run_stage("cert_query_plugin", run_cert_query_plugin)
 
-        task.save_ip_info()
+        self.run_save_ip_info()
 
 
 class DomainSiteStageService(object):
@@ -919,7 +1048,7 @@ class DomainPostProcessStageService(object):
             or task.options.get("service_detection")
             or task.options.get("npoc_service_detection")
         ):
-            task.save_service_info()
+            self.run_save_service_info()
 
         if task.options.get("poc_config"):
             TaskPipeline(task).run_stage(

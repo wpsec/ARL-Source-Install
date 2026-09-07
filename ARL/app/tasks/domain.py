@@ -1037,132 +1037,13 @@ class DomainTask(CommonTask):
         self.base_update_task.update_task_field(field=field, value=value)
 
     def gen_ipv4_map(self):
-        ipv4_map = {}
-        for domain_info in self.domain_info_list:
-            for ip in domain_info.ip_list:
-                old_domain = ipv4_map.get(ip, set())
-                old_domain.add(domain_info.domain)
-                ipv4_map[ip] = old_domain
-                self.ip_set.add(ip)
+        return DomainNetworkStageService(self).run_gen_ipv4_map()
 
-        self.ipv4_map = ipv4_map
-
-    # 只是保存没有开放端口的
     def save_ip_info(self):
-        fake_ip_info_list = []
-        for ip in self.ipv4_map:
-            data = {
-                "ip": ip,
-                "domain": list(self.ipv4_map[ip]),
-                "port_info": [],
-                "os_info": {},
-                "cdn_name": utils.get_cdn_name_by_ip(ip)
-            }
-            info_obj = modules.IPInfo(**data)
-            if info_obj not in self.ip_info_list:
-                fake_ip_info_list.append(info_obj)
-
-        for ip_info_obj in fake_ip_info_list:
-            ip_info = ip_info_obj.dump_json(flag=False)
-            ip_info["task_id"] = self.task_id
-            utils.conn_db("ip").update_one(
-                {"task_id": self.task_id, "ip": ip_info_obj.ip},
-                {"$set": ip_info},
-                upsert=True,
-            )
+        return DomainNetworkStageService(self).run_save_ip_info()
 
     def save_service_info(self):
-        self.service_info_list = []
-        service_map = {}
-        service_seen = set()
-        port_total = 0
-        merged_total = 0
-        nmap_merged = 0
-        npoc_merged = 0
-
-        def _append_item(service_name, ip, port_id, product="", version="", source=""):
-            nonlocal merged_total, nmap_merged, npoc_merged
-            raw_name = self._extract_detected_service(
-                service_name=service_name,
-                product=product,
-            )
-            service = self._normalize_scheme(raw_name)
-            if not service:
-                return
-
-            ip = str(ip or "").strip()
-            if not ip:
-                return
-
-            try:
-                port_id = int(port_id)
-            except Exception:
-                return
-
-            uniq_key = (service, ip, port_id)
-            if uniq_key in service_seen:
-                return
-            service_seen.add(uniq_key)
-
-            service_map.setdefault(service, [])
-            normalized_product = str(product or "").strip()
-            if not normalized_product:
-                # -sV 未开启或未命中时，回退协议名，避免 Product 长期空白。
-                normalized_product = service
-            service_map[service].append({
-                "ip": ip,
-                "port_id": port_id,
-                "product": normalized_product,
-                "version": str(version or "").strip(),
-            })
-            merged_total += 1
-            if source == "nmap":
-                nmap_merged += 1
-            elif source == "npoc":
-                npoc_merged += 1
-
-        # 1) nmap 结果（已被 npoc 回填增强）
-        for ip_item in self.ip_info_list:
-            port_info_list = getattr(ip_item, "port_info_list", [])
-            for port_item in port_info_list:
-                port_total += 1
-                _append_item(
-                    service_name=getattr(port_item, "service_name", ""),
-                    ip=getattr(ip_item, "ip", ""),
-                    port_id=getattr(port_item, "port_id", None),
-                    product=getattr(port_item, "product", ""),
-                    version=getattr(port_item, "version", ""),
-                    source="nmap",
-                )
-
-        # 2) npoc 明细补充（用于兜底合并来源）
-        for item in utils.conn_db('npoc_service').find({"task_id": self.task_id}):
-            _append_item(
-                service_name=item.get("scheme", ""),
-                ip=item.get("host", ""),
-                port_id=item.get("port", None),
-                product=item.get("scheme", ""),
-                version=item.get("version", ""),
-                source="npoc",
-            )
-
-        for service_name, info_list in service_map.items():
-            self.service_info_list.append({
-                "service_name": service_name,
-                "service_info": info_list,
-                "task_id": self.task_id
-            })
-
-        # 同任务重跑时先清理旧数据，避免重复堆积
-        utils.conn_db('service').delete_many({"task_id": self.task_id})
-        if self.service_info_list:
-            utils.conn_db('service').insert_many(self.service_info_list)
-
-        logger.info(
-            "save_service_info task_id:{} ports:{} merged:{} nmap:{} npoc:{} service_group:{}".format(
-                self.task_id, port_total, merged_total, nmap_merged, npoc_merged, len(self.service_info_list)
-            )
-        )
+        return DomainNetworkStageService(self).run_save_service_info()
 
     def ssl_cert(self):
         if self.options.get("port_scan"):

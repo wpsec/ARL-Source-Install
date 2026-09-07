@@ -473,11 +473,38 @@ class TestDomainStageServices(unittest.TestCase):
 
     def test_network_service_keeps_port_and_certificate_as_separate_stages(self):
         task = _Task({"port_scan": True, "ssl_cert": True})
-        with patch.object(Config, "CERT_PIVOT_QUERY_ENABLE", False):
+        with patch.object(
+            DomainNetworkStageService,
+            "run_gen_ipv4_map",
+            side_effect=lambda: task.calls.append("gen_ipv4_map"),
+        ), patch.object(
+            DomainNetworkStageService,
+            "run_save_ip_info",
+            side_effect=lambda: task.calls.append("save_ip_info"),
+        ), patch.object(Config, "CERT_PIVOT_QUERY_ENABLE", False):
             DomainNetworkStageService(task).run()
 
         self.assertEqual(["port_scan", "ssl_cert"], task.executor.names)
         self.assertEqual(["gen_ipv4_map", "port_scan", "ssl_cert", "save_ip_info"], task.calls)
+
+    def test_network_service_builds_ipv4_map_and_tracks_domains(self):
+        task = _Task()
+        task.ip_set = set()
+        task.domain_info_list = [
+            types.SimpleNamespace(domain="api.example.com", ip_list=["192.0.2.10"]),
+            types.SimpleNamespace(domain="www.example.com", ip_list=["192.0.2.10", "192.0.2.11"]),
+        ]
+
+        DomainNetworkStageService(task).run_gen_ipv4_map()
+
+        self.assertEqual(
+            {
+                "192.0.2.10": {"api.example.com", "www.example.com"},
+                "192.0.2.11": {"www.example.com"},
+            },
+            task.ipv4_map,
+        )
+        self.assertEqual({"192.0.2.10", "192.0.2.11"}, task.ip_set)
 
     def test_post_process_service_does_not_run_disabled_stages(self):
         task = _Task({})
