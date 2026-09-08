@@ -3244,8 +3244,8 @@ export function TableModuleView({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="relative flex-1">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row">
+            <div className="relative min-w-0 flex-1">
               <Search className="w-4 h-4 text-content-muted absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 value={quickFilter}
@@ -3260,7 +3260,7 @@ export function TableModuleView({
 
             <button
               onClick={() => void loadRows({ forceRefresh: true })}
-              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} shrink-0 gap-2`}
               disabled={loading || !hasList}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -3270,7 +3270,7 @@ export function TableModuleView({
             {module.exportPath && module.id !== 'task' ? (
               <button
                 onClick={() => void runExport()}
-                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} shrink-0 gap-2`}
               >
                 <Download className="w-4 h-4" />
                 导出
@@ -3281,8 +3281,8 @@ export function TableModuleView({
                 type="button"
                 onClick={() => setHyperlinkEnabled((prev) => !prev)}
                 className={hyperlinkEnabled
-                  ? `${CONSOLE_BUTTON_CLASS} border border-accent bg-accent/10 text-accent`
-                  : CONSOLE_SECONDARY_BUTTON_CLASS}
+                  ? `${CONSOLE_BUTTON_CLASS} shrink-0 border border-accent bg-accent/10 text-accent`
+                  : `${CONSOLE_SECONDARY_BUTTON_CLASS} shrink-0`}
                 title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
               >
                 超链接
