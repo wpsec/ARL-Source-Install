@@ -2935,7 +2935,7 @@ export function TableModuleView({
       />
 
       {['scheduler', 'asset_scope', 'asset_site', 'asset_domain', 'asset_ip', 'asset_wih'].includes(module.id) ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {[
             { id: 'scheduler', label: '资产监控' },
             { id: 'asset_scope', label: '资产分组' },
@@ -2959,7 +2959,7 @@ export function TableModuleView({
         </div>
       ) : null}
       {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'wih_endpoint', 'waf_host'].includes(module.id) ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {hasExternalFilters ? (
             <button
               onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
