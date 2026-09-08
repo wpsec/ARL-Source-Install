@@ -446,7 +446,7 @@ export function MainShell() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="space-y-4 p-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar p-6">
               <input
                 type="password"
                 placeholder="旧密码"

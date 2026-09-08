@@ -514,6 +514,7 @@
 
   .arl-modal-box > .overflow-y-auto {
     min-height: 0;
+    flex: 1 1 auto;
   }
 
   /* 品牌 muted 色本身已经承担层级，不再叠加过低透明度，保证辅助信息在浅色主题上可读。 */

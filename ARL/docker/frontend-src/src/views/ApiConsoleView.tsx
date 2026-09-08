@@ -1157,7 +1157,7 @@ export function ApiConsoleView({ token }: { token: string }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-4">
               <div className="stats stats-vertical sm:stats-horizontal w-full bg-base-100 border border-base-300">
                 <div className="stat p-3">
                   <div className="stat-title text-xs text-content-muted">已验证</div>

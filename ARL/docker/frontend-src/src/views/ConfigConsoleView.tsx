@@ -1444,7 +1444,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               <AlertTriangle className="w-5 h-5 text-warning" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
-            <div className="px-6 py-5 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-6 py-5 space-y-4">
               <p className="text-sm font-semibold">配置保存成功！</p>
               <p className="text-sm text-content-muted leading-relaxed">
                 由于当前系统配置不支持热更新，请在服务器中执行容器重启以使新配置生效：

@@ -40,7 +40,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-6 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-3">
           <div className="space-y-1">
             <label className="text-xs font-bold text-content-muted block">登录账号</label>
             <input

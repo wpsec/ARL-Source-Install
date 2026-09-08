@@ -4547,7 +4547,7 @@ export function TableModuleView({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-4">
               <div
                 role={taskReportExportFeedback.phase === 'error' ? 'alert' : 'status'}
                 className={`${
@@ -4652,7 +4652,7 @@ export function TableModuleView({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">策略</label>
                 <div className="relative">
@@ -4733,7 +4733,7 @@ export function TableModuleView({
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">任务类型</label>
                 <div className="relative">

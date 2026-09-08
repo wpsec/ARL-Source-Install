@@ -2460,7 +2460,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </button>
             </div>
 
-            <div className="p-5 space-y-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-5 space-y-3">
               <div className="space-y-2">
                 <label htmlFor="provider-config-api-key" className="text-xs font-bold text-content-muted block">
                   API Key
@@ -2577,7 +2577,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-5 space-y-3">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 <input
                   value={compatDraft.name}
@@ -2630,7 +2630,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <AlertTriangle className="w-5 h-5 text-warning" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
-            <div className="px-6 py-5 space-y-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-6 py-5 space-y-4">
               <p className="text-sm font-semibold">AI 配置保存成功！</p>
               <p className="text-sm text-content-muted leading-relaxed">
                 当前运行环境未完成热加载，请在服务器执行重启命令使配置生效：
@@ -2666,7 +2666,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3 overflow-y-auto min-h-0">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-5 space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-content-muted">
                 <div className="break-all">时间：{usageLogDetail.created_at || '-'}</div>
                 <div className="break-all">场景：{usageLogDetail.scene_label || usageLogDetail.scene || '-'}</div>
@@ -2710,7 +2710,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3 overflow-y-auto min-h-0">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-5 space-y-3">
               <div
                 role={testResult.ok ? 'status' : 'alert'}
                 className={`${
