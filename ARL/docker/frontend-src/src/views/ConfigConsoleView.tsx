@@ -875,7 +875,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
                   key={profile.id}
                   type="button"
                   onClick={() => applyScanProfile(profile)}
-                  className={`${CONSOLE_CARD_ACTION_CLASS} flex-col items-stretch p-3 ${
+                  className={`${CONSOLE_CARD_ACTION_CLASS} flex-col !items-stretch p-3 ${
                     isMatched
                       ? 'border-accent bg-accent/10'
                       : 'border-base-300 bg-base-100 hover:bg-base-200'
