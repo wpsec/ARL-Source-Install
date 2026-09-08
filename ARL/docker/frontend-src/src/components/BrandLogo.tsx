@@ -28,10 +28,10 @@ const sizeClassMap: Record<BrandLogoSize, { box: string; icon: string; arl: stri
 export default function BrandLogo({ size = 'md', className = '', compactBelowLg = false }: BrandLogoProps) {
   const cls = sizeClassMap[size];
   const tone = {
-    boxToneClass: 'bg-gradient-to-br from-base-300 via-base-200 to-base-100 border border-base-300 shadow-lg',
-    iconToneClass: 'text-base-content',
-    overlayClass: 'absolute inset-0 rounded-[inherit] bg-gradient-to-tr from-base-content/10 via-base-content/5 to-transparent pointer-events-none',
-    beaconClass: 'absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-accent border border-base-100',
+    boxToneClass: 'bg-gradient-to-br from-base-100 via-base-200 to-base-100 border border-primary/35 shadow-lg',
+    iconToneClass: 'text-primary',
+    overlayClass: 'absolute inset-0 rounded-[inherit] bg-gradient-to-tr from-primary/12 via-primary/5 to-transparent pointer-events-none',
+    beaconClass: 'absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-primary border border-base-100',
     arlTextClass: 'text-base-content',
     subTextClass: 'text-content-muted leading-3',
   };
