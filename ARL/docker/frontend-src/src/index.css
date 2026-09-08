@@ -504,6 +504,20 @@
   .arl-modal-box > .overflow-y-auto {
     min-height: 0;
   }
+
+  /* 品牌 muted 色本身已经承担层级，不再叠加过低透明度，保证辅助信息在浅色主题上可读。 */
+  .arl-app .opacity-70 {
+    opacity: 0.88;
+  }
+
+  .arl-app .opacity-80 {
+    opacity: 0.92;
+  }
+
+  .arl-app .text-content-muted\/70 {
+    color: var(--brand-text-muted);
+    opacity: 1;
+  }
 }
 
 @layer base {

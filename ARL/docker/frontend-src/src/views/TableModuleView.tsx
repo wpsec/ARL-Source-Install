@@ -3373,7 +3373,7 @@ export function TableModuleView({
                             title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
                           >
                             <span>{getColumnLabel(column)}</span>
-                            <span className={`inline-flex ${direction ? 'text-accent' : 'text-content-muted/70'}`}>
+                            <span className={`inline-flex ${direction ? 'text-accent' : 'text-content-muted'}`}>
                               {direction === 'desc' ? (
                                 <ChevronDown className="w-3.5 h-3.5" />
                               ) : direction === 'asc' ? (
