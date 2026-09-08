@@ -1702,6 +1702,22 @@ export function TableModuleView({
     return false;
   }, []);
 
+  const isCenteredTableColumn = useCallback((moduleId: string, column: string) => {
+    if (column === 'ai_analysis' && aiDenoiseModuleId) return true;
+    if (isLikelyIdColumn(column)) return true;
+    if (moduleId === 'wih' && column === 'record_type') return true;
+    if (
+      moduleId === 'wih_endpoint'
+      && ['method', 'verification_status', 'manual_review_required', 'detail_action'].includes(column)
+    ) {
+      return true;
+    }
+    if ((moduleId === 'nuclei_result' || moduleId === 'vuln') && column === 'detail_action') return true;
+    if (moduleId === 'task' && ['progress', 'status', 'start_time', 'end_time'].includes(column)) return true;
+    if (moduleId === 'site' && column === 'screenshot') return true;
+    return false;
+  }, [aiDenoiseModuleId]);
+
   const moduleActions = module.actions || [];
   const visibleActions = useMemo(() => {
     if (module.id === 'asset_site' || module.id === 'site') {
@@ -3363,16 +3379,17 @@ export function TableModuleView({
                   {columns.map((column) => {
                     const sortable = isColumnSortable(column);
                     const direction = getColumnSortDirection(column);
+                    const centered = isCenteredTableColumn(module.id, column);
                     return (
                       <th
                         key={column}
-                        className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-left"
+                        className={`px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap ${centered ? 'text-center' : 'text-left'}`}
                       >
                         {sortable ? (
                           <button
                             type="button"
                             onClick={() => toggleColumnSort(column)}
-                            className="inline-flex items-center justify-start gap-1.5 hover:text-accent transition"
+                            className={`inline-flex w-full items-center gap-1.5 transition hover:text-accent ${centered ? 'justify-center' : 'justify-start'}`}
                             title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
                           >
                             <span>{getColumnLabel(column)}</span>
