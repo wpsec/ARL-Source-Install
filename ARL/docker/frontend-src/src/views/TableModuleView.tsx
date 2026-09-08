@@ -2897,7 +2897,7 @@ export function TableModuleView({
     showGithubTaskRowOperate ||
     showGithubSchedulerRowOperate;
   const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
-  const rowOperateButtonClass = 'btn btn-ghost btn-sm border border-base-300 text-sm font-medium shrink-0';
+  const rowOperateButtonClass = `${CONSOLE_SECONDARY_BUTTON_CLASS} text-sm font-medium shrink-0`;
   const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
   const taskReportMenuItemClass =
     'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-300/60 transition-colors';

@@ -874,7 +874,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
                   key={profile.id}
                   type="button"
                   onClick={() => applyScanProfile(profile)}
-                  className={`btn btn-ghost h-auto min-h-0 w-full justify-start border p-3 text-left transition ${
+                  className={`btn btn-ghost h-auto min-h-0 w-full justify-start border p-3 text-left text-base-content transition hover:text-base-content ${
                     isMatched
                       ? 'border-accent bg-accent/10'
                       : 'border-base-300 bg-base-100 hover:bg-base-200'
