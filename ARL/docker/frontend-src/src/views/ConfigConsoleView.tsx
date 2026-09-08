@@ -951,7 +951,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => domainUploadInputRef.current?.click()}
-              className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               选择文件
@@ -962,7 +962,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => void uploadDomainDict()}
-              className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 whitespace-nowrap disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
@@ -1011,7 +1011,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => fileLeakUploadInputRef.current?.click()}
-              className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               选择文件
@@ -1022,7 +1022,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => void uploadFileLeakDict()}
-              className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 whitespace-nowrap disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />

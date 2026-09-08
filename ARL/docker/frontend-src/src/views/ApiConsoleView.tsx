@@ -1058,7 +1058,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
-                    className="btn btn-ghost btn-xs border border-base-300 gap-1 disabled:opacity-60"
+                    className={`${CONSOLE_SECONDARY_BUTTON_CLASS} h-8 min-h-8 px-2 text-xs gap-1 disabled:opacity-60`}
                     disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
                   >
                     <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />

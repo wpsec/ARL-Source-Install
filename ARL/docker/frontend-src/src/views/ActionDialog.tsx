@@ -818,7 +818,7 @@ export function ActionDialog({
                     type="button"
                     onClick={() => void runFofaQueryTest()}
                     disabled={!editable || fofaTesting}
-                    className="btn btn-ghost w-full border border-base-300 gap-2 disabled:opacity-60"
+                    className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full gap-2 disabled:opacity-60`}
                   >
                     <Play className={`w-4 h-4 ${fofaTesting ? 'animate-spin' : ''}`} />
                     {fofaTesting ? '测试中...' : `测试${currentMeasureProviderLabel}`}
