@@ -205,10 +205,10 @@ export function formatModuleCellValue(moduleId: string, column: string, row: any
       .flatMap((item: any) => {
         const productCandidates = [item?.product, item?.service_product, item?.serviceProduct];
         return productCandidates
-          .filter((raw) => raw !== null && raw !== undefined)
+            .filter((raw) => raw !== null && raw !== undefined)
           .flatMap((raw) =>
             String(raw)
-              .split(/[\r\n,]+/)
+              .split(/[\r\n,，；;、]+/)
               .map((part) => part.trim())
           );
       })
