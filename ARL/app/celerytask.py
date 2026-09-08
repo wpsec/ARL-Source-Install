@@ -715,7 +715,7 @@ def enqueue_domain_deep_task(task_id, target, task_options):
         },
     }
     try:
-        queue_task = _resolve_queue_task(queue_name)
+        queue_task = arl_task_heavy if queue_name == "arlheavy" else arl_task
         async_result = queue_task.apply_async(args=[payload], queue=queue_name)
         celery_id = str(getattr(async_result, "id", "") or async_result or "")
         query_id = _task_query_id(task_id)
