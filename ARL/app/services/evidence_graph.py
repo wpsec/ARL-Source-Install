@@ -212,7 +212,14 @@ class EvidenceGraph:
         text = str(value or "").strip()
         if not text:
             return ""
-        if _SENSITIVE_VALUE.search(text) or "://" in text or len(text) > _MAX_TEXT:
+        if (
+            _SENSITIVE_VALUE.search(text)
+            or "://" in text
+            or "/" in text
+            or "?" in text
+            or "=" in text
+            or len(text) > _MAX_TEXT
+        ):
             digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
             return "opaque_" + digest[:12]
         return cls._safe_text(text)

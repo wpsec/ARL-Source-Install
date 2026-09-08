@@ -796,3 +796,25 @@ class WihOrchestrator(object):
                 getattr(record, "source", "") or "",
                 getattr(record, "site", "") or "",
             )
+
+        # 计划 7 第一批：收尾时把既有候选/Endpoint Registry 汇聚到任务内证据图。
+        # adapter 只读 Registry；失败只影响诊断面，不影响旧结果写回。
+        if discovery_context is not None:
+            sync_evidence_graph = getattr(services, "sync_discovery_context", None)
+            if callable(sync_evidence_graph):
+                try:
+                    graph_summary = sync_evidence_graph(discovery_context)
+                    logger.info(
+                        "task_id:{} evidence graph synced nodes:{} edges:{} skipped:{}".format(
+                            task.task_id,
+                            int(graph_summary.get("nodes_added", 0) or 0),
+                            int(graph_summary.get("edges_added", 0) or 0),
+                            int(graph_summary.get("skipped", 0) or 0),
+                        )
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "wih evidence graph sync failed error_type:{}".format(
+                            type(exc).__name__
+                        )
+                    )

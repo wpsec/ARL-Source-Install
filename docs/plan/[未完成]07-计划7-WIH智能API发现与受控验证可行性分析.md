@@ -437,8 +437,9 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 
 - 已实现 `ARL/app/services/target_profile.py`：对已有页面、脚本、文档、Header 和运行时摘要做有界、只读画像解析，输出画像、置信度、类别化证据和采集建议；`unknown` 默认不推荐 browser runtime。
 - 已实现 `ARL/app/services/evidence_graph.py`：提供节点/关系的确定性幂等合并、节点/边预算和脱敏快照；原始 URL、正文和认证材料不进入图快照。
-- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`，当前 15 项契约测试通过。
-- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像只记录到任务内上下文，不改变默认 Collector 和扫描策略。
+- 已实现 `ARL/app/services/evidence_graph_adapter.py`：只读汇聚候选图、API 文档和 Endpoint Registry，按父目标/文档建立关系，重复同步保持幂等。
+- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`，当前 19 项契约测试通过。
+- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，不改变默认 Collector 和扫描策略。
 
 - [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；
 - [ ] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；
@@ -542,4 +543,4 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
   → 基准证明后 Rust 化
 ```
 
-下一步是在不改变默认扫描行为的前提下，把 `TargetProfileResolver` 接到现有 `DiscoveryContext`/`CandidateRegistry` 的任务级入口，仅记录画像与策略建议；随后将 `EvidenceGraph` 作为候选和 Endpoint Registry 的证据 adapter，补齐统一请求 profile、Collector 回流和跨场景 golden corpus。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。
+下一步是在不改变默认扫描行为的前提下，接入 `ResponseRegistry`/`RequestScheduler` 的统一请求观察和 Collector 回流，再让画像只影响低风险策略排序；最后补齐跨场景 golden corpus。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。
