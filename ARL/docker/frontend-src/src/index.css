@@ -760,7 +760,8 @@
   .arl-app input[type='checkbox']:checked {
     border-color: var(--brand-accent);
     background-color: var(--brand-accent);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.2l3 3 6-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    /* 深色主题的强调色是浅色面，深色勾选符号比固定白色更清晰。 */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.2l3 3 6-6' fill='none' stroke='%2317120b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
     background-size: 80% 80%;
@@ -859,4 +860,9 @@
 
 .arl-app input[type='checkbox']:disabled {
   opacity: 0.68;
+}
+
+/* 砂岩白的强调色较深，保留白色勾选符号以维持选中态对比度。 */
+[data-theme='sandstone'] .arl-app input[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.2l3 3 6-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
