@@ -98,13 +98,13 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
             <h3 className={cn("hidden px-3 mb-2 text-[11px] font-semibold leading-4 tracking-wide opacity-80 lg:block", group.color)}>
               {group.label}
             </h3>
-            <ul className="w-full list-none space-y-1 p-0">
+            <ul className="flex w-full list-none flex-col space-y-1 p-0">
               {group.items.map((item) => (
                 <li key={item.id} className="w-full">
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "flex min-h-10 w-full items-center justify-center rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
+                      "group flex min-h-10 w-full min-w-0 items-center justify-center overflow-hidden rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
                         ? "bg-primary/12 text-primary font-semibold shadow-sm ring-1 ring-inset ring-primary/25"
                         : "text-content-muted hover:bg-base-300/60 hover:text-base-content",
@@ -114,7 +114,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden flex-1 text-left lg:inline">{item.label}</span>
+                    <span className="hidden min-w-0 w-full flex-1 text-left lg:inline">{item.label}</span>
                   </button>
                 </li>
               ))}
