@@ -651,7 +651,7 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-row-active > .arl-sidebar-nav-item,
-  .arl-sidebar .arl-sidebar-nav-row:has(> .arl-sidebar-nav-item[aria-current='page']) > .arl-sidebar-nav-item {
+  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
     background-color: transparent !important;
     border-color: transparent !important;
     color: var(--brand-accent) !important;
