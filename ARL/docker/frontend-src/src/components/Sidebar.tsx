@@ -73,7 +73,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   ];
 
   return (
-    <aside className="relative z-10 w-16 lg:w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
+    <aside className="arl-sidebar relative z-10 w-16 lg:w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
       <div className="flex justify-center px-2 py-4 lg:block lg:px-4 lg:py-4 xl:px-5 xl:py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
         <BrandLogo size="md" compactBelowLg />
@@ -104,7 +104,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "group flex min-h-10 w-full min-w-0 items-center justify-center overflow-hidden rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
+                      "group flex min-h-10 w-full max-w-none min-w-0 items-center justify-center overflow-hidden rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
                         ? "bg-primary/12 text-primary font-semibold shadow-sm ring-1 ring-inset ring-primary/25"
                         : "text-content-muted hover:bg-base-300/60 hover:text-base-content",

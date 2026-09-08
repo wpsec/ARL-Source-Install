@@ -34,6 +34,7 @@ describe('Sidebar 整行菜单布局', () => {
 
     expect(activeButton.getAttribute('aria-current')).toBe('page');
     expect(activeButton.className).toContain('w-full');
+    expect(activeButton.className).toContain('lg:!w-full');
     expect(activeButton.className).toContain('min-w-0');
     expect(activeLabel?.className).toContain('w-full');
     expect(activeLabel?.className).toContain('flex-1');

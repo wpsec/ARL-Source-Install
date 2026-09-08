@@ -542,6 +542,12 @@
     min-height: 0;
   }
 
+  /* DaisyUI 的 btn 默认按内容取宽度；侧边栏需要整行命中和整行选中背景。 */
+  .arl-sidebar .btn {
+    width: 100%;
+    max-width: none;
+  }
+
   /* 禁用态仍要保留可辨识文字；透明度由调用方控制，颜色不能随主题沉入背景。 */
   .arl-app .btn:disabled,
   .arl-app .btn[aria-disabled='true'] {
