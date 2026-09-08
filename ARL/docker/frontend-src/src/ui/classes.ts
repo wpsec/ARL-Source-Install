@@ -45,10 +45,10 @@ export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 export const CONSOLE_PANEL_CLASS =
   'card card-border border border-base-300/85 bg-base-200/90 shadow-sm backdrop-blur-sm';
 
-export const CONSOLE_ALERT_ERROR_CLASS = 'alert alert-error alert-soft text-sm';
+export const CONSOLE_ALERT_ERROR_CLASS = 'alert alert-error alert-soft text-sm whitespace-pre-wrap break-words';
 
-export const CONSOLE_ALERT_SUCCESS_CLASS = 'alert alert-success alert-soft text-sm';
+export const CONSOLE_ALERT_SUCCESS_CLASS = 'alert alert-success alert-soft text-sm whitespace-pre-wrap break-words';
 
-export const CONSOLE_ALERT_INFO_CLASS = 'alert alert-info alert-soft text-sm';
+export const CONSOLE_ALERT_INFO_CLASS = 'alert alert-info alert-soft text-sm whitespace-pre-wrap break-words';
 
-export const CONSOLE_ALERT_WARNING_CLASS = 'alert alert-warning alert-soft text-sm';
+export const CONSOLE_ALERT_WARNING_CLASS = 'alert alert-warning alert-soft text-sm whitespace-pre-wrap break-words';

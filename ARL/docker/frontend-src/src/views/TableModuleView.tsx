@@ -2800,7 +2800,7 @@ export function TableModuleView({
         : [];
       const restartHint = taskNameSearchText ? '（当前有任务名筛选时，新任务可能被过滤）' : '';
       if (restartedTaskIds.length > 0) {
-        setSuccess(`重启成功，已创建新任务: ${restartedTaskIds.join(', ')}${restartHint}`);
+        setSuccess(`重启成功，已创建新任务:\n${restartedTaskIds.join('\n')}${restartHint ? `\n${restartHint}` : ''}`);
       } else {
         setSuccess(result?.message ? `重启成功: ${result.message}${restartHint}` : `重启成功，已创建新任务实例${restartHint}`);
       }
@@ -3923,10 +3923,10 @@ export function TableModuleView({
                                       子任务累计耗时：{taskServiceDuration.totalDurationLabel}
                                     </div>
                                     {taskServiceDuration.dedupApplied ? (
-                                      <div className="text-[11px] text-content-muted">
+                                      <div className="whitespace-pre-line text-[11px] text-content-muted">
                                         已自动排除父阶段重复统计
                                         {taskServiceDuration.skippedParentStageNames.length
-                                          ? `：${taskServiceDuration.skippedParentStageNames.join('、')}`
+                                          ? `：\n${taskServiceDuration.skippedParentStageNames.join('\n')}`
                                           : ''}
                                       </div>
                                     ) : null}

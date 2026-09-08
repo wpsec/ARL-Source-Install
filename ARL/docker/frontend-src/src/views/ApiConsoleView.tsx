@@ -482,8 +482,8 @@ export function ApiConsoleView({ token }: { token: string }) {
     const detailPairs = Object.entries(detailRaw)
       .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
       .slice(0, 6)
-      .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(',') : String(value)}`);
-    return detailPairs.join(' | ');
+      .map(([key, value]) => `${key}=${Array.isArray(value) ? value.map((item) => String(item ?? '')).filter(Boolean).join('\n') : String(value)}`);
+    return detailPairs.join('\n');
   };
 
   const buildProviderTestResult = (detailRaw: any, fallbackMessage: string): ServiceApiProviderTestResult => {

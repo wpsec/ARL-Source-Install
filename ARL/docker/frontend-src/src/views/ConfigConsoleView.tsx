@@ -751,9 +751,9 @@ export function ConfigConsoleView({ token }: { token: string }) {
         backupPath ? `备份: ${backupPath}` : '',
       ]
         .filter((item) => item)
-        .join('，');
+        .join('\n');
 
-      setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功（${summary}）`);
+      setSuccess(`${isNuclei ? 'Nuclei PoC' : 'afrog PoC'} 更新成功\n${summary}`);
       mergeScanConfigQueryData(data);
       void queryClient.invalidateQueries({ queryKey: scanConfigQueryKey });
     } catch (err: any) {
