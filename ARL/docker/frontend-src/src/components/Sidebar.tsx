@@ -5,7 +5,6 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useTheme, ThemeType } from '../context/ThemeContext';
 import BrandLogo from './BrandLogo';
-import SystemMonitorMiniWidget from './SystemMonitorMiniWidget';
 
 declare const __ARL_VERSION__: string;
 
@@ -15,12 +14,11 @@ function cn(...inputs: ClassValue[]) {
 
 interface SidebarProps {
   activeView: string;
-  token: string;
   onViewChange: (view: string) => void;
   onNewScan: () => void;
 }
 
-export default function Sidebar({ activeView, token, onViewChange, onNewScan }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, onNewScan }: SidebarProps) {
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
@@ -92,8 +90,6 @@ export default function Sidebar({ activeView, token, onViewChange, onNewScan }: 
           <span className="text-fixed-white text-base tracking-tight">新建任务</span>
         </motion.button>
       </div>
-
-      <SystemMonitorMiniWidget token={token} onOpen={() => onViewChange('monitoring')} />
 
       <nav className="flex-1 px-4 py-8 space-y-10">
         {navGroups.map((group) => (

@@ -82,6 +82,20 @@ describe('App 鉴权流转', () => {
     expect(calls.some((c) => c.url.includes('/user/logout'))).toBe(true);
   });
 
+  it('系统监控摘要位于顶部用户操作栏，紧邻用户名左侧', async () => {
+    localStorage.setItem('arl-token', 'tk-existing');
+    localStorage.setItem('arl-username', 'bob');
+    installFetchMock();
+    renderApp();
+
+    await waitFor(() => expect(screen.getByRole('region', { name: '系统监控摘要' })).toBeTruthy());
+    const monitor = screen.getByRole('region', { name: '系统监控摘要' });
+    const userActionBar = monitor.parentElement;
+    expect(userActionBar?.querySelector('[title="修改密码"]')).toBeTruthy();
+    expect(userActionBar?.textContent).toContain('bob');
+    expect(monitor.nextElementSibling?.textContent).toContain('bob');
+  });
+
   it('修改密码 Modal：按钮打开 dialog，全局 Esc 关闭', async () => {
     localStorage.setItem('arl-token', 'tk-existing');
     installFetchMock();

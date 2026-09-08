@@ -19,6 +19,7 @@ import {
 import Sidebar from './components/Sidebar';
 import { Modal } from './components/ui/Modal';
 import { ViewErrorBoundary } from './components/ui/ErrorBoundary';
+import SystemMonitorMiniWidget from './components/SystemMonitorMiniWidget';
 import { TASK_DETAIL_TABS, getModuleById, resolveStoredModuleId } from './config/modules';
 import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
@@ -330,12 +331,13 @@ export function MainShell() {
         <div className="absolute inset-0 theme-atmosphere-layer" />
       </div>
 
-      <Sidebar token={token} activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
+      <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
         <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-base-100/45 border-b border-base-300/60 flex items-center justify-between gap-4">
           <div className="text-xs text-content-muted min-h-[20px]">{globalNotice || ' '}</div>
           <div className="flex items-center gap-2">
+            <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
             <span className="text-xs font-semibold text-content-muted px-3 py-1.5 border border-base-300 rounded-lg">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
