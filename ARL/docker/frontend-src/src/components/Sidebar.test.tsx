@@ -40,6 +40,8 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeButton.className).toContain('!w-full');
     expect(activeButton.className).toContain('min-w-0');
     expect(activeButton.className).toContain('arl-sidebar-nav-item-active');
+    expect(activeButton.className).toContain('!bg-transparent');
+    expect(activeButton.className).toContain('!text-primary');
     expect(activeButton.className).not.toContain('bg-primary/12');
     expect(activeLabel?.className).toContain('!w-full');
     expect(activeLabel?.className).toContain('flex-1');
