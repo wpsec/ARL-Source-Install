@@ -85,8 +85,8 @@ function MetricRow({
     <div className={`flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
-        <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-baseline gap-x-1.5">
-          <span className="w-9 shrink-0 whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
+        <div className="flex min-w-0 items-baseline justify-between gap-1.5">
+          <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
           <span className="min-w-0 truncate text-right text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
         </div>
         <div className="mt-0.5">
