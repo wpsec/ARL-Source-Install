@@ -22,6 +22,7 @@ from app.utils.device import human_size
 from app import utils
 from app.modules import ErrorMsg
 from . import ARLResource, conn
+from .service import count_service_records
 
 ns = Namespace('console', description="控制台信息")
 
@@ -855,7 +856,7 @@ class ARLConsoleDashboard(ARLResource):
             "asset_data_source": asset_data_source,
             "domain_total": _count_documents("domain"),
             "ip_total": _count_documents("ip"),
-            "service_total": _count_documents("service"),
+            "service_total": count_service_records(),
             "url_total": _count_documents("url"),
             "vuln_total": _count_documents("vuln"),
             "github_task_total": _count_documents("github_task"),

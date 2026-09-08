@@ -199,7 +199,7 @@ export function formatModuleCellValue(moduleId: string, column: string, row: any
 
     // 未开启服务识别(-sV)或服务指纹不足时，产品信息可能为空，这里给出明确提示。
     if (productList.length === 0) return '未识别';
-    return Array.from(new Set(productList)).join(', ');
+    return Array.from(new Set(productList)).join('\n');
   }
 
   if (moduleId === 'vuln' && column === 'credential') {

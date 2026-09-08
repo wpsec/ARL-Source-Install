@@ -1680,7 +1680,7 @@ export function TableModuleView({
     if (moduleId === 'asset_site' && ['headers', 'finger'].includes(column)) return true;
     if (moduleId === 'site' && ['headers', 'finger'].includes(column)) return true;
     if ((moduleId === 'domain' || moduleId === 'asset_domain') && column === 'ips') return true;
-    if (moduleId === 'domain' && column === 'source') return true;
+    if ((moduleId === 'domain' || moduleId === 'asset_domain') && column === 'source') return true;
     if ((moduleId === 'ip' || moduleId === 'asset_ip') && ['port_info.port_id', 'domain'].includes(column)) return true;
     if (moduleId === 'asset_scope' && column === 'scope') return true;
     if (moduleId === 'cert' && column === 'cert_summary') return true;
@@ -3433,7 +3433,7 @@ export function TableModuleView({
                       {columns.map((column) => {
                         const wrapCell = shouldWrapCell(module.id, column);
                         const baseClassName = wrapCell
-                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-center leading-relaxed min-w-[220px] max-w-[560px]'
+                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
@@ -3503,9 +3503,9 @@ export function TableModuleView({
                             : (scopeLines.length > 0 ? scopeLines.join('\n') : '-');
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
                               <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
-                              <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+                              <div className="mt-2 flex flex-wrap items-center justify-start gap-3">
                                 {shouldCollapse ? (
                                   <button
                                     onClick={() =>
@@ -3547,8 +3547,8 @@ export function TableModuleView({
                             : (targetLines.length > 0 ? targetLines.join('\n') : '-');
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-center">{renderedText}</div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-left">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -3557,7 +3557,7 @@ export function TableModuleView({
                                       [scheduleTargetExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block mx-auto text-xs font-semibold text-accent hover:underline"
+                                  className="mt-2 block text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -3580,8 +3580,8 @@ export function TableModuleView({
                             : (optionLines.length > 0 ? optionLines.join('\n') : '-');
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed text-center">{renderedText}</div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed text-left">{renderedText}</div>
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -3619,7 +3619,7 @@ export function TableModuleView({
                             ? 'whitespace-pre-wrap break-all leading-relaxed rounded-box border border-error/45 bg-error/10 px-3 py-2'
                             : 'whitespace-pre-wrap break-all leading-relaxed';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[680px]">
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[680px]">
                               <div className={contentClass}>
                                 {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
                                   ? renderTextWithHyperlink(contentText)
