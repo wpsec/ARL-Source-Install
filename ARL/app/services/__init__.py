@@ -43,6 +43,13 @@ from .target_profile import TargetProfile, TargetProfileResolver
 from .wih_strategy import DiscoveryStrategyPlan, build_wih_strategy_plan
 from .controlled_verification_policy import ControlledVerificationPolicy, VerificationDecision
 from .wih_har_import import HarImportResult, import_har
+from .wih_adaptive_scheduler import WihScheduleCandidate, WihSchedulePlan, schedule_candidates
+from .wih_auth_boundary import (
+    AuthBoundaryResult,
+    apply_auth_boundary_result,
+    build_auth_boundary_jobs,
+    compare_auth_boundary,
+)
 from .evidence_graph import EvidenceEdge, EvidenceGraph, EvidenceNode
 from .evidence_graph_adapter import get_or_create_evidence_graph, sync_discovery_context
 from .trufflehog_scan import run_trufflehog_js

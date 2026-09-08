@@ -44,6 +44,19 @@ API_ENDPOINT_STATUSES: Tuple[str, ...] = (
     "skipped",
 )
 
+# WIH 验证结果是 Endpoint 的附加语义，不改变 API 资产状态机；例如一个
+# covered Endpoint 仍可以被标记为 auth_anomaly_candidate，供人工复核。
+REQUEST_SEMANTICS: Tuple[str, ...] = ("read_only", "write", "unknown")
+VERIFICATION_STATUSES: Tuple[str, ...] = (
+    "pending",
+    "verified_read",
+    "auth_anomaly_candidate",
+    "blocked",
+    "skipped",
+    "failed",
+    "degraded",
+)
+
 API_DOCUMENT_TYPE_HINTS: Tuple[str, ...] = (
     "openapi",
     "swagger",
@@ -549,6 +562,23 @@ def _validated_status(value: Any, allowed: Tuple[str, ...], label: str) -> str:
     return text
 
 
+def _bounded_identifiers(
+    values: Any, *, maximum: int = 64, item_size: int = 128
+) -> List[str]:
+    """限制证据/原因标识数量与长度，避免把自由文本带入资产面。"""
+
+    if isinstance(values, (str, bytes)) or not values:
+        values = (values,) if values else ()
+    result: List[str] = []
+    for value in values:
+        text = str(value or "").strip()[:item_size]
+        if text and text not in result:
+            result.append(text)
+        if len(result) >= maximum:
+            break
+    return result
+
+
 # 第 11 批 Review P2-01：degraded 原因的资产面受控枚举（附录A §4.20）。
 # 原因字段只承载归因类别，不得携带响应/报文/URL 值；未知值收敛 "other"，
 # 超长截断前白名单匹配（白名单值都很短，截断不影响枚举判定）。
@@ -603,6 +633,11 @@ _UNIFIED_ENDPOINT_FIELDS: Tuple[str, ...] = (
     "confidence",
     "status",
     "input_signature",
+    "request_semantics",
+    "evidence_ids",
+    "verification_status",
+    "verification_reason_codes",
+    "manual_review_required",
     "degraded_reason",
 )
 
@@ -643,6 +678,12 @@ class UnifiedApiEndpoint:
     observed_url: str = ""
     # P2-01（第 11 批 Review）：degraded 归因原因，受控枚举（见 sanitizer）。
     degraded_reason: str = ""
+    # 计划 7 增量字段追加在旧字段之后，避免漂移既有位置参数语义。
+    request_semantics: str = "unknown"
+    evidence_ids: List[str] = field(default_factory=list)
+    verification_status: str = "pending"
+    verification_reason_codes: List[str] = field(default_factory=list)
+    manual_review_required: bool = False
 
     def __post_init__(self) -> None:
         # 三层数据契约（附录A §4.16）：url 为非破坏性规范化值（供 endpoint_id/去重键
@@ -660,6 +701,17 @@ class UnifiedApiEndpoint:
         self.api_type = api_type
         self.auth_hint = _validated_status(self.auth_hint, AUTH_HINTS, "auth_hint")
         self.status = _validated_status(self.status, API_ENDPOINT_STATUSES, "endpoint status")
+        self.request_semantics = _validated_status(
+            self.request_semantics, REQUEST_SEMANTICS, "request_semantics"
+        )
+        self.verification_status = _validated_status(
+            self.verification_status, VERIFICATION_STATUSES, "verification_status"
+        )
+        self.evidence_ids = _bounded_identifiers(self.evidence_ids)
+        self.verification_reason_codes = _bounded_identifiers(
+            self.verification_reason_codes, maximum=32, item_size=64
+        )
+        self.manual_review_required = bool(self.manual_review_required)
         if self.graphql_operation not in GRAPHQL_OPERATIONS:
             raise ValueError("unsupported graphql_operation: {}".format(self.graphql_operation))
         self.confidence = min(100, max(0, int(self.confidence or 0)))
@@ -763,6 +815,11 @@ class UnifiedApiEndpoint:
             "confidence": self.confidence,
             "status": self.status,
             "input_signature": self.input_signature,
+            "request_semantics": self.request_semantics,
+            "evidence_ids": list(self.evidence_ids),
+            "verification_status": self.verification_status,
+            "verification_reason_codes": list(self.verification_reason_codes),
+            "manual_review_required": self.manual_review_required,
             "degraded_reason": self.degraded_reason,
         }
 

@@ -431,6 +431,28 @@ class ApiCandidateRegistry:
                 for source in ([endpoint.parent_document or endpoint.source,
                                 endpoint.source] + sorted(endpoint.sources)):
                     merged = existing.add_source(source) or merged
+                # 计划 7 证据与验证语义只做并集/升级，不因后续来源覆盖已有
+                # 资产状态；这样 HAR、浏览器和 endpoint probe 的结果可以安全聚合。
+                for evidence_id in endpoint.evidence_ids:
+                    if evidence_id not in existing.evidence_ids:
+                        existing.evidence_ids.append(evidence_id)
+                        merged = True
+                if (
+                    existing.request_semantics == "unknown"
+                    and endpoint.request_semantics != "unknown"
+                ):
+                    existing.request_semantics = endpoint.request_semantics
+                    merged = True
+                for reason_code in endpoint.verification_reason_codes:
+                    if reason_code not in existing.verification_reason_codes:
+                        existing.verification_reason_codes.append(reason_code)
+                        merged = True
+                if endpoint.verification_status != "pending":
+                    existing.verification_status = endpoint.verification_status
+                    merged = True
+                if endpoint.manual_review_required and not existing.manual_review_required:
+                    existing.manual_review_required = True
+                    merged = True
                 # 去重命中数与来源合并数分别口径：命中即计 dedup（与第 3 批一致），
                 # 证据实际新增才计 sources_merged（消费方判断"多来源聚合"生效）。
                 self.endpoint_deduplicated_count += 1

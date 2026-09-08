@@ -20,6 +20,10 @@ base_search_fields = {
     'method': fields.String(description="HTTP方法"),
     'status_code': fields.Integer(description="HTTP状态码"),
     'response_size': fields.Integer(description="响应大小"),
+    'verification_status': fields.String(description="验证状态"),
+    'auth_anomaly_candidate': fields.Boolean(description="认证边界异常候选"),
+    'manual_review_required': fields.Boolean(description="需要人工复核"),
+    'auth_profile': fields.String(description="认证上下文"),
     'task_id': fields.String(description="任务ID"),
 }
 

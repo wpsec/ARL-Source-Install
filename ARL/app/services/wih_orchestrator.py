@@ -123,6 +123,75 @@ def _browser_runtime_sites(scan_sites, discovery_context):
     return selected
 
 
+def _record_adaptive_endpoint_schedule(task, registry, discovery_context):
+    """记录 Endpoint 候选的自适应计划，暂不改变既有探测消费顺序。
+
+    计划 7 的开发阶段先把排序、预算和停止原因接入诊断面；真实部署观察期
+    结束前不直接替换已有 claim 顺序，避免把未验证的调度策略变成结果丢失面。
+    """
+
+    scheduler = getattr(services, "schedule_candidates", None)
+    snapshot = getattr(registry, "snapshot_endpoints", None)
+    if not callable(scheduler) or not callable(snapshot):
+        return
+    try:
+        endpoints = list(snapshot() or [])
+        metrics = (
+            discovery_context.metrics_snapshot()
+            if callable(getattr(discovery_context, "metrics_snapshot", None))
+            else {}
+        )
+        candidates = []
+        for endpoint in endpoints:
+            if not isinstance(endpoint, dict):
+                continue
+            method = str(endpoint.get("method") or "GET").strip().upper()
+            candidates.append(
+                {
+                    "candidate_id": str(endpoint.get("endpoint_id") or endpoint.get("url") or ""),
+                    "strategy": "endpoint_probe",
+                    "host": url_host(endpoint.get("url")),
+                    "expected_evidence": 80 if method in {"GET", "HEAD"} else 35,
+                    "confidence": endpoint.get("confidence", 0),
+                    "request_cost": 1 if method in {"GET", "HEAD"} else 3,
+                    "time_cost": 1,
+                    "waf_risk": 100 if endpoint.get("degraded_reason") == "host_waf_blocked" else 0,
+                    "covered": endpoint.get("status") in {"covered", "degraded", "failed", "skipped"},
+                    "source_count": len(endpoint.get("sources") or []),
+                    "priority": endpoint.get("confidence", 0),
+                }
+            )
+        plan = scheduler(
+            candidates,
+            budget=getattr(Config, "WIH_TOTAL_BUDGET_SEC", 2700),
+            max_selected=getattr(Config, "API_ENDPOINT_PROBE_MAX_TARGETS", 500),
+            max_per_host=16,
+            waf_block_count=metrics.get("waf_block_count", 0),
+            no_gain_count=metrics.get("no_gain_count", 0),
+        )
+        payload = plan.to_dict()
+        setattr(discovery_context, "wih_adaptive_schedule", payload)
+        record_metric = getattr(discovery_context, "record_metric", None)
+        if callable(record_metric):
+            record_metric("wih_adaptive_schedule_candidates_total", payload["candidate_count"])
+            record_metric("wih_adaptive_schedule_selected_total", payload["selected_count"])
+            if payload["stop_reason"]:
+                record_metric("wih_adaptive_schedule_stopped_total")
+        logger.info(
+            "task_id:{} adaptive endpoint schedule candidates:{} selected:{} pending:{} stop:{}".format(
+                task.task_id,
+                payload["candidate_count"],
+                payload["selected_count"],
+                payload["pending_count"],
+                payload["stop_reason"] or "none",
+            )
+        )
+    except (AttributeError, TypeError, ValueError, KeyError) as exc:
+        logger.debug(
+            "wih adaptive endpoint schedule failed error_type:%s", type(exc).__name__
+        )
+
+
 def _wih_primary_fully_succeeded(stage_metrics) -> bool:
     """仅整批正常完成（无超时/抢救/失败）才允许写 covered，降级批次必须重扫。"""
     if not isinstance(stage_metrics, dict):
@@ -770,6 +839,7 @@ class WihOrchestrator(object):
             api_registry = getattr(discovery_context, "api_candidate_registry", None)
             if api_registry is not None:
                 try:
+                    _record_adaptive_endpoint_schedule(task, api_registry, discovery_context)
                     _registry_endpoint_followup(
                         task, api_registry, wih_endpoints, discovery_context)
                 except Exception as exc:
