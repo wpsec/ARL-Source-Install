@@ -3893,7 +3893,7 @@ export function TableModuleView({
                             <button
                               type="button"
                               onClick={() => openTaskErrorDialog(row)}
-                              className="inline-flex items-center gap-1 text-error hover:underline font-semibold"
+                              className={`${CONSOLE_TEXT_BUTTON_CLASS} inline-flex items-center gap-1 text-error hover:underline font-semibold`}
                               title="点击查看异常详情"
                             >
                               <AlertTriangle className="w-4 h-4" />
@@ -4121,7 +4121,7 @@ export function TableModuleView({
                                     title: String(row?.site || row?.hostname || row?.title || '截图预览'),
                                   })
                                 }
-                                className="inline-flex items-center justify-center p-1 rounded-box border border-transparent hover:border-accent/60 transition"
+                                className="inline-flex items-center justify-center rounded-box border border-transparent p-1 transition hover:border-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100"
                                 title="点击预览截图"
                               >
                                 <img

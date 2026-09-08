@@ -648,6 +648,7 @@
   }
 
   .arl-app button:focus-visible,
+  .arl-app a:focus-visible,
   .arl-app input:not([type='checkbox']):not([type='radio']):focus,
   .arl-app input:not([type='checkbox']):not([type='radio']):focus-visible,
   .arl-app select:focus,
