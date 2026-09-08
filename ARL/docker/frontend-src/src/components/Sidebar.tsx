@@ -114,7 +114,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden min-w-0 w-full flex-1 text-left lg:inline">{item.label}</span>
+                    <span className="hidden min-w-0 w-full flex-1 self-stretch items-center text-left lg:flex">{item.label}</span>
                   </button>
                 </li>
               ))}
