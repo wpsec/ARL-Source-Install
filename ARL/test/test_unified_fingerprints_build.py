@@ -9,6 +9,7 @@
 4. 括号语法/不支持字段整条拒绝；schema 校验拦截坏文档；service 写入失败回滚 site；
    服务 transport 正确（dns/dhcp/snmp 含 udp）；merge key 标点敏感（A-B ≠ AB）。
 """
+import ast
 import importlib.util
 import json
 import os
@@ -298,6 +299,39 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
         self.assertEqual({t["proto"] for t in rules["service:snmp"]["transports"]}, {"udp"})
         self.assertEqual({t["proto"] for t in rules["service:mysql"]["transports"]}, {"tcp"})
         BUILD.validate_service_document({"meta": {}, "fingerprints": BUILD.build_service_fingerprints()})
+
+    def test_builtin_npoc_service_coverage(self):
+        rules = {r["name"]: r for r in BUILD.build_service_fingerprints()}
+        self.assertGreaterEqual(len(rules), 47)
+        for name in {
+            "ajp", "cobalt_strike", "dubbo", "hrpc", "iiop", "jdwp", "nfs",
+            "rmi", "rsync", "socks4", "socks5", "t3", "zmtp", "zookeeper",
+        }:
+            self.assertIn(name, rules)
+            self.assertIn("npoc", rules[name]["sources"])
+        self.assertIn("psql", rules["postgres"]["matchers"]["npoc_schemes"])
+        self.assertIn("rdp", rules["rdp"]["matchers"]["npoc_schemes"])
+
+    def test_all_npoc_scheme_constants_are_mapped(self):
+        const_path = ROOT_DIR.parent / "ARL-NPoC" / "xing" / "core" / "const.py"
+        tree = ast.parse(const_path.read_text(encoding="utf-8"))
+        expected = set()
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef) or node.name != "SchemeType":
+                continue
+            for item in node.body:
+                if not isinstance(item, ast.Assign) or len(item.targets) != 1:
+                    continue
+                if isinstance(item.targets[0], ast.Name):
+                    expected.add(ast.literal_eval(item.value))
+
+        rules = BUILD.build_service_fingerprints()
+        covered = {
+            scheme
+            for rule in rules
+            for scheme in rule["matchers"]["npoc_schemes"]
+        }
+        self.assertEqual(set(), expected - covered)
 
     def test_write_failure_keeps_previous_files(self):
         with tempfile.TemporaryDirectory() as d:

@@ -40,7 +40,8 @@ class ServiceFingerprintRegistry:
         self.ok = False
         self.load_error = ""
         self.alias_map = {}      # nmap service / npoc scheme(lower) -> {"name","priority","weight"}
-        self.port_map = {}       # (proto, port) -> name
+        self.port_map = {}       # (proto, port) -> [{"name", "weight"}]
+        self.product_map = {}    # Nmap product hint -> {"name", "priority", "weight"}
         self.confidence = {}     # npoc=100, nmap_service=90, port=25 等
         self._file_token = None
         self._load()
@@ -59,6 +60,7 @@ class ServiceFingerprintRegistry:
                 raise ValueError("unsupported format: {}".format(meta.get("format")))
             alias_map = {}
             port_map = {}
+            product_map = {}
             for rule in doc.get("fingerprints", []):
                 if not rule.get("enabled", True):
                     continue
@@ -72,14 +74,20 @@ class ServiceFingerprintRegistry:
                     key = str(svc).strip().lower()
                     alias_map.setdefault(key, {"name": name, "priority": "nmap_service_name", "weight": 90})
                 for product in rule.get("matchers", {}).get("nmap_product_hints", []):
-                    alias_map.setdefault(str(product).strip().lower(), {"name": name, "priority": "nmap_product_version",
-                                                                        "weight": 80})
+                    product_key = str(product).strip().lower()
+                    product_hit = {"name": name, "priority": "nmap_product_version", "weight": 80}
+                    product_map.setdefault(product_key, product_hit)
+                    alias_map.setdefault(product_key, product_hit)
                 port_weight = int(rule.get("resolution", {}).get("port_confidence", 25))
                 for transport in rule.get("transports", []):
                     for port in transport.get("ports", []):
-                        port_map.setdefault((str(transport.get("proto", "tcp")), int(port)), (name, port_weight))
+                        key = (str(transport.get("proto", "tcp")), int(port))
+                        candidates = port_map.setdefault(key, [])
+                        if not any(item["name"] == name for item in candidates):
+                            candidates.append({"name": name, "weight": port_weight})
             self.alias_map = alias_map
             self.port_map = port_map
+            self.product_map = product_map
             self.ok = True
             self.load_error = ""
             logger.info("service fingerprint registry loaded aliases=%d port_hints=%d",
@@ -145,21 +153,25 @@ class ServiceFingerprintRegistry:
                 return {"service": "", "confirmed": False, "confidence": 0, "sources": [], "conflict": None}
             port_hit = self.port_map.get((str(proto or "tcp"), port_num))
             if port_hit:
-                name, weight = port_hit
+                port_hit = sorted(port_hit, key=lambda item: (item["name"], -item["weight"]))
+                names = [item["name"] for item in port_hit]
+                name = names[0] if len(names) == 1 else ""
+                weight = max(item["weight"] for item in port_hit)
                 # 端口号只能产生弱候选（05 §六 优先级4），绝不确认服务
-                return {"service": name, "confirmed": False, "confidence": weight,
-                        "sources": ["port_only"], "conflict": None}
+                result = {"service": name, "confirmed": False, "confidence": weight,
+                          "sources": ["port_only"], "conflict": None}
+                if len(names) > 1:
+                    result["candidate_services"] = names
+                return result
 
         return {"service": "", "confirmed": False, "confidence": 0, "sources": [], "conflict": None}
 
     def _lookup_product(self, product_key):
         """匹配精确产品名及其带版本的 Nmap 提示。"""
-        hit = self.alias_map.get(product_key)
+        hit = self.product_map.get(product_key)
         if hit:
             return hit
-        for alias, candidate in sorted(self.alias_map.items(), key=lambda item: len(item[0]), reverse=True):
-            if candidate["priority"] != "nmap_product_version":
-                continue
+        for alias, candidate in sorted(self.product_map.items(), key=lambda item: len(item[0]), reverse=True):
             if product_key.startswith(alias + " ") or product_key.startswith(alias + "/"):
                 return candidate
         return None

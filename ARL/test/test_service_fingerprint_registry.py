@@ -83,6 +83,9 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
         self.assertEqual(self.registry.canonical("ms-wbt-server"), "rdp")
         self.assertEqual(self.registry.canonical("SSL/HTTP"), "https")
         self.assertEqual(self.registry.canonical("domain"), "dns")
+        self.assertEqual(self.registry.canonical("psql"), "postgres")
+        self.assertEqual(self.registry.canonical("proxy_https"), "proxy")
+        self.assertEqual(self.registry.canonical("zookeeper"), "zookeeper")
         # 未知输入原样小写返回（不吞）
         self.assertEqual(self.registry.canonical("WeirdSVC"), "weirdsvc")
 
@@ -112,6 +115,29 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
         self.assertEqual(res["service"], "ssh")
         self.assertEqual(res["confidence"], 80)
         self.assertEqual(res["sources"], ["nmap_product_version"])
+
+    def test_overlapping_product_hint_keeps_versioned_product_mapping(self):
+        res = self.registry.normalize_result(nmap_product="MariaDB 11.2")
+        self.assertEqual(res["service"], "mysql")
+        self.assertEqual(res["sources"], ["nmap_product_version"])
+
+    def test_npoc_postgresql_scheme_is_normalized(self):
+        res = self.registry.normalize_result(npoc_scheme="psql")
+        self.assertEqual(res["service"], "postgres")
+        self.assertEqual(res["confidence"], 100)
+        self.assertEqual(res["sources"], ["npoc_scheme"])
+
+    def test_new_npoc_service_port_is_a_weak_candidate(self):
+        res = self.registry.normalize_result(port=8009, proto="tcp")
+        self.assertEqual(res["service"], "ajp")
+        self.assertFalse(res["confirmed"])
+        self.assertEqual(res["sources"], ["port_only"])
+
+    def test_shared_port_keeps_all_weak_candidates(self):
+        res = self.registry.normalize_result(port=7001, proto="tcp")
+        self.assertEqual(res["service"], "")
+        self.assertFalse(res["confirmed"])
+        self.assertEqual(res["candidate_services"], ["iiop", "t3"])
 
     def test_port_only_is_weak_candidate(self):
         res = self.registry.normalize_result(port=3306, proto="tcp")

@@ -252,48 +252,67 @@ def load_extra_rules(path, merger):
     return _load_human_rule_source(path, "custom", merger)
 
 
-# --- 服务指纹 seed_v0（第5阶段以真实 Nmap/NPoC fixture 重建后方可承接识别链路；结构即消费契约） ---
+# --- 服务指纹内置基线（覆盖仓库内置 NPoC sniffer 与现有 Nmap 映射；结构即消费契约） ---
 # (name, nmap_service_names, npoc_schemes, transports, nmap_product_hints)
 SERVICE_SEED = [
-    ("http", ["http", "http-proxy", "www"], ["http"], [{"proto": "tcp", "ports": [80, 8080, 8888]}], []),
+    ("http", ["http", "www"], ["http"], [{"proto": "tcp", "ports": [80, 8080, 8888]}], []),
     ("https", ["https", "ssl/http"], ["https"], [{"proto": "tcp", "ports": [443, 8443]}], []),
-    ("ssh", ["ssh"], ["ssh"], [{"proto": "tcp", "ports": [22]}], ["openssh"]),
-    ("ftp", ["ftp"], ["ftp"], [{"proto": "tcp", "ports": [21]}], []),
-    ("smtp", ["smtp", "esmtp"], ["smtp"], [{"proto": "tcp", "ports": [25, 465, 587]}], []),
+    ("ssh", ["ssh"], ["ssh"], [{"proto": "tcp", "ports": [22]}], ["openssh", "dropbear", "libssh"]),
+    ("ftp", ["ftp"], ["ftp"], [{"proto": "tcp", "ports": [21]}], ["vsftpd", "proftpd", "pure-ftpd"]),
+    ("smtp", ["smtp", "esmtp"], ["smtp"], [{"proto": "tcp", "ports": [25, 465, 587]}], ["postfix", "exim", "sendmail"]),
     ("dns", ["domain", "dns"], ["dns"], [{"proto": "udp", "ports": [53]}, {"proto": "tcp", "ports": [53]}], []),
     ("dhcp", ["dhcp", "dhcpc"], [], [{"proto": "udp", "ports": [67, 68]}], []),
     ("pop3", ["pop3", "pop"], ["pop3"], [{"proto": "tcp", "ports": [110]}], []),
     ("imap", ["imap"], ["imap"], [{"proto": "tcp", "ports": [143]}], []),
     ("imaps", ["imaps"], [], [{"proto": "tcp", "ports": [993]}], []),
     ("smb", ["smb", "microsoft-ds", "netbios-ssn"], ["smb"], [{"proto": "tcp", "ports": [139, 445]}], []),
-    ("rdp", ["ms-wbt-server", "rdp", "terminal-server"], ["mstsc"], [{"proto": "tcp", "ports": [3389]}], []),
+    ("rdp", ["ms-wbt-server", "rdp", "terminal-server"], ["mstsc", "rdp"], [{"proto": "tcp", "ports": [3389]}], []),
     ("vnc", ["vnc", "rfb"], ["vnc"], [{"proto": "tcp", "ports": [5900, 5901]}], []),
-    ("mysql", ["mysql", "mariadb"], ["mysql"], [{"proto": "tcp", "ports": [3306]}], ["mysql"]),
-    ("mssql", ["ms-sql-s", "mssql", "sqlserver"], ["mssql"], [{"proto": "tcp", "ports": [1433]}, {"proto": "udp", "ports": [1434]}], []),
+    ("mysql", ["mysql", "mariadb"], ["mysql"], [{"proto": "tcp", "ports": [3306]}], ["mysql", "mariadb"]),
+    ("mssql", ["ms-sql-s", "mssql", "sqlserver"], ["mssql"], [{"proto": "tcp", "ports": [1433]}, {"proto": "udp", "ports": [1434]}], ["microsoft sql server"]),
     ("oracle", ["oracle", "tns"], ["oracle"], [{"proto": "tcp", "ports": [1521]}], []),
     ("ldap", ["ldap", "ldaps"], ["ldap"], [{"proto": "tcp", "ports": [389, 636]}, {"proto": "udp", "ports": [389]}], []),
-    ("postgres", ["postgresql", "psql"], ["pgsql"], [{"proto": "tcp", "ports": [5432]}], ["postgresql"]),
+    ("postgres", ["postgresql", "postgres", "psql"], ["pgsql", "psql"], [{"proto": "tcp", "ports": [5432]}], ["postgresql", "postgres"]),
     ("redis", ["redis"], ["redis"], [{"proto": "tcp", "ports": [6379]}], ["redis"]),
     ("memcached", ["memcached"], ["memcached"], [{"proto": "tcp", "ports": [11211]}], []),
     ("mongodb", ["mongodb"], ["mongodb"], [{"proto": "tcp", "ports": [27017]}], []),
     ("elasticsearch", ["elasticsearch", "elastic"], ["elasticsearch"], [{"proto": "tcp", "ports": [9200, 9300]}], []),
-    ("rabbitmq", ["amqp", "rabbitmq"], ["amqp"], [{"proto": "tcp", "ports": [5672, 15672]}], []),
+    ("rabbitmq", ["amqp", "rabbitmq"], ["amqp"], [{"proto": "tcp", "ports": [5672, 15672]}], ["rabbitmq"]),
     ("modbus", ["modbus", "modbus/tcp"], ["modbus"], [{"proto": "tcp", "ports": [502]}], []),
     ("snmp", ["snmp"], ["snmp"], [{"proto": "udp", "ports": [161, 162]}], []),
     ("telnet", ["telnet"], ["telnet"], [{"proto": "tcp", "ports": [23, 2323]}], []),
     ("kerberos", ["kerberos", "kpasswd", "kerberos-adm"], [], [{"proto": "tcp", "ports": [88, 464, 749]}, {"proto": "udp", "ports": [88]}], []),
     ("winrm", ["wsman", "winrm", "http-winrm"], [], [{"proto": "tcp", "ports": [5985, 5986]}], []),
-    ("proxy", ["squid", "proxy"], [], [{"proto": "tcp", "ports": [3128]}], []),
+    ("proxy", ["squid", "proxy"], ["proxy_https"], [{"proto": "tcp", "ports": [80, 3128, 10809]}], ["squid"]),
     ("zabbix", ["zabbix-trapper"], [], [{"proto": "tcp", "ports": [10051]}], []),
     ("tftp", ["tftp"], [], [{"proto": "udp", "ports": [69]}], []),
     ("syslog", ["syslog"], [], [{"proto": "udp", "ports": [514]}], []),
     ("ntp", ["ntp", "ntdp"], [], [{"proto": "udp", "ports": [123]}], []),
+    ("ajp", ["ajp", "ajp13"], ["ajp"], [{"proto": "tcp", "ports": [8009]}], []),
+    ("cobalt_strike", ["cobalt-strike", "cobaltstrike"], ["csts"], [{"proto": "tcp", "ports": [50050]}], ["cobalt strike"]),
+    ("dubbo", ["dubbo"], ["dubbo"], [{"proto": "tcp", "ports": [20880]}], []),
+    ("hrpc", ["hadoop-rpc", "hrpc"], ["hrpc"], [{"proto": "tcp", "ports": [8032]}], []),
+    ("iiop", ["iiop"], ["iiop"], [{"proto": "tcp", "ports": [7001]}], []),
+    ("jdwp", ["jdwp"], ["jdwp"], [{"proto": "tcp", "ports": [5000, 5005]}], []),
+    ("nfs", ["nfs"], ["nfs"], [{"proto": "tcp", "ports": [2049]}], []),
+    ("rmi", ["java-rmi", "rmi"], ["rmi"], [{"proto": "tcp", "ports": [1099]}], []),
+    ("rsync", ["rsync"], ["rsync"], [{"proto": "tcp", "ports": [873]}], []),
+    ("socks4", ["socks4"], ["socks4"], [{"proto": "tcp", "ports": [1090]}], []),
+    ("socks5", ["socks5", "socks"], ["socks5"], [{"proto": "tcp", "ports": [1090]}], []),
+    ("t3", ["t3", "weblogic-t3"], ["t3"], [{"proto": "tcp", "ports": [7001]}], []),
+    ("zmtp", ["zmtp", "zmq"], ["zmtp"], [{"proto": "tcp", "ports": [4506]}], []),
+    ("zookeeper", ["zookeeper"], ["zookeeper"], [{"proto": "tcp", "ports": [2181]}], []),
 ]
 
 
 def build_service_fingerprints():
     rules = []
     for name, nmap_names, npoc_schemes, transports, products in SERVICE_SEED:
+        sources = []
+        if nmap_names or products:
+            sources.append("nmap")
+        if npoc_schemes:
+            sources.append("npoc")
         rules.append({
             "id": "service:" + merge_key(name).replace(" ", "-"),
             "name": name,
@@ -310,7 +329,7 @@ def build_service_fingerprints():
                 "conflict_policy": "keep_evidence",
             },
             "confidence": 90,
-            "sources": ["seed_v0"],
+            "sources": sources,
             "enabled": True,
         })
     rules.sort(key=lambda r: r["id"])
@@ -445,7 +464,7 @@ def render_report(site, service_rules) -> str:
     L.append(f"- 分支级拒绝：{stats['dropped_branches']}（stopword {stats['dropped_branches_stopword']} / 超短 {stats['dropped_branches_too_short']}）；整条规则拒绝 {stats['rejected_rules']}；语法非法拒绝 {stats['malformed_rules']}；候选降级封顶 {stats['demoted']}")
     L.append(f"- 同名多源合并（conflicts，分支级 sources 保留）：{stats['conflicts']}")
     L.append(f"- regex 无锚点分支（no-anchor 兜底桶规模）：{no_anchor}")
-    L.append(f"- 服务规则：**seed_v0 骨架 {len(service_rules)} 条**（第5阶段以真实 Nmap/NPoC fixture 重建后方可承接识别链路）")
+    L.append(f"- 服务规则：**内置 Nmap/NPoC 基线 {len(service_rules)} 条**（覆盖仓库内置 NPoC sniffer；完整 Nmap 产品覆盖仍需真实 fixture 验收）")
     L.append("- 输入文件 sha256：")
     for name, digest in sorted(meta["input_files"].items()):
         L.append(f"  - `{name}` `{digest[:16]}`")
@@ -471,7 +490,12 @@ def main(argv=None):
     merger = Merger()
     site = build_site(args, merger)
     service_doc = {
-        "meta": {"format": "arl_service_fingerprint_v1", "status": "seed_v0", "rule_count": 0},
+        "meta": {
+            "format": "arl_service_fingerprint_v1",
+            "status": "nmap_npoc_builtin_v1",
+            "sources": ["nmap_service_names", "nmap_product_hints", "npoc_builtin_sniffers"],
+            "rule_count": 0,
+        },
         "fingerprints": build_service_fingerprints(),
     }
     service_doc["meta"]["rule_count"] = len(service_doc["fingerprints"])

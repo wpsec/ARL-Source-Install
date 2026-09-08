@@ -175,7 +175,7 @@ def apply_npoc_service_result(task, sniffer_items, use_registry=True):
         host = str(item.get("host", "") or "").strip()
         port = str(item.get("port", "") or "").strip()
         scheme = normalize_scheme(item.get("scheme"), use_registry=use_registry)
-        if not host or not port or not scheme:
+        if not host or not port or not scheme or scheme in LOW_CONF_SERVICE_NAMES:
             continue
         scheme_map["{}:{}".format(host, port)] = scheme
 

@@ -43,6 +43,24 @@ class ServiceDetectionRegistryTest(unittest.TestCase):
         self.assertEqual(0, result["confidence"])
         self.assertEqual([], result["sources"])
 
+    def test_low_confidence_npoc_result_is_not_written_back(self):
+        task = type("Task", (), {
+            "ip_info_list": [{
+                "ip": "192.0.2.10",
+                "port_info": [{"port_id": 443, "service_name": "unknown", "product": ""}],
+            }],
+        })()
+        updated = DETECTION.apply_npoc_service_result(
+            task,
+            [{"host": "192.0.2.10", "port": "443", "scheme": "unknown"}],
+            use_registry=False,
+        )
+
+        port_info = task.ip_info_list[0]["port_info"][0]
+        self.assertEqual(0, updated)
+        self.assertEqual("unknown", port_info["service_name"])
+        self.assertEqual("", port_info["product"])
+
 
 if __name__ == "__main__":
     unittest.main()
