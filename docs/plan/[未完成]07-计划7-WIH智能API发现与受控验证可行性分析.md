@@ -492,7 +492,7 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 
 - [x] 完成 L1 安全读取、L2 认证边界对比和 `api_verify` 独立调度的开发接线；L1 复用既有 Probe，L2 通过注入式 profile executor，真实凭据 profile 的部署接线仍按用户安排不运行；
 - [x] 统一 Endpoint 契约可输出 `auth_anomaly_candidate`、`blocked`、`skipped`、`pending`、`failed` 和 `degraded` 等验证语义；
-- [x] ARL 展示 Endpoint、验证状态、认证对比摘要和人工复核理由；调用链/参数来源的完整详情仍待证据图 adapter 扩展；
+- [x] ARL 展示 Endpoint、验证状态、认证对比摘要和人工复核理由；EvidenceGraph adapter 已补齐文档/候选/路由到 Endpoint 的 `documents`/`calls` 关系、参数节点及证据 ID 引用，仍不保存原始敏感值；
 - [x] 不自动执行 L3 专门安全测试。
 
 ### 第 7 批：性能和 Rust 评估
@@ -559,4 +559,4 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
   → 基准证明后 Rust 化
 ```
 
-开发侧下一步是继续收敛 Collector 的统一 profile/single-flight 接口，并补齐重复请求、worker 重启和失败重试的离线回归；运行时观察、40/64 目标、双架构和性能门禁按用户安排暂不执行。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。
+截至 2026-09-08，Collector 的统一 profile/single-flight 接口、重复请求、worker 重启和失败重试的开发侧回归已完成；当前剩余工作仅为真实运行观察、40/64 目标、双架构和性能发布门禁，按用户安排暂不执行。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。

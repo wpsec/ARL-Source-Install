@@ -69,7 +69,7 @@ describe('SystemMonitorMiniWidget', () => {
     installFetchMock({ routes: { '/console/system_monitor/': [500, { message: '不可用' }] } });
     renderWidget();
 
-    await vi.waitFor(() => expect(screen.getByTitle('暂不可用')).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByLabelText('资源状态不可用')).toBeTruthy());
     expect(screen.getByText('CPU')).toBeTruthy();
     expect(screen.getAllByText('--')).toHaveLength(3);
   });

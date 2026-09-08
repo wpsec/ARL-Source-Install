@@ -188,7 +188,9 @@ react-query **只解决 UI 页面切换/返回时的 API 重复拉取与加载�
 
 ### 2026-09-08 本地 UI smoke
 
-- [已完成] 离线构建链：`tsc --noEmit` 通过，Vitest `17` 个测试文件、`111` 项测试通过，Vite production build 通过，dist 入口资产和 SHA-256 清单自洽。
+- [已完成] 离线构建链：`tsc --noEmit` 通过，Vitest `18` 个测试文件、`116` 项测试通过，Vite production build 通过，dist 入口资产和 SHA-256 清单自洽。
+- [已完成] 静态 UI smoke：复用现有 dist 执行 `ui-smoke.sh`，入口资产与清单自洽；容器 serve 和 Playwright 因当前环境未提供 Docker/浏览器依赖而明确跳过。
+- [已完成] 主题可读性门禁：修正 DaisyUI 5 token 解析脚本并调整 sandstone warning/error 配色，`check-theme-contrast.py` 六套主题十二组配对全部通过。
 - [待环境] 双架构容器 serve 未执行：当前 Docker daemon socket 无权限；真实执行入口为 `ARL/docker/frontend-src/scripts/ui-smoke.sh`。
 - [待环境] Playwright 浏览器行为未执行：仓库未安装 Playwright，不隐式拉包；真实 Chromium/Safari 证据留给用户环境统一 review。
 

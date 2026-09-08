@@ -2,7 +2,7 @@
 
 ## 1. 复核结论
 
-- 复核基线：当前分支 `newUI`，HEAD `73da5abf`；本记录同时覆盖工作区内尚未提交的计划 7 后端实现、测试和前端主题改动。
+- 复核基线：当前分支 `newUI`，HEAD `14af26cd`（计划 5/6/7 离线闭环及后续 UI 修复提交）；本记录同时覆盖工作区内尚未提交的 EvidenceGraph adapter、前端主题门禁和监控摘要文案修复。
 - 结论：**开发侧通过，真实运行验收未完成**。
 - 未发现新的 P0/P1 范围越界、凭据进入资产面、默认路径隐式发起验证请求或协议观察无界增长问题。
 - 计划 7 仍保持 `[未完成][开发中]`；计划 5 保持暂停，计划 6/7 的真实 worker、40/64、多架构和发布门禁不以本地测试替代。
@@ -23,6 +23,7 @@
 - GraphQL、SOAP、WebSocket、SSE 观察统一进入协议 Registry；协议 Registry 拒绝非 `http/https/ws/wss` scheme。
 - 协议 Registry 对观察条目、来源集合和 evidence id 均有上限，达到容量时显式返回 `capacity` 并计量，不静默扩容。
 - EvidenceGraph 只消费 Registry/Context 快照，不在同步阶段发起请求。
+- EvidenceGraph adapter 已补齐文档/候选/路由到 Endpoint 的 `documents`/`calls` 关系、参数节点和有界 evidence ID 引用；图快照仍只保留不可逆节点 ID 与类别化边证据。
 
 ### 2.2 验证与脱敏
 
@@ -51,6 +52,10 @@
 - 前端 `npm run lint`：通过。
 - 前端 Vitest：`18` 个 test files、`116` 项通过。
 - 前端 `npm run build`：Vite 生产构建通过。
+- `python3 scripts/check-theme-contrast.py`：6 套主题、12 组对比度全部通过。
+- `ARL/test/test_theme_contrast.py`：2 项主题 token/对比度回归通过。
+- `ARL/docker/frontend-src/scripts/ui-smoke.sh` 静态模式：入口资产与 SHA-256 清单通过；Docker/Playwright 阶段明确跳过。
+- EvidenceGraph 图谱与 adapter 定向回归：14 项通过，覆盖调用链、文档关系、参数节点、认证边界、敏感值脱敏和幂等同步。
 
 测试中的 Mongo unavailable、pyparsing deprecation、ResourceWarning 和故障注入日志均为既有测试环境/故障路径提示，不构成新增失败；不以这些提示宣称生产运行通过。
 

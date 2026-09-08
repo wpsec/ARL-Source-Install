@@ -120,13 +120,13 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
     ? history
     : [{ cpu: cpuPercent, ram: memoryPercent, net: networkRate }];
   const unavailable = monitorQuery.isError;
-  const statusLabel = unavailable ? '暂不可用' : monitorQuery.isFetching && !monitorQuery.data ? '正在同步' : '实时运行';
   const isInitialLoading = monitorQuery.isFetching && !monitorQuery.data;
   const statusColor = unavailable ? 'bg-error' : isInitialLoading ? 'bg-warning' : 'bg-success';
+  const statusAriaLabel = unavailable ? '资源状态不可用' : isInitialLoading ? '资源状态同步中' : '资源状态';
 
   return (
     <section className="hidden min-w-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
-      <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-200 px-2.5" title={statusLabel}>
+      <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-200 px-2.5" aria-label={statusAriaLabel}>
         <div className="flex h-6 w-6 items-center justify-center rounded-box bg-accent/10 text-accent">
           <Activity className="h-3.5 w-3.5" />
         </div>
