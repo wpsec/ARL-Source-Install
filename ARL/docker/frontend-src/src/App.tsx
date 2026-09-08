@@ -225,7 +225,8 @@ export function MainShell() {
     try {
       await requestApi(token, '/user/logout', { method: 'GET' });
     } catch {
-      // ignore logout error
+      // 服务端退出失败时仍清理本地会话，避免客户端继续携带失效凭据。
+      console.warn('[ARL] logout request failed; local session cleared');
     }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USERNAME_KEY);
