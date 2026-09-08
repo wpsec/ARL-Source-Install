@@ -754,7 +754,7 @@ export function ActionDialog({
                   <input
                     value={fofaTaskName}
                     disabled={!editable}
-                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
                     className={CONSOLE_INPUT_CLASS}
                     placeholder="请输入任务名称"
                   />
