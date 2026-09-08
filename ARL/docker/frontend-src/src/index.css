@@ -820,6 +820,20 @@
   background-color: color-mix(in oklab, var(--brand-text-muted) 10%, var(--color-base-100));
 }
 
+/* 语义状态不能退化成灰色小标签；提高色彩面和边框层级，但文字仍使用语义色本身。 */
+.arl-app .badge-soft:not(.badge-neutral) {
+  color: var(--badge-color, var(--brand-text));
+  border-color: color-mix(in oklab, var(--badge-color, var(--brand-border)) 30%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--badge-color, var(--brand-text)) 14%, var(--color-base-100));
+}
+
+/* 反馈条使用同一套状态面，避免深色主题的成功/失败提示与卡片背景融为一体。 */
+.arl-app .alert-soft {
+  color: var(--alert-color, var(--brand-text));
+  border-color: color-mix(in oklab, var(--alert-color, var(--brand-border)) 30%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--alert-color, var(--brand-text)) 14%, var(--color-base-100));
+}
+
 .arl-app input:not([type='checkbox']):not([type='radio']):disabled,
 .arl-app select:disabled,
 .arl-app textarea:disabled,
