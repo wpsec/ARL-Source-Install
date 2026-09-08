@@ -361,7 +361,8 @@ export function MainShell() {
   }
 
   return (
-    <div className="arl-app h-screen flex bg-base-100 text-base-content overflow-hidden">
+    <div className="arl-app relative h-screen flex bg-base-100 text-base-content overflow-hidden">
+      <div className="theme-atmosphere-layer pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 min-w-0 flex-1 overflow-y-auto custom-scrollbar">

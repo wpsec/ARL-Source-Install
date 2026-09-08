@@ -16,8 +16,9 @@ export function LoginView({
   const [password, setPassword] = useState('');
 
   return (
-    <main className="arl-app w-full min-w-0 min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
-      <div className="card min-w-0 w-full max-w-xl border border-base-300 bg-base-200 shadow-sm">
+    <main className="arl-app relative w-full min-w-0 min-h-screen overflow-hidden bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
+      <div className="theme-atmosphere-layer-login pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
+      <div className="card relative z-10 min-w-0 w-full max-w-xl border border-base-300 bg-base-200 shadow-sm">
         <div className="card-body min-w-0 p-6 sm:p-10">
           <div className="flex min-w-0 flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center">
             {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
