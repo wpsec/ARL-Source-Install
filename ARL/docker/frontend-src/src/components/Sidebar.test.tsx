@@ -47,6 +47,11 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeRow?.className).toContain('arl-sidebar-nav-row');
     expect(activeRow?.className).toContain('w-full');
     expect(activeRow?.className).toContain('bg-primary/12');
+
+    const newScanButton = screen.getByRole('button', { name: '新建任务' });
+    expect(newScanButton.className).toContain('btn-primary');
+    expect(newScanButton.className).toContain('h-10');
+    expect(newScanButton.className).toContain('w-full');
   });
 
   it('非选中项不复用选中态标记', () => {

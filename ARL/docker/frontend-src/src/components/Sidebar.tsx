@@ -4,6 +4,7 @@ import { motion } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { useTheme, ThemeType } from '../context/ThemeContext';
+import { CONSOLE_PRIMARY_BUTTON_CLASS } from '../ui/classes';
 import BrandLogo from './BrandLogo';
 
 declare const __ARL_VERSION__: string;
@@ -84,7 +85,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
-          className="btn btn-primary btn-sm h-10 min-h-10 w-full justify-center gap-0 shadow-sm lg:justify-start lg:gap-2"
+          className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full justify-center gap-0 shadow-sm lg:justify-start lg:gap-2`}
           title="新建任务"
         >
           <Plus className="w-4 h-4" strokeWidth={2.5} />
