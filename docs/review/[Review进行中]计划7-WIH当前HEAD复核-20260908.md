@@ -2,7 +2,7 @@
 
 ## 1. 复核结论
 
-- 复核基线：当前分支 `newUI`，HEAD `334ee566`（计划 5/6/7 离线闭环、EvidenceGraph/主题门禁、监控摘要文案、监控摘要与顶部操作栏布局、登录页窄屏修复和总计划索引均已提交）；工作区干净。
+- 复核基线：当前分支 `newUI`，HEAD `51af2032`（计划 5/6/7 离线闭环、EvidenceGraph/主题门禁、监控摘要与顶部操作栏布局、登录页窄屏修复、服务信息重挂载回归和总计划索引均已提交）；工作区干净。
 - 结论：**开发侧通过，真实运行验收未完成**。
 - 未发现新的 P0/P1 范围越界、凭据进入资产面、默认路径隐式发起验证请求或协议观察无界增长问题。
 - 计划 7 仍保持 `[未完成][开发中]`；计划 5 保持暂停，计划 6/7 的真实 worker、40/64、多架构和发布门禁不以本地测试替代。
@@ -50,7 +50,7 @@
 - `python3 scripts/plan567-code-check.py --plan all`：计划 5、6、7 离线回归全部通过。
 - `git diff --check`：通过。
 - 前端 `npm run lint`：通过。
-- 前端 Vitest：`18` 个 test files、`116` 项通过。
+- 前端 Vitest：`18` 个 test files、`117` 项通过。
 - 前端 `npm run build`：Vite 生产构建通过。
 - `python3 scripts/check-theme-contrast.py`：6 套主题、12 组对比度全部通过。
 - `ARL/test/test_theme_contrast.py`：2 项主题 token/对比度回归通过。
@@ -58,6 +58,7 @@
 - EvidenceGraph 图谱与 adapter 定向回归：14 项通过，覆盖调用链、文档关系、参数节点、认证边界、敏感值脱敏和幂等同步。
 - 系统监控摘要定向回归：3 项通过，覆盖资源数据显示、失败态无障碍名称和摘要区域 `shrink-0` 布局约束。
 - 顶部操作栏定向回归与监控联动：`App`/监控组件共 11 项通过，覆盖操作栏 `shrink-0` 与监控摘要区域的联合布局约束。
+- 服务模块重挂载回归：10 项通过，覆盖 `task_id` 筛选恢复以及 `service_info` 的 IP/端口、服务名和 Product 展示，确认前端重构不会丢失已落库服务信息。
 
 测试中的 Mongo unavailable、pyparsing deprecation、ResourceWarning 和故障注入日志均为既有测试环境/故障路径提示，不构成新增失败；不以这些提示宣称生产运行通过。
 
