@@ -70,6 +70,7 @@ function MetricRow({
   data,
   dataKey,
   color,
+  withDivider = false,
 }: {
   icon: typeof Cpu;
   label: string;
@@ -77,9 +78,10 @@ function MetricRow({
   data: MonitorPoint[];
   dataKey: 'cpu' | 'ram' | 'net';
   color: string;
+  withDivider?: boolean;
 }) {
   return (
-    <div className="flex h-11 w-[124px] xl:w-[136px] 2xl:w-[148px] shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-100 px-2 xl:px-2.5">
+    <div className={`flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
         <div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2">
@@ -123,9 +125,13 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
     : [{ cpu: cpuPercent, ram: memoryPercent, net: networkRate }];
   return (
     <section className="hidden shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
-      <div className="flex items-center gap-1.5">
-        <MetricRow icon={Cpu} label="CPU" value={monitorQuery.data ? formatPercent(cpuPercent) : '--'} data={chartData} dataKey="cpu" color="var(--brand-accent)" />
-        <MetricRow icon={Database} label="内存" value={monitorQuery.data ? formatPercent(memoryPercent) : '--'} data={chartData} dataKey="ram" color="var(--brand-secondary)" />
+      <div
+        className="flex h-11 w-[380px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
+        role="group"
+        aria-label="CPU、内存与网速"
+      >
+        <MetricRow icon={Cpu} label="CPU" value={monitorQuery.data ? formatPercent(cpuPercent) : '--'} data={chartData} dataKey="cpu" color="var(--brand-accent)" withDivider />
+        <MetricRow icon={Database} label="内存" value={monitorQuery.data ? formatPercent(memoryPercent) : '--'} data={chartData} dataKey="ram" color="var(--brand-secondary)" withDivider />
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
