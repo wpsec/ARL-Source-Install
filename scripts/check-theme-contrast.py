@@ -45,7 +45,17 @@ def parse_daisy_themes(src: str) -> dict:
         name = re.search(r'name:\s*"?([a-z-]+)"?;', body)
         if not name:
             continue
-        tokens = dict(re.findall(r"^\s*(--[a-z0-9-]+):\s*\"([^\"]+)\";", body, re.M))
+        token_matches = re.findall(
+            r'^\s*(--[a-z0-9-]+):\s*(?:"([^"]+)"|([^;]+));',
+            body,
+            re.M,
+        )
+        # daisyUI 5 的 CSS-first 配置允许字符串值和普通 CSS 值；两种
+        # 写法都必须进入同一解析面，否则主题门禁会把有效主题误判为缺失。
+        tokens = {
+            key: (quoted or raw).strip()
+            for key, quoted, raw in token_matches
+        }
         themes[name.group(1)] = tokens
     return themes
 

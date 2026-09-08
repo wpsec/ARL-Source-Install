@@ -92,6 +92,9 @@ class _RichApiRegistry(_ApiRegistry):
                 "source": "browser",
                 "auth_hint": "bearer",
                 "manual_review_required": True,
+                "path_template": "/users/{id}",
+                "operation_id": "getUser",
+                "evidence_ids": ["runtime-observation-1"],
                 "parameters": [
                     {"name": "userId", "location": "query", "type_summary": "string"},
                 ],
@@ -181,6 +184,38 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
         self.assertIn("identity", kinds)
         self.assertIn("has_parameter", relations)
         self.assertIn("auth_boundary", relations)
+        self.assertIn("calls", relations)
+        self.assertIn("references", relations)
+
+    def test_document_relation_uses_graph_contract_name(self):
+        context = _Context()
+        graph = ADAPTER_MODULE.sync_discovery_context(context)
+        relations = {edge["relation"] for edge in context.evidence_graph.snapshot()["edges"]}
+
+        self.assertEqual(0, graph["skipped"])
+        self.assertIn("documents", relations)
+        self.assertNotIn("describes", relations)
+
+    def test_page_candidate_is_recorded_as_endpoint_caller(self):
+        context = _Context()
+        context.candidate_registry._values[0].candidate_type = "page"
+        graph = ADAPTER_MODULE.sync_discovery_context(context)
+        relations = {edge["relation"] for edge in context.evidence_graph.snapshot()["edges"]}
+
+        self.assertEqual(0, graph["skipped"])
+        self.assertIn("calls", relations)
+
+    def test_endpoint_candidate_is_not_treated_as_endpoint_caller(self):
+        context = _Context()
+        context.candidate_registry._values[0].candidate = "endpoint-rich"
+        context.api_candidate_registry = _RichApiRegistry()
+        ADAPTER_MODULE.sync_discovery_context(context)
+        snapshot = context.evidence_graph.snapshot()
+        node_kinds = {node["node_id"]: node["kind"] for node in snapshot["nodes"]}
+
+        for edge in snapshot["edges"]:
+            if edge["relation"] == "calls":
+                self.assertNotEqual("endpoint", node_kinds[edge["source_id"]])
 
     def test_protocol_registry_becomes_safe_protocol_nodes(self):
         context = _Context()

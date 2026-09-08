@@ -401,9 +401,14 @@ def _sync_endpoints(
                 },
             )
             summary["nodes_added"] += 1
-            resource_index[(url, str(endpoint.get("method") or "GET").upper())] = node_id
-            _add_parent_edge(graph, summary, node_id, endpoint.get("parent_document"), "describes", "document")
+            method = str(endpoint.get("method") or "GET").upper()
+            # 只把页面/路由候选视为调用方；同 URL 的 endpoint 候选只是资产镜像，
+            # 不能伪造一条 endpoint -> endpoint 的调用链。
+            caller_id = resource_index.get((url, ""))
+            _add_parent_edge(graph, summary, node_id, endpoint.get("parent_document"), "documents", "document")
             _add_parent_edge(graph, summary, node_id, endpoint.get("parent_target"), "exposes", "target")
+            _sync_endpoint_lineage(graph, summary, node_id, endpoint, identity, caller_id)
+            resource_index[(url, method)] = node_id
             _sync_endpoint_parameters(graph, summary, node_id, endpoint, identity)
             _sync_auth_boundary(graph, summary, node_id, endpoint, identity)
         except (KeyError, TypeError, ValueError, OverflowError):
@@ -428,6 +433,71 @@ def _add_parent_edge(
             summary["edges_added"] += 1
     except (KeyError, TypeError, ValueError, OverflowError):
         summary["skipped"] += 1
+
+
+def _sync_endpoint_lineage(
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    endpoint_node_id: str,
+    endpoint: Mapping[str, Any],
+    endpoint_identity: str,
+    caller_id: Optional[str],
+) -> None:
+    """把 Endpoint 的调用来源和证据 ID 接入图，且不复制来源原文。"""
+
+    if caller_id and caller_id != endpoint_node_id:
+        try:
+            if graph.add_edge(caller_id, endpoint_node_id, "calls", evidence=("candidate",)):
+                summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
+
+    path_template = str(endpoint.get("path_template") or "").strip()
+    parent_target = str(endpoint.get("parent_target") or "").strip()
+    if path_template:
+        route_identity = "{}|{}".format(parent_target or "target", path_template)
+        try:
+            route_id = graph.add_node(
+                "route",
+                route_identity,
+                status=str(endpoint.get("status") or "discovered"),
+                confidence=_confidence_from_score(endpoint.get("confidence")),
+                sources=("endpoint_route",),
+                attributes={"request_semantics": endpoint.get("request_semantics") or "unknown"},
+            )
+            summary["nodes_added"] += 1
+            if graph.add_edge(
+                route_id,
+                endpoint_node_id,
+                "calls",
+                evidence=(str(endpoint.get("operation_id") or endpoint.get("api_type") or "endpoint"),),
+            ):
+                summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
+
+    for evidence_id in list(endpoint.get("evidence_ids") or ())[:32]:
+        evidence_text = str(evidence_id or "").strip()
+        if not evidence_text:
+            continue
+        try:
+            evidence_node_id = graph.add_node(
+                "evidence",
+                "{}|{}".format(endpoint_identity, evidence_text),
+                status="observed",
+                confidence="observed",
+                sources=("endpoint_evidence",),
+            )
+            summary["nodes_added"] += 1
+            if graph.add_edge(
+                endpoint_node_id,
+                evidence_node_id,
+                "references",
+                evidence=("evidence_id",),
+            ):
+                summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
 
 
 def _sync_endpoint_parameters(
