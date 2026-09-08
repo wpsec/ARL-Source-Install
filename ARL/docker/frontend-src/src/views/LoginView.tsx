@@ -16,75 +16,75 @@ export function LoginView({
   const [password, setPassword] = useState('');
 
   return (
-    <main className="arl-app min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
-      <div className="card w-full max-w-xl border border-base-300 bg-base-200 shadow-sm">
-        <div className="card-body p-6 sm:p-10">
-        <div className="flex flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center">
-          {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
-          <BrandLogo size="lg" />
-          <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight leading-tight">
-              互联网资产自动化收集系统
-            </h1>
-            <p className="text-sm text-content-muted mt-1">
-              版本：{__ARL_VERSION__}
-            </p>
-          </div>
-        </div>
-
-        <form
-          className="space-y-6"
-          autoComplete="off"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            await onLogin(username, password);
-          }}
-        >
-          <div className="space-y-2">
-            <label className="label py-0 text-sm font-medium">用户名</label>
-            <div className="relative">
-              <User className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
-              <input
-                name="arl_username"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="off"
-                className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
-                placeholder="请输入用户名"
-              />
+    <main className="arl-app w-full min-w-0 min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
+      <div className="card min-w-0 w-full max-w-xl border border-base-300 bg-base-200 shadow-sm">
+        <div className="card-body min-w-0 p-6 sm:p-10">
+          <div className="flex min-w-0 flex-col items-start gap-4 mb-8 sm:flex-row sm:items-center">
+            {/* 登录页与侧边栏复用同一品牌 Logo，避免出现两套不一致样式 */}
+            <BrandLogo size="lg" />
+            <div className="min-w-0">
+              <h1 className="break-words text-xl sm:text-2xl font-semibold tracking-tight leading-tight">
+                互联网资产自动化收集系统
+              </h1>
+              <p className="text-sm text-content-muted mt-1">
+                版本：{__ARL_VERSION__}
+              </p>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="label py-0 text-sm font-medium">密码</label>
-            <div className="relative">
-              <Lock className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
-              <input
-                type="password"
-                name="arl_password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="new-password"
-                className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
-                placeholder="请输入密码"
-              />
-            </div>
-          </div>
-
-          {error ? (
-            <div role="alert" className="alert alert-error text-sm py-3">
-              {error}
-            </div>
-          ) : null}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full text-base`}
+          <form
+            className="min-w-0 space-y-6"
+            autoComplete="off"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              await onLogin(username, password);
+            }}
           >
-            {loading ? '登录中...' : '登录系统'}
-          </button>
-        </form>
+            <div className="space-y-2">
+              <label className="label py-0 text-sm font-medium">用户名</label>
+              <div className="relative min-w-0">
+                <User className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  name="arl_username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="off"
+                  className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
+                  placeholder="请输入用户名"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="label py-0 text-sm font-medium">密码</label>
+              <div className="relative min-w-0">
+                <Lock className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  type="password"
+                  name="arl_password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="new-password"
+                  className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
+                  placeholder="请输入密码"
+                />
+              </div>
+            </div>
+
+            {error ? (
+              <div role="alert" className="alert alert-error text-sm py-3">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full text-base`}
+            >
+              {loading ? '登录中...' : '登录系统'}
+            </button>
+          </form>
         </div>
       </div>
     </main>
