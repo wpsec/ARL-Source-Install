@@ -404,8 +404,8 @@
   --brand-text-muted: #6b625a;
   --brand-success: #047857;
   --brand-success-content: #ecfdf5;
-  --brand-warning-content: #1b1209;
-  --brand-error-content: #1e0c10;
+  --brand-warning-content: #ffffff;
+  --brand-error-content: #ffffff;
   --brand-card-surface-alpha: 0.72;
   --brand-card-elevated-alpha: 0.84;
   --brand-shell-alpha: 0.82;
