@@ -807,6 +807,40 @@
 
 }
 
+/* 语义按钮显式绑定品牌 token，避免 DaisyUI 在不同主题/浏览器下重新计算后
+   把浅色按钮文字误降成深色或让深色按钮面沉入卡片。禁用态由下方专用规则接管。 */
+.arl-app .btn-primary:not(:disabled, [disabled], [aria-disabled='true']),
+.arl-app .btn-accent:not(:disabled, [disabled], [aria-disabled='true']),
+.arl-app .btn-info:not(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: var(--brand-accent);
+  background-color: var(--brand-accent);
+  color: var(--brand-accent-contrast);
+}
+
+.arl-app .btn-secondary:not(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: var(--brand-secondary);
+  background-color: var(--brand-secondary);
+  color: var(--brand-bg);
+}
+
+.arl-app .btn-success:not(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: var(--brand-success);
+  background-color: var(--brand-success);
+  color: var(--brand-success-content);
+}
+
+.arl-app .btn-warning:not(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: var(--brand-warning);
+  background-color: var(--brand-warning);
+  color: var(--brand-warning-content);
+}
+
+.arl-app .btn-error:not(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: var(--brand-danger);
+  background-color: var(--brand-danger);
+  color: var(--brand-error-content);
+}
+
 /* DaisyUI 默认禁用态会把文字降到很低的透明度；控制台需要保留状态信息可读，
    同时用更柔和的表面色表达不可操作，而不是让控件沉入深色背景。 */
 .arl-app .btn:is(:disabled, [disabled], [aria-disabled='true']) {
