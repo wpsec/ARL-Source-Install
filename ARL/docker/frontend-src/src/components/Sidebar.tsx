@@ -79,7 +79,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         <BrandLogo size="md" compactBelowLg />
       </div>
 
-      <div className="px-2 py-3 lg:px-3 xl:px-4 xl:py-4">
+      <div className="px-1.5 py-3 lg:px-3 xl:px-4 xl:py-4">
         <motion.button 
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
@@ -92,15 +92,15 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </motion.button>
       </div>
 
-      <nav className="flex-1 px-1.5 py-2 space-y-5 lg:px-2.5 xl:px-3">
+      <nav className="flex-1 px-1.5 py-2 space-y-5 lg:px-3 xl:px-4">
         {navGroups.map((group) => (
           <div key={group.label}>
             <h3 className={cn("hidden px-3 mb-2 text-[11px] font-semibold leading-4 tracking-wide opacity-80 lg:block", group.color)}>
               {group.label}
             </h3>
-            <ul className="menu p-0 gap-1">
+            <ul className="menu w-full p-0 gap-1">
               {group.items.map((item) => (
-                <li key={item.id}>
+                <li key={item.id} className="w-full">
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
