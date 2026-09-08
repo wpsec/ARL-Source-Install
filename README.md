@@ -1,8 +1,4 @@
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1771929911927-d85a6718-38c0-48e1-8841-aab9082b1c69.png)
-
-基于 ARL 的互联网资产自动化收集平台二开版本。
+基于 ARL 的互联网资产自动化收集平台二开版本。  
 本版本围绕资产发现、Web 情报、任务调度、结果治理和平台运维进行了深度重构，保留原有 API 与 Mongo 结果结构，便于平滑升级。
 
 > 站在外部的角度，如果不知道自己拥有什么，就无法保护什么。
@@ -25,21 +21,20 @@
 git clone -b newUI https://github.com/wpsec/ARL-Source-Install.git
 cd ARL-Source-Install
 cp .env.example .env
-# 启动脚本会自动生成 Mongo/RabbitMQ 内部随机凭据；只需填写：
-# BASIC_AUTH_PASSWORD、ARL_APP_PASSWORD；启动前会校验全部必填键。
+# 只需填写：BASIC_AUTH_PASSWORD、ARL_APP_PASSWORD。
 chmod +x build.sh start.sh scripts/quick-build.sh
 ./build.sh
 ./start.sh
 ```
 
-也可以不复制根 `.env` 直接执行 `./start.sh`；首次启动会在
-启动脚本实际选中的 `.env` 中自动生成 Mongo/RabbitMQ 内部凭据，并交互要求输入
+也可以不复制根 `.env` 直接执行 `./start.sh`；首次启动会在  
+启动脚本实际选中的 `.env` 中自动生成 Mongo/RabbitMQ 内部凭据，并交互要求输入  
 Basic Auth 与 ARL 应用密码。直接使用 Docker Compose 时，仍需先复制并完整填写对应 `.env`。
 
 ### 注意！
 
-构建脚本默认使用国内 npm、PyPI 和 Playwright 镜像；网络策略不同可在 `.env` 中覆盖
-`ARL_FRONTEND_NPM_REGISTRY`、`ARL_PIP_INDEX_URL` 和 `ARL_PLAYWRIGHT_DOWNLOAD_HOST`。
+构建脚本默认使用国内 npm、PyPI 和 Playwright 镜像；网络策略不同可在 `.env` 中覆盖  
+`ARL_FRONTEND_NPM_REGISTRY`、`ARL_PIP_INDEX_URL` 和 `ARL_PLAYWRIGHT_DOWNLOAD_HOST`。  
 也可提前下载 Playwright 以提升部署速度。
 
 参考文档：
@@ -96,7 +91,7 @@ ARL_WORKER_REPLICAS=2   # 可选: 1 或 2，默认 2
 - **指纹治理**：重新梳理指纹文件、规则映射、缓存和产品识别，支持本地扩展与结果去重。
 - **UI 重构**：新版 React UI，统一主题、页面骨架、卡片、表格、弹窗和任务状态展示；Plan 04 继续推进 daisyUI 与模块拆分。
 - **多架构支持**：兼容 amd64 与 arm64，已完成 macOS Apple Silicon ARM64 Docker 构建和核心回归。
-- **AI 能力**：旧 AI 渗透链路已清理；Strix 已完成集成方向和安全兼容性预研，暂不作为默认生产扫描链路。
+- **AI 能力**：旧 AI 渗透链路已清理；Strix 已完成集成方向和安全兼容性预研，暂不作为默认生产扫描链路。（暂未实现）
 
 ## 二开功能总览
 
@@ -154,45 +149,23 @@ flowchart TB
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228172922-d4b58648-0aa2-4371-8381-b3901fbf0bf8.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1788890435798-6709bb1b-9e67-4b68-bcb6-a33a6da9c1c6.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228196339-42bcae2e-63d8-45b8-b304-4f718ed3284b.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1788890456781-26dd5ee6-3727-4d5e-a74f-e7ef656562b3.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228219353-51f9bdeb-5bee-44f4-98ed-68d6801f8175.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1788890343651-3ea58701-3b7d-4e15-a252-3f2e6248a49c.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228253396-5cec67df-a2c9-4a7c-9356-a59bd79bd6ac.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1788890378461-616a4b95-ecfe-4944-82aa-c28ce92d41f8.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228385246-41c5f9e2-fd5f-44fe-bb50-48376fd0c29a.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228343138-4e70644f-6fcf-4593-b624-92961998900f.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513802827-5253f290-e8a3-4dff-8ede-e95f0a959ec6.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513825277-58d6c929-3d98-4ff9-bd2c-c4915971969b.png)
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1774513896707-f7db26c1-ccd1-40a4-88ed-71d8d4ee3517.png)
-
-![]()
-
-<!-- 这是一张图片，ocr 内容为： -->
-
-![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773112617478-94083134-f952-4008-aa87-7a35249a9c5f.png)
+![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1788890556270-8f716d27-81de-4e2c-b23c-e0f5b856ee42.png)
 
 <!-- 这是一张图片，ocr 内容为： -->
 
@@ -216,17 +189,17 @@ flowchart TB
 
 ![](https://cdn.nlark.com/yuque/0/2026/png/27875807/1773228570340-62949951-33a3-44df-a8fb-c68e3b62d91d.png)
 
-| 组件         | 当前版本                          | 说明                                          |
-| ------------ | --------------------------------- | --------------------------------------------- |
-| 基础系统镜像 | `rockylinux:8`                    | ARL 主应用镜像基座（`ARL/docker/Dockerfile`） |
-| MongoDB      | `mongo:7.0`                       | 资产数据存储                                  |
-| RabbitMQ     | `rabbitmq:3.13-management-alpine` | Celery 消息队列                               |
-| Redis        | `redis:7-alpine`                  | 业务缓存与性能优化                            |
-| nginx        | `nginx:1.24-alpine`               | basic 和服务暴露                              |
-| node         | `node:20.20.1-bookworm`           | 编译前端                                      |
-| golang       | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
-| Python       | `Python-3.10.20`                  | 后端（离线安装包）                            |
-其它 bug 修复：补齐任务恢复、WAF 隔离、结果幂等、来源聚合和异常降级。
+| 组件                                                                  | 当前版本                          | 说明                                          |
+| --------------------------------------------------------------------- | --------------------------------- | --------------------------------------------- |
+| 基础系统镜像                                                          | `rockylinux:8`                    | ARL 主应用镜像基座（`ARL/docker/Dockerfile`） |
+| MongoDB                                                               | `mongo:7.0`                       | 资产数据存储                                  |
+| RabbitMQ                                                              | `rabbitmq:3.13-management-alpine` | Celery 消息队列                               |
+| Redis                                                                 | `redis:7-alpine`                  | 业务缓存与性能优化                            |
+| nginx                                                                 | `nginx:1.24-alpine`               | basic 和服务暴露                              |
+| node                                                                  | `node:20.20.1-bookworm`           | 编译前端                                      |
+| golang                                                                | `go1.22.4`                        | 构建阶段编译 `wih`（优先离线包，构建后清理）  |
+| Python                                                                | `Python-3.10.20`                  | 后端（离线安装包）                            |
+| 其它 bug 修复：补齐任务恢复、WAF 隔离、结果幂等、来源聚合和异常降级。 |                                   |                                               |
 
 ---
 
@@ -248,4 +221,4 @@ flowchart TB
 
 ## 开发指南
 
-面向后续开发者的系统边界、开发流程、数据维护规则和测试门禁，详见[《开发指南》](<./docs/reference/[长期参考]开发指南.md>)。
+面向后续开发者的系统边界、开发流程、数据维护规则和测试门禁，详见[《开发指南》](./docs/reference/[长期参考]开发指南.md)。
