@@ -527,6 +527,17 @@
     min-height: 0;
   }
 
+  /* 禁用态仍要保留可辨识文字；透明度由调用方控制，颜色不能随主题沉入背景。 */
+  .arl-app .btn:disabled,
+  .arl-app .btn[aria-disabled='true'] {
+    color: var(--brand-text-muted);
+  }
+
+  .arl-app .btn-primary:disabled,
+  .arl-app .btn-primary[aria-disabled='true'] {
+    color: var(--brand-accent-contrast);
+  }
+
   .arl-app input:not([type='checkbox']):not([type='radio']),
   .arl-app select {
     min-height: 0;

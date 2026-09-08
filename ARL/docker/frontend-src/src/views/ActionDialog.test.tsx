@@ -55,6 +55,19 @@ afterEach(() => {
 });
 
 describe('ActionDialog 字典选项读取（React Query）', () => {
+  it('新建任务底部操作栏保持可见结构', async () => {
+    installFetchMock({
+      routes: { '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD] },
+    });
+    renderDialog(newClient());
+
+    const footer = await screen.findByTestId('action-dialog-footer');
+    expect(footer.className).toContain('shrink-0');
+    expect(footer.className).toContain('border-t');
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '执行' })).toBeTruthy();
+  });
+
   it('水合选项列表并按“大字典优先”补齐 payload 默认值', async () => {
     const calls = installFetchMock({
       routes: { '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD] },
