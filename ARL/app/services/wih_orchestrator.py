@@ -17,6 +17,45 @@ from app.services.api_unified_models import (
 
 logger = utils.get_logger()
 
+
+def _record_target_profiles(task, scan_sites, records, discovery_context):
+    """把已有 WIH 记录转换为任务内画像提示，不触发额外请求。"""
+
+    resolver_type = getattr(services, "TargetProfileResolver", None)
+    if not callable(resolver_type) or discovery_context is None:
+        return
+    try:
+        resolver = resolver_type()
+        profiles = getattr(discovery_context, "target_profiles", None)
+        if not isinstance(profiles, dict):
+            profiles = {}
+            setattr(discovery_context, "target_profiles", profiles)
+        record_metric = getattr(discovery_context, "record_metric", None)
+        record_list = list(records or [])
+        for site in list(scan_sites or []):
+            site_text = str(site or "").strip()
+            site_records = [
+                record
+                for record in record_list
+                if str(getattr(record, "site", "") or "").strip() == site_text
+            ]
+            profile = resolver.resolve_records(site_records)
+            profiles[site_text] = profile.to_dict()
+            if callable(record_metric):
+                record_metric("wih_target_profile_observed_total")
+                record_metric("wih_target_profile_{}_total".format(profile.profile))
+        logger.info(
+            "task_id:{} target profiles resolved targets:{}".format(
+                task.task_id, len(list(scan_sites or []))
+            )
+        )
+    except Exception as exc:
+        # 画像是诊断和未来调度提示，失败时必须保留现有 WIH 主链路。
+        logger.debug(
+            "wih target profile resolve failed error_type:{}".format(type(exc).__name__)
+        )
+
+
 def _wih_primary_fully_succeeded(stage_metrics) -> bool:
     """仅整批正常完成（无超时/抢救/失败）才允许写 covered，降级批次必须重扫。"""
     if not isinstance(stage_metrics, dict):
@@ -428,6 +467,12 @@ class WihOrchestrator(object):
             else:
                 raw_records = wih_result
             records = set(raw_records or [])
+            _record_target_profiles(
+                task,
+                scan_sites,
+                records,
+                getattr(task, "discovery_context", None),
+            )
             primary_raw = wih_result[0] if isinstance(wih_result, tuple) else wih_result
             primary_metrics = getattr(primary_raw, "metrics", None)
             if ledger is not None and wih_site_keys and _wih_primary_fully_succeeded(primary_metrics):

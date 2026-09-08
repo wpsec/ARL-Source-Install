@@ -1,6 +1,6 @@
 # 计划 7：通用 Web/API 资产证据图与智能验证可行性分析
 
-状态：[未完成][需求重构]，仅完成方案评估，未实施。
+状态：[未完成][开发中]，已落盘第一批最小 TargetProfile/EvidenceGraph 契约与标准库单测；已接入 WIH 画像记录面，但未改变默认 Collector 和扫描策略。
 
 ## 一、重新定位
 
@@ -433,6 +433,13 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 
 ### 第 1 批：框架无关契约和安全边界冻结
 
+当前开发进度（2026-09-08）：
+
+- 已实现 `ARL/app/services/target_profile.py`：对已有页面、脚本、文档、Header 和运行时摘要做有界、只读画像解析，输出画像、置信度、类别化证据和采集建议；`unknown` 默认不推荐 browser runtime。
+- 已实现 `ARL/app/services/evidence_graph.py`：提供节点/关系的确定性幂等合并、节点/边预算和脱敏快照；原始 URL、正文和认证材料不进入图快照。
+- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`，当前 15 项契约测试通过。
+- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像只记录到任务内上下文，不改变默认 Collector 和扫描策略。
+
 - [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；
 - [ ] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；
 - [ ] 冻结目标范围、重定向、认证 profile、敏感信息和原始响应保存策略；
@@ -535,4 +542,4 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
   → 基准证明后 Rust 化
 ```
 
-下一步不是先做 qiankun 解析，也不是先重写 WIH，而是先实施计划 6 第 3 批的统一候选/文档队列，并把本计划的框架无关契约、L0/L1/L2 安全边界和跨场景 golden corpus 一起冻结。完成后再按目标画像逐步接入浏览器、协议解析和 ARL 复核展示。
+下一步是在不改变默认扫描行为的前提下，把 `TargetProfileResolver` 接到现有 `DiscoveryContext`/`CandidateRegistry` 的任务级入口，仅记录画像与策略建议；随后将 `EvidenceGraph` 作为候选和 Endpoint Registry 的证据 adapter，补齐统一请求 profile、Collector 回流和跨场景 golden corpus。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。

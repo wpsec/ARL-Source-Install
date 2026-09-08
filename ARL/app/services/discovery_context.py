@@ -902,6 +902,8 @@ class DiscoveryContext:
             "event_listener_error_count": 0,
         }
         self.event_counts: Dict[str, int] = {}
+        # 画像只在任务内供后续调度消费，不进入现有结果文档，避免改变旧接口。
+        self.target_profiles: Dict[str, Dict[str, Any]] = {}
         self._subscribers: Dict[str, List[Callable[[DiscoveryEvent], None]]] = {}
         # 并发请求合并：同 URL 并发 miss 时只有一个线程真实请求，其余等其结果。
         self._inflight: Dict[Tuple[str, str, str], threading.Event] = {}

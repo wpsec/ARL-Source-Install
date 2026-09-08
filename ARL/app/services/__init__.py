@@ -39,6 +39,8 @@ from .urlfinder_url_probe import run_urlfinder_url_probe
 from .wih_endpoint_probe import run_wih_endpoint_probe
 from .wih_endpoint_ai_fill import run_wih_endpoint_ai_fill
 from .wih_periodic_reuse import run_wih_periodic_reuse
+from .target_profile import TargetProfile, TargetProfileResolver
+from .evidence_graph import EvidenceEdge, EvidenceGraph, EvidenceNode
 from .trufflehog_scan import run_trufflehog_js
 from .afrog_scan import run_afrog_scan
 from .baseUpdateTask import BaseUpdateTask
