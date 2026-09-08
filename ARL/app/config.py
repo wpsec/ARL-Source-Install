@@ -868,6 +868,8 @@ class Config(object):
     BROWSER_INTEL_TIMEOUT_MS = 12000
     # 导航后额外等待（毫秒）
     BROWSER_INTEL_WAIT_MS = 800
+    # 浏览器情报阶段预算（秒），0 表示不额外限制
+    BROWSER_INTEL_STAGE_TIMEOUT_SEC = 900
     # 网页截图JS脚本路径（PhantomJS）
     SCREENSHOT_JS = os.path.join(basedir, 'tools/screenshot.js')
     # 截图文件存储目录
@@ -1422,6 +1424,12 @@ try:
     if y["ARL"].get("BROWSER_INTEL_WAIT_MS") is not None:
         Config.BROWSER_INTEL_WAIT_MS = safe_positive_int(
             int(y["ARL"]["BROWSER_INTEL_WAIT_MS"]), Config.BROWSER_INTEL_WAIT_MS
+        )
+    if y["ARL"].get("BROWSER_INTEL_STAGE_TIMEOUT_SEC") is not None:
+        Config.BROWSER_INTEL_STAGE_TIMEOUT_SEC = safe_positive_int(
+            int(y["ARL"]["BROWSER_INTEL_STAGE_TIMEOUT_SEC"]),
+            Config.BROWSER_INTEL_STAGE_TIMEOUT_SEC,
+            min_value=0,
         )
 
     # --- 截图回传配置 ---
@@ -2225,6 +2233,14 @@ try:
     Config.BROWSER_INTEL_WAIT_MS = safe_positive_int(
         env_int("ARL_BROWSER_INTEL_WAIT_MS", Config.BROWSER_INTEL_WAIT_MS),
         Config.BROWSER_INTEL_WAIT_MS
+    )
+    Config.BROWSER_INTEL_STAGE_TIMEOUT_SEC = safe_positive_int(
+        env_int(
+            "ARL_BROWSER_INTEL_STAGE_TIMEOUT_SEC",
+            Config.BROWSER_INTEL_STAGE_TIMEOUT_SEC,
+        ),
+        Config.BROWSER_INTEL_STAGE_TIMEOUT_SEC,
+        min_value=0,
     )
     if Config.SCREENSHOT_ENGINE not in ["playwright", "phantomjs", "auto"]:
         Config.SCREENSHOT_ENGINE = "playwright"

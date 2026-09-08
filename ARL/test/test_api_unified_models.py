@@ -213,6 +213,32 @@ class RedactionTest(unittest.TestCase):
         for attribute in ("value", "example", "default"):
             self.assertFalse(hasattr(parameter, attribute))
 
+    def test_endpoint_parameter_evidence_distinguishes_source_shapes(self):
+        endpoint = m.UnifiedApiEndpoint(
+            url="https://api.example.com/users/{id}",
+            source="har",
+            path_template="/users/{id}",
+            parameters=[
+                m.ParameterSpec(name="id", location="path"),
+                m.ParameterSpec(name="page", location="query"),
+            ],
+        )
+        evidence = endpoint.to_dict()["parameter_evidence"]
+        self.assertEqual(
+            [
+                {"name": "id", "in": "path", "evidence_kind": "runtime"},
+                {"name": "page", "in": "query", "evidence_kind": "runtime"},
+            ],
+            evidence,
+        )
+        template = m.UnifiedApiEndpoint(
+            url="https://api.example.com/users/{id}",
+            source="openapi",
+            path_template="/users/{id}",
+            parameters=[m.ParameterSpec(name="id", location="path")],
+        )
+        self.assertEqual("template", template.to_dict()["parameter_evidence"][0]["evidence_kind"])
+
     def test_security_summary_maps_scheme_type(self):
         summary = m.SecurityRequirementSummary(name="BearerAuth", type="http:bearer")
         self.assertEqual(summary.to_dict(), {"name": "BearerAuth", "type": "bearer"})

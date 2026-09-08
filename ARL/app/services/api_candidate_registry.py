@@ -40,6 +40,7 @@ from .api_unified_models import (
     API_DOCUMENT_TYPE_HINTS,
     API_DOC_TYPE_HINT_KEYWORDS,
     API_ENDPOINT_STATUSES,
+    PARAMETER_EVIDENCE_KINDS,
     UNIFIED_API_CONFIG_DEFAULTS,
     ApiDocumentCandidate,
     UnifiedApiEndpoint,
@@ -102,6 +103,15 @@ _BACKFLOW_HINT_RECORD_TYPES = ("urlfinder_url", "page_link")
 
 _DOC_PRIORITY_SEED = 10
 _DOC_PRIORITY_EVIDENCE = 20  # 来自记录/候选图的真实发现证据优先于路径猜测
+
+# 同一参数可能先由文档推断、再被模板或运行时观察确认；合并时只升级
+# 证据类别，避免后续低质量来源把更强的运行时证据覆盖掉。
+_PARAMETER_EVIDENCE_PRIORITY = {
+    "inferred": 0,
+    "literal": 1,
+    "template": 2,
+    "runtime": 3,
+}
 
 # graphql_schema_summary 生产侧冻结契约（附录A §4.13，2026-09-06 用户决策）。
 # 消费侧校验枚举 + 白名单投影：契约外键（Schema 原文、变量值等夹带形态）
@@ -446,6 +456,39 @@ class ApiCandidateRegistry:
                 for reason_code in endpoint.verification_reason_codes:
                     if reason_code not in existing.verification_reason_codes:
                         existing.verification_reason_codes.append(reason_code)
+                        merged = True
+                for item in endpoint.parameter_evidence:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get("name") or "").strip()[:128]
+                    location = str(item.get("in") or "").strip()
+                    kind = str(item.get("evidence_kind") or "inferred").strip().lower()
+                    if (
+                        not name
+                        or location not in ("path", "query", "header", "cookie", "formData", "body")
+                        or kind not in PARAMETER_EVIDENCE_KINDS
+                    ):
+                        continue
+                    current = next(
+                        (
+                            value for value in existing.parameter_evidence
+                            if value.get("name") == name and value.get("in") == location
+                        ),
+                        None,
+                    )
+                    if current is None:
+                        if len(existing.parameter_evidence) < 64:
+                            existing.parameter_evidence.append(
+                                {"name": name, "in": location, "evidence_kind": kind}
+                            )
+                            merged = True
+                        continue
+                    current_kind = str(current.get("evidence_kind") or "inferred")
+                    if (
+                        _PARAMETER_EVIDENCE_PRIORITY.get(kind, 0)
+                        > _PARAMETER_EVIDENCE_PRIORITY.get(current_kind, 0)
+                    ):
+                        current["evidence_kind"] = kind
                         merged = True
                 if endpoint.verification_status != "pending":
                     existing.verification_status = endpoint.verification_status
@@ -1697,6 +1740,15 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
     created = 0
     out_of_scope = 0
     context = getattr(registry, "_context", None)
+    protocol_registry = None
+    if context is not None:
+        try:
+            from .wih_protocol_registry import get_or_create_protocol_registry
+
+            protocol_registry = get_or_create_protocol_registry(context)
+        except Exception as exc:
+            logger.debug(
+                "protocol registry attach failed error_type:%s", type(exc).__name__)
     # 范围判定唯一收口在 Registry.register_endpoint_with_status 的 scope 闸
     # （None=无上下文显式无范围；空集合 fail-closed），本函数不再自行检 host。
     if not isinstance(results, dict):
@@ -1707,6 +1759,46 @@ def ingest_browser_runtime_events(registry: ApiCandidateRegistry, results: Any) 
         calls = payload.get("runtime_api_calls") or []
         for call in calls if isinstance(calls, list) else []:
             if not isinstance(call, dict):
+                continue
+            protocol = str(call.get("protocol") or "").strip().lower()
+            if protocol:
+                if protocol_registry is None:
+                    continue
+                try:
+                    from .wih_protocol_registry import ingest_protocol_events
+
+                    protocol_result = ingest_protocol_events(
+                        protocol_registry,
+                        [{
+                            "url": call.get("url"),
+                            "protocol": protocol,
+                            "event": call.get("event") or "handshake",
+                            "method": call.get("method") or "",
+                            "operation": call.get("operation") or "",
+                            "source": call.get("source") or "browser",
+                            "status": call.get("status") or "observed",
+                            "confidence": call.get("confidence", 70),
+                        }],
+                    )
+                    record_metric = getattr(context, "record_metric", None)
+                    if callable(record_metric):
+                        for outcome in (
+                            "created",
+                            "merged",
+                            "out_of_scope",
+                            "capacity",
+                            "skipped",
+                        ):
+                            amount = int(protocol_result.get(outcome, 0) or 0)
+                            if amount:
+                                record_metric(
+                                    "protocol_observation_{}_total".format(outcome),
+                                    amount,
+                                )
+                except Exception as exc:
+                    logger.debug(
+                        "browser protocol event register failed error_type:%s",
+                        type(exc).__name__)
                 continue
             endpoints = call.get("_graphql_endpoints")
             if isinstance(endpoints, list) and endpoints:

@@ -25,7 +25,12 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
     if not callable(resolver_type) or discovery_context is None:
         return
     try:
-        resolver = resolver_type()
+        resource_adapter = getattr(services, "extract_micro_frontend_resources", None)
+        try:
+            resolver = resolver_type(resource_adapter=resource_adapter)
+        except TypeError:
+            # 兼容外部/测试注入的旧 Resolver，资源图适配器保持可选。
+            resolver = resolver_type()
         strategy_builder = getattr(services, "build_wih_strategy_plan", None)
         profiles = getattr(discovery_context, "target_profiles", None)
         if not isinstance(profiles, dict):
@@ -59,8 +64,32 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
                 and site_host
                 and url_host(item.get("normalized_url")) == site_host
             ]
-            profile = resolver.resolve_records(site_records, site_responses)
+            try:
+                profile = resolver.resolve_records(
+                    site_records,
+                    site_responses,
+                    base_url=site_text,
+                    allowed_hosts={site_host} if site_host else None,
+                )
+            except TypeError:
+                # 兼容旧的外部 Resolver 注入；真实 Resolver 使用范围闸参数。
+                profile = resolver.resolve_records(site_records, site_responses)
             profile_payload = profile.to_dict()
+            micro_frontend_resources = getattr(
+                resolver, "last_micro_frontend_resources", None
+            )
+            if micro_frontend_resources:
+                profile_payload["micro_frontend_resources"] = list(
+                    micro_frontend_resources
+                )[:64]
+                try:
+                    setattr(
+                        discovery_context,
+                        "micro_frontend_resources",
+                        list(micro_frontend_resources)[:64],
+                    )
+                except (AttributeError, TypeError):
+                    pass
             if callable(strategy_builder):
                 try:
                     strategy = strategy_builder(
@@ -103,24 +132,48 @@ def _browser_runtime_sites(scan_sites, discovery_context):
     """只把画像明确建议 runtime 的站点交给浏览器 Collector。
 
     旧测试或旧任务没有画像时返回原集合，保持兼容；画像已经生成后，unknown/
-    SSR/API-only 不会因为全局开关开启而自动扩大到浏览器采集。
+    SSR/API-only 不会因为全局开关开启而自动扩大到浏览器采集。浏览器自身的
+    Playwright 网络栈不经过 RequestScheduler，因此在启动外部网络前仍要复用
+    任务级 WAF 类别闸门，避免把已熔断的目标交给外部 Collector。
     """
 
     sites = list(scan_sites or [])
     profiles = getattr(discovery_context, "target_profiles", None)
-    if not isinstance(profiles, dict):
-        return sites
-    selected = []
-    for site in sites:
-        payload = profiles.get(str(site or "").strip())
-        if not isinstance(payload, dict):
+    if isinstance(profiles, dict):
+        selected = []
+        for site in sites:
+            payload = profiles.get(str(site or "").strip())
+            if not isinstance(payload, dict):
+                continue
+            strategy = payload.get("strategy")
+            if not isinstance(strategy, dict):
+                continue
+            if "browser_runtime" in list(strategy.get("selected_collectors") or []):
+                selected.append(site)
+    else:
+        selected = sites
+
+    waf_policy = getattr(discovery_context, "waf_policy", None)
+    allow = getattr(waf_policy, "allow", None)
+    record_metric = getattr(discovery_context, "record_metric", None)
+    if not callable(allow):
+        return selected
+
+    allowed_sites = []
+    for site in selected:
+        try:
+            is_allowed = bool(allow(site, "browser"))
+        except (AttributeError, TypeError, ValueError):
+            # 老任务上下文没有完整 WAF policy 时保持兼容，不能把策略异常
+            # 伪装成空扫描结果；真实策略仍在正常路径上 fail-closed。
+            is_allowed = True
+        if is_allowed:
+            allowed_sites.append(site)
             continue
-        strategy = payload.get("strategy")
-        if not isinstance(strategy, dict):
-            continue
-        if "browser_runtime" in list(strategy.get("selected_collectors") or []):
-            selected.append(site)
-    return selected
+        if callable(record_metric):
+            record_metric("waf_block_count")
+            record_metric("wih_browser_waf_blocked_total")
+    return allowed_sites
 
 
 def _record_adaptive_endpoint_schedule(task, registry, discovery_context):
@@ -190,6 +243,60 @@ def _record_adaptive_endpoint_schedule(task, registry, discovery_context):
         logger.debug(
             "wih adaptive endpoint schedule failed error_type:%s", type(exc).__name__
         )
+
+
+def _import_proxy_runtime_events(task, discovery_context):
+    """消费任务显式提供的代理事件摘要，不改变默认网络行为。"""
+
+    if discovery_context is None:
+        return None
+    options = getattr(task, "options", None)
+    if not isinstance(options, dict):
+        return None
+    events = options.get("wih_proxy_events")
+    if not events:
+        return None
+    registry = getattr(discovery_context, "api_candidate_registry", None)
+    importer = getattr(services, "import_proxy_events", None)
+    if registry is None or not callable(importer):
+        return None
+
+    try:
+        result = importer(
+            events,
+            registry=registry,
+            allowed_hosts=getattr(discovery_context, "allowed_hosts", None),
+            source="proxy",
+        )
+        record_metric = getattr(discovery_context, "record_metric", None)
+        if callable(record_metric):
+            record_metric(
+                "proxy_runtime_event_imported_total",
+                int(getattr(result, "imported_count", 0) or 0),
+            )
+            record_metric(
+                "proxy_runtime_event_rejected_total",
+                int(getattr(result, "rejected_count", 0) or 0),
+            )
+            record_metric(
+                "proxy_runtime_event_merged_total",
+                int(getattr(result, "merged_count", 0) or 0),
+            )
+        return result
+    except Exception as exc:
+        logger.warning(
+            "task_id:{} proxy runtime event import failed error_type:{}".format(
+                task.task_id, type(exc).__name__
+            )
+        )
+        try:
+            discovery_context.record_metric("proxy_runtime_event_import_failed_total")
+        except Exception as metric_exc:
+            logger.debug(
+                "proxy runtime import failure metric failed error_type:%s",
+                type(metric_exc).__name__,
+            )
+        return None
 
 
 def _wih_primary_fully_succeeded(stage_metrics) -> bool:
@@ -786,6 +893,12 @@ class WihOrchestrator(object):
             if api_doc_records:
                 records |= api_doc_records
 
+        if api_unified_enabled:
+            _import_proxy_runtime_events(
+                task,
+                getattr(task, "discovery_context", None),
+            )
+
         # 计划 6 第 8 批（P0-05）：浏览器运行时采集接入统一 Registry 消费面。
         # flag 关闭不新增子阶段（legacy 行为面不变）；管线回退导致 Registry 未
         # 挂载时整段跳过；采集/摄取任何异常只隔离本阶段，不影响 WIH 主链路。
@@ -804,6 +917,11 @@ class WihOrchestrator(object):
                         lambda: services.run_browser_intel_scan(browser_sites),
                         detail="sites={}".format(len(browser_sites)),
                         input_count=len(browser_sites),
+                        budget_sec=getattr(
+                            Config,
+                            "BROWSER_INTEL_STAGE_TIMEOUT_SEC",
+                            None,
+                        ),
                     ) or {}
                     ingested = services.ingest_browser_runtime_events(
                         browser_registry, browser_results)
@@ -890,6 +1008,7 @@ class WihOrchestrator(object):
                         scan_sites,
                         list(records),
                         waf_guard=task.waf_guard,
+                        discovery_context=getattr(task, "discovery_context", None),
                     ),
                     detail="records={}".format(len(records)),
                     input_count=len(records),

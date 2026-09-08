@@ -321,6 +321,8 @@ ARL:
   BROWSER_INTEL_TIMEOUT_MS: 12000
   # 浏览器情报导航后额外等待（毫秒）
   BROWSER_INTEL_WAIT_MS: 800
+  # 浏览器情报采集阶段预算（秒，0=不限制）
+  BROWSER_INTEL_STAGE_TIMEOUT_SEC: 900
   # PhantomJS 单站点截图超时（秒）
   PHANTOMJS_TIMEOUT_SEC: 30
   # K8s 内部服务地址（示例：https://arl-web）

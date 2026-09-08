@@ -205,6 +205,86 @@ class TestBrowserIntelScan(unittest.TestCase):
         self.assertEqual("<redacted>", runtime_item.get("request_headers", {}).get("Authorization"))
         self.assertIn('"query": "<value>"', str(runtime_item.get("request_body_template") or ""))
 
+    @_browser_patch("Config", "BROWSER_INTEL_ENABLE", new=True)
+    @_browser_patch("BrowserIntelScan", "_open_playwright")
+    def test_browser_intel_collects_protocol_shapes_without_payloads(self, mock_sync_playwright):
+        class FakeWebSocket:
+            url = "WSS://Example.com/socket?token=SECRET_WS_TOKEN"
+
+            def __init__(self):
+                self._handlers = {}
+
+            def on(self, event, handler):
+                self._handlers[event] = handler
+                if event == "framereceived":
+                    handler("SECRET_FRAME_BODY")
+
+        class FakePage:
+            def __init__(self):
+                self._handlers = {}
+                self.url = "https://example.com/dashboard"
+
+            def on(self, event, handler):
+                self._handlers[event] = handler
+
+            def goto(self, site, wait_until=None, timeout=None):
+                class Request:
+                    method = "GET"
+                    resource_type = "eventsource"
+
+                class Response:
+                    request = Request()
+                    url = "https://example.com/events?token=SECRET_SSE_TOKEN"
+                    status = 200
+
+                self._handlers["response"](Response())
+                self._handlers["websocket"](FakeWebSocket())
+
+            def wait_for_timeout(self, ms):
+                return None
+
+            def title(self):
+                return "Example Dashboard"
+
+            def evaluate(self, script):
+                return []
+
+        class FakeContext:
+            def new_page(self):
+                return FakePage()
+
+            def close(self):
+                return None
+
+        class FakeBrowser:
+            def new_context(self, **kwargs):
+                return FakeContext()
+
+            def close(self):
+                return None
+
+        class FakeChromium:
+            def launch(self, **kwargs):
+                return FakeBrowser()
+
+        class FakePlaywright:
+            chromium = FakeChromium()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        mock_sync_playwright.return_value = FakePlaywright()
+        result = run_browser_intel_scan(["https://example.com"])
+        calls = result["https://example.com"]["runtime_api_calls"]
+        protocol_calls = [item for item in calls if item.get("protocol")]
+        self.assertEqual({"sse", "websocket"}, {item["protocol"] for item in protocol_calls})
+        self.assertNotIn("SECRET_WS_TOKEN", str(protocol_calls))
+        self.assertNotIn("SECRET_SSE_TOKEN", str(protocol_calls))
+        self.assertNotIn("SECRET_FRAME_BODY", str(protocol_calls))
+
 
 def _run_scan_single_request(post_data, content_type,
                              url="https://example.com/graphql", method="POST"):

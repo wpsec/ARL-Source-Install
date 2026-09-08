@@ -76,6 +76,28 @@ class _ApiRegistry:
         ]
 
 
+class _RichApiRegistry(_ApiRegistry):
+    def snapshot_documents(self):
+        return []
+
+    def snapshot_endpoints(self):
+        return [
+            {
+                "endpoint_id": "endpoint-rich",
+                "url": "endpoint-rich",
+                "method": "GET",
+                "api_type": "graphql",
+                "status": "covered",
+                "confidence": 90,
+                "source": "browser",
+                "auth_hint": "bearer",
+                "manual_review_required": True,
+                "parameters": [
+                    {"name": "userId", "location": "query", "type_summary": "string"},
+                ],
+            }
+        ]
+
 class _ResponseRegistry:
     def snapshot_metadata(self):
         return [
@@ -145,6 +167,39 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
         summary = ADAPTER_MODULE.sync_discovery_context(context)
 
         self.assertEqual(summary, {"nodes_added": 0, "edges_added": 0, "skipped": 0})
+
+    def test_endpoint_details_become_parameter_and_auth_edges(self):
+        context = _Context()
+        context.api_candidate_registry = _RichApiRegistry()
+        graph = ADAPTER_MODULE.sync_discovery_context(context)
+        snapshot = context.evidence_graph.snapshot()
+        kinds = {node["kind"] for node in snapshot["nodes"]}
+        relations = {edge["relation"] for edge in snapshot["edges"]}
+
+        self.assertEqual(0, graph["skipped"])
+        self.assertIn("parameter", kinds)
+        self.assertIn("identity", kinds)
+        self.assertIn("has_parameter", relations)
+        self.assertIn("auth_boundary", relations)
+
+    def test_protocol_registry_becomes_safe_protocol_nodes(self):
+        context = _Context()
+        context.protocol_registry = types.SimpleNamespace(snapshot=lambda: [{
+            "protocol_id": "protocol-id-1",
+            "protocol": "websocket",
+            "url": "wss://example.test/socket?token=secret",
+            "host": "example.test",
+            "event": "handshake",
+            "status": "observed",
+            "confidence": 75,
+            "sources": ["browser"],
+        }])
+        graph = ADAPTER_MODULE.sync_discovery_context(context)
+        snapshot = context.evidence_graph.snapshot()
+        self.assertEqual(0, graph["skipped"])
+        self.assertIn("protocol", {node["kind"] for node in snapshot["nodes"]})
+        self.assertIn("observes", {edge["relation"] for edge in snapshot["edges"]})
+        self.assertNotIn("secret", json.dumps(snapshot, ensure_ascii=False))
 
 
 if __name__ == "__main__":

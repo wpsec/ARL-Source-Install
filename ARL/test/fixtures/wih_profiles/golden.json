@@ -1,0 +1,57 @@
+{
+  "version": "wih-profile-golden-v1",
+  "cases": [
+    {
+      "name": "traditional_mvc",
+      "pages": [{"content_type": "text/html", "body": "<html><form action=\"/login\"><input name=\"user\"></form></html>"}],
+      "expected_profile": "traditional_mvc"
+    },
+    {
+      "name": "ssr",
+      "pages": [{"content_type": "text/html", "body": "<html data-server-rendered=\"true\"><body>content</body></html>"}],
+      "expected_profile": "ssr"
+    },
+    {
+      "name": "spa",
+      "pages": [{"content_type": "text/html", "body": "<div id=\"root\"></div><script type=\"module\"></script>"}],
+      "expected_profile": "spa"
+    },
+    {
+      "name": "api_only",
+      "pages": [{"content_type": "application/json", "url": "/api/items", "body": "{\"items\":[]}"}],
+      "expected_profile": "api_only"
+    },
+    {
+      "name": "graphql",
+      "pages": [{"content_type": "application/json", "url": "/graphql", "body": "{\"data\":{}}"}],
+      "scripts": [{"body": "graphql query operationName"}],
+      "expected_profile": "graphql_signal"
+    },
+    {
+      "name": "soap",
+      "pages": [{"content_type": "text/xml", "url": "/service?wsdl", "body": "<wsdl:definitions><soap:binding/></wsdl:definitions>"}],
+      "expected_profile": "soap_signal"
+    },
+    {
+      "name": "websocket",
+      "runtime_events": [{"url": "wss://example.test/socket", "content_type": "application/octet-stream"}],
+      "expected_profile": "websocket_signal"
+    },
+    {
+      "name": "har_api_only",
+      "pages": [{"content_type": "application/json", "url": "/api/har/items", "body": "{\"items\":[]}"}],
+      "runtime_events": [{"source": "har", "url": "https://example.test/api/har/items", "method": "GET"}],
+      "expected_profile": "api_only"
+    },
+    {
+      "name": "micro_frontend",
+      "pages": [{"content_type": "text/html", "body": "<div id=\"micro-app\"></div>"}],
+      "scripts": [{"body": "qiankun registerMicroApps"}],
+      "expected_profile": "micro_frontend"
+    },
+    {
+      "name": "unknown",
+      "expected_profile": "unknown"
+    }
+  ]
+}

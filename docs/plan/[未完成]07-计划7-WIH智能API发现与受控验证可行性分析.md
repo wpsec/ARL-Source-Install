@@ -1,6 +1,6 @@
 # 计划 7：通用 Web/API 资产证据图与智能验证可行性分析
 
-状态：[未完成][开发中]，核心开发链路已落盘，真实多目标/双架构验收仍按用户安排暂不执行。当前已接入 TargetProfile、EvidenceGraph、统一 Endpoint 契约、自适应调度、HAR 导入和 L0/L1/L2 受控验证摘要；运行时仍保持默认安全和兼容策略。
+状态：[未完成][开发中]，核心开发链路已落盘，真实多目标/双架构验收仍按用户安排暂不执行。当前已接入 TargetProfile、EvidenceGraph、统一 Endpoint 契约、自适应调度、HAR/代理事件导入和 L0/L1/L2 受控验证摘要；运行时仍保持默认安全和兼容策略。当前 HEAD 开发复核见 [计划 7 WIH 当前 HEAD 复核](../review/[Review进行中]计划7-WIH当前HEAD复核-20260908.md)。
 
 ## 一、重新定位
 
@@ -437,55 +437,60 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 
 - 已实现 `ARL/app/services/target_profile.py`：对已有页面、脚本、文档、Header 和运行时摘要做有界、只读画像解析，输出画像、置信度、类别化证据和采集建议；`unknown` 默认不推荐 browser runtime。
 - 已实现 `ARL/app/services/evidence_graph.py`：提供节点/关系的确定性幂等合并、节点/边预算和脱敏快照；原始 URL、正文和认证材料不进入图快照。
-- 已实现 `ARL/app/services/evidence_graph_adapter.py`：只读汇聚候选图、API 文档、Endpoint 和 Response Registry，按父目标/文档/响应建立关系，重复同步保持幂等。
+- 已实现 `ARL/app/services/evidence_graph_adapter.py`：只读汇聚候选图、API 文档、Endpoint、Protocol 和 Response Registry，按父目标/文档/响应建立关系，重复同步保持幂等。
+- 已扩展 `ARL/app/services/evidence_graph_adapter.py`：Endpoint 参数名/位置和认证边界进入有界参数、identity 节点及 `has_parameter`/`auth_required`/`auth_boundary` 关系；图中仍只保留类别化摘要和不可逆节点 ID。
 - 已增加 `ResponseRegistry.snapshot_metadata()`：向诊断/证据图暴露不含正文和 Header 的有界响应摘要。
 - 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`、`ARL/test/test_response_registry_snapshot.py`，相关证据图/响应契约回归通过。
 - WIH 主阶段和收尾阶段均会刷新任务内画像；收尾画像可以消费 ResponseRegistry 的摘要信号，但仍不读取或保存完整响应，也不自动切换 Collector。
 - 证据图同步计数和节点/边数量进入现有任务诊断快照，保持仅诊断用途，不写入 Mongo 结果文档。
 - 已实现 `wih_strategy.py`：将画像、显式开关、任务预算和低收益/WAF 指标映射为确定性 Collector 决策；browser runtime 只有在画像建议且开关显式开启时才接收目标，L2/L3 不会自动发送专门验证请求。
 - 已实现 `controlled_verification_policy.py`：统一 L0/L1/L2/L3 决策，GET/HEAD 为默认 L1，POST 必须同时具备只读标记和 allowlist，写入/专门方法进入 skipped/L3 语义；WIH endpoint probe 已接入该策略。
-- 已实现 `wih_har_import.py`：将 HAR 公开观测转换为统一 Endpoint Registry 资产，保留方法、参数名、请求体类型和鉴权类型摘要；URL 敏感 query 值、Header/Cookie 值和请求体不落资产，已观测项进入 `covered` 不再主动探测。
+- 已实现 `wih_har_import.py`：将 HAR 和标准化代理运行时事件转换为统一 Endpoint Registry 资产，保留方法、参数名、请求体类型和鉴权类型摘要；URL 敏感 query 值、Header/Cookie 值和请求体不落资产，已观测项进入 `covered` 不再主动探测。WIH 编排器仅在统一 API 开关开启且任务显式提供 `wih_proxy_events` 时消费该摘要。
 - 已实现 `wih_adaptive_scheduler.py`：按预期证据、置信度、请求/时间成本、WAF 风险和来源数量排序，提供 host 配额、阶段预算、低信息增益、重复覆盖和 pending/skipped 原因；WIH 编排收尾会记录诊断计划，但暂不替换既有 Registry claim 顺序。
 - 已实现 `wih_auth_boundary.py`：只接收状态码、Content-Type、结构 hash 和长度区间等白名单摘要，支持 anonymous/invalid_auth/authorized 三类 profile 作业描述，输出 `auth_anomaly_candidate` 与人工复核原因；不会接收或保存凭据、请求体和完整响应。
+- 已实现 `wih_api_verify.py`：将统一策略、候选预算和注入式 L1/L2 执行器拆为独立 `api_verify` 协调器；已提供复用既有 Endpoint Probe 的显式 L1 executor，未提供执行器时只返回 pending，不会隐式发起请求，危险方法和 L3 语义在执行前收口；L2 只接收认证边界摘要并输出人工复核结果。
+- 已扩展 `TargetProfileResolver`：增加微前端、GraphQL、SOAP、WebSocket 信号画像和协议 Collector 建议；浏览器运行时已被动登记 WebSocket 握手/帧形态和 SSE 建连，统一进入 `ProtocolRegistry`，不保存消息正文、不自动打开专门协议请求。
 - 已扩展统一 Endpoint 契约：增加 `request_semantics`、`evidence_ids`、`verification_status`、`verification_reason_codes` 和 `manual_review_required`，Registry 合并时执行证据并集和验证语义升级。
+- 已增加 `parameter_evidence`：只记录参数名、位置和 `literal/template/runtime/inferred` 来源类别，不扩展 `ParameterSpec` 的取值通道。
 - 已扩展 WIH Endpoint API/UI：支持按验证状态、认证边界异常候选和人工复核筛选，详情页展示认证边界摘要与原因。
-- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；真实认证 profile 执行、协议 Collector 全覆盖和 40/64 门禁仍未运行。
-- 本轮暂不勾选完整验收项：golden corpus、独立 `api_verify` 执行器、GraphQL/WSDL/WebSocket 运行时完整 Collector、跨架构和性能观察仍需后续开发/部署验证；画像和证据图仍只记录到任务内上下文，不改变默认扫描阶段和结果写回语义。
+- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；真实认证 profile 执行、目标矩阵和 40/64 门禁仍按用户安排暂不运行。
+- 本轮完成开发侧 golden corpus、独立 `api_verify` L1/L2 注入式协调和 WebSocket/SSE 协议观察；真实多目标扫描、凭据 profile、跨架构和性能观察仍需后续部署验证，画像和证据图仍只记录到任务内上下文，不改变默认扫描阶段和结果写回语义。
 
 - [x] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 最小字段契约；
 - [x] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；
 - [x] 冻结目标范围、重定向、认证 profile、敏感信息和原始响应保存策略；
-- [ ] 建立传统 MVC、SSR、SPA、API-only、GraphQL、SOAP、WebSocket、HAR 和未知系统 golden corpus。
+- [x] 建立传统 MVC、SSR、SPA、API-only、GraphQL、SOAP、WebSocket、HAR 和未知系统 golden corpus（开发侧 `ARL/test/fixtures/wih_profiles/golden.json`）。
 
 ### 第 2 批：统一响应和证据图
 
-- [ ] 接入 `ResponseRegistry`、`EvidenceGraph`、`CandidateRegistry` 和 `RequestScheduler`；
-- [ ] 所有 Collector 使用统一请求 profile、single-flight、WAF 类别和阶段预算；
-- [ ] 完成重复请求、来源聚合、worker 重启和幂等回归。
+- [x] 接入 `ResponseRegistry`、`EvidenceGraph`、`CandidateRegistry` 和 `RequestScheduler`（均挂载于任务级 `DiscoveryContext`）；
+- [x] 开发侧已为 HTTP Collector、TruffleHog JS 下载和浏览器外部边界统一请求 profile、single-flight、WAF 类别和阶段预算契约；Go WIH、浏览器和 TruffleHog 子进程仍按设计作为显式外部网络/进程边界，其中浏览器启动前复用任务级 WAF 闸门并单列网络记账；
+- [ ] 真实 worker/队列运行中验证所有外部边界的唯一请求、阶段预算和 WAF 退避行为；
+- [x] 完成重复请求、来源聚合、worker 重启和幂等回归的开发侧回归（`test_wih_endpoint_probe_cache`、`test_api_candidate_registry`、`test_discovery_ledger_store`）；真实 worker/队列重启仍需部署观察。
 
 ### 第 3 批：通用目标画像与基础 Collector
 
-- [ ] 实现未知目标、传统 MVC、SSR、SPA、API-only 和文档优先画像；
-- [ ] 接入 HTTP、HTML、脚本、API 文档、Header、错误响应和外部情报；
-- [ ] 微前端只作为可选资源图适配器，不影响通用路径。
+- [x] 实现未知目标、传统 MVC、SSR、SPA、API-only 和文档优先画像；
+- [x] 接入 HTTP、HTML、脚本、API 文档、Header、错误响应和外部情报；现有 WIH Collector 已由编排器串联，浏览器/TruffleHog 等外部网络边界单独记账；
+- [x] 微前端只作为可选资源图适配器，不影响通用路径（`wih_micro_frontend.py` 只消费已有摘要，资源图同步仍为任务内可选挂载）。
 
 ### 第 4 批：API/协议统一解析
 
-- [ ] 复用计划 6 第 3 批的 `ApiCandidateRegistry` + `ApiDocumentQueue`；
-- [ ] JS 新发现文档在当前任务内回流；
-- [ ] OpenAPI/Postman/GraphQL/WSDL/SOAP/WebSocket 统一进入 Endpoint/Protocol Registry；
-- [ ] 保留确定值、模板值、运行时值和推断值的差异。
+- [x] 复用计划 6 第 3 批的 `ApiCandidateRegistry` + `ApiDocumentQueue`；
+- [x] JS 新发现文档在当前任务内回流；
+- [x] OpenAPI/Postman/GraphQL/WSDL/SOAP/WebSocket 统一进入 Endpoint/Protocol Registry；
+- [x] 保留确定值、模板值、运行时值和推断值的差异（Endpoint `parameter_evidence`，不保存参数值）。
 
 ### 第 5 批：运行时补证和自适应调度
 
 - [x] 目标画像不足时才启用 browser runtime；
 - [x] 建立信息增益评分、候选优先级和低收益停止规则；
-- [x] 接入 HAR 导入，支持无页面 API-only 目标；代理运行时导入仍待补充；
+- [x] 接入 HAR 和标准化代理运行时事件导入，支持无页面 API-only 目标；代理适配器只接收已导出的请求摘要，不读取代理配置、不重放请求；任务显式提供 `wih_proxy_events` 后才进入 Registry；
 - [x] 调度计划输出新增候选、请求成本和停止原因；实际请求消费仍保留旧 claim 顺序。
 
 ### 第 6 批：受控验证和 ARL 人工复核
 
-- [ ] 实现 L1 安全读取、L2 认证边界对比和 `api_verify` 独立调度；当前已完成安全策略、摘要比较和结果契约，独立请求执行器仍待补充；
+- [x] 完成 L1 安全读取、L2 认证边界对比和 `api_verify` 独立调度的开发接线；L1 复用既有 Probe，L2 通过注入式 profile executor，真实凭据 profile 的部署接线仍按用户安排不运行；
 - [x] 统一 Endpoint 契约可输出 `auth_anomaly_candidate`、`blocked`、`skipped`、`pending`、`failed` 和 `degraded` 等验证语义；
 - [x] ARL 展示 Endpoint、验证状态、认证对比摘要和人工复核理由；调用链/参数来源的完整详情仍待证据图 adapter 扩展；
 - [x] 不自动执行 L3 专门安全测试。
@@ -493,8 +498,8 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 ### 第 7 批：性能和 Rust 评估
 
 - [ ] 比较统一前后的唯一请求、重复请求、缓存命中、网络等待和新增证据量；
-- [ ] 对 HTML/JS 解析、归一化、去重和排序建立 Python 基线；
-- [ ] 仅对满足性能门禁的 CPU 热点实施 Rust 批处理；
+- [x] 对 HTML/JS 解析、归一化、去重和排序建立 Python 基线（复用 `compare_rust_python_corpus.py`、`bench_api_unified_rust.py` 和现有 golden corpus）；真实目标任务的墙钟/网络基线仍待部署；
+- [x] 仅对满足性能门禁的 CPU 热点实施 Rust 批处理；当前统一层仅保留已通过代码/双架构交集门禁的 allowlist，其余维持 Python/shadow；
 - [ ] 完成 40 目标协同回归、64 目标性能门禁和 ARM64/amd64 smoke。
 
 ## 十三、验收标准
@@ -554,4 +559,4 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
   → 基准证明后 Rust 化
 ```
 
-下一步是在不改变默认扫描行为的前提下，接入 `ResponseRegistry`/`RequestScheduler` 的统一请求观察和 Collector 回流，再让画像只影响低风险策略排序；最后补齐跨场景 golden corpus。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。
+开发侧下一步是继续收敛 Collector 的统一 profile/single-flight 接口，并补齐重复请求、worker 重启和失败重试的离线回归；运行时观察、40/64 目标、双架构和性能门禁按用户安排暂不执行。真实服务器观察期不作为当前开发阻塞，运行中发现的 bug 直接回到对应契约和回归测试修复。

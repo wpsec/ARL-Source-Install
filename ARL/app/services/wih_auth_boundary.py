@@ -8,8 +8,10 @@ Registry 或前端记录面。
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Tuple
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 AUTH_PROFILES = ("anonymous", "invalid_auth", "authorized")
@@ -50,7 +52,7 @@ def build_auth_boundary_jobs(
             },
         )
     method = str(endpoint.get("method") or "GET").strip().upper() or "GET"
-    url = str(endpoint.get("url") or "").strip()[:2048]
+    url = _sanitize_job_url(str(endpoint.get("url") or "").strip()[:2048])
     return tuple(
         {
             "profile": profile,
@@ -188,6 +190,44 @@ def _unique(values: Iterable[str]) -> Tuple[str, ...]:
         if text and text not in output:
             output.append(text)
     return tuple(output)
+
+
+_SENSITIVE_QUERY_KEY_RE = re.compile(
+    r"(?:^|[-_])(authorization|api[-_]?key|access[-_]?token|token|password|secret|cookie)(?:$|[-_])",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_job_url(value: str) -> str:
+    """认证作业只携带可展示的 URL，绝不把 query 凭据传给执行器。"""
+
+    text = str(value or "")
+    try:
+        parsed = urlsplit(text)
+        if parsed.username is not None or parsed.password is not None:
+            hostname = parsed.hostname
+            if not hostname:
+                return ""
+            try:
+                port = parsed.port
+            except ValueError:
+                return ""
+            if ":" in hostname and not hostname.startswith("["):
+                hostname = "[{}]".format(hostname)
+            netloc = hostname
+            if port is not None:
+                netloc = "{}:{}".format(netloc, port)
+        else:
+            netloc = parsed.netloc
+        if not parsed.query and not parsed.fragment and netloc == parsed.netloc:
+            return text
+        pairs = []
+        for key, item in parse_qsl(parsed.query, keep_blank_values=True):
+            safe_value = "<redacted>" if _SENSITIVE_QUERY_KEY_RE.search(key) else item
+            pairs.append((key, safe_value))
+        return urlunsplit((parsed.scheme, netloc, parsed.path, urlencode(pairs), ""))
+    except (TypeError, ValueError):
+        return ""
 
 
 __all__ = [

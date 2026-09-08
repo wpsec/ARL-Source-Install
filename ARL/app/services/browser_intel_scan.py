@@ -14,11 +14,13 @@ from urllib.parse import parse_qsl, urlencode  # urlencode: form_urlencoded 模�
 from app import utils
 from app.config import Config
 from .baseThread import BaseThread
+from .api_unified_models import sanitize_url_secrets
 
 logger = utils.get_logger()
 
 
 class BrowserIntelScan(BaseThread):
+    PROTOCOLS = {"graphql", "soap", "websocket", "sse"}
     SENSITIVE_HEADER_KEYS = {
         "authorization",
         "cookie",
@@ -331,7 +333,11 @@ class BrowserIntelScan(BaseThread):
         for item in items or []:
             if not isinstance(item, dict):
                 continue
-            method_text = cls._clip_text(item.get("method", "GET"), 16).upper() or "GET"
+            protocol_text = cls._clip_text(item.get("protocol", ""), 24).lower()
+            method_default = "" if protocol_text else "GET"
+            method_text = cls._clip_text(item.get("method", method_default), 16).upper()
+            if not protocol_text:
+                method_text = method_text or "GET"
             url_text = cls._clip_text(item.get("url", ""), 240)
             if not url_text:
                 continue
@@ -354,6 +360,20 @@ class BrowserIntelScan(BaseThread):
                 "request_body_template": cls._clip_text(item.get("request_body_template", ""), 800),
                 "contains_file": str(item.get("contains_file") or "").strip().lower() in {"true", "1", "yes"},
             }
+            if protocol_text in cls.PROTOCOLS:
+                # 协议事件只保留连接/事件形态；消息正文、header 和 cookie 不进入
+                # 结果面。URL query 仍保留路径，但敏感参数值在这里先做一次脱敏，
+                # 让浏览器结果即使被调试输出也不会泄露凭据。
+                normalized["protocol"] = protocol_text
+                normalized["url"] = cls._clip_text(sanitize_url_secrets(url_text), 240)
+                normalized["event"] = cls._clip_text(item.get("event", "handshake"), 64) or "handshake"
+                normalized["operation"] = cls._clip_text(item.get("operation", ""), 128)
+                normalized["source"] = cls._clip_text(item.get("source", "browser"), 64) or "browser"
+                normalized["status"] = cls._clip_text(item.get("status", "observed"), 24) or "observed"
+                try:
+                    normalized["confidence"] = max(0, min(100, int(item.get("confidence", 70) or 0)))
+                except (TypeError, ValueError):
+                    normalized["confidence"] = 0
             json_data = item.get("json_data") if isinstance(item.get("json_data"), dict) else {}
             form_data = item.get("form_data") if isinstance(item.get("form_data"), dict) else {}
             if json_data:
@@ -511,6 +531,17 @@ class BrowserIntelScan(BaseThread):
                     try:
                         req = resp.request
                         resource_type = str(req.resource_type or "").strip().lower()
+                        if resource_type == "eventsource":
+                            runtime_api_calls.append({
+                                "protocol": "sse",
+                                "event": "handshake",
+                                "method": str(req.method or "GET").strip().upper() or "GET",
+                                "url": str(resp.url or "").strip(),
+                                "source": "browser",
+                                "status": "observed",
+                                "confidence": 75,
+                            })
+                            return
                         if resource_type not in {"xhr", "fetch"}:
                             return
                         request_headers = self._safe_request_headers(req)
@@ -560,9 +591,48 @@ class BrowserIntelScan(BaseThread):
                                 call_event["graphql_diagnostics"] = diagnostics
                         runtime_api_calls.append(call_event)
                     except Exception:
+                        logger.debug("browser response observation failed", exc_info=True)
+                        return
+
+                def handle_websocket(websocket):
+                    try:
+                        websocket_url = str(getattr(websocket, "url", "") or "").strip()
+                        if not websocket_url:
+                            return
+
+                        def append_protocol_event(event_name):
+                            runtime_api_calls.append({
+                                "protocol": "websocket",
+                                "event": event_name,
+                                "method": "",
+                                "url": websocket_url,
+                                "source": "browser",
+                                "status": "observed",
+                                "confidence": 75,
+                            })
+
+                        append_protocol_event("handshake")
+                        websocket_on = getattr(websocket, "on", None)
+                        if not callable(websocket_on):
+                            return
+                        websocket_on(
+                            "framereceived",
+                            lambda *_args: append_protocol_event("frame_received"),
+                        )
+                        websocket_on(
+                            "framesent",
+                            lambda *_args: append_protocol_event("frame_sent"),
+                        )
+                        websocket_on(
+                            "close",
+                            lambda *_args: append_protocol_event("closed"),
+                        )
+                    except Exception:
+                        logger.debug("browser websocket observation failed", exc_info=True)
                         return
 
                 page.on("response", handle_response)
+                page.on("websocket", handle_websocket)
                 page.goto(site, wait_until="domcontentloaded", timeout=self.timeout_ms)
                 if self.wait_ms > 0:
                     page.wait_for_timeout(self.wait_ms)
@@ -585,12 +655,12 @@ class BrowserIntelScan(BaseThread):
                 if context:
                     context.close()
             except Exception:
-                pass
+                logger.debug("browser context close failed", exc_info=True)
             try:
                 if browser:
                     browser.close()
             except Exception:
-                pass
+                logger.debug("browser close failed", exc_info=True)
 
         return {
             "browser_surface_summary": browser_surface_summary,

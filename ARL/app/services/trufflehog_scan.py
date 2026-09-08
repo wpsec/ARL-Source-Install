@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 from app import utils
 from app.config import Config
 from app.modules import WihRecord
+from .web_info_intel_utils import fetch_text
 
 logger = utils.get_logger()
 DNS_POLICY_CACHE = {}
@@ -32,10 +33,12 @@ class TrufflehogJSScanner:
     TruffleHog JS 扫描执行器
     """
 
-    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None):
+    def __init__(self, sites: List[str], wih_records: List[WihRecord], waf_guard=None,
+                 discovery_context=None):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
+        self.discovery_context = discovery_context
         self.trufflehog_bin = str(getattr(Config, "TRUFFLEHOG_BIN", "trufflehog") or "trufflehog")
         self.no_verification = bool(getattr(Config, "TRUFFLEHOG_NO_VERIFICATION", True))
         self.result_types = str(getattr(Config, "TRUFFLEHOG_RESULTS", "verified,unknown,unverified") or "").strip()
@@ -193,35 +196,66 @@ class TrufflehogJSScanner:
 
         saved_count = 0
         for index, js_url in enumerate(js_urls):
-            allow_scan, policy_detail = utils.check_dns_policy_for_url(js_url, cache_map=DNS_POLICY_CACHE)
-            if not allow_scan:
-                logger.info(
-                    "skip trufflehog js by dns policy url:{} reason:{} resolver_ips:{} system_ips:{}".format(
-                        js_url,
-                        policy_detail.get("reason", ""),
-                        policy_detail.get("resolver_ips", []),
-                        policy_detail.get("system_ips", []),
+            if self.discovery_context is None:
+                allow_scan, policy_detail = utils.check_dns_policy_for_url(
+                    js_url, cache_map=DNS_POLICY_CACHE)
+                if not allow_scan:
+                    logger.info(
+                        "skip trufflehog js by dns policy url:{} reason:{} "
+                        "resolver_ips:{} system_ips:{}".format(
+                            js_url,
+                            policy_detail.get("reason", ""),
+                            policy_detail.get("resolver_ips", []),
+                            policy_detail.get("system_ips", []),
+                        )
                     )
+                    continue
+
+            if self.discovery_context is not None:
+                try:
+                    text, response = fetch_text(
+                        js_url,
+                        waf_guard=self.waf_guard,
+                        timeout=(5, 12),
+                        max_bytes=self.max_file_bytes,
+                        waf_module="trufflehog_js",
+                        discovery_context=self.discovery_context,
+                        traffic_class="wih",
+                        request_profile="html_get",
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "download js through discovery context failed %s %s",
+                        js_url,
+                        type(exc).__name__,
+                    )
+                    continue
+                status_code = int(getattr(response, "status_code", 0) or 0)
+                if status_code >= 400 or not text:
+                    continue
+                body = bytes(
+                    getattr(response, "body", b"")
+                    or getattr(response, "content", b"")
+                    or text.encode("utf-8", errors="ignore")
                 )
-                continue
+            else:
+                try:
+                    conn = utils.http_req(
+                        js_url,
+                        "get",
+                        timeout=(5, 12),
+                        waf_guard=self.waf_guard,
+                        waf_module="trufflehog_js",
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "download js failed %s %s", js_url, type(exc).__name__)
+                    continue
 
-            try:
-                conn = utils.http_req(
-                    js_url,
-                    "get",
-                    timeout=(5, 12),
-                    waf_guard=self.waf_guard,
-                    waf_module="trufflehog_js",
-                )
-            except Exception as e:
-                logger.debug("download js failed {} {}".format(js_url, e))
-                continue
-
-            status_code = int(getattr(conn, "status_code", 0) or 0)
-            if status_code >= 400:
-                continue
-
-            body = bytes(getattr(conn, "content", b"") or b"")
+                status_code = int(getattr(conn, "status_code", 0) or 0)
+                if status_code >= 400:
+                    continue
+                body = bytes(getattr(conn, "content", b"") or b"")
             if not body:
                 continue
 
@@ -451,9 +485,15 @@ class TrufflehogJSScanner:
             self._cleanup()
 
 
-def run_trufflehog_js(sites: List[str], wih_records: List[WihRecord], waf_guard=None) -> List[WihRecord]:
+def run_trufflehog_js(sites: List[str], wih_records: List[WihRecord], waf_guard=None,
+                      discovery_context=None) -> List[WihRecord]:
     """
     对 WIH 收集到的 JS 源执行 TruffleHog 泄漏扫描
     """
-    scanner = TrufflehogJSScanner(sites=sites, wih_records=wih_records, waf_guard=waf_guard)
+    scanner = TrufflehogJSScanner(
+        sites=sites,
+        wih_records=wih_records,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+    )
     return scanner.run()

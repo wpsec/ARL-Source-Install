@@ -146,6 +146,51 @@ class TargetProfileResolverTest(unittest.TestCase):
 
         self.assertEqual(profile.profile, MODULE.PROFILE_API_ONLY)
 
+    def test_protocol_signals_get_specialized_profiles_without_network(self):
+        graphql = self.resolver.resolve(
+            pages=[{"content_type": "application/json", "url": "/graphql", "body": '{"data": {}}'}],
+            scripts=[{"body": "graphql query operationName"}],
+        )
+        self.assertEqual(MODULE.PROFILE_GRAPHQL, graphql.profile)
+        self.assertIn(MODULE.COLLECTOR_PROTOCOL, graphql.recommended_collectors)
+
+        soap = self.resolver.resolve(
+            pages=[{"content_type": "text/xml", "url": "/service?wsdl", "body": "<wsdl:definitions><soap:binding/></wsdl:definitions>"}],
+        )
+        self.assertEqual(MODULE.PROFILE_SOAP, soap.profile)
+
+        websocket = self.resolver.resolve(
+            runtime_events=[{"url": "wss://example.test/socket", "content_type": "application/octet-stream"}],
+        )
+        self.assertEqual(MODULE.PROFILE_WEBSOCKET, websocket.profile)
+
+    def test_micro_frontend_signal_is_an_optional_profile(self):
+        profile = self.resolver.resolve(
+            pages=[{"content_type": "text/html", "body": '<div id="micro-app"></div>'}],
+            scripts=[{"body": "qiankun registerMicroApps"}],
+        )
+        self.assertEqual(MODULE.PROFILE_MICRO_FRONTEND, profile.profile)
+        self.assertIn(MODULE.COLLECTOR_BROWSER_RUNTIME, profile.optional_collectors)
+
+    def test_micro_frontend_adapter_is_explicit_and_read_only(self):
+        observed = []
+
+        def adapter(**kwargs):
+            observed.append(kwargs)
+            return [{"application": "bsc", "entry": "https://example.test/bsc/"}]
+
+        resolver = MODULE.TargetProfileResolver(resource_adapter=adapter)
+        profile = resolver.resolve(
+            pages=[{"content_type": "text/html", "body": "<div id=\"micro-app\"></div>"}],
+            base_url="https://example.test/",
+            allowed_hosts={"example.test"},
+        )
+        self.assertEqual(MODULE.PROFILE_MICRO_FRONTEND, profile.profile)
+        self.assertEqual(1, len(resolver.last_micro_frontend_resources))
+        self.assertEqual(1, len(observed))
+        self.assertEqual("https://example.test/", observed[0]["base_url"])
+        self.assertEqual({"example.test"}, observed[0]["allowed_hosts"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,8 @@ def sync_discovery_context(
         endpoint_limit,
         resource_index,
     )
+    _sync_protocol_registry(discovery_context, evidence_graph, summary)
+    _sync_micro_frontend_resources(discovery_context, evidence_graph, summary)
     _sync_responses(discovery_context, evidence_graph, summary, response_limit, resource_index)
     record_metric = getattr(discovery_context, "record_metric", None)
     if callable(record_metric):
@@ -142,6 +144,113 @@ def _sync_api_registry(
         return
     _sync_documents(registry, graph, summary, document_limit, resource_index)
     _sync_endpoints(registry, graph, summary, endpoint_limit, resource_index)
+
+
+def _sync_protocol_registry(
+    discovery_context: Any,
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+) -> None:
+    registry = getattr(discovery_context, "protocol_registry", None)
+    snapshot = getattr(registry, "snapshot", None)
+    if not callable(snapshot):
+        return
+    try:
+        observations = list(snapshot())
+    except (AttributeError, TypeError, ValueError):
+        summary["skipped"] += 1
+        return
+    for observation in observations[:64]:
+        if not isinstance(observation, Mapping):
+            summary["skipped"] += 1
+            continue
+        protocol = str(observation.get("protocol") or "unknown").strip().lower()
+        url = str(observation.get("url") or "").strip()
+        event = str(observation.get("event") or "handshake").strip()
+        if not url or not protocol:
+            summary["skipped"] += 1
+            continue
+        identity = "|".join((
+            str(observation.get("protocol_id") or ""),
+            protocol,
+            url,
+            event,
+            str(observation.get("method") or ""),
+            str(observation.get("operation") or ""),
+        ))
+        try:
+            node_id = graph.add_node(
+                "protocol",
+                identity,
+                status=str(observation.get("status") or "observed"),
+                confidence=_confidence_from_score(observation.get("confidence")),
+                sources=observation.get("sources") or (
+                    observation.get("source") or "protocol_registry",
+                ),
+                attributes={
+                    "transport": protocol,
+                    "verification_status": str(observation.get("status") or "observed"),
+                },
+            )
+            summary["nodes_added"] += 1
+            host = str(observation.get("host") or "").strip()
+            _add_parent_edge(graph, summary, node_id, host, "observes")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
+
+
+def _sync_micro_frontend_resources(
+    discovery_context: Any,
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+) -> None:
+    resources = getattr(discovery_context, "micro_frontend_resources", None)
+    if not isinstance(resources, (list, tuple)):
+        return
+    for resource in list(resources)[:64]:
+        if not isinstance(resource, Mapping):
+            summary["skipped"] += 1
+            continue
+        application = str(resource.get("application") or "").strip()
+        entry = str(resource.get("entry") or "").strip()
+        route = str(resource.get("route") or resource.get("mount_path") or "").strip()
+        if not application:
+            summary["skipped"] += 1
+            continue
+        try:
+            application_id = graph.add_node(
+                "application",
+                application,
+                status="observed",
+                confidence=_confidence_from_score(resource.get("confidence")),
+                sources=resource.get("evidence") or (resource.get("source") or "micro_frontend",),
+                attributes={"parser": resource.get("framework") or "micro_frontend"},
+            )
+            summary["nodes_added"] += 1
+            if route:
+                route_id = graph.add_node(
+                    "route",
+                    "{}|{}".format(application, route),
+                    status="observed",
+                    confidence=_confidence_from_score(resource.get("confidence")),
+                    sources=("micro_frontend",),
+                )
+                summary["nodes_added"] += 1
+                if graph.add_edge(application_id, route_id, "contains", evidence=("micro_frontend",)):
+                    summary["edges_added"] += 1
+            if entry:
+                asset_id = graph.add_node(
+                    "asset",
+                    "{}|entry|{}".format(application, entry),
+                    status="observed",
+                    confidence=_confidence_from_score(resource.get("confidence")),
+                    sources=("micro_frontend",),
+                )
+                summary["nodes_added"] += 1
+                if graph.add_edge(application_id, asset_id, "references", evidence=("entry",)):
+                    summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
 
 
 def _sync_responses(
@@ -287,12 +396,16 @@ def _sync_endpoints(
                     "http_method": endpoint.get("method") or "GET",
                     "request_profile": "api_endpoint_probe",
                     "parser": endpoint.get("api_type") or "rest",
+                    "request_semantics": endpoint.get("request_semantics") or "unknown",
+                    "verification_status": endpoint.get("verification_status") or "pending",
                 },
             )
             summary["nodes_added"] += 1
             resource_index[(url, str(endpoint.get("method") or "GET").upper())] = node_id
             _add_parent_edge(graph, summary, node_id, endpoint.get("parent_document"), "describes", "document")
             _add_parent_edge(graph, summary, node_id, endpoint.get("parent_target"), "exposes", "target")
+            _sync_endpoint_parameters(graph, summary, node_id, endpoint, identity)
+            _sync_auth_boundary(graph, summary, node_id, endpoint, identity)
         except (KeyError, TypeError, ValueError, OverflowError):
             summary["skipped"] += 1
 
@@ -312,6 +425,98 @@ def _add_parent_edge(
         parent_id = graph.add_node(parent_kind, parent_text, sources=("registry_parent",))
         summary["nodes_added"] += 1
         if graph.add_edge(parent_id, child_id, relation, evidence=("registry",)):
+            summary["edges_added"] += 1
+    except (KeyError, TypeError, ValueError, OverflowError):
+        summary["skipped"] += 1
+
+
+def _sync_endpoint_parameters(
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    endpoint_node_id: str,
+    endpoint: Mapping[str, Any],
+    endpoint_identity: str,
+) -> None:
+    parameters = endpoint.get("parameters")
+    if not isinstance(parameters, (list, tuple)):
+        return
+    evidence_index = {}
+    for evidence in endpoint.get("parameter_evidence") or ():
+        if not isinstance(evidence, Mapping):
+            continue
+        evidence_name = str(evidence.get("name") or "").strip()
+        evidence_location = str(
+            evidence.get("in") or evidence.get("location") or ""
+        ).strip().lower()
+        if evidence_name and evidence_location:
+            evidence_index[(evidence_name, evidence_location)] = str(
+                evidence.get("evidence_kind") or "inferred"
+            ).strip().lower()
+    for parameter in list(parameters)[:32]:
+        if isinstance(parameter, Mapping):
+            name = str(parameter.get("name") or "").strip()
+            location = str(
+                parameter.get("in") or parameter.get("location") or "unknown"
+            ).strip().lower()
+            type_summary = str(
+                parameter.get("type") or parameter.get("type_summary") or "unknown"
+            ).strip().lower()
+            evidence_kind = str(
+                parameter.get("evidence_kind")
+                or evidence_index.get((name, location))
+                or "inferred"
+            ).strip().lower()
+        else:
+            name = str(getattr(parameter, "name", "") or "").strip()
+            location = str(getattr(parameter, "location", "unknown") or "unknown").strip().lower()
+            type_summary = str(getattr(parameter, "type_summary", "unknown") or "unknown").strip().lower()
+            evidence_kind = "inferred"
+        if not name:
+            continue
+        try:
+            parameter_id = graph.add_node(
+                "parameter",
+                "{}|{}|{}".format(endpoint_identity, location, name),
+                sources=("endpoint_parameter",),
+                attributes={"transport": location},
+            )
+            summary["nodes_added"] += 1
+            if graph.add_edge(
+                endpoint_node_id,
+                parameter_id,
+                "has_parameter",
+                evidence=(location, type_summary, evidence_kind),
+            ):
+                summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
+
+
+def _sync_auth_boundary(
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    endpoint_node_id: str,
+    endpoint: Mapping[str, Any],
+    endpoint_identity: str,
+) -> None:
+    auth_hint = str(endpoint.get("auth_hint") or "unknown").strip().lower()
+    anomaly = bool(endpoint.get("manual_review_required") or endpoint.get("auth_anomaly_candidate"))
+    if auth_hint in {"", "none", "unknown"} and not anomaly:
+        return
+    try:
+        identity_node_id = graph.add_node(
+            "identity",
+            "{}|auth|{}|{}".format(endpoint_identity, auth_hint or "unknown", anomaly),
+            sources=("auth_boundary",),
+            attributes={"transport": "auth_anomaly_candidate" if anomaly else auth_hint},
+        )
+        summary["nodes_added"] += 1
+        if graph.add_edge(
+            endpoint_node_id,
+            identity_node_id,
+            "auth_required" if not anomaly else "auth_boundary",
+            evidence=("manual_review" if anomaly else auth_hint,),
+        ):
             summary["edges_added"] += 1
     except (KeyError, TypeError, ValueError, OverflowError):
         summary["skipped"] += 1

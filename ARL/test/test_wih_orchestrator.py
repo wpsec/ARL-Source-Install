@@ -180,6 +180,39 @@ class BrowserRuntimeTargetFilterTest(unittest.TestCase):
 
         self.assertEqual(["https://legacy.example.test"], selected)
 
+    def test_waf_blocked_targets_do_not_reach_external_browser_collector(self):
+        metrics = {}
+
+        def record_metric(name, amount=1):
+            metrics[name] = metrics.get(name, 0) + amount
+
+        context = types.SimpleNamespace(
+            target_profiles={
+                "https://blocked.example.test": {
+                    "strategy": {"selected_collectors": ["browser_runtime"]},
+                },
+                "https://allowed.example.test": {
+                    "strategy": {"selected_collectors": ["browser_runtime"]},
+                },
+            },
+            waf_policy=types.SimpleNamespace(
+                allow=lambda target, _traffic_class: "blocked" not in str(target)
+            ),
+            record_metric=record_metric,
+        )
+
+        selected = _MODULE._browser_runtime_sites(
+            [
+                "https://blocked.example.test",
+                "https://allowed.example.test",
+            ],
+            context,
+        )
+
+        self.assertEqual(["https://allowed.example.test"], selected)
+        self.assertEqual(1, metrics.get("waf_block_count"))
+        self.assertEqual(1, metrics.get("wih_browser_waf_blocked_total"))
+
 
 class _FakeCandidate(object):
     def __init__(self, candidate, candidate_type="endpoint", status="discovered"):
@@ -201,6 +234,7 @@ class _FakeDiscoveryContext(object):
 
     def __init__(self, candidates):
         self.candidate_registry = _FakeRegistry(candidates)
+        self.allowed_hosts = {"example.test"}
         self.registered = []
         self.marked = []
         self.metrics = {}
@@ -213,6 +247,39 @@ class _FakeDiscoveryContext(object):
 
     def record_metric(self, name, amount=1):
         self.metrics[name] = int(self.metrics.get(name, 0) or 0) + int(amount or 0)
+
+
+class ProxyRuntimeImportTest(unittest.TestCase):
+    def test_import_is_opt_in_and_uses_task_scope(self):
+        calls = []
+
+        def importer(events, **kwargs):
+            calls.append((events, kwargs))
+            return types.SimpleNamespace(imported_count=2, rejected_count=1, merged_count=1)
+
+        original_importer = getattr(fake_services, "import_proxy_events", None)
+        fake_services.import_proxy_events = importer
+        try:
+            task = _Task()
+            task.options = {"wih_proxy_events": [{"url": "https://example.test/a"}]}
+            context = _FakeDiscoveryContext([])
+            context.api_candidate_registry = object()
+            result = _MODULE._import_proxy_runtime_events(task, context)
+        finally:
+            if original_importer is None:
+                del fake_services.import_proxy_events
+            else:
+                fake_services.import_proxy_events = original_importer
+
+        self.assertEqual(2, result.imported_count)
+        self.assertEqual(1, len(calls))
+        self.assertEqual({"example.test"}, calls[0][1]["allowed_hosts"])
+        self.assertEqual(2, context.metrics["proxy_runtime_event_imported_total"])
+
+    def test_import_is_not_called_without_explicit_events(self):
+        task = _Task()
+        context = _FakeDiscoveryContext([])
+        self.assertIsNone(_MODULE._import_proxy_runtime_events(task, context))
 
 
 class _EndpointTask(_Task):

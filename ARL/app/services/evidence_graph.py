@@ -19,8 +19,10 @@ _SAFE_ATTRIBUTE_KEYS = {
     "http_method",
     "parser",
     "request_profile",
+    "request_semantics",
     "status_code",
     "transport",
+    "verification_status",
 }
 _SENSITIVE_VALUE = re.compile(
     r"(?i)(authorization|bearer|cookie|password|passwd|secret|token|api[_-]?key)"

@@ -5,7 +5,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
 PROFILE_UNKNOWN = "unknown"
@@ -14,6 +14,10 @@ PROFILE_SSR = "ssr"
 PROFILE_SPA = "spa"
 PROFILE_API_ONLY = "api_only"
 PROFILE_DOCUMENT_FIRST = "document_first"
+PROFILE_MICRO_FRONTEND = "micro_frontend"
+PROFILE_GRAPHQL = "graphql_signal"
+PROFILE_SOAP = "soap_signal"
+PROFILE_WEBSOCKET = "websocket_signal"
 
 CONFIDENCE_LOW = "low"
 CONFIDENCE_MEDIUM = "medium"
@@ -24,6 +28,7 @@ COLLECTOR_HTML = "html"
 COLLECTOR_SCRIPT = "script"
 COLLECTOR_API_DOCUMENT = "api_document"
 COLLECTOR_BROWSER_RUNTIME = "browser_runtime"
+COLLECTOR_PROTOCOL = "protocol"
 
 _MAX_ITEMS = 64
 _MAX_BODY_CHARS = 65536
@@ -59,6 +64,10 @@ class TargetProfileResolver:
     只读取有限长度的公开摘要，不保留 URL、响应正文或认证信息。
     """
 
+    def __init__(self, resource_adapter=None):
+        self.resource_adapter = resource_adapter if callable(resource_adapter) else None
+        self.last_micro_frontend_resources: List[Dict[str, Any]] = []
+
     def resolve(
         self,
         pages: Iterable[Any] = (),
@@ -66,6 +75,8 @@ class TargetProfileResolver:
         documents: Iterable[Any] = (),
         runtime_events: Iterable[Any] = (),
         response_headers: Iterable[Any] = (),
+        base_url: str = "",
+        allowed_hosts: Optional[Iterable[str]] = None,
     ) -> TargetProfile:
         observations = self._bounded_items(pages)
         script_items = self._bounded_items(scripts)
@@ -81,6 +92,10 @@ class TargetProfileResolver:
         spa_marker_seen = False
         ssr_marker_seen = False
         form_seen = False
+        micro_frontend_seen = False
+        graphql_seen = False
+        soap_seen = False
+        websocket_seen = False
 
         for item in observations:
             content_type, body, url = self._observation_parts(item)
@@ -102,6 +117,24 @@ class TargetProfileResolver:
             if self._contains_any(lower_body, ("openapi", "swagger", "graphql", "wsdl")):
                 document_marker_seen = True
                 self._add_evidence(evidence, "document:format_marker")
+            if self._contains_any(
+                lower_body,
+                ("qiankun", "wujie", "micro-app", "microfrontend", "micro-frontend"),
+            ):
+                micro_frontend_seen = True
+                self._add_evidence(evidence, "html:micro_frontend_marker")
+            if self._contains_any(lower_body, ("/graphql", "graphqloperation", "__graphql")):
+                graphql_seen = True
+                self._add_evidence(evidence, "protocol:graphql")
+            if self._contains_any(
+                lower_body,
+                ("<soap:", "soapaction", "wsdl:definitions", "application/soap+xml"),
+            ):
+                soap_seen = True
+                self._add_evidence(evidence, "protocol:soap")
+            if "websocket" in lower_body or "ws://" in lower_body or "wss://" in lower_body:
+                websocket_seen = True
+                self._add_evidence(evidence, "protocol:websocket")
             if self._contains_any(
                 lower_body,
                 (
@@ -139,6 +172,20 @@ class TargetProfileResolver:
             if self._looks_like_document_url(lower_url, lower_body):
                 document_marker_seen = True
                 self._add_evidence(evidence, "script:document_reference")
+            if self._contains_any(
+                lower_body, ("qiankun", "wujie", "micro-app", "microfrontend")
+            ):
+                micro_frontend_seen = True
+                self._add_evidence(evidence, "script:micro_frontend_marker")
+            if self._contains_any(lower_body, ("graphql", "apollo", "urql")) or "graphql" in lower_url:
+                graphql_seen = True
+                self._add_evidence(evidence, "script:graphql_marker")
+            if self._contains_any(lower_body, ("soapaction", "wsdl")):
+                soap_seen = True
+                self._add_evidence(evidence, "script:soap_marker")
+            if self._contains_any(lower_body, ("websocket(", "new websocket", "wss://")):
+                websocket_seen = True
+                self._add_evidence(evidence, "script:websocket_marker")
 
         for item in document_items:
             _, body, url = self._observation_parts(item)
@@ -147,10 +194,28 @@ class TargetProfileResolver:
                 self._add_evidence(evidence, "document:candidate")
             if self._looks_like_document_url(url.lower(), body.lower()):
                 self._add_evidence(evidence, "document:well_known_path")
+            if "graphql" in body.lower() or "graphql" in url.lower():
+                graphql_seen = True
+                self._add_evidence(evidence, "document:graphql")
+            if "wsdl" in body.lower() or "soap" in body.lower():
+                soap_seen = True
+                self._add_evidence(evidence, "document:soap")
 
         if runtime_items:
             self._add_evidence(evidence, "runtime:observed")
             spa_marker_seen = True
+            for item in runtime_items:
+                _, body, url = self._observation_parts(item)
+                lower_runtime = "{} {}".format(body, url).lower()
+                if "graphql" in lower_runtime:
+                    graphql_seen = True
+                    self._add_evidence(evidence, "runtime:graphql")
+                if "soap" in lower_runtime or "wsdl" in lower_runtime:
+                    soap_seen = True
+                    self._add_evidence(evidence, "runtime:soap")
+                if "ws://" in lower_runtime or "wss://" in lower_runtime or "websocket" in lower_runtime:
+                    websocket_seen = True
+                    self._add_evidence(evidence, "runtime:websocket")
 
         for item in header_items:
             content_type, _, _ = self._observation_parts(item)
@@ -159,6 +224,57 @@ class TargetProfileResolver:
                 api_marker_seen = True
                 self._add_evidence(evidence, "header:json_content_type")
 
+        self.last_micro_frontend_resources = []
+        if micro_frontend_seen and self.resource_adapter is not None:
+            try:
+                self.last_micro_frontend_resources = list(
+                    self.resource_adapter(
+                        pages=observations,
+                        scripts=script_items,
+                        runtime_events=runtime_items,
+                        base_url=str(base_url or ""),
+                        allowed_hosts=allowed_hosts,
+                    )
+                )[:64]
+            except (TypeError, ValueError, AttributeError):
+                self.last_micro_frontend_resources = []
+
+        if micro_frontend_seen:
+            return self._profile(
+                PROFILE_MICRO_FRONTEND,
+                CONFIDENCE_HIGH if html_seen else CONFIDENCE_MEDIUM,
+                evidence,
+                (COLLECTOR_HTTP, COLLECTOR_HTML, COLLECTOR_SCRIPT),
+                (COLLECTOR_BROWSER_RUNTIME, COLLECTOR_PROTOCOL),
+                (),
+            )
+        if graphql_seen and not html_seen:
+            return self._profile(
+                PROFILE_GRAPHQL,
+                CONFIDENCE_HIGH,
+                evidence,
+                (COLLECTOR_HTTP, COLLECTOR_API_DOCUMENT, COLLECTOR_PROTOCOL),
+                (),
+                (COLLECTOR_BROWSER_RUNTIME,),
+            )
+        if soap_seen and not html_seen:
+            return self._profile(
+                PROFILE_SOAP,
+                CONFIDENCE_HIGH,
+                evidence,
+                (COLLECTOR_HTTP, COLLECTOR_API_DOCUMENT, COLLECTOR_PROTOCOL),
+                (),
+                (COLLECTOR_BROWSER_RUNTIME,),
+            )
+        if websocket_seen and not html_seen:
+            return self._profile(
+                PROFILE_WEBSOCKET,
+                CONFIDENCE_MEDIUM,
+                evidence,
+                (COLLECTOR_HTTP, COLLECTOR_PROTOCOL),
+                (COLLECTOR_BROWSER_RUNTIME,),
+                (),
+            )
         if document_marker_seen and not html_seen:
             return self._profile(
                 PROFILE_DOCUMENT_FIRST,
@@ -226,6 +342,8 @@ class TargetProfileResolver:
         self,
         records: Iterable[Any] = (),
         response_metadata: Iterable[Any] = (),
+        base_url: str = "",
+        allowed_hosts: Optional[Iterable[str]] = None,
     ) -> TargetProfile:
         """把既有 WihRecord/候选记录转换为画像线索。
 
@@ -256,6 +374,8 @@ class TargetProfileResolver:
             pages=list(pages) + self._bounded_items(response_metadata),
             scripts=scripts,
             documents=documents,
+            base_url=base_url,
+            allowed_hosts=allowed_hosts,
         )
 
     @staticmethod
@@ -336,13 +456,18 @@ __all__ = [
     "COLLECTOR_BROWSER_RUNTIME",
     "COLLECTOR_HTML",
     "COLLECTOR_HTTP",
+    "COLLECTOR_PROTOCOL",
     "COLLECTOR_SCRIPT",
     "PROFILE_API_ONLY",
     "PROFILE_DOCUMENT_FIRST",
+    "PROFILE_GRAPHQL",
+    "PROFILE_MICRO_FRONTEND",
+    "PROFILE_SOAP",
     "PROFILE_SPA",
     "PROFILE_SSR",
     "PROFILE_TRADITIONAL_MVC",
     "PROFILE_UNKNOWN",
+    "PROFILE_WEBSOCKET",
     "TargetProfile",
     "TargetProfileResolver",
 ]

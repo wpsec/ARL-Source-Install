@@ -1388,6 +1388,39 @@ class ScopeGateReviewTest(unittest.TestCase):
             url="https://api.example.com/c", method="GET", input_signature="s3"))
         self.assertTrue(created)
 
+    def test_endpoint_merge_upgrades_parameter_evidence_without_values(self):
+        context = DiscoveryContext(task_id="parameter-evidence", allowed_hosts={"api.example.com"})
+        registry = reg.ApiCandidateRegistry(task_id="parameter-evidence", context=context)
+        first = UnifiedApiEndpoint(
+            url="https://api.example.com/users",
+            method="GET",
+            input_signature="same",
+            source="openapi",
+            parameters=[_models.ParameterSpec(name="page", location="query")],
+            parameter_evidence=[
+                {"name": "page", "in": "query", "evidence_kind": "inferred"}
+            ],
+        )
+        second = UnifiedApiEndpoint(
+            url="https://api.example.com/users",
+            method="GET",
+            input_signature="same",
+            source="browser",
+            parameters=[_models.ParameterSpec(name="page", location="query")],
+            parameter_evidence=[
+                {"name": "page", "in": "query", "evidence_kind": "runtime"}
+            ],
+        )
+        registry.register_endpoint_with_status(first)
+        _stored, outcome = registry.register_endpoint_with_status(second)
+        self.assertEqual(outcome, reg.ApiCandidateRegistry.ENDPOINT_REGISTER_MERGED)
+        evidence = registry.snapshot_endpoints()[0]["parameter_evidence"]
+        self.assertEqual(
+            [{"name": "page", "in": "query", "evidence_kind": "runtime"}],
+            evidence,
+        )
+        self.assertNotIn("<value>", json.dumps(evidence, ensure_ascii=False))
+
     def test_browser_shape_digest_distinguishes_truncated_tails(self):
         # R6-P1-02：差异落在截断区（第 33 键 / 超 64 字符长名尾部 / 大集合尾部）
         # 必须产生不同 input_signature，不再前缀折叠合并；取值仍禁入签名。

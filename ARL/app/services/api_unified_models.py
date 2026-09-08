@@ -108,6 +108,12 @@ AUTH_SCHEME_TYPE_TO_HINT: Dict[str, str] = {
 GRAPHQL_OPERATIONS: Tuple[str, ...] = ("query", "mutation", "subscription", "unknown")
 
 PARAMETER_LOCATIONS: Tuple[str, ...] = ("path", "query", "header", "cookie", "formData", "body")
+PARAMETER_EVIDENCE_KINDS: Tuple[str, ...] = (
+    "literal",
+    "template",
+    "runtime",
+    "inferred",
+)
 
 # 请求 profile（计划 6 §8.1）：同一 URL 在不同 profile / 认证上下文下是不同观察。
 REQUEST_PROFILES: Tuple[str, ...] = (
@@ -436,6 +442,53 @@ class SecurityRequirementSummary:
         return {"name": self.name, "type": self.type}
 
 
+def _normalize_parameter_evidence(
+    values: Any,
+    parameters: Any,
+    *,
+    source: str,
+    path_template: str,
+) -> List[Dict[str, str]]:
+    """只投影参数来源类别，防止把运行时参数值带入 Endpoint。"""
+
+    provided: Dict[Tuple[str, str], str] = {}
+    for value in values if isinstance(values, (list, tuple)) else ():
+        if not isinstance(value, Mapping):
+            continue
+        name = str(value.get("name") or "").strip()[:128]
+        location = str(value.get("in") or value.get("location") or "query").strip()
+        kind = str(value.get("evidence_kind") or value.get("kind") or "inferred").strip().lower()
+        if not name or location not in PARAMETER_LOCATIONS:
+            continue
+        if kind not in PARAMETER_EVIDENCE_KINDS:
+            kind = "inferred"
+        provided[(name, location)] = kind
+
+    source_text = str(source or "").strip().lower()
+    output: List[Dict[str, str]] = []
+    seen = set()
+    for parameter in parameters if isinstance(parameters, (list, tuple)) else ():
+        name = str(getattr(parameter, "name", "") or "").strip()[:128]
+        location = str(getattr(parameter, "location", "query") or "query").strip()
+        if not name or location not in PARAMETER_LOCATIONS or (name, location) in seen:
+            continue
+        seen.add((name, location))
+        kind = provided.get((name, location))
+        if not kind:
+            if any(marker in source_text for marker in ("browser", "har", "runtime")):
+                kind = "runtime"
+            elif location == "path" and any(marker in str(path_template or "") for marker in ("{", ":")):
+                kind = "template"
+            elif source_text:
+                kind = "literal"
+            else:
+                kind = "inferred"
+        output.append({"name": name, "in": location, "evidence_kind": kind})
+        if len(output) >= 64:
+            break
+    return output
+
+
 # ---------------------------------------------------------------------------
 # ApiDocumentCandidate（计划 6 §4.2）
 # ---------------------------------------------------------------------------
@@ -618,6 +671,7 @@ _UNIFIED_ENDPOINT_FIELDS: Tuple[str, ...] = (
     "operation_id",
     "tags",
     "parameters",
+    "parameter_evidence",
     "request_body_type",
     "request_body_schema",
     "response_schema",
@@ -684,6 +738,8 @@ class UnifiedApiEndpoint:
     verification_status: str = "pending"
     verification_reason_codes: List[str] = field(default_factory=list)
     manual_review_required: bool = False
+    # 只记录参数来源形态，不记录参数值；追加在尾部保持旧位置参数兼容。
+    parameter_evidence: List[Dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # 三层数据契约（附录A §4.16）：url 为非破坏性规范化值（供 endpoint_id/去重键
@@ -733,6 +789,12 @@ class UnifiedApiEndpoint:
         self.sources = {str(item or "").strip() for item in self.sources if str(item or "").strip()}
         if self.source:
             self.sources.add(self.source)
+        self.parameter_evidence = _normalize_parameter_evidence(
+            self.parameter_evidence,
+            self.parameters,
+            source=self.source,
+            path_template=self.path_template,
+        )
         if not self.endpoint_id:
             self.endpoint_id = _digest(self.url, self.method, self.api_type, self.path_template)
 
@@ -805,6 +867,7 @@ class UnifiedApiEndpoint:
             "operation_id": self.operation_id,
             "tags": list(self.tags),
             "parameters": [item.to_dict() for item in self.parameters],
+            "parameter_evidence": [dict(item) for item in self.parameter_evidence],
             "request_body_type": self.request_body_type,
             "request_body_schema": _stable(self.request_body_schema),
             "response_schema": _stable(self.response_schema),
@@ -956,6 +1019,7 @@ __all__ = [
     "AUTH_SCHEME_TYPE_TO_HINT",
     "GRAPHQL_OPERATIONS",
     "PARAMETER_LOCATIONS",
+    "PARAMETER_EVIDENCE_KINDS",
     "REQUEST_PROFILES",
     "DIAGNOSTIC_STATUSES",
     "API_DOCUMENT_KEY_PREFIX",

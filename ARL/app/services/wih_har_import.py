@@ -30,6 +30,7 @@ DEFAULT_MAX_ENTRIES = 5000
 MAX_HEADER_NAMES = 64
 MAX_PARAMETERS = 64
 MAX_BODY_SAMPLE_CHARS = 8192
+DEFAULT_MAX_PROXY_EVENTS = 5000
 
 
 @dataclass
@@ -108,6 +109,52 @@ def import_har(
     return result
 
 
+def import_proxy_events(
+    events: Any,
+    *,
+    registry: Any = None,
+    allowed_hosts: Optional[Iterable[str]] = None,
+    source: str = "proxy",
+    max_events: int = DEFAULT_MAX_PROXY_EVENTS,
+) -> HarImportResult:
+    """导入标准化代理事件，不读取代理配置，也不重放请求。
+
+    输入只约定请求侧摘要：每个事件可以直接包含 ``url``/``method``，也可以
+    放在 ``request`` 对象中；headers/query/body 只用于提取名称和类型。这样
+    Burp、mitmproxy 等导出适配层可以先归一化事件，再复用 HAR 的安全边界。
+    """
+
+    if isinstance(events, Mapping):
+        events = events.get("events")
+    if not isinstance(events, list):
+        return HarImportResult(errors=("invalid_proxy_events",))
+
+    try:
+        limit = max(0, int(max_events))
+    except (TypeError, ValueError):
+        limit = DEFAULT_MAX_PROXY_EVENTS
+
+    entries = []
+    rejected = 0
+    for event in events[:limit]:
+        entry = _proxy_event_to_entry(event)
+        if entry is None:
+            rejected += 1
+            continue
+        entries.append(entry)
+
+    result = import_har(
+        {"log": {"version": HAR_VERSION, "entries": entries}},
+        registry=registry,
+        allowed_hosts=allowed_hosts,
+        source=source,
+        max_entries=len(entries),
+    )
+    result.rejected_count += rejected
+    result.truncated_count += max(0, len(events) - limit)
+    return result
+
+
 def _load_payload(payload: Any) -> Any:
     if isinstance(payload, Mapping):
         return payload
@@ -119,6 +166,101 @@ def _load_payload(payload: Any) -> Any:
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _proxy_event_to_entry(event: Any) -> Optional[Dict[str, Any]]:
+    """把代理适配器的请求摘要转换成内部 HAR entry。"""
+
+    if not isinstance(event, Mapping):
+        return None
+    request = event.get("request")
+    request = request if isinstance(request, Mapping) else event
+
+    raw_url = request.get("url") or request.get("uri") or event.get("url")
+    method = request.get("method") or event.get("method") or "GET"
+    if not str(raw_url or "").strip():
+        return None
+
+    body = request.get("postData")
+    if body is None:
+        body = request.get("body")
+    if isinstance(body, Mapping):
+        post_data = _proxy_body_mapping(body)
+    elif body is not None:
+        post_data = {
+            "mimeType": request.get("contentType") or event.get("contentType") or "",
+        }
+    else:
+        post_data = None
+
+    return {
+        "request": {
+            "method": method,
+            "url": raw_url,
+            "headers": _proxy_header_items(request.get("headers") or event.get("headers")),
+            "cookies": _proxy_header_items(request.get("cookies") or event.get("cookies")),
+            "queryString": _proxy_query_items(
+                request.get("queryString")
+                or request.get("query")
+                or event.get("queryString")
+                or event.get("query")
+            ),
+            "postData": post_data,
+        },
+    }
+
+
+def _proxy_header_items(value: Any) -> List[Dict[str, str]]:
+    """只保留代理事件的字段名，丢弃所有 Header/Cookie 值。"""
+
+    if isinstance(value, Mapping):
+        return [{"name": str(name)} for name in list(value)[:MAX_HEADER_NAMES]]
+    if not isinstance(value, (list, tuple)):
+        return []
+    items = []
+    for item in value[:MAX_HEADER_NAMES]:
+        if isinstance(item, Mapping):
+            name = item.get("name") or item.get("key")
+        elif isinstance(item, (list, tuple)) and item:
+            name = item[0]
+        else:
+            name = item
+        if name is not None:
+            items.append({"name": str(name)})
+    return items
+
+
+def _proxy_query_items(value: Any) -> List[Dict[str, str]]:
+    """只保留 query 参数名，避免代理导出值进入统一 Endpoint。"""
+
+    if isinstance(value, Mapping):
+        return [{"name": str(name)} for name in list(value)[:MAX_PARAMETERS]]
+    if not isinstance(value, (list, tuple)):
+        return []
+    items = []
+    for item in value[:MAX_PARAMETERS]:
+        if isinstance(item, Mapping):
+            name = item.get("name") or item.get("key")
+        elif isinstance(item, (list, tuple)) and item:
+            name = item[0]
+        else:
+            name = item
+        if name is not None:
+            items.append({"name": str(name)})
+    return items
+
+
+def _proxy_body_mapping(value: Mapping[str, Any]) -> Dict[str, Any]:
+    """从代理 body 摘要中保留类型和参数名，避免复制完整正文。"""
+
+    output: Dict[str, Any] = {}
+    mime = value.get("mimeType") or value.get("contentType") or ""
+    if mime:
+        output["mimeType"] = str(mime)[:128]
+    params = value.get("params")
+    if isinstance(params, (list, tuple)):
+        output["params"] = _proxy_query_items(params)
+    return output
 
 
 def _endpoint_from_entry(entry: Any, source: str) -> Optional[UnifiedApiEndpoint]:
@@ -169,6 +311,10 @@ def _endpoint_from_entry(entry: Any, source: str) -> Optional[UnifiedApiEndpoint
 def _safe_http_url(value: str) -> bool:
     try:
         parsed = urlsplit(value)
+    except ValueError:
+        return False
+    try:
+        parsed.port
     except ValueError:
         return False
     return (
@@ -294,4 +440,4 @@ def _register(registry: Any, endpoint: UnifiedApiEndpoint):
     return stored, "created" if created else "merged"
 
 
-__all__ = ["HarImportResult", "import_har"]
+__all__ = ["HarImportResult", "import_har", "import_proxy_events"]

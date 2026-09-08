@@ -57,6 +57,17 @@ class WihAuthBoundaryTest(unittest.TestCase):
         self.assertEqual(MODULE.AUTH_PENDING, jobs[0]["status"])
         self.assertEqual("l2_requires_explicit_enable", jobs[0]["reason_code"])
 
+    def test_job_url_strips_userinfo_and_fragment(self):
+        jobs = MODULE.build_auth_boundary_jobs(
+            {
+                "url": "https://user:password@example.test/api?next=ok#secret-fragment",
+            },
+            enabled=True,
+        )
+        self.assertTrue(all(job["url"] == "https://example.test/api?next=ok" for job in jobs))
+        self.assertNotIn("password", json.dumps(jobs, ensure_ascii=False))
+        self.assertNotIn("secret-fragment", json.dumps(jobs, ensure_ascii=False))
+
 
 if __name__ == "__main__":
     unittest.main()

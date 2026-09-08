@@ -42,13 +42,25 @@ from .wih_periodic_reuse import run_wih_periodic_reuse
 from .target_profile import TargetProfile, TargetProfileResolver
 from .wih_strategy import DiscoveryStrategyPlan, build_wih_strategy_plan
 from .controlled_verification_policy import ControlledVerificationPolicy, VerificationDecision
-from .wih_har_import import HarImportResult, import_har
+from .wih_har_import import HarImportResult, import_har, import_proxy_events
 from .wih_adaptive_scheduler import WihScheduleCandidate, WihSchedulePlan, schedule_candidates
 from .wih_auth_boundary import (
     AuthBoundaryResult,
     apply_auth_boundary_result,
     build_auth_boundary_jobs,
     compare_auth_boundary,
+)
+from .wih_api_verify import build_l1_executor, run_api_verify
+from .wih_protocol_registry import (
+    ProtocolObservation,
+    ProtocolRegistry,
+    get_or_create_protocol_registry,
+    ingest_protocol_events,
+)
+from .wih_micro_frontend import (
+    MicroFrontendResource,
+    MicroFrontendResourceAdapter,
+    extract_micro_frontend_resources,
 )
 from .evidence_graph import EvidenceEdge, EvidenceGraph, EvidenceNode
 from .evidence_graph_adapter import get_or_create_evidence_graph, sync_discovery_context

@@ -55,6 +55,7 @@ class HarImportTest(unittest.TestCase):
         entries = [
             {"request": {"method": "GET", "url": "https://other.example.test/a"}},
             {"request": {"method": "GET", "url": "https://user:password@example.test/a"}},
+            {"request": {"method": "GET", "url": "https://example.test:invalid/a"}},
         ]
         result = MODULE.import_har(
             {"log": {"version": "1.2", "entries": entries}},
@@ -62,7 +63,7 @@ class HarImportTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.imported_count)
-        self.assertEqual(2, result.rejected_count)
+        self.assertEqual(3, result.rejected_count)
 
     def test_duplicate_observations_are_merged_by_endpoint_identity(self):
         entry = {"request": {"method": "GET", "url": "https://example.test/a?item=1"}}
@@ -95,6 +96,43 @@ class HarImportTest(unittest.TestCase):
 
         self.assertEqual(1, result.imported_count)
         self.assertEqual("covered", registry.snapshot_endpoints()[0]["status"])
+
+    def test_imports_standardized_proxy_event_without_values(self):
+        result = MODULE.import_proxy_events(
+            [{
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.test/v1/items?token=secret&limit=10",
+                    "headers": {"Authorization": "Bearer secret", "X-Trace": "abc"},
+                    "query": {"token": "secret", "limit": "10"},
+                    "contentType": "application/json",
+                    "body": '{"token":"secret","name":"demo"}',
+                },
+            }],
+            allowed_hosts={"example.test"},
+        )
+
+        self.assertEqual(1, result.imported_count)
+        endpoint = result.endpoints[0]
+        self.assertEqual("POST", endpoint.method)
+        self.assertEqual("bearer", endpoint.auth_hint)
+        self.assertIn("limit", [item.name for item in endpoint.parameters])
+        self.assertNotIn("secret", json.dumps(result.to_dict(), ensure_ascii=False))
+
+    def test_proxy_import_bounds_invalid_and_out_of_scope_events(self):
+        result = MODULE.import_proxy_events(
+            [
+                {"url": "https://other.example.test/a"},
+                {"request": {"url": ""}},
+                "not-an-event",
+            ],
+            allowed_hosts={"example.test"},
+            max_events=2,
+        )
+
+        self.assertEqual(0, result.imported_count)
+        self.assertGreaterEqual(result.rejected_count, 2)
+        self.assertEqual(1, result.truncated_count)
 
 
 if __name__ == "__main__":
