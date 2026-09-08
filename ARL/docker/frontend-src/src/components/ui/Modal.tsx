@@ -3,8 +3,8 @@ import { useEffect, useRef, type ReactNode } from 'react';
 /**
  * 全站唯一弹窗实现（docs/04 组件映射）：原生 <dialog> 获得焦点陷阱、Esc、
  * inert 背景行为；遮罩点击关闭由 target===dialog 判定。
- * 内容滚动不在本组件发生——body 用 Phase0 统一的 max-h-[72vh] 白名单滚动类，
- * 避免 modal-box 与内容区双滚动条。
+ * 内容滚动不在本组件发生——由调用方内容区承担滚动，短表单可使用 max-h-[72vh]，
+ * 长表单可使用 min-h-0/flex-1，避免 modal-box 与内容区双滚动条。
  */
 export function Modal({
   open,

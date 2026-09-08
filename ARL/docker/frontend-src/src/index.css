@@ -6,7 +6,7 @@
 
 /* daisyUI 主题注册（docs/04 token 映射）：全部取现有 --brand-* 变量，值唯一来源仍是
    上方品牌变量块与 [data-theme] 切换，daisy 层不复制色值、氛围层 CSS 零改动。
-   primary=accent-strong（决策点1）；sandstone 为亮色主题，content 配对单独定。 */
+   primary 使用可读的主题强调色；accent-strong 仅保留为主题内部的深色层级。 */
 @plugin "daisyui/theme" {
   name: "brand";
   default: true;
@@ -16,7 +16,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-bg);
@@ -50,7 +50,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-bg);
@@ -84,7 +84,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-bg);
@@ -118,7 +118,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-bg);
@@ -152,7 +152,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-bg);
@@ -185,7 +185,7 @@
   --color-base-200: var(--brand-card);
   --color-base-300: var(--brand-border);
   --color-base-content: var(--brand-text);
-  --color-primary: var(--brand-accent-strong);
+  --color-primary: var(--brand-accent);
   --color-primary-content: var(--brand-accent-contrast);
   --color-secondary: var(--brand-secondary);
   --color-secondary-content: var(--brand-accent-contrast);
@@ -217,18 +217,18 @@
   --brand-card: #1c2936;
   --brand-card-rgb: 28, 41, 54;
   --brand-border: #344653;
-  --brand-accent: #8399aa;
-  --brand-accent-rgb: 131, 153, 170;
-  --brand-accent-strong: #5f7585;
-  --brand-secondary: #778c9b;
-  --brand-secondary-rgb: 119, 140, 155;
-  --brand-warning: #b8956f;
-  --brand-warning-rgb: 184, 149, 111;
-  --brand-danger: #d08e91;
-  --brand-danger-rgb: 208, 142, 145;
-  --brand-text: #e9eef1;
-  --brand-text-muted: #bbc6ce;
-  --brand-accent-contrast: #f8fbff;
+  --brand-accent: #7dd3fc;
+  --brand-accent-rgb: 125, 211, 252;
+  --brand-accent-strong: #2786c7;
+  --brand-secondary: #c4b5fd;
+  --brand-secondary-rgb: 196, 181, 253;
+  --brand-warning: #fbbf24;
+  --brand-warning-rgb: 251, 191, 36;
+  --brand-danger: #fb7185;
+  --brand-danger-rgb: 251, 113, 133;
+  --brand-text: #edf7ff;
+  --brand-text-muted: #b8ccdc;
+  --brand-accent-contrast: #0a1724;
   --brand-success: #34d399;
   --brand-success-content: #06281e;
   --brand-warning-content: #241a0e;
@@ -256,18 +256,18 @@
   --brand-card: #192531;
   --brand-card-rgb: 25, 37, 49;
   --brand-border: #304253;
-  --brand-accent: #6f8da4;
-  --brand-accent-rgb: 111, 141, 164;
-  --brand-accent-strong: #4e687b;
-  --brand-secondary: #8fa5b3;
-  --brand-secondary-rgb: 143, 165, 179;
-  --brand-warning: #be9b72;
-  --brand-warning-rgb: 190, 155, 114;
-  --brand-danger: #c68188;
-  --brand-danger-rgb: 198, 129, 136;
-  --brand-text: #e4eaee;
-  --brand-text-muted: #a6b4bf;
-  --brand-accent-contrast: #f8fbff;
+  --brand-accent: #64c7ff;
+  --brand-accent-rgb: 100, 199, 255;
+  --brand-accent-strong: #1d9bf0;
+  --brand-secondary: #b5a7ff;
+  --brand-secondary-rgb: 181, 167, 255;
+  --brand-warning: #f3bd69;
+  --brand-warning-rgb: 243, 189, 105;
+  --brand-danger: #ff7d96;
+  --brand-danger-rgb: 255, 125, 150;
+  --brand-text: #e9f5ff;
+  --brand-text-muted: #b7cbe0;
+  --brand-accent-contrast: #07111d;
   --brand-card-surface-alpha: 0.82;
   --brand-card-elevated-alpha: 0.9;
   --brand-shell-alpha: 0.86;
@@ -283,18 +283,18 @@
   --brand-card: #1c2e3e;
   --brand-card-rgb: 28, 46, 62;
   --brand-border: #354b5c;
-  --brand-accent: #7898ad;
-  --brand-accent-rgb: 120, 152, 173;
-  --brand-accent-strong: #537286;
-  --brand-secondary: #9ab0bc;
-  --brand-secondary-rgb: 154, 176, 188;
-  --brand-warning: #c6a174;
-  --brand-warning-rgb: 198, 161, 116;
-  --brand-danger: #c9878a;
-  --brand-danger-rgb: 201, 135, 138;
-  --brand-text: #e5ecef;
-  --brand-text-muted: #adbcc6;
-  --brand-accent-contrast: #f7fbff;
+  --brand-accent: #71d0ff;
+  --brand-accent-rgb: 113, 208, 255;
+  --brand-accent-strong: #2e9fca;
+  --brand-secondary: #91e6c7;
+  --brand-secondary-rgb: 145, 230, 199;
+  --brand-warning: #f4c978;
+  --brand-warning-rgb: 244, 201, 120;
+  --brand-danger: #ff8c91;
+  --brand-danger-rgb: 255, 140, 145;
+  --brand-text: #edf8ff;
+  --brand-text-muted: #b9cfdd;
+  --brand-accent-contrast: #0a1720;
   --brand-card-surface-alpha: 0.8;
   --brand-card-elevated-alpha: 0.88;
   --brand-shell-alpha: 0.84;
@@ -310,18 +310,18 @@
   --brand-card: #2b363e;
   --brand-card-rgb: 43, 54, 62;
   --brand-border: #46565f;
-  --brand-accent: #8aa5ad;
-  --brand-accent-rgb: 138, 165, 173;
-  --brand-accent-strong: #58737d;
-  --brand-secondary: #afbdc1;
-  --brand-secondary-rgb: 175, 189, 193;
-  --brand-warning: #c4a77c;
-  --brand-warning-rgb: 196, 167, 124;
-  --brand-danger: #c8959b;
-  --brand-danger-rgb: 200, 149, 155;
-  --brand-text: #e8edef;
-  --brand-text-muted: #bbc6ca;
-  --brand-accent-contrast: #f8fbfd;
+  --brand-accent: #7de2d0;
+  --brand-accent-rgb: 125, 226, 208;
+  --brand-accent-strong: #3ab6a3;
+  --brand-secondary: #b8c7ff;
+  --brand-secondary-rgb: 184, 199, 255;
+  --brand-warning: #e8bf78;
+  --brand-warning-rgb: 232, 191, 120;
+  --brand-danger: #ff9ba3;
+  --brand-danger-rgb: 255, 155, 163;
+  --brand-text: #eef8f5;
+  --brand-text-muted: #c0d0d0;
+  --brand-accent-contrast: #17201f;
   --brand-card-surface-alpha: 0.8;
   --brand-card-elevated-alpha: 0.88;
   --brand-shell-alpha: 0.84;
@@ -337,18 +337,18 @@
   --brand-card: #282a2c;
   --brand-card-rgb: 40, 42, 44;
   --brand-border: #3a3e42;
-  --brand-accent: #7893a8;
-  --brand-accent-rgb: 120, 147, 168;
-  --brand-accent-strong: #526d80;
-  --brand-secondary: #94a6b0;
-  --brand-secondary-rgb: 148, 166, 176;
-  --brand-warning: #c8b083;
-  --brand-warning-rgb: 200, 176, 131;
-  --brand-danger: #c38181;
-  --brand-danger-rgb: 195, 129, 129;
-  --brand-text: #d9dcde;
-  --brand-text-muted: #aab3ba;
-  --brand-accent-contrast: #f7fbff;
+  --brand-accent: #f3b96a;
+  --brand-accent-rgb: 243, 185, 106;
+  --brand-accent-strong: #c98736;
+  --brand-secondary: #9bc9f2;
+  --brand-secondary-rgb: 155, 201, 242;
+  --brand-warning: #ffd166;
+  --brand-warning-rgb: 255, 209, 102;
+  --brand-danger: #ff8993;
+  --brand-danger-rgb: 255, 137, 147;
+  --brand-text: #f4f7fa;
+  --brand-text-muted: #c0cbd4;
+  --brand-accent-contrast: #17120b;
   --brand-card-surface-alpha: 0.9;
   --brand-card-elevated-alpha: 0.96;
   --brand-shell-alpha: 0.92;
@@ -465,7 +465,7 @@
   }
 
   /* Modal 组件的 box 壳（components/ui/Modal.tsx）：覆盖 daisy modal-box 默认
-     padding/max-width/滚动，头部-滚动体-底部三段结构由内容自带（Phase0 的 72vh 白名单）。 */
+     padding/max-width/滚动，头部-滚动体-底部三段结构由内容自带。 */
   .arl-modal-box {
     width: 100%;
     max-height: 92vh;
