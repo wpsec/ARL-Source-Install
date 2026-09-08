@@ -64,7 +64,7 @@ export function normalizeValue(value: any): string {
         return JSON.stringify(item);
       })
       .filter((item) => item)
-      .join(', ');
+      .join('\n');
     return truncateText(normalized || '-');
   }
   if (typeof value === 'object') return truncateText(JSON.stringify(value));
@@ -90,7 +90,7 @@ export function normalizeValueNoTruncate(value: any): string {
         }
       })
       .filter((item) => item)
-      .join(', ');
+      .join('\n');
     return normalized || '-';
   }
   if (typeof value === 'object') {

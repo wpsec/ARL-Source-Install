@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   isLikelyIdColumn,
   normalizeHttpHyperlink,
+  normalizeValue,
+  normalizeValueNoTruncate,
   truncateMiddleText,
   truncateText,
 } from './format';
@@ -28,5 +30,12 @@ describe('truncate helpers', () => {
   it('id 列启发式不误伤普通列', () => {
     expect(isLikelyIdColumn('task_id')).toBe(true);
     expect(isLikelyIdColumn('title')).toBe(false);
+  });
+});
+
+describe('多值展示格式', () => {
+  it('数组值统一按行展示，避免长列表挤在一行', () => {
+    expect(normalizeValue(['alpha', 'beta'])).toBe('alpha\nbeta');
+    expect(normalizeValueNoTruncate(['alpha', 'beta'])).toBe('alpha\nbeta');
   });
 });

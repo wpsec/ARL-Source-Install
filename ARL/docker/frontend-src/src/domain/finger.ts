@@ -166,7 +166,7 @@ export function formatHeaderLines(value: any): string {
     if (item === null || item === undefined) {
       itemText = '';
     } else if (Array.isArray(item)) {
-      itemText = item.map((part) => String(part ?? '')).filter((part) => part).join(', ');
+      itemText = item.map((part) => String(part ?? '')).filter((part) => part).join('\n');
     } else if (typeof item === 'object') {
       itemText = JSON.stringify(item);
     } else {
@@ -203,7 +203,7 @@ export function formatCertSummary(row: any): string {
   const toText = (value: any, max = 420): string => {
     if (value === null || value === undefined) return '-';
     if (Array.isArray(value)) {
-      const text = value.map((item) => String(item ?? '')).filter((item) => item).join(', ');
+      const text = value.map((item) => String(item ?? '')).filter((item) => item).join('\n');
       return truncateText(text || '-', max);
     }
     if (typeof value === 'object') {
@@ -229,7 +229,7 @@ export function formatCertSummary(row: any): string {
     ? sslSecurity.protocol_names.map((item: any) => String(item || '').trim()).filter((item: string) => item)
     : [];
   const protocolNames = Array.from(new Set([...protocolNamesFromItems, ...protocolNamesFromList]));
-  const protocolText = protocolNames.length > 0 ? protocolNames.join(', ') : '-';
+  const protocolText = protocolNames.length > 0 ? protocolNames.join('\n') : '-';
 
   const leastStrength = toText(sslSecurity?.least_strength);
   const ecdheCountRaw = Number(sslSecurity?.ecdhe_count);

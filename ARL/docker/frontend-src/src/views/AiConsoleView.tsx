@@ -1688,11 +1688,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const usageAvgElapsedSampleCount = usageStats?.avg_elapsed_sample_count || 0;
   const usageTopModelListText = usageStats?.by_model?.slice(0, 5)
     .map((item) => `${item.provider || '-'} / ${item.model || '-'} (${item.total_tokens})`)
-    .join('；') || '';
+    .join('\n') || '';
   const usageTopSceneListText = usageStats?.by_scene?.slice(0, 5)
     .map((item) => `${item.scene_label || item.scene || '-'} (${item.total_tokens})`)
-    .join('；') || '';
-  const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('；') || '';
+    .join('\n') || '';
+  const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('\n') || '';
 
   return (
     <div className={CONSOLE_PAGE_CLASS}>
@@ -2339,19 +2339,19 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         )}
 
         {usageTopModelListText ? (
-          <div className="text-[11px] text-content-muted">
+          <div className="whitespace-pre-line break-words text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天高频模型Top5：{usageTopModelListText}
           </div>
         ) : null}
 
         {usageTopSceneListText ? (
-          <div className="text-[11px] text-content-muted">
+          <div className="whitespace-pre-line break-words text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天高消耗场景Top5：{usageTopSceneListText}
           </div>
         ) : null}
 
         {usageTopErrorReasonText ? (
-          <div className="text-[11px] text-content-muted">
+          <div className="whitespace-pre-line break-words text-[11px] text-content-muted">
             最近{usageStats?.window_days || 7}天失败原因Top3：{usageTopErrorReasonText}
           </div>
         ) : null}

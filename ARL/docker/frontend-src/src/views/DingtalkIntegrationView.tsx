@@ -29,6 +29,12 @@ import {
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
 
+function formatRuntimeFieldList(value: unknown): string {
+  if (!Array.isArray(value)) return '无';
+  const fields = value.map((item) => String(item ?? '').trim()).filter(Boolean);
+  return fields.length > 0 ? fields.join('\n') : '无';
+}
+
 export function DingtalkIntegrationView({ token }: { token: string }) {
   type DingtalkConfigForm = {
     dingding_access_token: string;
@@ -799,9 +805,10 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
         </div>
 
-        <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
-          运行状态：缺失基础字段 {Array.isArray(runtimeStatus?.missing_basic_fields) ? runtimeStatus.missing_basic_fields.join(', ') || '无' : '无'}；
-          缺失发布字段 {Array.isArray(runtimeStatus?.missing_publish_fields) ? runtimeStatus.missing_publish_fields.join(', ') || '无' : '无'}
+        <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2 whitespace-pre-line break-words">
+          <div>运行状态</div>
+          <div className="mt-1">缺失基础字段：{formatRuntimeFieldList(runtimeStatus?.missing_basic_fields)}</div>
+          <div className="mt-1">缺失发布字段：{formatRuntimeFieldList(runtimeStatus?.missing_publish_fields)}</div>
         </div>
 
         <div className="space-y-2">
