@@ -3369,13 +3369,13 @@ export function TableModuleView({
                     return (
                       <th
                         key={column}
-                        className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center"
+                        className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-left"
                       >
                         {sortable ? (
                           <button
                             type="button"
                             onClick={() => toggleColumnSort(column)}
-                            className="inline-flex items-center justify-center gap-1.5 hover:text-accent transition"
+                            className="inline-flex items-center justify-start gap-1.5 hover:text-accent transition"
                             title={direction === 'desc' ? '当前降序，点击切换升序' : '点击按此列降序'}
                           >
                             <span>{getColumnLabel(column)}</span>
@@ -3435,7 +3435,7 @@ export function TableModuleView({
                         const wrapCell = shouldWrapCell(module.id, column) || formattedCellText.includes('\n');
                         const baseClassName = wrapCell
                           ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
-                          : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
+                          : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-left';
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);

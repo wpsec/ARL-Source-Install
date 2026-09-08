@@ -64,7 +64,7 @@ export function DataTable<Row extends object>({
     columns.map((column) => {
       if (column.render) {
         return (
-          <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
+          <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-left'}`}>
             {column.render(row, index)}
           </td>
         );
@@ -77,7 +77,7 @@ export function DataTable<Row extends object>({
         ? formatCellArrayValue(rawValue)
         : String(rawValue ?? '-');
       return (
-        <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
+        <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-left'}`}>
           <span className={displayValue.includes('\n') ? 'whitespace-pre-wrap break-all' : undefined}>
             {displayValue}
           </span>
@@ -103,7 +103,7 @@ export function DataTable<Row extends object>({
                 <th
                   key={column.key}
                   className={`${cellPad} text-sm font-semibold whitespace-nowrap ${
-                    column.headerClass ?? 'text-content-muted text-center'
+                    column.headerClass ?? 'text-content-muted text-left'
                   }`}
                 >
                   {column.header}

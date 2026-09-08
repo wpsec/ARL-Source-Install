@@ -33,6 +33,7 @@ import {
   normalizeValueNoTruncate,
   parseNumericValue,
 } from '../domain/format';
+import { formatTokenListText } from '../domain/finger';
 import { formatCpuSummary, formatUsageSummary } from '../domain/system';
 import type {OpenModuleHandler} from '../domain/types';
 import { PageHeader } from '../layout/PageHeader';
@@ -586,7 +587,9 @@ export function DashboardView({
                         <td className="py-3 pr-4">
                           <StatusPill text={statusInfo.text} type={statusInfo.type} />
                         </td>
-                        <td className="py-3 pr-4 font-mono">{normalizeValue(task?.target)}</td>
+                        <td className="py-3 pr-4 font-mono whitespace-pre-wrap break-all leading-relaxed">
+                          {formatTokenListText(task?.target)}
+                        </td>
                         <td className="py-3 text-content-muted">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</td>
                       </tr>
                     );
