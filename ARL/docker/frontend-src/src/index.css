@@ -569,8 +569,11 @@
   }
 
   .arl-app button:focus-visible,
+  .arl-app input:not([type='checkbox']):not([type='radio']):focus,
   .arl-app input:not([type='checkbox']):not([type='radio']):focus-visible,
+  .arl-app select:focus,
   .arl-app select:focus-visible,
+  .arl-app textarea:focus,
   .arl-app textarea:focus-visible {
     outline: none;
     border-color: var(--brand-accent);
