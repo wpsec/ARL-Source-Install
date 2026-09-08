@@ -33,6 +33,8 @@ describe('Sidebar 整行菜单布局', () => {
     const activeLabel = activeButton.querySelector('span');
 
     expect(activeButton.getAttribute('aria-current')).toBe('page');
+    expect(activeButton.className).toContain('arl-sidebar-nav-item');
+    expect(activeButton.className).not.toContain('btn');
     expect(activeButton.className).toContain('w-full');
     expect(activeButton.className).toContain('lg:!w-full');
     expect(activeButton.className).toContain('min-w-0');
@@ -40,6 +42,7 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeLabel?.className).toContain('flex-1');
     expect(activeLabel?.className).toContain('lg:flex');
     expect(activeLabel?.className).toContain('self-stretch');
+    expect(activeLabel?.className).toContain('justify-start');
     expect(activeButton.parentElement?.className).toContain('w-full');
   });
 

@@ -104,17 +104,17 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "group flex min-h-10 w-full max-w-none min-w-0 items-center justify-center overflow-hidden rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
+                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
                         ? "bg-primary/12 text-primary font-semibold shadow-sm ring-1 ring-inset ring-primary/25"
-                        : "text-content-muted hover:bg-base-300/60 hover:text-base-content",
+                        : "bg-transparent text-content-muted hover:bg-base-300/60 hover:text-base-content",
                     )}
                     title={item.label}
                     aria-label={item.label}
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden min-w-0 w-full flex-1 self-stretch items-center text-left lg:flex">{item.label}</span>
+                    <span className="hidden min-w-0 w-full flex-1 self-stretch items-center justify-start text-left lg:flex">{item.label}</span>
                   </button>
                 </li>
               ))}

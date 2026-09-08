@@ -558,10 +558,16 @@
     min-height: 0;
   }
 
-  /* DaisyUI 的 btn 默认按内容取宽度；侧边栏需要整行命中和整行选中背景。 */
-  .arl-sidebar .btn {
+  /* 菜单项不用 DaisyUI btn 的内部背景层，避免文字区和整行出现两种底色。 */
+  .arl-sidebar .arl-sidebar-nav-item {
     width: 100%;
     max-width: none;
+    background-color: transparent;
+  }
+
+  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    color: var(--color-primary);
   }
 
   /* ghost 信息在暗色主题中不能依赖透明背景和浏览器默认文字色。 */
