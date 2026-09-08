@@ -1,6 +1,7 @@
 import { Fragment, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { formatCellArrayValue } from '../../domain/cells';
 
 /** 超过该行数启用虚拟滚动（docs/04：超长列表 >200 虚拟滚动）。 */
 const VIRTUALIZE_THRESHOLD = 200;
@@ -72,7 +73,9 @@ export function DataTable<Row extends object>({
       const rawValue = column.getValue
         ? column.getValue(row)
         : ((row as Record<string, unknown>)[column.key] ?? '-');
-      const displayValue = String(rawValue);
+      const displayValue = Array.isArray(rawValue)
+        ? formatCellArrayValue(rawValue)
+        : String(rawValue ?? '-');
       return (
         <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
           <span className={displayValue.includes('\n') ? 'whitespace-pre-wrap break-all' : undefined}>

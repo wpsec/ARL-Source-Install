@@ -15,7 +15,7 @@ if (!('ResizeObserver' in globalThis)) {
   };
 }
 
-type Row = { id: string; name: string; status?: string };
+type Row = { id: string; name: string | string[]; status?: string };
 
 const columns: Array<DataTableColumn<Row>> = [
   { key: 'name', header: '名称', getValue: (row) => row.name },
@@ -80,6 +80,19 @@ describe('DataTable', () => {
         rows={[{ id: 'multi', name: 'Alpha\nBeta' }]}
         rowKey={(r) => r.id}
       />,
+    );
+    const value = container.querySelector('tbody tr td span');
+    expect(value?.textContent).toBe('Alpha\nBeta');
+    expect(value?.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('默认数组单元格统一按行展示', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        rows={[{ id: 'multi-array', name: ['Alpha', 'Beta'] }]}
+        rowKey={(r) => r.id}
+      />
     );
     const value = container.querySelector('tbody tr td span');
     expect(value?.textContent).toBe('Alpha\nBeta');

@@ -15,7 +15,7 @@ import {
 } from './task';
 import { formatWihEndpointMetric } from './wih';
 
-function formatCellArrayValue(value: any[]): string {
+export function formatCellArrayValue(value: any[]): string {
   const items = value.flatMap((item) => {
     if (item === null || item === undefined) return [];
     if (typeof item === 'object') {
