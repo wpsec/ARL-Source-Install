@@ -25,6 +25,7 @@ import { DataTable } from '../components/ui/DataTable';
 import type {AiDenoiseModuleId} from '../domain/types';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_WARNING_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
@@ -1752,12 +1753,12 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       {error ? (
-        <div role="alert" className="alert alert-error text-xs py-2">
+        <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
           {error}
         </div>
       ) : null}
       {success ? (
-        <div role="status" className="alert alert-success text-xs py-2">
+        <div role="status" className={`${CONSOLE_ALERT_SUCCESS_CLASS} text-xs py-2`}>
           {success}
         </div>
       ) : null}
@@ -1773,7 +1774,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="alert alert-warning text-xs py-2">
+      <div className={`${CONSOLE_ALERT_WARNING_CLASS} text-xs py-2`}>
         提示：AI 去噪分析支持按模块独立开关与 SOP 绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
 
@@ -2716,7 +2717,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   testResult.ok
                     ? CONSOLE_ALERT_SUCCESS_CLASS
                     : testResult.message.includes('已跳过')
-                      ? 'alert alert-warning alert-soft text-sm'
+                      ? CONSOLE_ALERT_WARNING_CLASS
                       : CONSOLE_ALERT_ERROR_CLASS
                 }`}
               >

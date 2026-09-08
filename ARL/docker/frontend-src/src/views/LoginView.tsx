@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Lock, User } from 'lucide-react';
 import BrandLogo from '../components/BrandLogo';
-import { CONSOLE_INPUT_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from '../ui/classes';
+import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_INPUT_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from '../ui/classes';
 
 export function LoginView({
   onLogin,
@@ -73,7 +73,7 @@ export function LoginView({
             </div>
 
             {error ? (
-              <div role="alert" className="alert alert-error text-sm py-3">
+              <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} py-3`}>
                 {error}
               </div>
             ) : null}

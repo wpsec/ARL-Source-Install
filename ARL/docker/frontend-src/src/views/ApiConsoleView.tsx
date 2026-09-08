@@ -20,6 +20,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_INFO_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
@@ -1189,14 +1190,14 @@ export function ApiConsoleView({ token }: { token: string }) {
               ) : null}
 
               {batchTesting ? (
-                <div role="status" className="alert alert-info alert-soft text-sm">
+                <div role="status" className={CONSOLE_ALERT_INFO_CLASS}>
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>正在验证已配置的 API，请稍候...</span>
                 </div>
               ) : null}
 
               {!batchTesting && batchTestResults.length === 0 ? (
-                <div role="status" className="alert alert-info alert-soft justify-center text-sm">
+                <div role="status" className={`${CONSOLE_ALERT_INFO_CLASS} justify-center`}>
                   暂无需要验证的已配置 API。
                 </div>
               ) : null}

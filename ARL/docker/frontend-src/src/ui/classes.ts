@@ -47,4 +47,6 @@ export const CONSOLE_ALERT_ERROR_CLASS = 'alert alert-error alert-soft text-sm';
 
 export const CONSOLE_ALERT_SUCCESS_CLASS = 'alert alert-success alert-soft text-sm';
 
+export const CONSOLE_ALERT_INFO_CLASS = 'alert alert-info alert-soft text-sm';
+
 export const CONSOLE_ALERT_WARNING_CLASS = 'alert alert-warning alert-soft text-sm';

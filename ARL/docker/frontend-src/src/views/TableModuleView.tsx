@@ -85,6 +85,8 @@ import {
 import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_INFO_CLASS,
+  CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_BUTTON_CLASS,
   CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
@@ -2921,7 +2923,7 @@ export function TableModuleView({
     <div ref={tableRootRef} className={CONSOLE_PAGE_CLASS}>
       {success ? (
         <div className="fixed inset-x-0 top-5 z-[80] flex justify-center px-4 pointer-events-none">
-          <div role="status" className="alert alert-success w-full max-w-[30rem] py-3 text-sm">
+          <div role="status" className={`${CONSOLE_ALERT_SUCCESS_CLASS} w-full max-w-[30rem] py-3`}>
             <CheckCircle2 className="h-4 w-4 shrink-0" />
             <span className="whitespace-pre-wrap break-all text-center leading-relaxed">{success}</span>
           </div>
@@ -4547,13 +4549,13 @@ export function TableModuleView({
             <div className="p-6 space-y-4">
               <div
                 role={taskReportExportFeedback.phase === 'error' ? 'alert' : 'status'}
-                className={`alert alert-soft px-4 py-3 ${
+                className={`${
                   taskReportExportFeedback.phase === 'error'
-                    ? 'alert-error'
+                    ? CONSOLE_ALERT_ERROR_CLASS
                     : taskReportExportFeedback.phase === 'success'
-                      ? 'alert-success'
-                      : 'alert-info'
-                }`}
+                      ? CONSOLE_ALERT_SUCCESS_CLASS
+                      : CONSOLE_ALERT_INFO_CLASS
+                } px-4 py-3`}
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 shrink-0">
