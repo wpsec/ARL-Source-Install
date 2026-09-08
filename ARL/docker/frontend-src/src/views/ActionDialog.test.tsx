@@ -38,6 +38,13 @@ const GENERIC_ARRAY_ACTION = {
   path: '/generic/',
 } as any;
 
+const FOFA_TEST_ACTION = {
+  id: 'fofa_test',
+  label: '测试测绘语法',
+  method: 'POST',
+  path: '/task_fofa/test',
+} as any;
+
 function renderDialog(client: QueryClient) {
   return render(
     <QueryClientProvider client={client}>
@@ -59,6 +66,20 @@ function renderGenericArrayDialog(client: QueryClient) {
         token="tk-action"
         action={GENERIC_ARRAY_ACTION}
         initialPayload={{ targets: ['alpha.example', 'beta.example'] }}
+        onClose={vi.fn()}
+        onSubmit={vi.fn(async () => {})}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+function renderFofaTestDialog(client: QueryClient) {
+  return render(
+    <QueryClientProvider client={client}>
+      <ActionDialog
+        token="tk-action"
+        action={FOFA_TEST_ACTION}
+        initialPayload={{ provider: 'fofa', query: 'domain="example.com"' }}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => {})}
       />
@@ -100,6 +121,16 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     renderGenericArrayDialog(newClient());
     const textarea = screen.getByPlaceholderText('多个值请换行输入') as HTMLTextAreaElement;
     expect(textarea.value).toBe('alpha.example\nbeta.example');
+  });
+
+  it('测绘表单也固定弹窗高度并保留底部操作栏', () => {
+    renderFofaTestDialog(newClient());
+
+    const footer = screen.getByTestId('action-dialog-footer');
+    expect(footer.parentElement?.classList.contains('arl-modal-box')).toBe(true);
+    expect(footer.parentElement?.classList.contains('arl-modal-tall')).toBe(true);
+    expect(screen.getByRole('button', { name: '取消' }).className).toContain('w-full');
+    expect(screen.getByRole('button', { name: '执行' }).className).toContain('w-full');
   });
 
   it('水合选项列表并按“大字典优先”补齐 payload 默认值', async () => {

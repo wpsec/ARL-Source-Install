@@ -69,7 +69,19 @@ export function ActionDialog({
   const isPolicySelectionRequired = isTaskScheduleCreate || isAssetScopeAddScheduler;
   const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
-  const isLongFormAction = isTaskCreate || isPolicyAction || isTaskScheduleCreate;
+  // 这些分支都有独立滚动内容；统一固定 box 高度，保证底部提交区不会随字段数量被推出视口。
+  const isLongFormAction =
+    isTaskCreate ||
+    isPolicyAction ||
+    isTaskScheduleCreate ||
+    isFofaAction ||
+    isGithubSchedulerAction ||
+    isAssetScopeCreate ||
+    isAssetScopeAddScope ||
+    isAssetScopeUpdate ||
+    isAssetScopeAddScheduler ||
+    isAssetScopeAddSiteMonitor ||
+    isAssetScopeAddWihMonitor;
   const shouldLoadDictOptions = isTaskCreate || isPolicyAction;
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(
