@@ -617,7 +617,7 @@
     min-height: 0;
   }
 
-  /* 选中背景归属于完整按钮，文字区随 flex-1 铺满，避免出现嵌套色块。 */
+  /* 选中背景归属于整行，按钮和文字区共同铺满，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
     display: flex;
     min-width: 0;
@@ -626,13 +626,16 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-row-active {
+    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card));
+    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border));
     box-shadow: inset 3px 0 0 var(--color-primary);
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
     display: flex;
-    flex: 1 1 100% !important;
+    flex: 1 1 auto !important;
     width: 100% !important;
+    min-width: 0 !important;
     max-width: none !important;
     align-self: stretch;
   }
@@ -647,10 +650,10 @@
     flex: 1 1 0%;
   }
 
-  .arl-sidebar .arl-sidebar-nav-item-active,
-  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
-    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
-    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;
+  .arl-sidebar .arl-sidebar-nav-row-active > .arl-sidebar-nav-item,
+  .arl-sidebar .arl-sidebar-nav-row:has(> .arl-sidebar-nav-item[aria-current='page']) > .arl-sidebar-nav-item {
+    background-color: transparent !important;
+    border-color: transparent !important;
     color: var(--brand-accent) !important;
   }
 
