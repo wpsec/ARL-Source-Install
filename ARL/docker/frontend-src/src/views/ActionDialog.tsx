@@ -565,7 +565,7 @@ export function ActionDialog({
       onClose={onClose}
       boxClass={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl!' : 'max-w-3xl!'}`}
     >
-        <div className="shrink-0 px-6 py-4 border-b border-base-300 bg-base-200 flex items-center justify-between">
+        <div className="shrink-0 px-4 py-4 border-b border-base-300 bg-base-200 flex items-center justify-between sm:px-6">
           <div>
             <h4 className="text-lg font-black">{action.label}</h4>
             <p className="text-xs text-content-muted font-mono mt-1">
@@ -577,7 +577,7 @@ export function ActionDialog({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6 space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden space-y-4 p-4 sm:p-6">
           {action.description ? <p className="text-sm text-content-muted">{action.description}</p> : null}
 
           {action.fileFieldName ? (
@@ -1548,11 +1548,11 @@ export function ActionDialog({
 
         <div
           data-testid="action-dialog-footer"
-          className="shrink-0 flex items-center justify-end gap-3 border-t border-base-300 bg-base-100 px-6 py-4"
+          className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
         >
             <button
               onClick={onClose}
-              className={CONSOLE_SECONDARY_BUTTON_CLASS}
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
             >
               取消
             </button>
@@ -1882,7 +1882,7 @@ export function ActionDialog({
                   setLoading(false);
                 }
               }}
-              className={CONSOLE_PRIMARY_BUTTON_CLASS}
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
               disabled={loading}
             >
               {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction || isAssetScopeAddScope || isAssetScopeAddScheduler || isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? '确定' : '执行'}

@@ -85,9 +85,10 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     const footer = await screen.findByTestId('action-dialog-footer');
     expect(footer.className).toContain('shrink-0');
     expect(footer.className).toContain('border-t');
+    expect(footer.className).toContain('flex-col');
     expect(footer.parentElement?.classList.contains('arl-modal-box')).toBe(true);
-    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '执行' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' }).className).toContain('w-full');
+    expect(screen.getByRole('button', { name: '执行' }).className).toContain('w-full');
   });
 
   it('通用数组字段以多行文本框回显', () => {
