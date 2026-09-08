@@ -1032,7 +1032,7 @@ export function ActionDialog({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
                   <input
                     type="checkbox"
                     checked={githubSchedulerDingdingNotify}
@@ -1042,7 +1042,7 @@ export function ActionDialog({
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
                   <input
                     type="checkbox"
                     checked={githubSchedulerKbNotifyEnable}
