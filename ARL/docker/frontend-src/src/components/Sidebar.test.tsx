@@ -41,7 +41,7 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeButton.className).toContain('min-w-0');
     expect(activeButton.className).toContain('arl-sidebar-nav-item-active');
     expect(activeButton.className).toContain('bg-primary/12');
-    expect(activeLabel?.className).toContain('!w-auto');
+    expect(activeLabel?.className).toContain('!w-full');
     expect(activeLabel?.className).toContain('flex-1');
     expect(activeLabel?.className).toContain('lg:flex');
     expect(activeLabel?.className).toContain('self-stretch');

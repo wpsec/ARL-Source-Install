@@ -660,8 +660,8 @@
       min-height: 2.5rem;
       align-items: center;
       justify-content: flex-start;
-      width: auto !important;
-      flex: 1 1 auto !important;
+      width: 100% !important;
+      flex: 1 1 0% !important;
     }
   }
 
