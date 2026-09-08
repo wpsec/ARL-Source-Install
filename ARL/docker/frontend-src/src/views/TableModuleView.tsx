@@ -2948,7 +2948,7 @@ export function TableModuleView({
               className={`btn btn-sm ${
                 module.id === item.id
                   ? 'btn-primary'
-                  : 'btn-ghost border-base-300 text-base-content/70 hover:text-base-content'
+                  : 'btn-ghost border-base-300 text-content-muted hover:text-base-content'
               }`}
             >
               {item.label}
@@ -2975,7 +2975,7 @@ export function TableModuleView({
               className={`btn btn-sm ${
                 module.id === item.id
                   ? 'btn-primary'
-                  : 'btn-ghost border-base-300 text-base-content/70 hover:text-base-content'
+                  : 'btn-ghost border-base-300 text-content-muted hover:text-base-content'
               }`}
             >
               {`${item.label} - ${

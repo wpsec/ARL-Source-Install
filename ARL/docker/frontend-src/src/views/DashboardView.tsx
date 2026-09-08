@@ -526,7 +526,7 @@ export function DashboardView({
                       <span className="text-content-muted">{source}</span>
                       <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
                     </div>
-                    <p className="text-base-content/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
+                    <p className="text-base-content break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                   </div>
                 );
               })}

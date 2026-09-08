@@ -5,6 +5,7 @@ type BrandLogoSize = 'md' | 'lg';
 interface BrandLogoProps {
   size?: BrandLogoSize;
   className?: string;
+  compactBelowLg?: boolean;
 }
 
 const sizeClassMap: Record<BrandLogoSize, { box: string; icon: string; arl: string; sub: string; gap: string }> = {
@@ -24,7 +25,7 @@ const sizeClassMap: Record<BrandLogoSize, { box: string; icon: string; arl: stri
   },
 };
 
-export default function BrandLogo({ size = 'md', className = '' }: BrandLogoProps) {
+export default function BrandLogo({ size = 'md', className = '', compactBelowLg = false }: BrandLogoProps) {
   const cls = sizeClassMap[size];
   const tone = {
     boxToneClass: 'bg-gradient-to-br from-base-300 via-base-200 to-base-100 border border-base-300 shadow-lg',
@@ -32,7 +33,7 @@ export default function BrandLogo({ size = 'md', className = '' }: BrandLogoProp
     overlayClass: 'absolute inset-0 rounded-[inherit] bg-gradient-to-tr from-base-content/10 via-base-content/5 to-transparent pointer-events-none',
     beaconClass: 'absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-accent border border-base-100',
     arlTextClass: 'text-base-content',
-    subTextClass: 'text-base-content/70',
+    subTextClass: 'text-content-muted leading-3',
   };
 
   return (
@@ -47,7 +48,7 @@ export default function BrandLogo({ size = 'md', className = '' }: BrandLogoProp
         </div>
         <span className={tone.beaconClass} />
       </div>
-      <div className="flex flex-col min-w-0">
+      <div className={`${compactBelowLg ? 'hidden lg:flex' : 'flex'} flex-col min-w-0`}>
         <span className={`${cls.arl} font-black tracking-tight leading-none ${tone.arlTextClass}`}>ARL</span>
         <span className={`${cls.sub} font-black uppercase tracking-[0.24em] mt-1 ${tone.subTextClass}`}>Lighthouse</span>
       </div>

@@ -73,28 +73,29 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   ];
 
   return (
-    <aside className="w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
-      <div className="px-4 xl:px-5 py-4 xl:py-5 border-b border-base-300">
+    <aside className="w-16 lg:w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
+      <div className="flex justify-center px-2 py-4 lg:block lg:px-4 lg:py-4 xl:px-5 xl:py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
-        <BrandLogo size="md" />
+        <BrandLogo size="md" compactBelowLg />
       </div>
 
-      <div className="px-3 xl:px-4 py-3 xl:py-4">
+      <div className="px-2 py-3 lg:px-3 xl:px-4 xl:py-4">
         <motion.button 
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
-          className="btn btn-primary btn-sm h-10 min-h-10 w-full gap-2 shadow-sm"
+          className="btn btn-primary btn-sm h-10 min-h-10 w-full justify-center gap-0 shadow-sm lg:justify-start lg:gap-2"
+          title="新建任务"
         >
           <Plus className="w-4 h-4" strokeWidth={2.5} />
-          <span>新建任务</span>
+          <span className="hidden lg:inline">新建任务</span>
         </motion.button>
       </div>
 
-      <nav className="flex-1 px-2.5 xl:px-3 py-2 space-y-5">
+      <nav className="flex-1 px-1.5 py-2 space-y-5 lg:px-2.5 xl:px-3">
         {navGroups.map((group) => (
           <div key={group.label}>
-            <h3 className={cn("px-3 mb-2 text-[11px] font-semibold tracking-wide opacity-80", group.color)}>
+            <h3 className={cn("hidden px-3 mb-2 text-[11px] font-semibold leading-4 tracking-wide opacity-80 lg:block", group.color)}>
               {group.label}
             </h3>
             <ul className="menu p-0 gap-1">
@@ -103,15 +104,17 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "min-h-10 w-full justify-start gap-3 rounded-box px-3 py-2 text-sm font-medium transition-colors",
+                      "min-h-10 w-full justify-center gap-0 rounded-box px-0 py-2 text-sm font-medium transition-colors lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
                         ? "bg-primary/12 text-primary font-semibold"
-                        : "text-base-content/70 hover:bg-base-300/60 hover:text-base-content"
+                        : "text-content-muted hover:bg-base-300/60 hover:text-base-content"
                     )}
+                    title={item.label}
+                    aria-label={item.label}
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    {item.label}
+                    <span className="hidden lg:inline">{item.label}</span>
                   </button>
                 </li>
               ))}
@@ -121,13 +124,13 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
 
       </nav>
 
-      <div className="p-3 xl:p-4 border-t border-base-300 space-y-4">
+      <div className="p-2 lg:p-3 xl:p-4 border-t border-base-300 space-y-4">
         <div className="space-y-2">
-          <div className="flex items-center gap-2 px-2 text-base-content/70">
+          <div className="flex items-center justify-center gap-2 px-0 text-content-muted lg:justify-start lg:px-2">
             <Palette className="w-3.5 h-3.5" />
-            <span className="text-xs font-semibold">主题定制</span>
+            <span className="hidden text-xs font-semibold lg:inline">主题定制</span>
           </div>
-          <div className="flex flex-wrap gap-2 px-2" role="group" aria-label="主题定制">
+          <div className="flex flex-wrap justify-center gap-2 px-0 lg:justify-start lg:px-2" role="group" aria-label="主题定制">
             {themes.map((t) => (
               <motion.button
                 key={t.id}
@@ -147,7 +150,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
           </div>
         </div>
 
-        <div className="card border border-base-300 bg-base-100 shadow-sm">
+        <div className="card hidden border border-base-300 bg-base-100 shadow-sm lg:block">
           <div className="card-body p-3 gap-1">
             <span className="text-xs font-semibold">互联网资产自动化收集系统</span>
             <div className="flex items-center gap-1 min-w-0">

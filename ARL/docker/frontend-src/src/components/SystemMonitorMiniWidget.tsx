@@ -83,8 +83,8 @@ function MetricRow({
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-1">
-          <span className="truncate text-[9px] font-semibold text-content-muted">{label}</span>
-          <span className="shrink-0 text-[10px] font-bold tabular-nums" style={{ color }}>{value}</span>
+          <span className="truncate text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
+          <span className="shrink-0 text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
         </div>
         <Sparkline data={data} dataKey={dataKey} color={color} />
       </div>
@@ -139,27 +139,27 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
-      <div className="hidden 2xl:flex h-10 shrink-0 items-center gap-2 rounded-box border border-base-300 bg-base-100 px-2.5">
+      <div className="hidden xl:flex h-10 shrink-0 items-center gap-2 rounded-box border border-base-300 bg-base-100 px-2.5">
         <div className="min-w-0 text-center">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />
-            <span className="text-[9px] font-semibold">发送</span>
+            <span className="text-[10px] font-semibold leading-3">发送</span>
           </div>
-          <p className="truncate text-[10px] font-bold tabular-nums">{normalizeValue(resource.network_total_sent)}</p>
+          <p className="truncate text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.network_total_sent)}</p>
         </div>
         <div className="min-w-0 text-center">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowDown className="h-3 w-3" />
-            <span className="text-[9px] font-semibold">接收</span>
+            <span className="text-[10px] font-semibold leading-3">接收</span>
           </div>
-          <p className="truncate text-[10px] font-bold tabular-nums">{normalizeValue(resource.network_total_recv)}</p>
+          <p className="truncate text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.network_total_recv)}</p>
         </div>
         <div className="min-w-0 text-center">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <Activity className="h-3 w-3" />
-            <span className="text-[9px] font-semibold">进程</span>
+            <span className="text-[10px] font-semibold leading-3">进程</span>
           </div>
-          <p className="truncate text-[10px] font-bold tabular-nums">{normalizeValue(resource.process_count)}</p>
+          <p className="truncate text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.process_count)}</p>
         </div>
       </div>
 

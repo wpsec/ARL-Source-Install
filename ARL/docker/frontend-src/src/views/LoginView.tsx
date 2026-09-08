@@ -16,7 +16,7 @@ export function LoginView({
   const [password, setPassword] = useState('');
 
   return (
-    <main className="min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
+    <main className="arl-app min-h-screen bg-base-100 text-base-content flex items-center justify-center p-4 sm:p-8">
       <div className="card w-full max-w-xl border border-base-300 bg-base-200 shadow-sm">
         <div className="card-body p-6 sm:p-10">
         <div className="flex items-start sm:items-center gap-4 mb-8">
