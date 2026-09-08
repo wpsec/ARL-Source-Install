@@ -770,7 +770,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="配置管理" description="支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。" />
 
-      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">扫描配置</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -778,7 +778,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               onClick={() => {
                 void scanConfigQuery.refetch();
               }}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2"
               disabled={isConfigActionBusy}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -786,7 +786,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('nuclei')}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${nucleiPocUpdating ? 'animate-spin' : ''}`} />
@@ -794,7 +794,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('afrog')}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${afrogPocUpdating ? 'animate-spin' : ''}`} />
@@ -802,7 +802,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void saveScanConfig()}
-              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-primary gap-2 disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
@@ -823,23 +823,23 @@ export function ConfigConsoleView({ token }: { token: string }) {
         ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
             <span className="text-content-muted">配置文件:</span>
             <span className="font-mono ml-2">{configPath || '-'}</span>
           </div>
-          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
             <span className="text-content-muted">最近更新时间:</span>
             <span className="font-mono ml-2">{updatedAt || '-'}</span>
           </div>
         </div>
 
-        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让扫描参数完全生效。
         </div>
-        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
           PoC 更新说明：按钮会调用 git 同步远端仓库（nuclei: projectdiscovery/nuclei-templates，afrog: zan8in/afrog-pocs）。
         </div>
-        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-3 items-center rounded-xl border border-base-300 bg-base-100/25 px-3 py-3">
+        <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-3 items-center rounded-box border border-base-300 bg-base-100 px-3 py-3">
           <div className="space-y-1">
             <div className="text-xs font-black tracking-wide text-base-content">PoC 更新代理</div>
             <div className="text-[11px] text-content-muted">仅作用于 Nuclei / afrog PoC 仓库更新时的 `git clone/pull`。</div>
@@ -854,8 +854,8 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-5">
-        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-5 shadow-sm">
+        <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">预定义资源档位</div>
           <div className="text-xs text-content-muted">
             一键套用常见机型参数（CPU/内存/带宽），覆盖 Nuclei、afrog、域名爆破、端口扫描、URL 探测、Web/Celery 并发等关键项，降低低配主机被扫描压垮风险。
@@ -871,7 +871,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
                   className={`text-left rounded-xl border p-3 transition ${
                     isMatched
                       ? 'border-accent bg-accent/10'
-                      : 'border-base-300 hover:bg-base-100/70'
+                      : 'border-base-300 hover:bg-base-200'
                   }`}
                 >
                   <div className="text-sm font-bold">{profile.label}</div>
@@ -886,7 +886,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               className={`text-left rounded-xl border p-3 transition ${
                 isCustomScanProfileMatched
                   ? 'border-accent bg-accent/10'
-                  : 'border-base-300 bg-base-100/30'
+                  : 'border-base-300 bg-base-100'
               }`}
             >
               <div className="text-sm font-bold">自定义配置</div>
@@ -903,7 +903,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+        <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">字典管理</div>
         <div className="space-y-2">
           <label htmlFor="config-domain-dict-select" className="text-xs font-bold text-content-muted block">
@@ -945,7 +945,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => domainUploadInputRef.current?.click()}
-              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
+              className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               选择文件
@@ -956,7 +956,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => void uploadDomainDict()}
-              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 whitespace-nowrap disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${domainUploading ? 'animate-spin' : ''}`} />
@@ -1005,7 +1005,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => fileLeakUploadInputRef.current?.click()}
-              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
+              className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               选择文件
@@ -1016,7 +1016,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => void uploadFileLeakDict()}
-              className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 whitespace-nowrap disabled:opacity-60"
               disabled={isConfigActionBusy}
             >
               <Upload className={`w-4 h-4 ${fileLeakUploading ? 'animate-spin' : ''}`} />
@@ -1026,7 +1026,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+        <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">并发与资源配置</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -1185,9 +1185,9 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+        <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">扫描超时与端口参数</div>
-        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
+        <div className="space-y-3 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label htmlFor="config-nuclei-single-target-timeout-sec" className="text-xs font-bold text-content-muted block">
@@ -1279,7 +1279,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
+        <div className="space-y-3 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="flex items-center gap-3">
             <input
               id="config-urlfinder-url-probe-enable"
@@ -1325,7 +1325,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-base-300 bg-base-100/35 p-4">
+        <div className="space-y-3 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-bold text-content-muted">端口扫描全局默认参数（策略未显式设置时生效）</div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -1397,7 +1397,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
         </div>
 
-        <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+        <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">安全过滤与解析器</div>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
@@ -1442,7 +1442,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               <p className="text-sm text-content-muted leading-relaxed">
                 由于当前系统配置不支持热更新，请在服务器中执行容器重启以使新配置生效：
               </p>
-              <div className="bg-base-100/50 border border-base-300 rounded-lg p-3">
+              <div className="bg-base-100 border border-base-300 rounded-box p-3">
                 <code className="text-xs text-accent font-mono block select-all">
                   docker-compose restart
                 </code>
@@ -1451,10 +1451,10 @@ export function ConfigConsoleView({ token }: { token: string }) {
                 (或使用提供的 ./restart.sh 脚本)
               </p>
             </div>
-            <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-3 bg-base-100/30">
+            <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-3 bg-base-100">
               <button
                 onClick={() => setShowRestartModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-accent/20"
+                className="btn btn-primary"
               >
                 我知道了
               </button>

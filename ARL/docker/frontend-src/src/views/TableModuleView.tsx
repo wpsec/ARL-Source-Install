@@ -1593,7 +1593,7 @@ export function TableModuleView({
       : 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black';
     if (resultLevel === 'danger') return `${base} border-error/40 bg-error/10 text-error`;
     if (resultLevel === 'suspicious') return `${base} border-warning/45 bg-warning/12 text-warning`;
-    if (resultLevel === 'disabled') return `${base} border-base-300 bg-base-100/65 text-content-muted`;
+    if (resultLevel === 'disabled') return `${base} border-base-300 bg-base-100 text-content-muted`;
     return `${base} border-emerald-400/35 bg-emerald-400/12 text-emerald-300`;
   }, []);
   const openAiDenoiseDetail = useCallback((row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
@@ -2885,10 +2885,10 @@ export function TableModuleView({
     showGithubTaskRowOperate ||
     showGithubSchedulerRowOperate;
   const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
-  const rowOperateButtonClass = 'px-3 py-1.5 rounded-lg border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition shrink-0';
+  const rowOperateButtonClass = 'btn btn-ghost btn-sm border border-base-300 text-sm font-medium shrink-0';
   const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
   const taskReportMenuItemClass =
-    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-100/70 transition';
+    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-300/60 transition-colors';
   const rowOperateColumnWidthClass = showAssetScopeRowOperate
     ? 'min-w-[760px]'
     : showTaskRowOperate
@@ -2904,11 +2904,11 @@ export function TableModuleView({
               : '';
 
   return (
-    <div ref={tableRootRef} className="p-8 space-y-6">
+    <div ref={tableRootRef} className="p-6 lg:p-8 space-y-6">
       {success ? (
         <div className="fixed inset-x-0 top-5 z-[80] flex justify-center px-4 pointer-events-none">
-          <div className="inline-flex w-full max-w-[30rem] items-center justify-center gap-2 rounded-xl border border-emerald-400/35 bg-emerald-400/12 px-4 py-3 text-sm font-semibold text-emerald-200 shadow-xl shadow-black/20 backdrop-blur-sm">
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-300" />
+          <div role="status" className="alert alert-success w-full max-w-[30rem] py-3 text-sm">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
             <span className="whitespace-pre-wrap break-all text-center leading-relaxed">{success}</span>
           </div>
         </div>
@@ -2937,10 +2937,10 @@ export function TableModuleView({
             <button
               key={item.id}
               onClick={() => onOpenModule(item.id)}
-              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+              className={`btn btn-sm ${
                 module.id === item.id
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-base-300 bg-base-100/35 text-base-content hover:text-base-content hover:bg-base-100/70'
+                  ? 'btn-primary'
+                  : 'btn-ghost border-base-300 text-base-content/70 hover:text-base-content'
               }`}
             >
               {item.label}
@@ -2953,7 +2953,7 @@ export function TableModuleView({
           {hasExternalFilters ? (
             <button
               onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
-              className="px-4 py-2.5 rounded-xl border text-sm font-bold transition inline-flex items-center gap-1.5 bg-brand-accent text-white border-accent shadow-sm hover:bg-accent/90 hover:shadow-md"
+              className="btn btn-primary btn-sm gap-1.5"
               title="返回任务管理"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -2964,10 +2964,10 @@ export function TableModuleView({
             <button
               key={item.id}
               onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
-              className={`px-4 py-2 rounded-xl border text-sm font-semibold transition ${
+              className={`btn btn-sm ${
                 module.id === item.id
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-base-300 bg-base-100/35 text-base-content hover:text-base-content hover:bg-base-100/70'
+                  ? 'btn-primary'
+                  : 'btn-ghost border-base-300 text-base-content/70 hover:text-base-content'
               }`}
             >
               {`${item.label} - ${
@@ -2982,7 +2982,7 @@ export function TableModuleView({
         </div>
       ) : null}
 
-      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
+      <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
         {hasExternalFilters ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-base-content">查看筛选条件:</span>
@@ -2990,7 +2990,7 @@ export function TableModuleView({
               <span
                 key={key}
                 title={`${key}=${String(value ?? '')}`}
-                className="text-xs px-2.5 py-1 rounded-lg border border-base-300 bg-base-100/60 font-mono max-w-[42rem] whitespace-pre-wrap break-all leading-relaxed"
+                className="badge badge-ghost h-auto min-h-6 max-w-[42rem] whitespace-pre-wrap break-all px-2.5 py-1 font-mono text-xs leading-relaxed"
               >
                 {formatExternalFilterChipText(key, value)}
               </span>
@@ -2998,7 +2998,7 @@ export function TableModuleView({
             {onClearExternalFilters ? (
               <button
                 onClick={onClearExternalFilters}
-                className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-xs border border-base-300"
               >
                 清除筛选
               </button>
@@ -3079,7 +3079,7 @@ export function TableModuleView({
                     setPage(1);
                     void loadRows({ page: 1, forceRefresh: true });
                   }}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                   disabled={loading || !hasList}
                 >
                   <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -3089,7 +3089,7 @@ export function TableModuleView({
               {hasList ? (
                 <button
                   onClick={clearSearchFilters}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                   disabled={loading || !hasList}
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -3100,10 +3100,10 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setHyperlinkEnabled((prev) => !prev)}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                  className={`btn btn-sm border transition ${
                     hyperlinkEnabled
                       ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
+                      : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
                   }`}
                   title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
                 >
@@ -3113,7 +3113,7 @@ export function TableModuleView({
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                 >
                   <Download className="w-4 h-4" />
                   {module.id === 'asset_site' || module.id === 'site'
@@ -3128,7 +3128,7 @@ export function TableModuleView({
               {module.id === 'asset_site' ? (
                 <button
                   onClick={() => void openAssetSiteRiskDialog()}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                   disabled={riskDialogLoading}
                 >
                   <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
@@ -3138,7 +3138,7 @@ export function TableModuleView({
               {module.id === 'task' ? (
                 <button
                   onClick={openTaskGlobalView}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                 >
                   <Eye className="w-4 h-4" />
                   全局查看
@@ -3148,7 +3148,7 @@ export function TableModuleView({
                 <button
                   onClick={() => void openTaskViewByName()}
                   disabled={!taskNameSearchText}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                   title="使用上方“任务名”搜索框内容查看同名任务"
                 >
                   <Eye className="w-4 h-4" />
@@ -3159,10 +3159,10 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setTaskCompactMode((prev) => !prev)}
-                  className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                  className={`btn btn-sm border transition ${
                     taskCompactMode
                       ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
+                      : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
                   }`}
                   title={taskCompactMode ? '当前为简洁模式，点击切换完整模式' : '当前为完整模式，点击切换简洁模式'}
                 >
@@ -3172,7 +3172,7 @@ export function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('ip')}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                 >
                   <Download className="w-4 h-4" />
                   导出IP列表
@@ -3181,7 +3181,7 @@ export function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('domain')}
-                  className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
                 >
                   <Download className="w-4 h-4" />
                   导出关联域名
@@ -3206,7 +3206,7 @@ export function TableModuleView({
 
             <button
               onClick={() => void loadRows({ forceRefresh: true })}
-              className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2"
               disabled={loading || !hasList}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -3216,7 +3216,7 @@ export function TableModuleView({
             {module.exportPath && module.id !== 'task' ? (
               <button
                 onClick={() => void runExport()}
-                className="px-4 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+                className="btn btn-ghost btn-sm border border-base-300 gap-2"
               >
                 <Download className="w-4 h-4" />
                 导出
@@ -3226,10 +3226,10 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={() => setHyperlinkEnabled((prev) => !prev)}
-                className={`px-4 py-2.5 rounded-xl border text-sm font-semibold transition ${
+                className={`btn btn-sm border transition ${
                   hyperlinkEnabled
                     ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-base-300 text-base-content hover:text-base-content hover:bg-base-100/70'
+                    : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
                 }`}
                 title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
               >
@@ -3255,7 +3255,7 @@ export function TableModuleView({
                   key={action.id}
                   onClick={() => openActionDialog(action)}
                   disabled={disabled}
-                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                  className="btn btn-ghost btn-sm border border-base-300 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {action.label}
                 </button>
@@ -3266,7 +3266,7 @@ export function TableModuleView({
                 type="button"
                 onClick={() => void stopAndDeleteSelectedTasks()}
                 disabled={selectedIds.length === 0 || taskStopAndDeleteLoading}
-                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="btn btn-ghost btn-sm border border-base-300 disabled:opacity-40 disabled:cursor-not-allowed"
                 title="先停止所选任务，再执行删除"
               >
                 {taskStopAndDeleteLoading ? '停止并删除中...' : '停止并删除'}
@@ -3278,14 +3278,14 @@ export function TableModuleView({
                   type="button"
                   onClick={() => toggleTaskReportExportMenu('batch')}
                   disabled={taskReportExportDisabled}
-                  className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-2"
+                  className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Download className="w-4 h-4" />
                   {taskReportExportBusy ? '报告导出中...' : '报告导出'}
                   <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === 'batch' ? 'rotate-180' : ''}`} />
                 </button>
                 {taskReportExportMenu === 'batch' ? (
-                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-xl border border-base-300 bg-base-200 shadow-2xl">
+                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-box border border-base-300 bg-base-200 shadow-lg">
                     {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
                       <button
                         key={option.value}
@@ -3303,7 +3303,7 @@ export function TableModuleView({
             {module.id === 'asset_scope' && module.exportPath ? (
               <button
                 onClick={() => void runExport()}
-                className="px-4 py-2.5 rounded-xl text-sm font-bold tracking-wide uppercase border border-base-300 hover:bg-base-100/70 transition flex items-center gap-2"
+                className="btn btn-ghost btn-sm border border-base-300 gap-2"
               >
                 <Download className="w-4 h-4" />
                 批量导出
@@ -3314,7 +3314,7 @@ export function TableModuleView({
       </div>
 
       {hasList ? (
-        <div className="bg-base-200/35 border border-base-300 rounded-2xl overflow-hidden">
+        <div className="bg-base-200 border border-base-300 rounded-box overflow-hidden shadow-sm">
           <DataTable
             columns={[
               { key: '__select', header: '' },
@@ -3449,7 +3449,7 @@ export function TableModuleView({
                           if (!analysis) {
                             return (
                               <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]">
-                                <span className="inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border border-base-300 bg-base-100/65 text-xs font-semibold text-content-muted">
+                                <span className="badge badge-ghost min-w-[92px] border border-base-300 px-2.5 py-3 text-xs font-semibold text-content-muted">
                                   待分析
                                 </span>
                               </td>
@@ -3629,7 +3629,7 @@ export function TableModuleView({
                               ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-warning/60 bg-warning/15 text-warning text-xs font-bold'
                               : methodText === 'GET'
                                 ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-emerald-400/45 bg-emerald-400/12 text-emerald-300 text-xs font-bold'
-                                : 'inline-flex items-center px-2.5 py-1 rounded-lg border border-base-300 bg-base-100/50 text-content-muted text-xs font-bold';
+                                : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-content-muted text-xs font-bold';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
                               <span className={tagClass}>{methodText || '-'}</span>
@@ -3643,7 +3643,7 @@ export function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openRiskRecordDetail(module.id, row, rowIndex)}
-                                className="inline-flex items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
+                                className="btn btn-ghost btn-xs border border-base-300 text-accent"
                               >
                                 查看详情
                               </button>
@@ -3657,7 +3657,7 @@ export function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openWihEndpointDetail(row, rowIndex)}
-                                className="inline-flex items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
+                                className="btn btn-ghost btn-xs border border-base-300 text-accent"
                               >
                                 查看详情
                               </button>
@@ -3696,7 +3696,7 @@ export function TableModuleView({
                           const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[300px] max-w-[760px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-base-300 bg-base-100/40 px-3 py-2 font-mono text-left">
+                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-box border border-base-300 bg-base-100 px-3 py-2 font-mono text-left">
                                 {verifyText}
                               </div>
                               {hasVerifyText ? (
@@ -3745,11 +3745,11 @@ export function TableModuleView({
                               <div className="mx-auto w-[170px] space-y-1 text-left">
                                 <div className="flex items-center justify-between gap-2 text-xs">
                                   <span className="font-semibold text-content-muted">进度</span>
-                                  <span className="font-black text-white">{formatModuleCellValue(module.id, column, row)}</span>
+                                  <span className="font-semibold text-base-content">{formatModuleCellValue(module.id, column, row)}</span>
                                 </div>
                                 <div className="h-2 bg-base-100 rounded-full border border-base-300 overflow-hidden">
                                   <div
-                                    className="h-full bg-brand-accent rounded-full transition-all duration-300"
+                                    className="h-full bg-primary rounded-full transition-all duration-300"
                                     style={{ width: `${getTaskProgressPercent(row)}%` }}
                                   />
                                 </div>
@@ -3795,39 +3795,39 @@ export function TableModuleView({
                                     event.stopPropagation();
                                     void copyTextToClipboard(copyPayload, '目标');
                                   }}
-                                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-base-300 bg-base-100/55 px-3 py-1 text-xs font-semibold text-accent hover:bg-base-100/80 transition"
+                                  className="btn btn-ghost btn-xs shrink-0 border border-base-300 text-accent"
                                   title="复制目标"
                                 >
                                   复制
                                 </button>
                                 {showTaskTargetStatTooltip ? (
                                   <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
-                                    <div className="rounded-xl border border-base-300 bg-base-200/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                    <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
                                       <div className="text-xs font-black tracking-wide text-base-content">任务资产统计</div>
                                       <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                        <div className="rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
                                           <div className="text-content-muted">站点</div>
                                           <div className="mt-1 text-sm font-semibold text-base-content">{siteCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                        <div className="rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
                                           <div className="text-content-muted">子域名</div>
                                           <div className="mt-1 text-sm font-semibold text-base-content">{domainCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                        <div className="rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
                                           <div className="text-content-muted">IP</div>
                                           <div className="mt-1 text-sm font-semibold text-base-content">{ipCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                        <div className="rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
                                           <div className="text-content-muted">URL</div>
                                           <div className="mt-1 text-sm font-semibold text-base-content">{urlCnt}</div>
                                         </div>
-                                        <div className="rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2 col-span-2">
+                                        <div className="rounded-box border border-base-300 bg-base-100 px-2.5 py-2 col-span-2">
                                           <div className="text-content-muted">风险</div>
                                           <div className="mt-1 text-sm font-semibold text-base-content">{vulnCnt}</div>
                                         </div>
                                       </div>
                                       {hasWafSummary ? (
-                                        <div className="mt-2 rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2 text-[11px]">
+                                        <div className="mt-2 rounded-box border border-base-300 bg-base-100 px-2.5 py-2 text-[11px]">
                                           <div className="text-content-muted">WAF识别概览</div>
                                           <div className="mt-1 text-base-content break-all">
                                             主机 {wafDetectedHostCount} / 站点 {wafObservedSiteCount} / 跳过主机 {wafBlockedHostCount} / 跳过站点 {wafSkipSiteCount} / 绕过 {wafBypassHostCount} / 请求 {wafSkipRequestCount}
@@ -3873,9 +3873,9 @@ export function TableModuleView({
                               <div className="group relative inline-flex items-center justify-center">
                                 {statusNode}
                                 <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
-                                  <div className="rounded-xl border border-base-300 bg-base-200/95 p-3 text-left shadow-2xl backdrop-blur-xl">
+                                  <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
                                     <div className="text-xs font-black tracking-wide text-base-content">任务执行时间概览</div>
-                                    <div className="mt-2 rounded-lg border border-base-300 bg-base-100/35 px-2.5 py-2">
+                                    <div className="mt-2 rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
                                       <div className="text-[11px] text-content-muted">当前任务执行时长</div>
                                       <div className="mt-1 text-sm font-semibold text-base-content">{currentDurationLabel}</div>
                                       <div className="mt-1 text-[11px] text-content-muted">开始：{currentStartText}</div>
@@ -3910,7 +3910,7 @@ export function TableModuleView({
                                         {taskAccountingSummary.note}
                                       </div>
                                     ) : null}
-                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-base-300 bg-base-100/40 p-2 text-[11px] leading-relaxed text-base-content">
+                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 text-[11px] leading-relaxed text-base-content">
                                       {taskServiceDuration.entries.length > 0 ? (
                                         taskServiceDuration.entries.map((entry, lineIndex) => (
                                           <React.Fragment key={`${lineIndex}-${entry.stageName}`}>
@@ -4173,7 +4173,7 @@ export function TableModuleView({
                                       <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === `row:${id}` ? 'rotate-180' : ''}`} />
                                     </button>
                                     {taskReportExportMenu === `row:${id}` && !taskRowPending && !taskReportExportBusy ? (
-                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-xl border border-base-300 bg-base-200 shadow-2xl">
+                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-box border border-base-300 bg-base-200 shadow-lg">
                                         {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
                                           <button
                                             key={option.value}
@@ -4393,7 +4393,7 @@ export function TableModuleView({
                 }}
           />
 
-          <div className="px-4 py-3 border-t border-base-300 bg-base-100/30 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="px-4 py-3 border-t border-base-300 bg-base-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="text-xs text-content-muted font-semibold">
               共 {total} 条，当前第 {page}/{totalPages} 页
             </div>
@@ -4407,7 +4407,7 @@ export function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page <= 1}
-                className="px-3.5 py-2 rounded-xl border border-base-300 text-sm disabled:opacity-40"
+                className="btn btn-ghost btn-sm btn-square border border-base-300 disabled:opacity-40"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -4463,7 +4463,7 @@ export function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page >= totalPages}
-                className="px-3.5 py-2 rounded-xl border border-base-300 text-sm disabled:opacity-40"
+                className="btn btn-ghost btn-sm btn-square border border-base-300 disabled:opacity-40"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -4471,7 +4471,7 @@ export function TableModuleView({
           </div>
         </div>
       ) : (
-        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-10 text-center text-content-muted text-sm">
+        <div className="bg-base-200 border border-base-300 rounded-box p-10 text-center text-base-content/60 text-sm shadow-sm">
           该模块为操作中心，无列表数据。请使用上方动作按钮执行。
         </div>
       )}
@@ -4506,7 +4506,7 @@ export function TableModuleView({
               <button
                 onClick={closeTaskReportExportFeedback}
                 disabled={taskReportExportBusy}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
+                className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
                 title={taskReportExportBusy ? '导出进行中，暂不可关闭' : '关闭'}
               >
                 <X className="w-5 h-5" />
@@ -4552,7 +4552,7 @@ export function TableModuleView({
                         ? 'bg-error'
                         : taskReportExportFeedback.phase === 'success'
                           ? 'bg-emerald-400'
-                          : 'bg-brand-accent'
+                          : 'bg-primary'
                     }`}
                     style={{ width: `${Math.max(0, Math.min(100, taskReportExportFeedback.progress))}%` }}
                   />
@@ -4560,18 +4560,18 @@ export function TableModuleView({
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
                   <div className="text-content-muted">任务数量</div>
                   <div className="mt-1 font-semibold text-sm">{taskReportExportFeedback.taskCount}</div>
                 </div>
-                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
                   <div className="text-content-muted">导出格式</div>
                   <div className="mt-1 font-semibold text-sm break-all">{taskReportExportFeedback.formatLabel}</div>
                 </div>
               </div>
 
               {taskReportExportFeedback.fileName ? (
-                <div className="rounded-xl border border-base-300 bg-base-100/40 px-3 py-2">
+                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
                   <div className="text-xs text-content-muted">导出文件</div>
                   <div className="mt-1 text-sm font-semibold break-all">{taskReportExportFeedback.fileName}</div>
                 </div>
@@ -4590,7 +4590,7 @@ export function TableModuleView({
                 <button
                   onClick={closeTaskReportExportFeedback}
                   disabled={taskReportExportBusy}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
+                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
                 >
                   {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
                 </button>
@@ -4611,7 +4611,7 @@ export function TableModuleView({
               <button
                 onClick={closeRiskDialog}
                 disabled={riskDialogSubmitting}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
+                className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4666,14 +4666,14 @@ export function TableModuleView({
                 <button
                   onClick={closeRiskDialog}
                   disabled={riskDialogSubmitting}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
+                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => void submitAssetSiteRiskTask()}
                   disabled={riskDialogSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
+                  className="btn btn-primary"
                 >
                   {riskDialogSubmitting ? '下发中...' : '确认下发'}
                 </button>
@@ -4689,10 +4689,10 @@ export function TableModuleView({
                 <h4 className="text-lg font-black">任务下发</h4>
                 <p className="text-xs text-content-muted mt-1">策略：{policyTaskPolicyName || '-'}</p>
               </div>
-              <button
-                onClick={closePolicyTaskDialog}
-                disabled={policyTaskSubmitting}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition disabled:opacity-40"
+                <button
+                  onClick={closePolicyTaskDialog}
+                  disabled={policyTaskSubmitting}
+                  className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4766,14 +4766,14 @@ export function TableModuleView({
                 <button
                   onClick={closePolicyTaskDialog}
                   disabled={policyTaskSubmitting}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-40"
+                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => void submitPolicyTask()}
                   disabled={policyTaskSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider"
+                  className="btn btn-primary"
                 >
                   {policyTaskSubmitting ? '下发中...' : '确认下发'}
                 </button>
@@ -4823,7 +4823,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={closeRiskRecordDetail}
-                  className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                  className="btn btn-ghost btn-square btn-sm"
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -4832,14 +4832,14 @@ export function TableModuleView({
               <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {fields.map(([label, text]) => (
-                    <div key={label} className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-3">
+                    <div key={label} className="rounded-box border border-base-300 bg-base-100 px-4 py-3">
                       <div className="text-xs font-semibold text-content-muted mb-1">{label}</div>
                       <div className="text-sm break-all whitespace-pre-wrap">{text}</div>
                     </div>
                   ))}
                 </div>
                 {verifyRaw && verifyRaw !== '-' ? (
-                  <div className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-3">
+                  <div className="rounded-box border border-base-300 bg-base-100 px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-content-muted">{verifyLabel}</span>
                       <button
@@ -4878,7 +4878,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                  className="btn btn-ghost btn-square btn-sm"
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -4887,32 +4887,32 @@ export function TableModuleView({
 
               <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     方法：{methodText}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     状态码：{formatWihEndpointMetric(detailRow, 'status_code')}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     响应大小：{formatWihEndpointMetric(detailRow, 'response_size')}
                   </span>
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     AI填充：{aiFillStatusText}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                     <div className="text-xs font-black tracking-wide text-base-content">目标</div>
                     <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.target))}</div>
                   </div>
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                     <div className="text-xs font-black tracking-wide text-base-content">页面URL</div>
                     <div className="text-sm break-all leading-relaxed">{renderTextWithHyperlink(normalizeValueNoTruncate(detailRow?.page_url))}</div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs font-black tracking-wide text-base-content">{urlLabel}</div>
                     {detailUrl && detailUrl !== '-' ? (
@@ -4929,7 +4929,7 @@ export function TableModuleView({
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-3">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
                     <div className="text-xs font-black tracking-wide text-base-content">AI填充结果</div>
                     <div className="text-xs text-content-muted">
                       状态：{aiFillStatusText}
@@ -4953,7 +4953,7 @@ export function TableModuleView({
                             return (
                               <span
                                 key={`${nameText}-${index}`}
-                                className="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-xs font-semibold break-all"
+                                className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold break-all"
                               >
                                 {nameText} [{locationText}/{typeText}] = {valueText}
                               </span>
@@ -4973,7 +4973,7 @@ export function TableModuleView({
                       </div>
                     ) : null}
                   </div>
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                     <div className="text-xs font-black tracking-wide text-base-content">验证信息</div>
                     <div className="text-xs text-content-muted">
                       {normalizeValueNoTruncate(detailRow?.verification_note)}
@@ -4987,7 +4987,7 @@ export function TableModuleView({
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs font-black tracking-wide text-base-content">请求报文</div>
                       {requestPacket && requestPacket !== '-' ? (
@@ -5000,11 +5000,11 @@ export function TableModuleView({
                         </button>
                       ) : null}
                     </div>
-                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-base-300 bg-base-100/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                    <pre className="max-h-[420px] overflow-auto rounded-box border border-base-300 bg-base-100 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
                       {requestPacket || '-'}
                     </pre>
                   </div>
-                  <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                  <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs font-black tracking-wide text-base-content">回复报文</div>
                       {responsePacket && responsePacket !== '-' ? (
@@ -5017,18 +5017,18 @@ export function TableModuleView({
                         </button>
                       ) : null}
                     </div>
-                    <pre className="max-h-[420px] overflow-auto rounded-xl border border-base-300 bg-base-100/70 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
+                    <pre className="max-h-[420px] overflow-auto rounded-box border border-base-300 bg-base-100 p-4 text-xs leading-relaxed whitespace-pre-wrap break-all font-mono text-left">
                       {responsePacket || '-'}
                     </pre>
                   </div>
                 </div>
               </div>
 
-              <div className="px-6 py-4 border-t border-base-300 bg-base-100/30 flex justify-end">
+              <div className="px-6 py-4 border-t border-base-300 bg-base-100 flex justify-end">
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                  className="btn btn-ghost border border-base-300"
                 >
                   关闭
                 </button>
@@ -5050,7 +5050,7 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-sm"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -5062,13 +5062,13 @@ export function TableModuleView({
                 <span className={getAiDenoiseCellClass(aiDenoiseDetail.analysis.result_level, false)}>
                   {aiDenoiseDetail.analysis.display_text || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                   {aiDenoiseModuleId === 'wih_endpoint' ? '价值等级' : '风险等级'}：{aiDenoiseDetail.analysis.risk_level || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                   {aiDenoiseModuleId === 'wih_endpoint' ? '价值标签' : '可信度'}：{aiDenoiseDetail.analysis.trust || '-'}
                 </span>
-                <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                   来源：{
                     aiDenoiseDetail.analysis.source === 'ai'
                       ? 'AI模型'
@@ -5078,12 +5078,12 @@ export function TableModuleView({
                   }
                 </span>
                 {aiDenoiseDetail.analysis.analyzed_at ? (
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     分析时间：{aiDenoiseDetail.analysis.analyzed_at}
                   </span>
                 ) : null}
                 {aiDenoiseModuleId === 'cert' ? (
-                  <span className="inline-flex items-center rounded-full border border-base-300 bg-base-100/60 px-2.5 py-1 text-xs font-semibold">
+                  <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     到期：{aiDenoiseDetail.analysis.cert_expire_at || '-'}
                     {Number.isFinite(Number(aiDenoiseDetail.analysis.cert_expire_days))
                       ? `（${Number(aiDenoiseDetail.analysis.cert_expire_days) < 0 ? '已过期' : `剩余${Number(aiDenoiseDetail.analysis.cert_expire_days)}天`}）`
@@ -5106,7 +5106,7 @@ export function TableModuleView({
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                 <div className="text-xs font-black tracking-wide text-base-content">分析摘要</div>
                 <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
                   {aiDenoiseDetail.analysis.summary || '-'}
@@ -5114,14 +5114,14 @@ export function TableModuleView({
               </div>
 
               {aiDenoiseModuleId === 'site' ? (
-                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                   <div className="text-xs font-black tracking-wide text-base-content">AI分析后的指纹结果</div>
                   {Array.isArray(aiDenoiseDetail.analysis.finger_result) && aiDenoiseDetail.analysis.finger_result.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {aiDenoiseDetail.analysis.finger_result.map((item, index) => (
                         <span
                           key={`${index}-${item}`}
-                          className="inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-xs font-semibold"
+                          className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold"
                         >
                           {item}
                         </span>
@@ -5134,7 +5134,7 @@ export function TableModuleView({
               ) : null}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                   <div className="text-xs font-black tracking-wide text-base-content">分析依据</div>
                   {aiDenoiseDetail.analysis.evidence.length > 0 ? (
                     <div className="space-y-1.5">
@@ -5148,7 +5148,7 @@ export function TableModuleView({
                     <div className="text-sm text-content-muted">暂无依据</div>
                   )}
                 </div>
-                <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+                <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                   <div className="text-xs font-black tracking-wide text-base-content">处置建议</div>
                   {aiDenoiseDetail.analysis.suggestions.length > 0 ? (
                     <div className="space-y-1.5">
@@ -5164,7 +5164,7 @@ export function TableModuleView({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-base-300 bg-base-100/35 p-4 space-y-2">
+              <div className="rounded-box border border-base-300 bg-base-100 p-4 space-y-2">
                 <div className="text-xs font-black tracking-wide text-base-content">AI交互记录</div>
                 {Array.isArray(aiDenoiseDetail.analysis.dialogue_records) && aiDenoiseDetail.analysis.dialogue_records.length > 0 ? (
                   <div className="space-y-2 max-h-[300px] overflow-auto">
@@ -5179,7 +5179,7 @@ export function TableModuleView({
                               : 'AI回复';
                       const roleClass =
                         item.role === 'system'
-                          ? 'border-base-300 bg-base-100/60 text-content-muted'
+                          ? 'border-base-300 bg-base-100 text-content-muted'
                           : item.role === 'user'
                             ? 'border-accent/35 bg-accent/10 text-base-content'
                             : item.role === 'tool'
@@ -5201,11 +5201,11 @@ export function TableModuleView({
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-base-300 bg-base-100/30 flex justify-end">
+            <div className="px-6 py-4 border-t border-base-300 bg-base-100 flex justify-end">
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost border border-base-300"
               >
                 关闭
               </button>
@@ -5223,14 +5223,14 @@ export function TableModuleView({
               </div>
               <button
                 onClick={() => setTaskErrorDialog(null)}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-sm"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-base-300 bg-base-100/30 text-sm space-y-1">
+            <div className="px-6 py-4 border-b border-base-300 bg-base-100 text-sm space-y-1">
               <div><span className="text-content-muted">任务名：</span>{taskErrorDialog.taskName}</div>
               <div><span className="text-content-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
               <div><span className="text-content-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
@@ -5238,7 +5238,7 @@ export function TableModuleView({
 
             <div className="p-6 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
               {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
-                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-xl border border-base-300 bg-base-100/40 p-4 space-y-3">
+                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                     <div><span className="text-content-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
                     <div><span className="text-content-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
@@ -5250,7 +5250,7 @@ export function TableModuleView({
                   {log.traceback ? (
                     <div className="text-sm">
                       <span className="text-content-muted">日志信息：</span>
-                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-base-100/70 border border-base-300 rounded-lg p-3 overflow-auto">{log.traceback}</pre>
+                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-base-100 border border-base-300 rounded-box p-3 overflow-auto">{log.traceback}</pre>
                     </div>
                   ) : null}
                 </div>
@@ -5272,7 +5272,7 @@ export function TableModuleView({
               </div>
               <button
                 onClick={() => closeDeleteConfirmDialog(false)}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-sm"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -5286,13 +5286,13 @@ export function TableModuleView({
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => closeDeleteConfirmDialog(false)}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                  className="btn btn-ghost border border-base-300"
                 >
                   取消
                 </button>
                 <button
                   onClick={() => closeDeleteConfirmDialog(true)}
-                  className="px-5 py-2.5 rounded-xl bg-error text-white text-sm font-black hover:opacity-90 transition"
+                  className="btn btn-error"
                 >
                   {deleteConfirmDialog.confirmText}
                 </button>
@@ -5308,13 +5308,13 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={() => setScreenshotPreview(null)}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-sm"
                 title="关闭预览"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar bg-base-100/40">
+            <div className="p-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar bg-base-100">
               <img
                 src={screenshotPreview.url}
                 alt={screenshotPreview.title}

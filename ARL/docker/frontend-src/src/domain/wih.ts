@@ -174,5 +174,5 @@ export function getWihRecordTypeTagClass(recordType: string, sensitive: boolean)
   if (sensitive) {
     return 'inline-flex items-center rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 text-[11px] font-black text-warning';
   }
-  return 'inline-flex items-center rounded-full border border-base-300 bg-base-100/70 px-2.5 py-1 text-[11px] font-semibold text-content-muted';
+  return 'badge badge-ghost border border-base-300 px-2.5 py-3 text-[11px] font-semibold text-content-muted';
 }

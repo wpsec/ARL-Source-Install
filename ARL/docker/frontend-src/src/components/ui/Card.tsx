@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 /** 卡片面单一来源：卡片容器类只在此定义（docs/04 组件映射 Card）。 */
-export const CARD_SHELL_CLASS = 'bg-base-200/35 border border-base-300 rounded-2xl';
+export const CARD_SHELL_CLASS = 'card bg-base-200 border border-base-300 rounded-box shadow-sm';
 
 export function Card({
   children,

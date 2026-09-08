@@ -50,7 +50,8 @@ describe('SystemMonitorMiniWidget', () => {
     expect(screen.getByText('1.2 GB')).toBeTruthy();
     expect(screen.getByText('3.4 GB')).toBeTruthy();
     expect(screen.getByText('86')).toBeTruthy();
-    expect(screen.getByText('实时运行')).toBeTruthy();
+    expect(screen.queryByText('实时运行')).toBeNull();
+    expect(screen.queryByText('系统监控')).toBeNull();
     expect(calls.some((call) => call.url.includes('/console/system_monitor/'))).toBe(true);
   });
 
@@ -59,7 +60,7 @@ describe('SystemMonitorMiniWidget', () => {
     installFetchMock({ routes: { '/console/system_monitor/': [200, MONITOR_PAYLOAD] } });
     renderWidget(onOpen);
 
-    await vi.waitFor(() => expect(screen.getByText('实时运行')).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByText('24.5%')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '打开系统监控' }));
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -68,7 +69,7 @@ describe('SystemMonitorMiniWidget', () => {
     installFetchMock({ routes: { '/console/system_monitor/': [500, { message: '不可用' }] } });
     renderWidget();
 
-    await vi.waitFor(() => expect(screen.getByText('暂不可用')).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getByTitle('暂不可用')).toBeTruthy());
     expect(screen.getByText('CPU')).toBeTruthy();
     expect(screen.getAllByText('--')).toHaveLength(3);
   });

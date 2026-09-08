@@ -32,7 +32,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const navGroups = [
     {
       label: '核心功能',
-      color: 'text-brand-accent',
+      color: 'text-primary',
       items: [
         { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
         { id: 'tasks', label: '任务管理', icon: Activity },
@@ -44,7 +44,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
     },
     {
       label: '扫描与漏洞',
-      color: 'text-brand-secondary',
+      color: 'text-secondary',
       items: [
         { id: 'policies', label: '策略配置', icon: FileText },
         { id: 'fingerprints', label: '指纹管理', icon: Zap },
@@ -54,7 +54,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
     },
     {
       label: 'GitHub 监控',
-      color: 'text-brand-accent',
+      color: 'text-primary',
       items: [
         { id: 'github_monitor', label: 'GitHub 监控', icon: Github },
         { id: 'github_mgmt', label: 'GitHub 管理', icon: Settings },
@@ -62,7 +62,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
     },
     {
       label: '集成与通知',
-      color: 'text-brand-warning',
+      color: 'text-warning',
       items: [
         { id: 'api_mgmt', label: 'API 管理', icon: Key },
         { id: 'dingtalk', label: '钉钉集成', icon: MessageSquare },
@@ -73,60 +73,61 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   ];
 
   return (
-    <div className="w-64 border-r border-brand-border h-screen flex flex-col bg-brand-bg/50 backdrop-blur-xl overflow-y-auto custom-scrollbar">
-      <div className="p-8 flex items-center gap-4">
+    <aside className="w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
+      <div className="px-5 py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
         <BrandLogo size="md" />
       </div>
 
-      <div className="px-6 py-2">
+      <div className="px-4 py-4">
         <motion.button 
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
-          className="w-full bg-brand-accent text-white font-black py-4 px-6 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl shadow-black/20"
+          className="btn btn-primary w-full gap-2 shadow-sm"
         >
-          <Plus className="w-5 h-5 text-white stroke-[3px]" />
-          <span className="text-white text-base tracking-tight">新建任务</span>
+          <Plus className="w-4 h-4" strokeWidth={2.5} />
+          <span>新建任务</span>
         </motion.button>
       </div>
 
-      <nav className="flex-1 px-4 py-8 space-y-10">
+      <nav className="flex-1 px-3 py-2 space-y-6">
         {navGroups.map((group) => (
-          <div key={group.label} className="space-y-3">
-            <h3 className={cn("px-4 text-[11px] font-black uppercase tracking-[0.15em] opacity-90", group.color)}>
+          <div key={group.label}>
+            <h3 className={cn("px-3 mb-2 text-[11px] font-semibold tracking-wide opacity-80", group.color)}>
               {group.label}
             </h3>
-            <div className="space-y-1">
+            <ul className="menu p-0 gap-1">
               {group.items.map((item) => (
-                <motion.button
-                  key={item.id}
-                  whileHover={{ x: 4 }}
-                  onClick={() => onViewChange(item.id)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all text-sm font-semibold group",
-                    activeView === item.id
-                      ? "bg-brand-accent/10 text-brand-accent"
-                      : "text-brand-text hover:text-brand-text hover:bg-brand-card/50"
-                  )}
-                >
-                  <item.icon className={cn("w-4 h-4 transition-colors", activeView === item.id ? "text-brand-accent" : "text-brand-text group-hover:text-brand-text")} />
-                  {item.label}
-                </motion.button>
+                <li key={item.id}>
+                  <button
+                    onClick={() => onViewChange(item.id)}
+                    className={cn(
+                      "w-full justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      activeView === item.id
+                        ? "bg-primary/12 text-primary font-semibold"
+                        : "text-base-content/70 hover:bg-base-300/60 hover:text-base-content"
+                    )}
+                    aria-current={activeView === item.id ? 'page' : undefined}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.label}
+                  </button>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         ))}
 
       </nav>
 
-      <div className="p-6 border-t border-brand-border space-y-6">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 px-2">
-            <Palette className="w-3 h-3 text-brand-text" />
-            <span className="text-[10px] font-black text-brand-text uppercase tracking-widest">主题定制</span>
+      <div className="p-4 border-t border-base-300 space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-2 text-base-content/70">
+            <Palette className="w-3.5 h-3.5" />
+            <span className="text-xs font-semibold">主题定制</span>
           </div>
-          <div className="flex flex-wrap gap-2 px-2">
+          <div className="flex flex-wrap gap-2 px-2" role="group" aria-label="主题定制">
             {themes.map((t) => (
               <motion.button
                 key={t.id}
@@ -135,25 +136,29 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                 onClick={() => setTheme(t.id)}
                 title={t.label}
                 className={cn(
-                  "w-6 h-6 rounded-lg transition-all border-2",
+                  "w-6 h-6 rounded-full transition-all border-2",
                   t.color,
                   theme === t.id ? "border-base-content scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
                 )}
-              />
+                  aria-label={t.label}
+                  aria-pressed={theme === t.id}
+                />
             ))}
           </div>
         </div>
 
-        <div className="p-3 bg-brand-card/30 rounded-2xl border border-brand-border space-y-1.5">
-          <span className="text-xs font-semibold text-brand-text block">互联网资产自动化收集系统</span>
-          <div className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-brand-text shrink-0 opacity-85">系统版本：</span>
-            <span className="text-[10px] text-brand-text tracking-wide truncate opacity-85">
-              {__ARL_VERSION__}
-            </span>
+        <div className="card border border-base-300 bg-base-100 shadow-sm">
+          <div className="card-body p-3 gap-1">
+            <span className="text-xs font-semibold">互联网资产自动化收集系统</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-[10px] text-base-content/60 shrink-0">系统版本：</span>
+              <span className="text-[10px] text-base-content/60 tracking-wide truncate">
+                {__ARL_VERSION__}
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

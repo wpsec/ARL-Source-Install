@@ -561,7 +561,7 @@ export function ActionDialog({
               {action.method} {action.path}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-base-100/70 transition">
+          <button onClick={onClose} className="btn btn-ghost btn-square btn-sm">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -579,7 +579,7 @@ export function ActionDialog({
                   const nextFile = event.target.files?.[0] || null;
                   setFile(nextFile);
                 }}
-                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-base-300 file:bg-base-100 file:text-white"
+                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-base-300 file:bg-base-100 file:text-base-content"
               />
             </div>
           ) : null}
@@ -695,7 +695,7 @@ export function ActionDialog({
                       placeholder="例如：80,443,8080,10000-10100"
                     />
                   ) : null}
-                  <div className="mt-3 p-3 rounded-xl border border-base-300 bg-base-100/40 text-[11px] text-content-muted leading-relaxed">
+                  <div className="mt-3 p-3 rounded-box border border-base-300 bg-base-100 text-[11px] text-content-muted leading-relaxed">
                     建议仅勾选需要的扫描项。目标多时优先开启核心能力（端口扫描、服务识别、站点识别），可提升效率。
                   </div>
                 </div>
@@ -797,7 +797,7 @@ export function ActionDialog({
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-content-muted">结果数</label>
-                  <div className="w-full rounded-xl border border-base-300 bg-base-100/60 px-3 py-2 text-sm font-mono">
+                  <div className="w-full rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono">
                     {fofaResultSize === null ? '-' : String(fofaResultSize)}
                   </div>
                 </div>
@@ -807,7 +807,7 @@ export function ActionDialog({
                     type="button"
                     onClick={() => void runFofaQueryTest()}
                     disabled={!editable || fofaTesting}
-                    className="w-full px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center justify-center gap-2"
+                    className="btn btn-ghost w-full border border-base-300 gap-2 disabled:opacity-60"
                   >
                     <Play className={`w-4 h-4 ${fofaTesting ? 'animate-spin' : ''}`} />
                     {fofaTesting ? '测试中...' : `测试${currentMeasureProviderLabel}`}
@@ -1096,7 +1096,7 @@ export function ActionDialog({
                   value={scopeGroupName}
                   disabled={!isAssetScopeUpdate || !editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100/60 px-3 py-2 text-sm"
+                  className="w-full rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm"
                   placeholder="取资产组名称"
                 />
               </div>
@@ -1230,7 +1230,7 @@ export function ActionDialog({
                 </div>
               </div>
 
-              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
                 <h5 className="text-sm font-black">字典配置</h5>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div className="space-y-1">
@@ -1325,7 +1325,7 @@ export function ActionDialog({
                 </div>
               ) : null}
 
-              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">基础扫描配置</h5>
                   <button
@@ -1359,7 +1359,7 @@ export function ActionDialog({
                 </div>
               </div>
 
-              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">PoC 配置</h5>
                   <button
@@ -1401,7 +1401,7 @@ export function ActionDialog({
                 </div>
               </div>
 
-              <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4 space-y-4">
+              <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <h5 className="text-sm font-black">弱口令爆破配置</h5>
                   <button
@@ -1524,7 +1524,7 @@ export function ActionDialog({
           )}
 
           {!editable ? (
-            <div className="text-xs text-content-muted bg-base-100/60 border border-base-300 rounded-lg px-3 py-2">
+            <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
               当前动作使用固定参数，已禁用编辑。
             </div>
           ) : null}
@@ -1536,7 +1536,7 @@ export function ActionDialog({
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+              className="btn btn-ghost border border-base-300"
             >
               取消
             </button>
@@ -1866,7 +1866,7 @@ export function ActionDialog({
                   setLoading(false);
                 }
               }}
-              className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider uppercase"
+              className="btn btn-primary"
               disabled={loading}
             >
               {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction || isAssetScopeAddScope || isAssetScopeAddScheduler || isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? '确定' : '执行'}

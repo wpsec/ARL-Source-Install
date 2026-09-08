@@ -80,14 +80,14 @@ export function DataTable<Row extends object>({
       className={`overflow-x-auto custom-scrollbar${shouldVirtualize ? ` overflow-y-auto ${virtualizedMaxHeightClass}` : ''}`}
     >
       <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
-        <thead className="bg-base-100/40 border-b border-base-300">
+        <thead className="bg-base-200 border-b border-base-300">
           {renderHeader ? renderHeader() : (
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`${cellPad} text-sm font-black whitespace-nowrap ${
-                    column.headerClass ?? 'text-content-muted text-center'
+                  className={`${cellPad} text-sm font-semibold whitespace-nowrap ${
+                    column.headerClass ?? 'text-base-content/60 text-center'
                   }`}
                 >
                   {column.header}
@@ -99,13 +99,16 @@ export function DataTable<Row extends object>({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={columns.length} className={`${cellPad} text-center text-content-muted`}>
-                加载中…
+              <td colSpan={columns.length} className={`${cellPad} text-center text-base-content/60`}>
+                <span className="inline-flex items-center gap-2">
+                  <span className="loading loading-spinner loading-xs" />
+                  加载中…
+                </span>
               </td>
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className={`${cellPad} text-center text-content-muted`}>
+              <td colSpan={columns.length} className={`${cellPad} text-center text-base-content/60`}>
                 {emptyText}
               </td>
             </tr>
@@ -125,7 +128,7 @@ export function DataTable<Row extends object>({
                     key={rowKey(row, index)}
                     data-index={index}
                     ref={rowVirtualizer.measureElement}
-                    className="border-b border-base-300/50"
+                    className="border-b border-base-300/50 hover:bg-base-200/60 transition-colors"
                   >
                     {renderCells(row, index)}
                   </tr>
@@ -141,7 +144,7 @@ export function DataTable<Row extends object>({
             rows.map((row, index) => renderRow ? (
               <Fragment key={rowKey(row, index)}>{renderRow(row, index)}</Fragment>
             ) : (
-              <tr key={rowKey(row, index)} className="border-b border-base-300/50">
+              <tr key={rowKey(row, index)} className="border-b border-base-300/50 hover:bg-base-200/60 transition-colors">
                 {renderCells(row, index)}
               </tr>
             ))

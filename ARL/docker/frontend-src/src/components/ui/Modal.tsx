@@ -59,7 +59,7 @@ export function Modal({
         if (dismissable && event.target === ref.current) onClose();
       }}
     >
-      <div ref={boxRef} className={`arl-modal-box ${boxClass}`}>{children}</div>
+      <div ref={boxRef} className={`modal-box arl-modal-box ${boxClass}`}>{children}</div>
     </dialog>
   );
 }

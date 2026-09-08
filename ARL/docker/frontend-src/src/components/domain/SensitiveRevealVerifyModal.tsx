@@ -28,7 +28,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           <button
             type="button"
             onClick={props.onClose}
-            className="p-2 rounded-lg hover:bg-base-100/70 transition"
+            className="btn btn-ghost btn-square btn-sm"
             title="关闭"
           >
             <X className="w-5 h-5" />
@@ -68,11 +68,11 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
             </div>
           ) : null}
         </div>
-        <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/30">
+        <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
           <button
             type="button"
             onClick={props.onClose}
-            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+            className="btn btn-ghost border border-base-300"
             disabled={props.loading}
           >
             取消
@@ -80,7 +80,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           <button
             type="button"
             onClick={props.onConfirm}
-            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition disabled:opacity-60"
+            className="btn btn-primary disabled:opacity-60"
             disabled={props.loading}
           >
             {props.loading ? '验证中...' : '验证并显示'}

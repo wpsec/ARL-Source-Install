@@ -180,12 +180,12 @@ export function SystemMonitorView({ token }: { token: string }) {
       detail: `入 ${netIn.toFixed(1)} / 出 ${netOut.toFixed(1)} KB/s`,
       percent: Math.min(100, Math.max(0, netTotal > 1000 ? 100 : netTotal / 10)),
       icon: Network,
-      color: 'text-emerald-400',
+      color: 'text-success',
     },
   ];
 
   return (
-    <div className="p-8 space-y-8">
+    <div className="p-6 lg:p-8 space-y-8">
       <PageHeader
         title="系统监控"
         description="实时监控主机资源、CPU、内存、磁盘与网络流量趋势"
@@ -195,7 +195,7 @@ export function SystemMonitorView({ token }: { token: string }) {
           <p className="text-sm font-mono">{updatedAt || '-'}</p>
           <button
             onClick={() => void monitorQuery.refetch()}
-            className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
+            className="btn btn-ghost border border-base-300"
             disabled={loading}
           >
             <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
@@ -205,29 +205,29 @@ export function SystemMonitorView({ token }: { token: string }) {
         }
       />
 
-      {error ? <div className="text-sm text-error border border-error/30 bg-error/10 rounded-xl px-4 py-3">{error}</div> : null}
+      {error ? <div role="alert" className="alert alert-error text-sm py-3">{error}</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {resourceCards.map((item) => (
-          <div key={item.title} className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl shadow-xl shadow-black/20">
+          <div key={item.title} className="bg-base-200 border border-base-300 p-5 rounded-box shadow-sm">
             <div className="flex items-center justify-between mb-5">
-              <div className={`p-2.5 rounded-xl bg-base-100 border border-base-300 ${item.color}`}>
+              <div className={`p-2.5 rounded-box bg-base-100 border border-base-300 ${item.color}`}>
                 <item.icon className="w-5 h-5" />
               </div>
               <span className="text-xs font-black text-content-muted">{item.detail}</span>
             </div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-content-muted mb-1">{item.title}</h3>
-            <p className="text-2xl font-black tracking-tight">{item.value}</p>
+            <h3 className="text-xs font-medium tracking-wide text-base-content/60 mb-1">{item.title}</h3>
+            <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
             <div className="h-2 mt-4 rounded-full bg-base-100 border border-base-300 overflow-hidden">
-              <div className="h-full bg-brand-accent transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }} />
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }} />
             </div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
-          <h3 className="text-xl font-black tracking-tight mb-6">资源使用趋势</h3>
+        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
+          <h3 className="text-lg font-semibold tracking-tight mb-6">资源使用趋势</h3>
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
@@ -243,8 +243,8 @@ export function SystemMonitorView({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
-          <h3 className="text-xl font-black tracking-tight mb-6">网络流量趋势</h3>
+        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
+          <h3 className="text-lg font-semibold tracking-tight mb-6">网络流量趋势</h3>
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
@@ -271,17 +271,17 @@ export function SystemMonitorView({ token }: { token: string }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
-          <p className="text-xs text-content-muted uppercase tracking-wider">累计发送流量</p>
-          <p className="text-2xl font-black mt-1">{normalizeValue(resource?.network_total_sent)}</p>
+        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
+          <p className="text-xs text-base-content/60 tracking-wide">累计发送流量</p>
+          <p className="text-2xl font-semibold mt-1">{normalizeValue(resource?.network_total_sent)}</p>
         </div>
-        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
-          <p className="text-xs text-content-muted uppercase tracking-wider">累计接收流量</p>
-          <p className="text-2xl font-black mt-1">{normalizeValue(resource?.network_total_recv)}</p>
+        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
+          <p className="text-xs text-base-content/60 tracking-wide">累计接收流量</p>
+          <p className="text-2xl font-semibold mt-1">{normalizeValue(resource?.network_total_recv)}</p>
         </div>
-        <div className="bg-base-200/35 border border-base-300 rounded-2xl p-4">
-          <p className="text-xs text-content-muted uppercase tracking-wider">进程数量 / 启动时间</p>
-          <p className="text-lg font-black mt-1">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</p>
+        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
+          <p className="text-xs text-base-content/60 tracking-wide">进程数量 / 启动时间</p>
+          <p className="text-lg font-semibold mt-1">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</p>
         </div>
       </div>
     </div>

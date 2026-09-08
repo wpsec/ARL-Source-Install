@@ -1686,7 +1686,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('；') || '';
 
   return (
-    <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-5">
+    <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-5 shadow-sm">
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div>
           <div className="text-sm font-bold tracking-wide">AI管理</div>
@@ -1706,7 +1706,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               setSuccess('');
               void aiConfigQuery.refetch();
             }}
-            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -1715,7 +1715,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void runAiConnectivityTest()}
-            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
@@ -1724,7 +1724,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={toggleSensitiveDisplay}
-            className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <Eye className="w-4 h-4" />
@@ -1733,7 +1733,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void saveAiConfig()}
-            className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+            className="btn btn-primary gap-2 disabled:opacity-60"
             disabled={isActionBusy}
           >
             <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
@@ -1743,32 +1743,32 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       </div>
 
       {error ? (
-        <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+        <div role="alert" className="alert alert-error text-xs py-2">
           {error}
         </div>
       ) : null}
       {success ? (
-        <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+        <div role="status" className="alert alert-success text-xs py-2">
           {success}
         </div>
       ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-        <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+        <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
           <span className="text-content-muted">配置文件:</span>
           <span className="font-mono ml-2">{configPath || '-'}</span>
         </div>
-        <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+        <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
           <span className="text-content-muted">最近更新时间:</span>
           <span className="font-mono ml-2">{updatedAt || '-'}</span>
         </div>
       </div>
 
-      <div className="text-xs text-amber-300 bg-amber-300/10 border border-amber-300/30 rounded-xl px-3 py-2">
+      <div className="alert alert-warning text-xs py-2">
         提示：AI 去噪分析支持按模块独立开关与 SOP 绑定。详情页仅展示扫描阶段已落库的分析结果，不会因点击详情而再次触发 AI 调用。
       </div>
 
-      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-base-content">AI提供方独立配置</div>
           <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
@@ -1823,7 +1823,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               apiKeyUrl: '',
             };
             return (
-              <div key={provider.id} className="rounded-xl border border-base-300 bg-base-100/35 p-3 space-y-3">
+              <div key={provider.id} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={`h-10 w-10 rounded-xl border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
@@ -1839,7 +1839,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] ${
                     configured
                       ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
-                      : 'text-content-muted border-base-300 bg-base-100/60'
+                      : 'text-content-muted border-base-300 bg-base-100'
                   }`}>
                     {configured ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
                     {configured ? '已配置' : '未配置'}
@@ -1854,14 +1854,14 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => setDefaultAiProvider(providerId)}
-                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
+                    className="btn btn-ghost btn-xs border border-base-300"
                   >
                     设为默认
                   </button>
                   <button
                     type="button"
                     onClick={() => openProviderConfigDialog(providerId)}
-                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
+                    className="btn btn-ghost btn-xs border border-base-300"
                   >
                     配置
                   </button>
@@ -1872,7 +1872,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
         <div className="text-xs font-black tracking-wide text-base-content">AI对话高级参数（可选）</div>
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
           <div className="space-y-2">
@@ -2009,7 +2009,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setDialogSystemPromptOpen((prev) => !prev)}
-                className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-xs border border-base-300"
               >
                 {dialogSystemPromptOpen ? '收起可选参数' : '展开可选参数'}
               </button>
@@ -2050,7 +2050,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-base-content">AI功能开关配置</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2077,7 +2077,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         <div className="text-xs text-content-muted">
           WIH接口AI填充会优先根据请求报文、参数名和请求体形态补齐低副作用测试值，再把测试摘要交给后续 AI 去噪使用。AI去噪支持站点、目录扫描、SSL证书、URL信息、WIH接口、风险、PoC风险独立开关。对应 SOP 在下方「SOP管理」中上传维护。
         </div>
-        <div className="rounded-xl border border-base-300 bg-base-100/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
+        <div className="rounded-box border border-base-300 bg-base-100 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center">
           <div className="text-sm font-semibold">WIH接口AI填充</div>
           <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
             <input
@@ -2102,7 +2102,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
             return (
               <div
                 key={moduleConfig.id}
-                className="rounded-xl border border-base-300 bg-base-100/35 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center"
+                className="rounded-box border border-base-300 bg-base-100 p-3 grid grid-cols-1 xl:grid-cols-[180px_auto_1fr] gap-3 items-center"
               >
                 <div className="text-sm font-semibold">{moduleConfig.label}</div>
                 <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} h-9 px-2.5`}>
@@ -2127,7 +2127,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-base-content">SOP管理</div>
         </div>
@@ -2173,7 +2173,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => sopUploadInputRef.current?.click()}
-                className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold whitespace-nowrap hover:bg-base-100/70 transition flex items-center justify-center disabled:opacity-60"
+                className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
                 disabled={sopUploading}
               >
                 选择文件
@@ -2182,7 +2182,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={clearSopUploadSelection}
-                className="px-3 py-2 h-10 rounded-xl border border-base-300 text-xs font-semibold whitespace-nowrap hover:bg-base-100/70 transition disabled:opacity-60"
+                className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
                 disabled={sopUploading || !sopUploadFile}
               >
                 清空
@@ -2192,7 +2192,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void uploadAiSop()}
-            className="px-4 py-2 h-10 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition disabled:opacity-60 flex items-center gap-2"
+            className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 disabled:opacity-60"
             disabled={sopUploading}
           >
             <Upload className={`w-4 h-4 ${sopUploading ? 'animate-pulse' : ''}`} />
@@ -2204,7 +2204,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           {aiSopModuleConfigs.map((moduleConfig) => {
             const template = sopTemplateMap[moduleConfig.id];
             return (
-              <div key={moduleConfig.id} className="rounded-xl border border-base-300 bg-base-100/35 p-3">
+              <div key={moduleConfig.id} className="rounded-box border border-base-300 bg-base-100 p-3">
                 <div className="grid grid-cols-1 xl:grid-cols-[140px_220px_1fr_160px] gap-3 text-xs">
                   <div>
                     <div className="text-content-muted">模块</div>
@@ -2230,7 +2230,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-base-300/80 bg-base-100/25 p-4">
+      <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-base-content">Token用量统计与AI对话日志</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2282,7 +2282,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               onClick={() => {
                 void usageQuery.refetch();
               }}
-              className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-xs border border-base-300 gap-2 disabled:opacity-60"
               disabled={usageLoading}
             >
               <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
@@ -2293,7 +2293,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
 
         {usageStats ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+            <div className="rounded-box border border-base-300 bg-base-100 p-3 space-y-1">
               <div className="text-xs text-content-muted">累计总量</div>
               <div className="text-sm font-black">Total {usageStats.all_time.total_tokens}</div>
               <div className="text-[11px] text-content-muted">
@@ -2303,7 +2303,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 请求 {usageStats.all_time.request_count} | 成功 {usageStats.all_time.success_count} | 失败 {usageStats.all_time.error_count}
               </div>
             </div>
-            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+            <div className="rounded-box border border-base-300 bg-base-100 p-3 space-y-1">
               <div className="text-xs text-content-muted">总体成功率</div>
               <div className="text-sm font-black">{usageSuccessRate}%</div>
               <div className="text-[11px] text-content-muted">
@@ -2313,7 +2313,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 失败 {usageErrorCount} | 跳过 {usageSkipCount}
               </div>
             </div>
-            <div className="rounded-xl border border-base-300 bg-base-100/40 p-3 space-y-1">
+            <div className="rounded-box border border-base-300 bg-base-100 p-3 space-y-1">
               <div className="text-xs text-content-muted">平均响应耗时</div>
               <div className="text-sm font-black">{usageAvgElapsedMs} ms</div>
               <div className="text-[11px] text-content-muted">
@@ -2346,7 +2346,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           </div>
         ) : null}
 
-        <div className="rounded-xl border border-base-300 bg-base-100/35 overflow-hidden">
+        <div className="rounded-box border border-base-300 bg-base-100 overflow-hidden">
           <div className="px-3 py-2 text-xs text-content-muted border-b border-base-300 flex items-center justify-between gap-2">
             <span>最近对话日志（显示最新 {usageLogs.length} / 总计 {usageLogsTotal}）</span>
             <span>{usageLogsUpdatedAt ? `更新时间：${usageLogsUpdatedAt}` : ''}</span>
@@ -2416,7 +2416,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => setUsageLogDetail(item)}
-                    className="px-2 py-1 rounded-lg border border-base-300 text-[11px] font-semibold hover:bg-base-100/70 transition"
+                    className="btn btn-ghost btn-xs border border-base-300"
                   >
                     查看详情
                   </button>
@@ -2444,7 +2444,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-xs border border-base-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2536,18 +2536,18 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost border border-base-300"
               >
                 取消
               </button>
               <button
                 type="button"
                 onClick={saveProviderConfigDraft}
-                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
+                className="btn btn-primary"
               >
                 保存
               </button>
@@ -2562,7 +2562,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-xs border border-base-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2592,11 +2592,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 保存配置后，该接口会出现在「模型提供方 = OpenAI 兼容接口」的可套用列表中。
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost border border-base-300"
               >
                 取消
               </button>
@@ -2606,7 +2606,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   const ok = addCompatProvider();
                   if (ok) setCompatDialogOpen(false);
                 }}
-                className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition"
+                className="btn btn-primary"
               >
                 确认添加
               </button>
@@ -2625,18 +2625,18 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <p className="text-sm text-content-muted leading-relaxed">
                 当前运行环境未完成热加载，请在服务器执行重启命令使配置生效：
               </p>
-              <div className="bg-base-100/50 border border-base-300 rounded-lg p-3">
+              <div className="bg-base-100 border border-base-300 rounded-box p-3">
                 <code className="text-xs text-accent font-mono block select-all">
                   docker-compose restart
                 </code>
               </div>
               <p className="text-xs text-content-muted">(或使用 ./restart.sh 脚本)</p>
             </div>
-            <div className="px-6 py-4 border-t border-base-300 flex justify-end bg-base-100/30">
+            <div className="px-6 py-4 border-t border-base-300 flex justify-end bg-base-100">
               <button
                 type="button"
                 onClick={() => setShowRestartModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-brand-accent hover:opacity-90 transition text-sm font-black tracking-wider shadow-lg shadow-accent/20"
+                className="btn btn-primary"
               >
                 我知道了
               </button>
@@ -2651,7 +2651,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition shrink-0"
+                className="btn btn-ghost btn-square btn-xs border border-base-300 shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2665,7 +2665,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <div className="break-all">配置：{usageLogDetail.profile || '-'}</div>
                 <div className="break-all">Tokens：Total {usageLogDetail.total_tokens}（P {usageLogDetail.prompt_tokens} / C {usageLogDetail.completion_tokens}）</div>
               </div>
-              <div className="space-y-2 rounded-xl border border-base-300 bg-base-100/35 p-3">
+              <div className="space-y-2 rounded-box border border-base-300 bg-base-100 p-3">
                 <div className="text-xs font-semibold">用户输入</div>
                 <pre className="max-h-[220px] overflow-auto text-xs rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {usageLogDetail.request_text || '-'}
@@ -2676,11 +2676,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 </pre>
               </div>
             </div>
-            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost border border-base-300"
               >
                 关闭
               </button>
@@ -2695,7 +2695,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="p-1.5 rounded-lg border border-base-300 hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-xs border border-base-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2718,7 +2718,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <div>配置：{testResult.profile || '-'}</div>
                 <div>测试时间：{testResult.tested_at || '-'}</div>
               </div>
-              <div className="space-y-2 rounded-xl border border-base-300 bg-base-100/35 p-3">
+              <div className="space-y-2 rounded-box border border-base-300 bg-base-100 p-3">
                 <div className="text-xs font-semibold">用户发送</div>
                 <div className="text-sm rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {testResult.request_text || '你好呀～'}
@@ -2731,17 +2731,17 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               {testResult.detail ? (
                 <details className="text-xs text-content-muted">
                   <summary className="cursor-pointer select-none">调试详情</summary>
-                  <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] bg-base-100/45 border border-base-300 rounded-lg p-3">
+                  <pre className="mt-2 max-h-[300px] overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] bg-base-100 border border-base-300 rounded-box p-3">
                     {testResult.detail}
                   </pre>
                 </details>
               ) : null}
             </div>
-            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100/25">
+            <div className="px-5 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                className="btn btn-ghost border border-base-300"
               >
                 关闭
               </button>

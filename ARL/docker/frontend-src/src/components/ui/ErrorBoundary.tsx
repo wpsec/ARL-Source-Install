@@ -32,7 +32,7 @@ export class ViewErrorBoundary extends React.Component<Props, State> {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="px-5 py-2.5 rounded-xl bg-brand-accent text-sm font-black hover:opacity-90 transition"
+                className="btn btn-primary"
               >
                 刷新重试
               </button>

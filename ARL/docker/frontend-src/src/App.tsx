@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Lock, X } from 'lucide-react';
 import {
   ACTIVE_MODULE_KEY,
+  ACTIVE_MODULE_FILTERS_KEY,
   TOKEN_KEY,
   USERNAME_KEY,
   buildFilterSignature,
@@ -37,7 +38,29 @@ const TableModuleView = lazy(() => import('./views/TableModuleView').then((m) =>
 const ActionDialog = lazy(() => import('./views/ActionDialog').then((m) => ({ default: m.ActionDialog })));
 
 function ViewFallback() {
-  return <div className="p-8 text-sm text-content-muted">页面加载中…</div>;
+  return (
+    <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-base-content/60">
+      <span className="loading loading-spinner loading-sm" aria-label="加载中" />
+      页面加载中…
+    </div>
+  );
+}
+
+function readStoredModuleFilters(): Record<string, JsonValue> {
+  try {
+    const raw = localStorage.getItem(ACTIVE_MODULE_FILTERS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    return Object.entries(parsed).reduce<Record<string, JsonValue>>((result, [moduleId, filters]) => {
+      if (!moduleId || !filters || typeof filters !== 'object' || Array.isArray(filters)) return result;
+      result[moduleId] = filters as JsonValue;
+      return result;
+    }, {});
+  } catch {
+    return {};
+  }
 }
 
 export function MainShell() {
@@ -48,7 +71,9 @@ export function MainShell() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
   const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
-  const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>({});
+  const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>(
+    readStoredModuleFilters,
+  );
   const [moduleScrollResetTokens, setModuleScrollResetTokens] = useState<Record<string, number>>({});
   const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
   const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
@@ -183,8 +208,10 @@ export function MainShell() {
 
       localStorage.setItem(TOKEN_KEY, newToken);
       localStorage.setItem(USERNAME_KEY, userName);
+      localStorage.removeItem(ACTIVE_MODULE_FILTERS_KEY);
       setToken(newToken);
       setUsername(userName);
+      setModuleExternalFilters({});
       openModule('dashboard');
     } catch (err: any) {
       setLoginError(err?.message || '登录失败');
@@ -202,6 +229,7 @@ export function MainShell() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USERNAME_KEY);
     localStorage.removeItem(ACTIVE_MODULE_KEY);
+    localStorage.removeItem(ACTIVE_MODULE_FILTERS_KEY);
     setToken('');
     setModuleExternalFilters({});
     setActiveModuleId('dashboard');
@@ -295,7 +323,12 @@ export function MainShell() {
   useEffect(() => {
     if (!token) return;
     localStorage.setItem(ACTIVE_MODULE_KEY, activeModuleId);
-  }, [token, activeModuleId]);
+    if (Object.keys(moduleExternalFilters).length > 0) {
+      localStorage.setItem(ACTIVE_MODULE_FILTERS_KEY, JSON.stringify(moduleExternalFilters));
+    } else {
+      localStorage.removeItem(ACTIVE_MODULE_FILTERS_KEY);
+    }
+  }, [token, activeModuleId, moduleExternalFilters]);
 
   useEffect(() => {
     if (!token) return;
@@ -327,34 +360,32 @@ export function MainShell() {
 
   return (
     <div className="h-screen flex bg-base-100 text-base-content overflow-hidden">
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute inset-0 theme-atmosphere-layer" />
-      </div>
-
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
-        <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-base-100/45 border-b border-base-300/60 flex items-center justify-between gap-4">
-          <div className="text-xs text-content-muted min-h-[20px]">{globalNotice || ' '}</div>
-          <div className="flex items-center gap-2">
+        <header className="navbar sticky top-0 z-20 min-h-16 px-6 border-b border-base-300 bg-base-100">
+          <div className="flex-1 min-w-0 text-sm text-base-content/60 truncate" role="status">
+            {globalNotice || ' '}
+          </div>
+          <div className="navbar-end gap-2">
             <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
-            <span className="text-xs font-semibold text-content-muted px-3 py-1.5 border border-base-300 rounded-lg">{username}</span>
+            <span className="badge badge-ghost h-9 px-3 text-sm font-medium">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
-              className="p-2.5 rounded-xl border border-base-300 hover:bg-base-100/60"
+              className="btn btn-ghost btn-sm btn-square"
               title="修改密码"
             >
               <Lock className="w-4 h-4" />
             </button>
             <button
               onClick={() => void doLogout()}
-              className="p-2.5 rounded-xl border border-base-300 hover:bg-base-100/60"
+              className="btn btn-ghost btn-sm btn-square"
               title="退出"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </header>
         <ViewErrorBoundary key={activeModuleId}>
         <Suspense fallback={<ViewFallback />}>
         {activeModule.id === 'dashboard' ? (
@@ -401,41 +432,41 @@ export function MainShell() {
 
       {passwdDialogOpen ? (
         <Modal open onClose={() => setPasswdDialogOpen(false)} boxClass="w-full max-w-md!">
-            <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between">
-              <h4 className="font-black">修改密码</h4>
-              <button onClick={() => setPasswdDialogOpen(false)} className="p-2 hover:bg-base-100/60 rounded-xl">
+            <div className="flex items-center justify-between border-b border-base-300 px-6 py-4">
+              <h4 className="text-lg font-semibold">修改密码</h4>
+              <button onClick={() => setPasswdDialogOpen(false)} className="btn btn-ghost btn-sm btn-square">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="space-y-4 p-6">
               <input
                 type="password"
                 placeholder="旧密码"
                 value={passwdForm.old_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, old_password: event.target.value }))}
-                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
+                className="input input-bordered w-full"
               />
               <input
                 type="password"
                 placeholder="新密码"
                 value={passwdForm.new_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, new_password: event.target.value }))}
-                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
+                className="input input-bordered w-full"
               />
               <input
                 type="password"
                 placeholder="确认新密码"
                 value={passwdForm.check_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, check_password: event.target.value }))}
-                className="w-full bg-base-100 border border-base-300 rounded-xl px-3 py-2.5 text-sm"
+                className="input input-bordered w-full"
               />
 
-              {passwdError ? <div className="text-xs text-error">{passwdError}</div> : null}
+              {passwdError ? <div role="alert" className="alert alert-error text-sm py-3">{passwdError}</div> : null}
 
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className="w-full bg-brand-accent py-3 rounded-xl font-black text-sm shadow-lg shadow-accent/20"
+                className="btn btn-primary w-full"
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>

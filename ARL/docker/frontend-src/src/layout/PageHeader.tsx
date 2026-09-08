@@ -14,12 +14,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+    <header className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
       <div>
-        <h2 className="text-4xl font-black tracking-tight">{title}</h2>
-        {description ? <p className="text-brand-text-muted mt-2 text-sm">{description}</p> : null}
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {description ? <p className="text-sm text-base-content/60 mt-1.5 max-w-3xl">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-    </div>
+    </header>
   );
 }

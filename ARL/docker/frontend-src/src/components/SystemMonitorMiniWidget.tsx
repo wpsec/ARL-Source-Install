@@ -79,7 +79,7 @@ function MetricRow({
   color: string;
 }) {
   return (
-    <div className="flex h-10 w-[104px] shrink-0 items-center gap-1.5 rounded-xl border border-base-300/70 bg-base-100/60 px-2">
+    <div className="flex h-10 w-[104px] shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-100 px-2">
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-1">
@@ -123,17 +123,14 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
   const statusLabel = unavailable ? '暂不可用' : monitorQuery.isFetching && !monitorQuery.data ? '正在同步' : '实时运行';
   const isInitialLoading = monitorQuery.isFetching && !monitorQuery.data;
   const statusColor = unavailable ? 'bg-error' : isInitialLoading ? 'bg-warning' : 'bg-success';
-  const statusTextColor = unavailable ? 'text-error' : isInitialLoading ? 'text-warning' : 'text-success';
 
   return (
     <section className="hidden min-w-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
-      <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-base-300/80 bg-base-200/45 px-2.5" title={statusLabel}>
+      <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-200 px-2.5" title={statusLabel}>
         <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent/10 text-accent">
           <Activity className="h-3.5 w-3.5" />
         </div>
-        <span className="hidden text-[10px] font-black 2xl:inline">系统监控</span>
         <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
-        <span className={`hidden text-[9px] font-semibold 2xl:inline ${statusTextColor}`}>{statusLabel}</span>
       </div>
 
       <div className="flex items-center gap-1.5">
@@ -142,7 +139,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
-      <div className="flex h-10 shrink-0 items-center gap-2 rounded-xl border border-base-300/70 bg-base-100/40 px-2.5">
+      <div className="flex h-10 shrink-0 items-center gap-2 rounded-box border border-base-300 bg-base-100 px-2.5">
         <div className="min-w-0 text-center">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />
@@ -169,7 +166,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
       <button
         type="button"
         onClick={onOpen}
-        className="flex h-10 w-8 shrink-0 items-center justify-center rounded-xl border border-base-300 text-content-muted transition hover:bg-base-100/60 hover:text-accent"
+        className="btn btn-ghost btn-square btn-sm border border-base-300 text-content-muted hover:text-accent"
         title="打开系统监控"
         aria-label="打开系统监控"
       >

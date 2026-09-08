@@ -333,17 +333,17 @@ export function DashboardView({
     <div className="space-y-2">
       <div className="flex items-center justify-between text-[10px] font-black text-content-muted uppercase tracking-widest">
         <span>{title}</span>
-        <span className="text-white">{formatPercent(percent)}</span>
+        <span className="text-base-content">{formatPercent(percent)}</span>
       </div>
       <div className="h-1.5 bg-base-100 rounded-full overflow-hidden border border-base-300">
-        <div className="h-full bg-brand-accent rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
+        <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
       </div>
       <p className="text-[10px] text-content-muted">{detail}</p>
     </div>
   );
 
   return (
-    <div className="p-8 space-y-10">
+    <div className="p-6 lg:p-8 space-y-8">
       <PageHeader
         title="我的仪表盘"
         description="互联网资产自动化收集系统 · 实时监控中"
@@ -354,7 +354,7 @@ export function DashboardView({
           <div className="flex gap-2 justify-end">
             <button
               onClick={onQuickCreateTask}
-              className="px-5 py-2.5 rounded-xl bg-brand-accent text-white text-sm font-black uppercase tracking-wider hover:opacity-90 transition flex items-center gap-2"
+              className="btn btn-primary"
             >
               <Plus className="w-[18px] h-[18px]" />
               新建任务
@@ -363,7 +363,7 @@ export function DashboardView({
               onClick={() => {
                 void dashboardQuery.refetch();
               }}
-              className="px-5 py-2.5 border border-base-300 rounded-xl text-sm font-semibold hover:bg-base-200/60 transition flex items-center gap-2"
+              className="btn btn-ghost border border-base-300"
             >
               <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
               刷新
@@ -377,12 +377,12 @@ export function DashboardView({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card) => (
-          <div key={card.title} className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl hover:border-accent/50 transition-all group shadow-xl shadow-black/20">
+          <div key={card.title} className="bg-base-200 border border-base-300 p-5 rounded-box hover:border-primary/50 transition-colors group shadow-sm">
             <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-2xl bg-base-100 border border-base-300 group-hover:scale-110 transition-transform ${card.color}`}>
+              <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
                 <card.icon className="w-6 h-6" />
               </div>
-              <div className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${card.isUp ? 'text-emerald-400 bg-emerald-400/10' : 'text-error bg-error/10'}`}>
+              <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${card.isUp ? 'text-success bg-success/10' : 'text-error bg-error/10'}`}>
                 {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                 {card.change}
               </div>
@@ -394,7 +394,7 @@ export function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="lg:col-span-2 bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
           <h3 className="text-xl font-black tracking-tight mb-8">资产增长趋势 (7日)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -415,7 +415,7 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-8 rounded-3xl shadow-xl shadow-black/20">
+        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
           <h3 className="text-xl font-black tracking-tight mb-8">资产分布概览</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -441,7 +441,7 @@ export function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+        <div className="bg-base-200 border border-base-300 p-6 rounded-box flex flex-col shadow-sm">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-secondary/10 rounded-xl">
               <Activity className="w-5 h-5 text-secondary" />
@@ -462,7 +462,7 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="bg-base-200/30 backdrop-blur-md border border-base-300 p-6 rounded-3xl flex flex-col shadow-xl shadow-black/20">
+        <div className="bg-base-200 border border-base-300 p-6 rounded-box flex flex-col shadow-sm">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-accent/10 rounded-xl">
@@ -492,7 +492,7 @@ export function DashboardView({
               </button>
             </div>
           </div>
-          <div className="flex-1 bg-black/20 rounded-2xl p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
+          <div className="flex-1 bg-base-100 border border-base-300 rounded-box p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
             {isLogPaused ? (
               <div className="mb-2 text-warning border border-warning/30 bg-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
             ) : null}
@@ -500,13 +500,13 @@ export function DashboardView({
               const level = String(log?.level || 'INFO').toUpperCase();
               const source = String(log?.source || 'SYSTEM').toUpperCase();
               return (
-                <div key={`${source}-${level}-${index}`} className="py-2 border-b border-white/5 last:border-0">
+                <div key={`${source}-${level}-${index}`} className="py-2 border-b border-base-300 last:border-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-content-muted'}`}>{level}</span>
                     <span className="text-content-muted">{source}</span>
                     <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
                   </div>
-                  <p className="text-white/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
+                  <p className="text-base-content/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                 </div>
               );
             })}
@@ -515,7 +515,7 @@ export function DashboardView({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div className="xl:col-span-2 bg-base-200/35 border border-base-300 rounded-3xl p-6 space-y-4">
+        <div className="xl:col-span-2 bg-base-200 border border-base-300 rounded-box p-6 space-y-4 shadow-sm">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black tracking-tight">最近任务</h3>
             <button
@@ -575,17 +575,17 @@ export function DashboardView({
           </div>
         </div>
 
-        <div className="bg-base-200/35 border border-base-300 rounded-3xl p-6">
+        <div className="bg-base-200 border border-base-300 rounded-box p-6 shadow-sm">
           <h3 className="text-lg font-black mb-4">快捷入口</h3>
           <div className="grid grid-cols-1 gap-3">
             {quickModules.map((entry) => (
               <button
                 key={entry.id}
                 onClick={() => onOpenModule(entry.id)}
-                className="text-left bg-base-100/40 border border-base-300 rounded-2xl p-4 hover:border-accent/45 hover:bg-base-200/55 transition"
+                className="text-left bg-base-100 border border-base-300 rounded-box p-4 hover:border-primary/45 hover:bg-base-200 transition-colors"
               >
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-base-200/60 border border-base-300 ${entry.color}`}>
+                  <div className={`p-2 rounded-lg bg-base-200 border border-base-300 ${entry.color}`}>
                     <entry.icon className="w-4 h-4" />
                   </div>
                   <div>

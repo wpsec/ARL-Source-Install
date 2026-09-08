@@ -953,7 +953,7 @@ export function ApiConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
 
-      <div className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
+      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
           <div className="flex items-center gap-2">
@@ -963,7 +963,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                 setSuccess('');
                 void serviceApiQuery.refetch();
               }}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2"
               disabled={loading || batchTesting || Boolean(testingProviderId)}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -971,7 +971,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void testConfiguredServiceApis()}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <CheckCircle2 className={`w-4 h-4 ${batchTesting ? 'animate-pulse' : ''}`} />
@@ -980,7 +980,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={toggleSensitiveDisplay}
-              className="px-4 py-2 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <Eye className="w-4 h-4" />
@@ -988,7 +988,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void saveServiceApiConfig()}
-              className="px-4 py-2 rounded-xl bg-brand-accent text-white text-sm font-black hover:opacity-90 transition flex items-center gap-2 disabled:opacity-60"
+              className="btn btn-primary gap-2 disabled:opacity-60"
               disabled={saving || loading || batchTesting || Boolean(testingProviderId)}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
@@ -1009,24 +1009,24 @@ export function ApiConsoleView({ token }: { token: string }) {
         ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
-          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
             <span className="text-content-muted">配置文件:</span>
             <span className="font-mono ml-2">{configPath || '-'}</span>
           </div>
-          <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-2">
+          <div className="bg-base-100 border border-base-300 rounded-box px-3 py-2">
             <span className="text-content-muted">最近更新时间:</span>
             <span className="font-mono ml-2">{updatedAt || '-'}</span>
           </div>
         </div>
 
-        <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
+        <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
           提示：保存后会写入配置文件，建议重启 `web` 与 `worker` 容器让 API 插件配置立即生效。
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {providers.map((provider) => (
-          <div key={provider.id} className="bg-base-200/35 border border-base-300 rounded-2xl p-5 space-y-4">
+          <div key={provider.id} className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-black tracking-wide break-all">
@@ -1050,7 +1050,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => void testServiceApiProvider(provider.id, provider.alias || provider.title)}
-                    className="px-3 py-1.5 rounded-lg border border-base-300 text-xs font-semibold hover:bg-base-100/70 transition flex items-center gap-1 disabled:opacity-60"
+                    className="btn btn-ghost btn-xs border border-base-300 gap-1 disabled:opacity-60"
                     disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
                   >
                     <Play className={`w-3.5 h-3.5 ${testingProviderId === provider.id ? 'animate-spin' : ''}`} />
@@ -1143,7 +1143,7 @@ export function ApiConsoleView({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setBatchTestDialogOpen(false)}
-                className="p-2 rounded-lg hover:bg-base-100/70 transition"
+                className="btn btn-ghost btn-square btn-sm"
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -1152,7 +1152,7 @@ export function ApiConsoleView({ token }: { token: string }) {
 
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
-                <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-3">
+                <div className="bg-base-100 border border-base-300 rounded-box px-3 py-3">
                   <div className="text-content-muted">已验证</div>
                   <div className="mt-1 text-2xl font-black">{batchTestSummary.total}</div>
                 </div>
@@ -1164,14 +1164,14 @@ export function ApiConsoleView({ token }: { token: string }) {
                   <div className="text-error">失败</div>
                   <div className="mt-1 text-2xl font-black text-error">{batchTestSummary.failCount}</div>
                 </div>
-                <div className="bg-base-100/60 border border-base-300 rounded-xl px-3 py-3">
+                <div className="bg-base-100 border border-base-300 rounded-box px-3 py-3">
                   <div className="text-content-muted">完成时间</div>
                   <div className="mt-1 font-mono break-all">{batchTestSummary.testedAt || '-'}</div>
                 </div>
               </div>
 
               {batchTestSummary.message ? (
-                <div className="text-xs text-content-muted bg-base-100/50 border border-base-300 rounded-xl px-3 py-2">
+                <div className="text-xs text-content-muted bg-base-100 border border-base-300 rounded-box px-3 py-2">
                   {batchTestSummary.message}
                 </div>
               ) : null}
@@ -1183,14 +1183,14 @@ export function ApiConsoleView({ token }: { token: string }) {
               ) : null}
 
               {batchTesting ? (
-                <div className="flex items-center gap-3 rounded-xl border border-base-300 bg-base-100/40 px-4 py-4 text-sm">
+                <div className="flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-4 text-sm">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>正在验证已配置的 API，请稍候...</span>
                 </div>
               ) : null}
 
               {!batchTesting && batchTestResults.length === 0 ? (
-                <div className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-8 text-sm text-content-muted text-center">
+                <div className="rounded-box border border-base-300 bg-base-100 px-4 py-8 text-sm text-content-muted text-center">
                   暂无需要验证的已配置 API。
                 </div>
               ) : null}
@@ -1200,7 +1200,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                   {batchTestResults.map((item) => (
                     <div
                       key={`${item.providerId}-${item.testedAt || item.message}`}
-                      className="rounded-xl border border-base-300 bg-base-100/40 px-4 py-4"
+                      className="rounded-box border border-base-300 bg-base-100 px-4 py-4"
                     >
                       <div className="flex items-start gap-3">
                         <div
@@ -1239,7 +1239,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                 <button
                   type="button"
                   onClick={() => setBatchTestDialogOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-base-300 text-sm font-semibold hover:bg-base-100/70 transition"
+                  className="btn btn-ghost border border-base-300"
                 >
                   关闭
                 </button>

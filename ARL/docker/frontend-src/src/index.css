@@ -492,12 +492,12 @@
   }
 
   button {
-    min-height: 2.625rem;
+    min-height: 0;
   }
 
   input:not([type='checkbox']):not([type='radio']),
   select {
-    min-height: 2.625rem;
+    min-height: 0;
   }
 
   input:not([type='checkbox']):not([type='radio']),

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
  * daisy 语义：label + input[type=checkbox].checkbox；选中态描边提亮。
  */
 export const CHECKBOX_CARD_CLASS =
-  'flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 h-10 text-sm cursor-pointer transition hover:border-accent/60';
+  'flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 h-10 text-sm cursor-pointer transition-colors hover:border-primary/60';
 
 export function CheckboxCard({
   checked,
@@ -23,7 +23,7 @@ export function CheckboxCard({
   className?: string;
 }) {
   return (
-    <label className={`${CHECKBOX_CARD_CLASS}${checked ? ' border-accent/70' : ''} ${className}`}>
+    <label className={`${CHECKBOX_CARD_CLASS}${checked ? ' border-primary/70 bg-primary/5' : ''} ${className}`}>
       <input
         type="checkbox"
         className="checkbox checkbox-sm shrink-0"

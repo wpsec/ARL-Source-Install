@@ -121,4 +121,18 @@ describe('App 鉴权流转', () => {
     fireEvent.click(assetNav);
     await waitFor(() => expect(localStorage.getItem('arl-active-module')).toBe('site'));
   });
+
+  it('刷新后恢复任务明细筛选，避免已落库结果退回全局列表', async () => {
+    localStorage.setItem('arl-token', 'tk-existing');
+    localStorage.setItem('arl-username', 'bob');
+    localStorage.setItem('arl-active-module', 'service');
+    localStorage.setItem('arl-active-module-filters', JSON.stringify({ service: { task_id: 'task-1' } }));
+    const calls = installFetchMock();
+    renderApp();
+
+    await waitFor(() => {
+      const serviceCall = calls.find((call) => call.url.includes('/api/service/'));
+      expect(serviceCall?.url).toContain('task_id=task-1');
+    });
+  });
 });
