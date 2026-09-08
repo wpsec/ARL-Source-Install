@@ -2,7 +2,13 @@
 
 import unittest
 
-from app.services.ip_stage_services import IPNetworkStageService, IPPostProcessStageService
+from test._api_unified_bootstrap import load_modules
+
+
+_captured = load_modules("app.services.ip_stage_services")
+_ip_stage_services = _captured["app.services.ip_stage_services"]
+IPNetworkStageService = _ip_stage_services.IPNetworkStageService
+IPPostProcessStageService = _ip_stage_services.IPPostProcessStageService
 
 
 class _Executor(object):
