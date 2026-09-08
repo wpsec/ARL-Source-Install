@@ -104,17 +104,23 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "min-h-10 w-full justify-center gap-0 rounded-box px-0 py-2 text-sm font-medium transition-colors lg:justify-start lg:gap-3 lg:px-3",
-                      activeView === item.id
-                        ? "bg-primary/12 text-primary font-semibold"
-                        : "text-content-muted hover:bg-base-300/60 hover:text-base-content"
+                      "flex min-h-10 w-full items-center justify-center rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start",
                     )}
                     title={item.label}
                     aria-label={item.label}
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
-                    <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden lg:inline">{item.label}</span>
+                    <span
+                      className={cn(
+                        "inline-flex h-10 w-10 items-center justify-center rounded-box transition-colors lg:h-10 lg:w-fit lg:justify-start lg:gap-3 lg:px-3",
+                        activeView === item.id
+                          ? "bg-primary/12 text-primary font-semibold"
+                          : "text-content-muted hover:bg-base-300/60 hover:text-base-content"
+                      )}
+                    >
+                      <item.icon className="w-4 h-4 shrink-0" />
+                      <span className="hidden lg:inline">{item.label}</span>
+                    </span>
                   </button>
                 </li>
               ))}

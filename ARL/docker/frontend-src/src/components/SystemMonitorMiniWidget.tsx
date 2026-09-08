@@ -121,13 +121,6 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
     : [{ cpu: cpuPercent, ram: memoryPercent, net: networkRate }];
   return (
     <section className="hidden shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
-      <div
-        className="flex h-10 w-8 shrink-0 items-center justify-center rounded-box border border-base-300 bg-base-200 text-accent"
-        data-testid="system-monitor-icon"
-        aria-label="系统监控图标"
-      >
-        <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-      </div>
       <div className="flex items-center gap-1.5">
         <MetricRow icon={Cpu} label="CPU" value={monitorQuery.data ? formatPercent(cpuPercent) : '--'} data={chartData} dataKey="cpu" color="var(--brand-accent)" />
         <MetricRow icon={Database} label="内存" value={monitorQuery.data ? formatPercent(memoryPercent) : '--'} data={chartData} dataKey="ram" color="var(--brand-secondary)" />
