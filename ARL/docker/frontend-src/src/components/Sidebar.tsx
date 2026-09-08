@@ -106,16 +106,16 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   className={cn(
                     "arl-sidebar-nav-row w-full rounded-box",
                     activeView === item.id
-                      ? "arl-sidebar-nav-row-active"
+                      ? "arl-sidebar-nav-row-active bg-primary/12"
                       : "hover:bg-base-300/60",
                   )}
                 >
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent bg-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
+                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent !bg-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
-                        ? "arl-sidebar-nav-item-active bg-primary/12 font-semibold text-primary shadow-sm ring-1 ring-inset ring-primary/25"
+                        ? "arl-sidebar-nav-item-active font-semibold text-primary"
                         : "text-content-muted hover:bg-transparent hover:text-base-content",
                     )}
                     title={item.label}

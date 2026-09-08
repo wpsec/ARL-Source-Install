@@ -584,10 +584,14 @@
     min-height: 0;
   }
 
-  /* 让按钮和文字共同占满整行，避免选中态出现外层与内层两块不同底色。 */
+  /* 选中背景归属于整行，按钮只负责铺满点击区域，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
     width: 100%;
     max-width: none;
+  }
+
+  .arl-sidebar .arl-sidebar-nav-row-active {
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
@@ -603,7 +607,7 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-item-active {
-    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    background-color: transparent;
   }
 
   /* ghost 信息在暗色主题中不能依赖透明背景和浏览器默认文字色。 */
