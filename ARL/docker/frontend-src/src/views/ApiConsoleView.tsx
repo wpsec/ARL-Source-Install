@@ -966,7 +966,7 @@ export function ApiConsoleView({ token }: { token: string }) {
       <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => {
                 setError('');
