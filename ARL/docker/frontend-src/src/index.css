@@ -634,7 +634,9 @@
 
   .arl-sidebar .arl-sidebar-nav-item-active,
   .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
-    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent) !important;
+    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
+    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;
+    color: var(--brand-accent) !important;
   }
 
   @media (min-width: 1024px) {
