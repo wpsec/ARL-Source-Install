@@ -114,10 +114,10 @@ def _browser_runtime_sites(scan_sites, discovery_context):
     for site in sites:
         payload = profiles.get(str(site or "").strip())
         if not isinstance(payload, dict):
-            return sites
+            continue
         strategy = payload.get("strategy")
         if not isinstance(strategy, dict):
-            return sites
+            continue
         if "browser_runtime" in list(strategy.get("selected_collectors") or []):
             selected.append(site)
     return selected

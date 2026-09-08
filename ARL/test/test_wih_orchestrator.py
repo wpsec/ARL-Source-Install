@@ -150,6 +150,37 @@ finally:
 WihOrchestrator = _MODULE.WihOrchestrator
 
 
+class BrowserRuntimeTargetFilterTest(unittest.TestCase):
+    def test_only_explicitly_selected_targets_reach_browser(self):
+        context = types.SimpleNamespace(target_profiles={
+            "https://spa.example.test": {
+                "strategy": {"selected_collectors": ["http", "browser_runtime"]},
+            },
+            "https://ssr.example.test": {
+                "strategy": {"selected_collectors": ["http", "html"]},
+            },
+        })
+
+        selected = _MODULE._browser_runtime_sites(
+            [
+                "https://spa.example.test",
+                "https://ssr.example.test",
+                "https://missing.example.test",
+            ],
+            context,
+        )
+
+        self.assertEqual(["https://spa.example.test"], selected)
+
+    def test_legacy_context_without_profiles_keeps_targets(self):
+        selected = _MODULE._browser_runtime_sites(
+            ["https://legacy.example.test"],
+            types.SimpleNamespace(),
+        )
+
+        self.assertEqual(["https://legacy.example.test"], selected)
+
+
 class _FakeCandidate(object):
     def __init__(self, candidate, candidate_type="endpoint", status="discovered"):
         self.candidate = candidate
