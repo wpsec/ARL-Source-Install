@@ -677,7 +677,7 @@ export function ActionDialog({
                     className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[132px]`}
                     placeholder={'example.com\napi.example.com\n1.2.3.4'}
                   />
-                  <p className="text-[11px] text-content-muted">可输入多个目标，支持换行、空格或逗号分隔，提交时会自动归一化。</p>
+                  <p className="text-[11px] text-content-muted">多个目标请每行输入一个；同时兼容空格或逗号输入，提交时会自动归一化。</p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-content-muted">端口扫描范围</label>
@@ -1094,7 +1094,7 @@ export function ActionDialog({
                   }
                 />
                 <p className="text-[11px] text-content-muted">
-                  支持换行、空格或逗号分隔，提交时会自动归一化为多条资产范围。
+                  每行输入一个资产范围；同时兼容空格或逗号输入，提交时会自动归一化。
                 </p>
               </div>
             </div>
@@ -1121,7 +1121,7 @@ export function ActionDialog({
                   className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[168px]`}
                   placeholder={'example.com\napi.example.com'}
                 />
-                <p className="text-[11px] text-content-muted">支持多行或逗号分割。</p>
+                <p className="text-[11px] text-content-muted">每行输入一个资产范围（兼容逗号分隔）。</p>
               </div>
               {isAssetScopeUpdate ? (
                 <div className="space-y-1">
@@ -1133,7 +1133,7 @@ export function ActionDialog({
                     className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
                     placeholder={'test.example.com'}
                   />
-                  <p className="text-[11px] text-content-muted">可留空，支持多行或逗号分割。</p>
+                  <p className="text-[11px] text-content-muted">可留空，每行输入一个黑名单项（兼容逗号分隔）。</p>
                 </div>
               ) : null}
             </div>
@@ -1767,7 +1767,7 @@ export function ActionDialog({
                       throw new Error('请填写资产组名称');
                     }
                     if (normalizedScopes.length === 0) {
-                      throw new Error('请填写资产范围，支持多行或逗号分割');
+                      throw new Error('请填写资产范围，每行输入一个');
                     }
 
                     if (isAssetScopeUpdate) {
