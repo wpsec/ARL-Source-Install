@@ -31,6 +31,8 @@ export const CONSOLE_TEXT_BUTTON_CLASS =
 
 export const CONSOLE_PRIMARY_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-primary`;
 
+export const CONSOLE_DANGER_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-error`;
+
 export const CONSOLE_SECONDARY_BUTTON_CLASS =
   `${CONSOLE_BUTTON_CLASS} border border-base-300 bg-base-100 text-base-content hover:border-primary/45 hover:bg-base-300/70 hover:text-base-content`;
 

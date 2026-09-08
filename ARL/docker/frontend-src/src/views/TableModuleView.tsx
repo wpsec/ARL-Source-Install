@@ -89,6 +89,7 @@ import {
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_BUTTON_CLASS,
   CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
+  CONSOLE_DANGER_BUTTON_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
@@ -5344,7 +5345,7 @@ export function TableModuleView({
                 </button>
                 <button
                   onClick={() => closeDeleteConfirmDialog(true)}
-                  className="btn btn-error btn-sm h-10 min-h-10 w-full sm:w-auto"
+                  className={`${CONSOLE_DANGER_BUTTON_CLASS} w-full sm:w-auto`}
                 >
                   {deleteConfirmDialog.confirmText}
                 </button>
