@@ -66,12 +66,12 @@ describe('SystemMonitorMiniWidget', () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it('监控接口失败时保留布局并提示不可用', async () => {
+  it('监控接口失败时保留布局并显示占位值', async () => {
     installFetchMock({ routes: { '/console/system_monitor/': [500, { message: '不可用' }] } });
     renderWidget();
 
-    await vi.waitFor(() => expect(screen.getByLabelText('资源状态不可用')).toBeTruthy());
+    await vi.waitFor(() => expect(screen.getAllByText('--')).toHaveLength(3));
     expect(screen.getByText('CPU')).toBeTruthy();
-    expect(screen.getAllByText('--')).toHaveLength(3);
+    expect(screen.queryByLabelText('资源状态不可用')).toBeNull();
   });
 });
