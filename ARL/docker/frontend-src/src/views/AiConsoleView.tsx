@@ -29,6 +29,8 @@ import {
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PAGE_CLASS,
+  CONSOLE_PANEL_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SELECT_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
@@ -1690,7 +1692,8 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const usageTopErrorReasonText = usageStats?.top_error_reasons?.map((item) => `${item.reason} (${item.count})`).join('；') || '';
 
   return (
-    <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-5 shadow-sm">
+    <div className={CONSOLE_PAGE_CLASS}>
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-5`}>
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div>
           <div className="text-sm font-bold tracking-wide">AI管理</div>
@@ -1710,7 +1713,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               setSuccess('');
               void aiConfigQuery.refetch();
             }}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={isActionBusy}
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -1719,7 +1722,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void runAiConnectivityTest()}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={isActionBusy}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
@@ -1728,7 +1731,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={toggleSensitiveDisplay}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={isActionBusy}
           >
             <Eye className="w-4 h-4" />
@@ -2769,6 +2772,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         onUsernameChange={setSensitiveVerifyUsername}
         onPasswordChange={setSensitiveVerifyPassword}
       />
+      </div>
     </div>
   );
 }
