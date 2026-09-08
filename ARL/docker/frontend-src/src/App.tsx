@@ -330,7 +330,7 @@ export function MainShell() {
         <div className="absolute inset-0 theme-atmosphere-layer" />
       </div>
 
-      <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
+      <Sidebar token={token} activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
         <div className="sticky top-0 z-20 px-6 py-4 backdrop-blur-xl bg-base-100/45 border-b border-base-300/60 flex items-center justify-between gap-4">
