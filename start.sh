@@ -58,18 +58,22 @@ elif [ -f "$ENV_FILE_DOCKER" ]; then
 fi
 
 if [ -z "$ENV_FILE" ]; then
-    # 首次安装：自动生成 Mongo/RabbitMQ 内部随机凭据并持久化到 ARL/docker/.env
-    # （与 compose 默认 env-file 路径一致）；Basic Auth 与 ARL 密码仍为用户填写项。
-    echo "未找到 .env，执行首次内部凭据初始化（交互终端会提示填写 Basic Auth/ARL 密码）..."
-    if ! "$DOCKER_DIR/init-deploy-env.sh"; then
-        echo "❌ 初始化失败，请检查上方 [INIT] 输出"
-        exit 1
-    fi
+    # 首次安装：在 compose 默认路径创建 .env，再生成 Mongo/RabbitMQ 内部随机凭据。
+    # Basic Auth 与 ARL 密码仍为用户填写项。
     ENV_FILE="$ENV_FILE_DOCKER"
+    echo "未找到 .env，执行首次内部凭据初始化（交互终端会提示填写 Basic Auth/ARL 密码）..."
+else
+    # 根目录 .env 也必须经过初始化：用户按 README 复制模板后，内部凭据占位仍需自动补齐。
+    echo "检查部署环境文件，补齐缺失的 Mongo/RabbitMQ 内部随机凭据（已有值保持不变）..."
+fi
+
+if ! "$DOCKER_DIR/init-deploy-env.sh" "$ENV_FILE"; then
+    echo "❌ 初始化失败，请检查上方 [INIT] 输出"
+    exit 1
 fi
 
 if ! "$DOCKER_DIR/check-deploy-env.sh" "$ENV_FILE"; then
-    echo "❌ .env 预检未通过：请按 [ENV-CHECK] 列出的问题项逐条修复后重试"
+    echo "❌ 环境提醒未消除：请按 [ENV-CHECK] 列出的问题项逐条修复后重试"
     exit 1
 fi
 

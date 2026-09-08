@@ -102,6 +102,11 @@ class TestWeakCredentialPathsRemoved(unittest.TestCase):
         self.assertNotIn("$ARL_APP_PASS", content)
         self.assertNotIn("${ARL_APP_PASS", content)
         self.assertIn("check-deploy-env.sh", content, "start.sh 必须接入 .env 预检")
+        self.assertIn(
+            'init-deploy-env.sh" "$ENV_FILE"',
+            content,
+            "start.sh 必须对实际选中的 .env 补齐内部随机凭据",
+        )
 
     def test_resetpass_script_has_no_hardcoded_credentials(self):
         content = read(REPO_ROOT / "resetpass.sh")
@@ -482,6 +487,21 @@ class TestInitDeployEnv(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             parsed = self._env_map(target)
             self.assertRegex(parsed.get("RABBITMQ_DEFAULT_PASS", ""), r"^[0-9a-f]{32}$")
+
+    def test_init_replaces_placeholder_internal_credentials_in_existing_env(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, ".env")
+            pathlib.Path(target).write_text(read(ENV_EXAMPLE_DOCKER), encoding="utf-8")
+            proc = self._run_init(target)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            parsed = self._env_map(target)
+            self.assertRegex(parsed["MONGO_INITDB_ROOT_PASSWORD"], r"^[0-9a-f]{32}$")
+            self.assertRegex(parsed["RABBITMQ_DEFAULT_PASS"], r"^[0-9a-f]{32}$")
+            self.assertTrue(parsed["MONGO_INITDB_ROOT_USERNAME"].startswith("root_"))
+            self.assertTrue(parsed["RABBITMQ_DEFAULT_USER"].startswith("arl_"))
+            self.assertNotIn("<set-me>", "\n".join(
+                "{}={}".format(key, parsed.get(key, "")) for key in self.INTERNAL_KEYS
+            ))
 
     def test_init_result_then_precheck_flags_user_keys_only(self):
         # 联动：init 产物在用户补齐 Basic/ARL 密码前，预检必须只点名这两个键。

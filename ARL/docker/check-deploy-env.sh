@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 部署 .env 预检（计划 1：Compose 启动前的必填配置显式检查）。
+# 部署 .env 环境提醒（计划 1：Compose 启动前的必填配置显式检查）。
 # 用法: check-deploy-env.sh [ENV文件路径]
 #   不传参数时按 仓库根 .env → ARL/docker/.env 顺序探测。
 # 规则:
@@ -8,7 +8,7 @@
 #   3) <set-me> 占位值不允许启动；
 #   4) 密码键命中仓库历史分发过或常见的弱口令值时只告警，不阻止启动；
 #      密码强度建议不作为部署硬门禁。
-# 输出约定: 问题一律走 stderr 且只列键名，绝不回显敏感键的值。
+# 输出约定: 问题一律走 stderr 且只列键名，统一使用“环境提醒”口径，绝不回显敏感键的值。
 # 退出码: 0=通过; 1=存在任一问题; 2=用法错误。
 set -u
 
@@ -53,7 +53,7 @@ if [ -z "$ENV_FILE" ]; then
 fi
 
 if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
-    printf '[ENV-CHECK] 缺少 .env：请复制 %s 为 .env 并填入自设凭据（.env 仅本地存在，不入库）\n' \
+    printf '[ENV-CHECK] 环境提醒：缺少 .env，请复制 %s 并填入自设凭据（.env 仅本地存在，不入库）\n' \
         "$SCRIPT_DIR/.env.example" >&2
     exit 1
 fi
@@ -87,17 +87,17 @@ is_weak_value() {
 for key in "${REQUIRED_KEYS[@]}"; do
     value="$(env_get "$key")"
     if [ -z "$value" ]; then
-        printf '[ENV-CHECK] 缺少必填配置或值为空: %s\n' "$key" >&2
+        printf '[ENV-CHECK] 环境提醒：缺少必填配置或值为空: %s\n' "$key" >&2
         fail=1
         continue
     fi
     if [ "$value" = "$PLACEHOLDER" ]; then
-        printf '[ENV-CHECK] 仍为占位值，请填入真实配置: %s\n' "$key" >&2
+        printf '[ENV-CHECK] 环境提醒：仍为占位值，请填入真实配置: %s\n' "$key" >&2
         fail=1
         continue
     fi
     if is_password_key "$key" && is_weak_value "$value"; then
-        printf '[ENV-CHECK] WARNING: %s 使用弱口令或历史默认值，建议轮换（不阻止启动）\n' "$key" >&2
+        printf '[ENV-CHECK] 环境提醒 WARNING: %s 使用弱口令或历史默认值，建议轮换（不阻止启动）\n' "$key" >&2
         warn=1
     fi
 done
@@ -107,8 +107,8 @@ if [ "$fail" -ne 0 ]; then
 fi
 
 if [ "$warn" -ne 0 ]; then
-    printf '[ENV-CHECK] OK: %s（必填键齐全、无占位；存在弱口令告警）\n' "$ENV_FILE"
+    printf '[ENV-CHECK] 环境提醒已处理: %s（必填键齐全、无占位；存在弱口令告警）\n' "$ENV_FILE"
 else
-    printf '[ENV-CHECK] OK: %s（必填键齐全、无占位）\n' "$ENV_FILE"
+    printf '[ENV-CHECK] 环境提醒已处理: %s（必填键齐全、无占位）\n' "$ENV_FILE"
 fi
 exit 0

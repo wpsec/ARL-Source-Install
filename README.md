@@ -25,16 +25,16 @@
 git clone -b newUI https://github.com/wpsec/ARL-Source-Install.git
 cd ARL-Source-Install
 cp .env.example .env
-# 下面 4 个密码占位必须替换：BASIC_AUTH_PASSWORD、ARL_APP_PASSWORD、
-# MONGO_INITDB_ROOT_PASSWORD、RABBITMQ_DEFAULT_PASS；7 个必填键都不能留空。
+# 启动脚本会自动生成 Mongo/RabbitMQ 内部随机凭据；只需填写：
+# BASIC_AUTH_PASSWORD、ARL_APP_PASSWORD；启动前会校验全部必填键。
 chmod +x build.sh start.sh scripts/quick-build.sh
 ./build.sh
 ./start.sh
 ```
 
 也可以不复制根 `.env` 直接执行 `./start.sh`；首次启动会在
-`ARL/docker/.env` 自动生成 Mongo/RabbitMQ 内部凭据，并交互要求输入 Basic Auth
-与 ARL 应用密码。直接使用 Docker Compose 时，请先复制并完整填写对应 `.env`。
+启动脚本实际选中的 `.env` 中自动生成 Mongo/RabbitMQ 内部凭据，并交互要求输入
+Basic Auth 与 ARL 应用密码。直接使用 Docker Compose 时，仍需先复制并完整填写对应 `.env`。
 
 ### 注意！
 
