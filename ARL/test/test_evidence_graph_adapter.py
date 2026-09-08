@@ -80,7 +80,7 @@ class _ResponseRegistry:
     def snapshot_metadata(self):
         return [
             {
-                "normalized_url": "resource-1",
+                "normalized_url": "endpoint-1",
                 "method": "GET",
                 "request_profile": "html_get",
                 "status_code": 200,
@@ -109,7 +109,7 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
 
         self.assertEqual(first["skipped"], 0)
         self.assertEqual(second["skipped"], 0)
-        self.assertEqual(graph.node_count, 6)
+        self.assertEqual(graph.node_count, 5)
         self.assertEqual(graph.edge_count, 5)
 
     def test_snapshot_never_contains_candidate_or_registry_raw_identity(self):
@@ -121,7 +121,7 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
         self.assertNotIn("endpoint-id-1", serialized)
         self.assertNotIn("document-1", serialized)
         self.assertNotIn("endpoint-1", serialized)
-        self.assertNotIn("resource-1", serialized)
+        self.assertNotIn("endpoint-1", serialized)
         self.assertEqual(graph["skipped"], 0)
 
     def test_graph_budget_is_soft_for_scan_pipeline(self):

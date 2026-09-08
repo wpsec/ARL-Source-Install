@@ -59,9 +59,17 @@ def sync_discovery_context(
     if evidence_graph is None:
         return {"nodes_added": 0, "edges_added": 0, "skipped": 0}
     summary = {"nodes_added": 0, "edges_added": 0, "skipped": 0}
-    _sync_candidates(discovery_context, evidence_graph, summary, candidate_limit)
-    _sync_api_registry(discovery_context, evidence_graph, summary, document_limit, endpoint_limit)
-    _sync_responses(discovery_context, evidence_graph, summary, response_limit)
+    resource_index: Dict[tuple, str] = {}
+    _sync_candidates(discovery_context, evidence_graph, summary, candidate_limit, resource_index)
+    _sync_api_registry(
+        discovery_context,
+        evidence_graph,
+        summary,
+        document_limit,
+        endpoint_limit,
+        resource_index,
+    )
+    _sync_responses(discovery_context, evidence_graph, summary, response_limit, resource_index)
     return summary
 
 
@@ -70,6 +78,7 @@ def _sync_candidates(
     graph: EvidenceGraph,
     summary: Dict[str, int],
     limit: int,
+    resource_index: Dict[tuple, str],
 ) -> None:
     registry = getattr(discovery_context, "candidate_registry", None)
     values = getattr(registry, "values", None)
@@ -99,6 +108,11 @@ def _sync_candidates(
                 attributes=_candidate_attributes(candidate),
             )
             summary["nodes_added"] += 1
+            if candidate_type in {"endpoint", "api"}:
+                method = _candidate_method(candidate)
+                resource_index[(candidate_value, method)] = node_id
+            elif candidate_type in {"page", "path", "url"}:
+                resource_index[(candidate_value, "")] = node_id
             parent_target = str(getattr(candidate, "parent_target", "") or "").strip()
             if parent_target:
                 parent_id = graph.add_node("target", parent_target, sources=("candidate_parent",))
@@ -115,12 +129,13 @@ def _sync_api_registry(
     summary: Dict[str, int],
     document_limit: int,
     endpoint_limit: int,
+    resource_index: Dict[tuple, str],
 ) -> None:
     registry = getattr(discovery_context, "api_candidate_registry", None)
     if registry is None:
         return
-    _sync_documents(registry, graph, summary, document_limit)
-    _sync_endpoints(registry, graph, summary, endpoint_limit)
+    _sync_documents(registry, graph, summary, document_limit, resource_index)
+    _sync_endpoints(registry, graph, summary, endpoint_limit, resource_index)
 
 
 def _sync_responses(
@@ -128,6 +143,7 @@ def _sync_responses(
     graph: EvidenceGraph,
     summary: Dict[str, int],
     limit: int,
+    resource_index: Dict[tuple, str],
 ) -> None:
     registry = getattr(discovery_context, "response_registry", None)
     snapshot = getattr(registry, "snapshot_metadata", None)
@@ -167,19 +183,22 @@ def _sync_responses(
                 },
             )
             summary["nodes_added"] += 1
-            resource_id = graph.add_node(
-                "resource",
-                normalized_url,
-                sources=("response_registry",),
+            related_id = resource_index.get((normalized_url, method)) or resource_index.get(
+                (normalized_url, "")
             )
-            summary["nodes_added"] += 1
-            if graph.add_edge(resource_id, response_id, "observed_as", evidence=(request_profile,)):
+            if related_id and graph.add_edge(related_id, response_id, "observes", evidence=(request_profile,)):
                 summary["edges_added"] += 1
         except (KeyError, TypeError, ValueError, OverflowError):
             summary["skipped"] += 1
 
 
-def _sync_documents(registry: Any, graph: EvidenceGraph, summary: Dict[str, int], limit: int) -> None:
+def _sync_documents(
+    registry: Any,
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    limit: int,
+    resource_index: Dict[tuple, str],
+) -> None:
     snapshot = getattr(registry, "snapshot_documents", None)
     if not callable(snapshot):
         return
@@ -211,12 +230,19 @@ def _sync_documents(registry: Any, graph: EvidenceGraph, summary: Dict[str, int]
                 },
             )
             summary["nodes_added"] += 1
+            resource_index[(identity, "")] = node_id
             _add_parent_edge(graph, summary, node_id, document.get("parent_target"), "references")
         except (KeyError, TypeError, ValueError, OverflowError):
             summary["skipped"] += 1
 
 
-def _sync_endpoints(registry: Any, graph: EvidenceGraph, summary: Dict[str, int], limit: int) -> None:
+def _sync_endpoints(
+    registry: Any,
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    limit: int,
+    resource_index: Dict[tuple, str],
+) -> None:
     snapshot = getattr(registry, "snapshot_endpoints", None)
     if not callable(snapshot):
         return
@@ -258,6 +284,7 @@ def _sync_endpoints(registry: Any, graph: EvidenceGraph, summary: Dict[str, int]
                 },
             )
             summary["nodes_added"] += 1
+            resource_index[(url, str(endpoint.get("method") or "GET").upper())] = node_id
             _add_parent_edge(graph, summary, node_id, endpoint.get("parent_document"), "describes", "document")
             _add_parent_edge(graph, summary, node_id, endpoint.get("parent_target"), "exposes", "target")
         except (KeyError, TypeError, ValueError, OverflowError):
@@ -295,6 +322,13 @@ def _candidate_attributes(candidate: Any) -> Dict[str, Any]:
         if metadata.get("api_type"):
             attributes["parser"] = metadata.get("api_type")
     return attributes
+
+
+def _candidate_method(candidate: Any) -> str:
+    metadata = getattr(candidate, "metadata", None)
+    if isinstance(metadata, Mapping):
+        return str(metadata.get("method") or "GET").upper()
+    return "GET"
 
 
 def _confidence_from_metadata(metadata: Any) -> str:
