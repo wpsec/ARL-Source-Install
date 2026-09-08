@@ -15,6 +15,23 @@ import {
 } from './task';
 import { formatWihEndpointMetric } from './wih';
 
+function formatCellArrayValue(value: any[]): string {
+  const items = value.flatMap((item) => {
+    if (item === null || item === undefined) return [];
+    if (typeof item === 'object') {
+      try {
+        return [JSON.stringify(item)];
+      } catch {
+        return [String(item)];
+      }
+    }
+    return formatTokenListText(item).split(/\r?\n/);
+  })
+    .map((item) => String(item).trim())
+    .filter(Boolean);
+  return Array.from(new Set(items)).join('\n') || '-';
+}
+
 export function formatModuleCellValue(moduleId: string, column: string, row: any): string {
   const value = getValueByPath(row, column);
 
@@ -253,5 +270,6 @@ export function formatModuleCellValue(moduleId: string, column: string, row: any
     if (fingerNames.length > 0) return fingerNames.join('\n');
   }
 
+  if (Array.isArray(value)) return formatCellArrayValue(value);
   return normalizeValue(value);
 }

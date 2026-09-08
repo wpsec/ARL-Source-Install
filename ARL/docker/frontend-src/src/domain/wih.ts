@@ -145,7 +145,7 @@ export function formatWihVerificationReasons(row: any): string {
   const reasons = Array.isArray(row?.verification_reason_codes)
     ? row.verification_reason_codes
     : [];
-  return reasons.map((item: unknown) => String(item || '').trim()).filter(Boolean).join('、') || '-';
+  return reasons.map((item: unknown) => String(item || '').trim()).filter(Boolean).join('\n') || '-';
 }
 
 export const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([

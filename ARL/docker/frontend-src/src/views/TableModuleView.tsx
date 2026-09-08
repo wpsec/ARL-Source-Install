@@ -3431,7 +3431,8 @@ export function TableModuleView({
                         </td>
                       ) : null}
                       {columns.map((column) => {
-                        const wrapCell = shouldWrapCell(module.id, column);
+                        const formattedCellText = formatModuleCellValue(module.id, column, row);
+                        const wrapCell = shouldWrapCell(module.id, column) || formattedCellText.includes('\n');
                         const baseClassName = wrapCell
                           ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
                           : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-center';
@@ -4071,10 +4072,9 @@ export function TableModuleView({
                         }
 
                         if (hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)) {
-                          const cellText = formatModuleCellValue(module.id, column, row);
                           return (
                             <td key={column} className={baseClassName}>
-                              {renderTextWithHyperlink(cellText)}
+                              {renderTextWithHyperlink(formattedCellText)}
                             </td>
                           );
                         }
@@ -4179,7 +4179,7 @@ export function TableModuleView({
 
                         return (
                           <td key={column} className={baseClassName}>
-                            {formatModuleCellValue(module.id, column, row)}
+                            {formattedCellText}
                           </td>
                         );
                       })}
@@ -5022,7 +5022,7 @@ export function TableModuleView({
                     <div className="text-xs text-content-muted">
                       {normalizeValueNoTruncate(detailRow?.verification_note)}
                     </div>
-                    <div className="text-xs text-content-muted">
+                    <div className="text-xs text-content-muted whitespace-pre-wrap break-all">
                       认证边界：{formatWihVerificationReasons(detailRow)}
                     </div>
                     {detailRow?.auth_boundary_comparison && typeof detailRow.auth_boundary_comparison === 'object' ? (

@@ -73,6 +73,19 @@ describe('DataTable', () => {
     expect(missingCells.every((cell) => cell === '-')).toBe(true);
   });
 
+  it('默认文本单元格保留多值换行并允许折行', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        rows={[{ id: 'multi', name: 'Alpha\nBeta' }]}
+        rowKey={(r) => r.id}
+      />,
+    );
+    const value = container.querySelector('tbody tr td span');
+    expect(value?.textContent).toBe('Alpha\nBeta');
+    expect(value?.className).toContain('whitespace-pre-wrap');
+  });
+
   it('> 阈值进入虚拟滚动：内部滚动容器出现且 DOM 行数收敛', () => {
     const { container } = render(
       <DataTable columns={columns} rows={makeRows(201)} rowKey={(r) => r.id} />,

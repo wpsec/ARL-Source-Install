@@ -15,4 +15,8 @@ describe('formatModuleCellValue 多值字段', () => {
       source: 'arl, chaos',
     })).toBe('arl\nchaos');
   });
+
+  it('未知数组字段也按行展示，避免回退为逗号串', () => {
+    expect(formatModuleCellValue('site', 'tags', { tags: ['one', 'two'] })).toBe('one\ntwo');
+  });
 });

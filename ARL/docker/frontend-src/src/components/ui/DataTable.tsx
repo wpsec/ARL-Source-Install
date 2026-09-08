@@ -60,14 +60,27 @@ export function DataTable<Row extends object>({
   });
 
   const renderCells = (row: Row, index: number) =>
-    columns.map((column) => (
-      <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
-        {column.render
-          ? column.render(row, index)
-          : String(column.getValue ? column.getValue(row) : ((row as Record<string, unknown>)[column.key] ?? '-'))
-        }
-      </td>
-    ));
+    columns.map((column) => {
+      if (column.render) {
+        return (
+          <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
+            {column.render(row, index)}
+          </td>
+        );
+      }
+
+      const rawValue = column.getValue
+        ? column.getValue(row)
+        : ((row as Record<string, unknown>)[column.key] ?? '-');
+      const displayValue = String(rawValue);
+      return (
+        <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-center'}`}>
+          <span className={displayValue.includes('\n') ? 'whitespace-pre-wrap break-all' : undefined}>
+            {displayValue}
+          </span>
+        </td>
+      );
+    });
 
   const virtualItems = shouldVirtualize ? rowVirtualizer.getVirtualItems() : [];
   const virtualTotal = shouldVirtualize ? rowVirtualizer.getTotalSize() : 0;
