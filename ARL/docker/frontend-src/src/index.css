@@ -499,6 +499,17 @@
     row-gap: 0.75rem;
   }
 
+  /* 操作栏必须在内容之上保持可见；按钮不参与横向压缩，窄屏由媒体规则换行。 */
+  .arl-modal-box > .border-t {
+    position: relative;
+    z-index: 1;
+    box-shadow: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
+  }
+
+  .arl-modal-box > .border-t > .btn {
+    flex-shrink: 0;
+  }
+
   /* 标题、接口路径和任务名可能很长；头部内容必须先收缩，关闭按钮保持可见。 */
   .arl-modal-box > .border-b > :first-child {
     min-width: 0;
