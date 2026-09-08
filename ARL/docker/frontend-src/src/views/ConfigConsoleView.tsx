@@ -1437,7 +1437,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
       {showRestartModal ? (
         <Modal open onClose={() => setShowRestartModal(false)} boxClass="w-full max-w-md!">
             <div className="px-6 py-4 border-b border-base-300 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <AlertTriangle className="w-5 h-5 text-warning" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
             <div className="px-6 py-5 space-y-4">

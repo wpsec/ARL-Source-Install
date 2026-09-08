@@ -10,14 +10,14 @@ interface BrandLogoProps {
 
 const sizeClassMap: Record<BrandLogoSize, { box: string; icon: string; arl: string; sub: string; gap: string }> = {
   md: {
-    box: 'w-12 h-12 rounded-2xl',
+    box: 'w-12 h-12 rounded-box',
     icon: 'w-8 h-8',
     arl: 'text-[1.65rem]',
     sub: 'text-[11px]',
     gap: 'gap-4',
   },
   lg: {
-    box: 'w-14 h-14 rounded-2xl',
+    box: 'w-14 h-14 rounded-box',
     icon: 'w-9 h-9',
     arl: 'text-3xl',
     sub: 'text-xs',

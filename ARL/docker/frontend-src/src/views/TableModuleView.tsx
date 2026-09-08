@@ -83,7 +83,12 @@ import {
   isSensitiveWihRow,
 } from '../domain/wih';
 import { PageHeader } from '../layout/PageHeader';
-import { CONSOLE_INPUT_CLASS, UNIFIED_SELECT_CLASS } from '../ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_INPUT_CLASS,
+  CONSOLE_TEXTAREA_MONO_CLASS,
+  UNIFIED_SELECT_CLASS,
+} from '../ui/classes';
 import { ActionDialog } from './ActionDialog';
 
 export function TableModuleView({
@@ -1591,12 +1596,12 @@ export function TableModuleView({
   }, []);
   const getAiDenoiseCellClass = useCallback((resultLevel: AiDenoiseResultItem['result_level'], clickable: boolean): string => {
     const base = clickable
-      ? 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black transition hover:opacity-85'
-      : 'inline-flex items-center justify-center min-w-[92px] px-2.5 py-1 rounded-full border text-xs font-black';
-    if (resultLevel === 'danger') return `${base} border-error/40 bg-error/10 text-error`;
-    if (resultLevel === 'suspicious') return `${base} border-warning/45 bg-warning/12 text-warning`;
-    if (resultLevel === 'disabled') return `${base} border-base-300 bg-base-100 text-content-muted`;
-    return `${base} border-emerald-400/35 bg-emerald-400/12 text-emerald-300`;
+      ? 'badge min-w-[92px] px-2.5 py-1 text-xs font-black transition hover:opacity-85'
+      : 'badge min-w-[92px] px-2.5 py-1 text-xs font-black';
+    if (resultLevel === 'danger') return `${base} badge-error`;
+    if (resultLevel === 'suspicious') return `${base} badge-warning`;
+    if (resultLevel === 'disabled') return `${base} badge-ghost border border-base-300`;
+    return `${base} badge-success`;
   }, []);
   const openAiDenoiseDetail = useCallback((row: any, rowIndex: number, currentAnalysis: AiDenoiseResultItem) => {
     if (!aiDenoiseModuleId) return;
@@ -3608,7 +3613,7 @@ export function TableModuleView({
                           const contentText = formatModuleCellValue(module.id, column, row);
                           // 敏感记录在 WIH 中添加显著色块与标识，便于人工优先复核。
                           const contentClass = sensitive
-                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-xl border border-error/45 bg-error/10 px-3 py-2'
+                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-box border border-error/45 bg-error/10 px-3 py-2'
                             : 'whitespace-pre-wrap break-all leading-relaxed';
                           return (
                             <td key={column} className="px-4 py-3 align-top text-sm text-center min-w-[260px] max-w-[680px]">
@@ -3628,9 +3633,9 @@ export function TableModuleView({
                           const methodText = String(row?.method || '').trim().toUpperCase();
                           const tagClass =
                             methodText === 'POST'
-                              ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-warning/60 bg-warning/15 text-warning text-xs font-bold'
-                              : methodText === 'GET'
-                                ? 'inline-flex items-center px-2.5 py-1 rounded-lg border border-emerald-400/45 bg-emerald-400/12 text-emerald-300 text-xs font-bold'
+                                ? 'badge badge-warning text-xs font-bold'
+                                : methodText === 'GET'
+                                ? 'badge badge-success text-xs font-bold'
                                 : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-content-muted text-xs font-bold';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
@@ -3930,7 +3935,7 @@ export function TableModuleView({
                                       </div>
                                     ) : null}
                                     {taskAccountingSummary.hasUncountedDuration ? (
-                                      <div className="text-[11px] font-semibold text-amber-300">
+                                      <div className="text-[11px] font-semibold text-warning">
                                         进行中阶段耗时（暂未计入累计）：{taskAccountingSummary.uncountedStageName} · {taskAccountingSummary.uncountedDurationLabel}
                                       </div>
                                     ) : null}
@@ -4116,7 +4121,7 @@ export function TableModuleView({
                                     title: String(row?.site || row?.hostname || row?.title || '截图预览'),
                                   })
                                 }
-                                className="inline-flex items-center justify-center p-1 rounded-xl border border-transparent hover:border-accent/60 transition"
+                                className="inline-flex items-center justify-center p-1 rounded-box border border-transparent hover:border-accent/60 transition"
                                 title="点击预览截图"
                               >
                                 <img
@@ -4544,20 +4549,21 @@ export function TableModuleView({
 
             <div className="p-6 space-y-4">
               <div
-                className={`rounded-xl border px-4 py-3 ${
+                role={taskReportExportFeedback.phase === 'error' ? 'alert' : 'status'}
+                className={`alert alert-soft px-4 py-3 ${
                   taskReportExportFeedback.phase === 'error'
-                    ? 'border-red-500/30 bg-red-500/10 text-red-200'
+                    ? 'alert-error'
                     : taskReportExportFeedback.phase === 'success'
-                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                      : 'border-accent/30 bg-accent/10 text-base-content'
+                      ? 'alert-success'
+                      : 'alert-info'
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 shrink-0">
                     {taskReportExportFeedback.phase === 'success' ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+                      <CheckCircle2 className="w-5 h-5 text-success" />
                     ) : taskReportExportFeedback.phase === 'error' ? (
-                      <AlertTriangle className="w-5 h-5 text-red-300" />
+                      <AlertTriangle className="w-5 h-5 text-error" />
                     ) : (
                       <RefreshCw className="w-5 h-5 text-accent animate-spin" />
                     )}
@@ -4574,18 +4580,18 @@ export function TableModuleView({
                   <span>导出进度</span>
                   <span>{taskReportExportFeedback.progress}%</span>
                 </div>
-                <div className="h-2.5 rounded-full border border-base-300 bg-base-100 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      taskReportExportFeedback.phase === 'error'
-                        ? 'bg-error'
-                        : taskReportExportFeedback.phase === 'success'
-                          ? 'bg-emerald-400'
-                          : 'bg-primary'
-                    }`}
-                    style={{ width: `${Math.max(0, Math.min(100, taskReportExportFeedback.progress))}%` }}
-                  />
-                </div>
+                <progress
+                  className={`progress w-full ${
+                    taskReportExportFeedback.phase === 'error'
+                      ? 'progress-error'
+                      : taskReportExportFeedback.phase === 'success'
+                        ? 'progress-success'
+                        : 'progress-primary'
+                  }`}
+                  value={Math.max(0, Math.min(100, taskReportExportFeedback.progress))}
+                  max="100"
+                  aria-label="导出进度"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3 text-xs">
@@ -4607,7 +4613,7 @@ export function TableModuleView({
               ) : null}
 
               {taskReportExportFeedback.error ? (
-                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2 whitespace-pre-wrap break-all">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} whitespace-pre-wrap break-all`}>
                   {taskReportExportFeedback.error}
                 </div>
               ) : null}
@@ -4680,13 +4686,13 @@ export function TableModuleView({
                   value={riskTaskName}
                   onChange={(event) => setRiskTaskName(event.target.value)}
                   disabled={riskDialogSubmitting}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="风险巡航任务-策略名"
                 />
               </div>
 
               {riskDialogError ? (
-                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
                   {riskDialogError}
                 </div>
               ) : null}
@@ -4760,7 +4766,7 @@ export function TableModuleView({
                   value={policyTaskName}
                   onChange={(event) => setPolicyTaskName(event.target.value)}
                   disabled={policyTaskSubmitting}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入任务名称"
                 />
               </div>
@@ -4771,7 +4777,7 @@ export function TableModuleView({
                   value={policyTaskTarget}
                   onChange={(event) => setPolicyTaskTarget(event.target.value)}
                   disabled={policyTaskSubmitting}
-                  className="w-full min-h-[180px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[180px]`}
                   placeholder={
                     policyTaskTag === 'risk_cruising'
                       ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
@@ -4786,7 +4792,7 @@ export function TableModuleView({
               </div>
 
               {policyTaskError ? (
-                <div className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+                <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
                   {policyTaskError}
                 </div>
               ) : null}
@@ -5231,9 +5237,9 @@ export function TableModuleView({
                             ? 'border-accent/35 bg-accent/10 text-base-content'
                             : item.role === 'tool'
                               ? 'border-warning/35 bg-warning/10 text-base-content'
-                              : 'border-emerald-400/35 bg-emerald-400/10 text-base-content';
+                              : 'border-success/35 bg-success/10 text-base-content';
                       return (
-                        <div key={`${index}-${item.role}`} className={`rounded-xl border px-3 py-2 ${roleClass}`}>
+                        <div key={`${index}-${item.role}`} className={`rounded-box border px-3 py-2 ${roleClass}`}>
                           <div className="text-[11px] font-black tracking-wide mb-1">{roleLabel}</div>
                           <div className="text-sm whitespace-pre-wrap break-all leading-relaxed">
                             {formatAiDialogueContent(item.role, item.content)}
@@ -5314,7 +5320,7 @@ export function TableModuleView({
         <Modal open onClose={() => closeDeleteConfirmDialog(false)} boxClass="w-full max-w-lg!">
             <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <AlertTriangle className="w-5 h-5 text-warning" />
                 <h4 className="text-lg font-black">{deleteConfirmDialog.title}</h4>
               </div>
               <button
@@ -5365,7 +5371,7 @@ export function TableModuleView({
               <img
                 src={screenshotPreview.url}
                 alt={screenshotPreview.title}
-                className="mx-auto max-w-full h-auto rounded-xl border border-base-300 bg-base-100"
+                className="mx-auto max-w-full h-auto rounded-box border border-base-300 bg-base-100"
               />
             </div>
         </Modal>

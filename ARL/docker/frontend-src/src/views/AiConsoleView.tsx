@@ -24,6 +24,8 @@ import { Modal } from '../components/ui/Modal';
 import { DataTable } from '../components/ui/DataTable';
 import type {AiDenoiseModuleId} from '../domain/types';
 import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
@@ -658,12 +660,12 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       ({
         qwen: {
           logo: 'QW',
-          logoClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40',
+          logoClass: 'bg-success/15 text-success border-success/40',
           apiKeyUrl: 'https://bailian.console.aliyun.com/?apiKey=1',
         },
         kimi: {
           logo: 'KM',
-          logoClass: 'bg-sky-500/20 text-sky-300 border-sky-400/40',
+          logoClass: 'bg-info/15 text-info border-info/40',
           apiKeyUrl: 'https://platform.moonshot.cn/console/api-keys',
         },
         openai: {
@@ -673,17 +675,17 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         },
         glm: {
           logo: 'GL',
-          logoClass: 'bg-violet-500/20 text-violet-300 border-violet-400/40',
+          logoClass: 'bg-secondary/15 text-secondary border-secondary/40',
           apiKeyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
         },
         deepseek: {
           logo: 'DS',
-          logoClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40',
+          logoClass: 'bg-info/15 text-info border-info/40',
           apiKeyUrl: 'https://platform.deepseek.com/api_keys',
         },
         custom_compatible: {
           logo: 'API',
-          logoClass: 'bg-amber-500/20 text-amber-300 border-amber-400/40',
+          logoClass: 'bg-warning/15 text-warning border-warning/40',
           apiKeyUrl: 'https://platform.openai.com/api-keys',
         },
       }) as Record<
@@ -769,7 +771,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const aiInputMonoClass = CONSOLE_INPUT_MONO_CLASS;
   const aiSelectWrapClass = 'relative w-full';
   const aiUploadFilenameClass =
-    'flex-1 h-10 rounded-xl border border-base-300 bg-base-100 px-3 text-sm text-content-muted flex items-center truncate';
+    'flex-1 h-10 rounded-box border border-base-300 bg-base-100 px-3 text-sm text-base-content/60 flex items-center truncate';
 
   const clearSopUploadSelection = useCallback(() => {
     setSopUploadFile(null);
@@ -1826,7 +1828,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <div key={provider.id} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className={`h-10 w-10 rounded-xl border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
+                    <div className={`h-10 w-10 rounded-box border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
                       {providerMeta.logo}
                     </div>
                     <div className="min-w-0">
@@ -1836,10 +1838,10 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                       </div>
                     </div>
                   </div>
-                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border text-[11px] ${
+                  <div className={`badge gap-1 text-[11px] ${
                     configured
-                      ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
-                      : 'text-content-muted border-base-300 bg-base-100'
+                      ? 'badge-success'
+                      : 'badge-ghost border border-base-300'
                   }`}>
                     {configured ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
                     {configured ? '已配置' : '未配置'}
@@ -2367,12 +2369,12 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 cellClass: 'text-left whitespace-nowrap',
                 render: (item: any) => (
                   <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded border ${
+                    className={`badge text-xs ${
                       item.status === 'ok'
-                        ? 'text-emerald-300 border-emerald-300/40 bg-emerald-300/10'
+                        ? 'badge-success'
                         : item.status === 'skipped'
-                          ? 'text-amber-300 border-amber-300/40 bg-amber-300/10'
-                          : 'text-error border-error/40 bg-error/10'
+                          ? 'badge-warning'
+                          : 'badge-error'
                     }`}
                   >
                     {item.status === 'ok' ? '成功' : item.status === 'skipped' ? '跳过' : '失败'}
@@ -2426,7 +2428,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           />
         </div>
         {usageError ? (
-          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+          <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
             {usageError}
           </div>
         ) : null}
@@ -2436,7 +2438,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         <Modal open onClose={closeProviderConfigDialog} boxClass="w-full max-w-2xl!">
             <div className="px-5 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
-                <div className={`h-8 w-8 rounded-lg border flex items-center justify-center text-[10px] font-black tracking-wide ${providerConfigMeta.logoClass}`}>
+                <div className={`h-8 w-8 rounded-box border flex items-center justify-center text-[10px] font-black tracking-wide ${providerConfigMeta.logoClass}`}>
                   {providerConfigMeta.logo}
                 </div>
                 <div className="text-sm font-black tracking-wide truncate">配置 {providerConfigLabel}</div>
@@ -2617,7 +2619,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
       {showRestartModal ? (
         <Modal open onClose={() => setShowRestartModal(false)} boxClass="w-full max-w-md!">
             <div className="px-6 py-4 border-b border-base-300 flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-400" />
+              <AlertTriangle className="w-5 h-5 text-warning" />
               <h4 className="text-lg font-black tracking-wide">需要重启容器</h4>
             </div>
             <div className="px-6 py-5 space-y-4">
@@ -2702,12 +2704,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
             </div>
             <div className="p-5 space-y-3 overflow-y-auto min-h-0">
               <div
-                className={`text-xs rounded-lg px-3 py-2 border ${
+                role={testResult.ok ? 'status' : 'alert'}
+                className={`${
                   testResult.ok
-                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
+                    ? CONSOLE_ALERT_SUCCESS_CLASS
                     : testResult.message.includes('已跳过')
-                      ? 'text-amber-300 bg-amber-300/10 border-amber-300/30'
-                      : 'text-error bg-error/10 border-error/30'
+                      ? 'alert alert-warning alert-soft text-sm'
+                      : CONSOLE_ALERT_ERROR_CLASS
                 }`}
               >
                 {testResult.message || '-'}
@@ -2720,11 +2723,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
               <div className="space-y-2 rounded-box border border-base-300 bg-base-100 p-3">
                 <div className="text-xs font-semibold">用户发送</div>
-                <div className="text-sm rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
+                <div className="text-sm rounded-box border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {testResult.request_text || '你好呀～'}
                 </div>
                 <div className="text-xs font-semibold pt-1">AI回复</div>
-                <div className="text-sm rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all min-h-[44px]">
+                <div className="text-sm rounded-box border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all min-h-[44px]">
                   {testResult.reply_text || '-'}
                 </div>
               </div>
