@@ -439,7 +439,8 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 - 已实现 `ARL/app/services/evidence_graph.py`：提供节点/关系的确定性幂等合并、节点/边预算和脱敏快照；原始 URL、正文和认证材料不进入图快照。
 - 已实现 `ARL/app/services/evidence_graph_adapter.py`：只读汇聚候选图、API 文档、Endpoint 和 Response Registry，按父目标/文档/响应建立关系，重复同步保持幂等。
 - 已增加 `ResponseRegistry.snapshot_metadata()`：向诊断/证据图暴露不含正文和 Header 的有界响应摘要。
-- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`、`ARL/test/test_response_registry_snapshot.py`，当前 21 项契约测试通过。
+- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`、`ARL/test/test_response_registry_snapshot.py`，当前 22 项契约测试通过。
+- WIH 主阶段和收尾阶段均会刷新任务内画像；收尾画像可以消费 ResponseRegistry 的摘要信号，但仍不读取或保存完整响应，也不自动切换 Collector。
 - 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，不改变默认 Collector 和扫描策略。
 
 - [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；

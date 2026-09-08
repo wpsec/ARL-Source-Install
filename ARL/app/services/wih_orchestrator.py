@@ -31,6 +31,17 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
             profiles = {}
             setattr(discovery_context, "target_profiles", profiles)
         record_metric = getattr(discovery_context, "record_metric", None)
+        response_metadata = []
+        response_snapshot = getattr(
+            getattr(discovery_context, "response_registry", None),
+            "snapshot_metadata",
+            None,
+        )
+        if callable(response_snapshot):
+            try:
+                response_metadata = list(response_snapshot())
+            except (AttributeError, TypeError, ValueError):
+                response_metadata = []
         record_list = list(records or [])
         for site in list(scan_sites or []):
             site_text = str(site or "").strip()
@@ -39,9 +50,19 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
                 for record in record_list
                 if str(getattr(record, "site", "") or "").strip() == site_text
             ]
-            profile = resolver.resolve_records(site_records)
-            profiles[site_text] = profile.to_dict()
-            if callable(record_metric):
+            site_host = url_host(site_text)
+            site_responses = [
+                item
+                for item in response_metadata
+                if isinstance(item, dict)
+                and site_host
+                and url_host(item.get("normalized_url")) == site_host
+            ]
+            profile = resolver.resolve_records(site_records, site_responses)
+            profile_payload = profile.to_dict()
+            changed = profiles.get(site_text) != profile_payload
+            profiles[site_text] = profile_payload
+            if changed and callable(record_metric):
                 record_metric("wih_target_profile_observed_total")
                 record_metric("wih_target_profile_{}_total".format(profile.profile))
         logger.info(
@@ -773,6 +794,13 @@ class WihOrchestrator(object):
                 detail="records={}".format(len(records)),
                 input_count=len(records),
             )
+
+        _record_target_profiles(
+            task,
+            scan_sites,
+            records,
+            discovery_context,
+        )
 
         for raw_record in records:
             record = InfoHunter.normalize_wih_record(raw_record)

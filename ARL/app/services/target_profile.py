@@ -222,7 +222,11 @@ class TargetProfileResolver:
             (COLLECTOR_BROWSER_RUNTIME,),
         )
 
-    def resolve_records(self, records: Iterable[Any] = ()) -> TargetProfile:
+    def resolve_records(
+        self,
+        records: Iterable[Any] = (),
+        response_metadata: Iterable[Any] = (),
+    ) -> TargetProfile:
         """把既有 WihRecord/候选记录转换为画像线索。
 
         WihRecord 通常没有响应正文，因此这里只使用记录类型和候选路径作为
@@ -248,7 +252,11 @@ class TargetProfileResolver:
                 documents.append(item)
             elif any(marker in record_type for marker in ("api", "endpoint", "path", "url")):
                 pages.append(item)
-        return self.resolve(pages=pages, scripts=scripts, documents=documents)
+        return self.resolve(
+            pages=list(pages) + self._bounded_items(response_metadata),
+            scripts=scripts,
+            documents=documents,
+        )
 
     @staticmethod
     def _bounded_items(items: Iterable[Any]) -> List[Any]:

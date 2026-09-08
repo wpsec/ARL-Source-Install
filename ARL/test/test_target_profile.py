@@ -133,6 +133,19 @@ class TargetProfileResolverTest(unittest.TestCase):
 
         self.assertEqual(profile.profile, MODULE.PROFILE_DOCUMENT_FIRST)
 
+    def test_response_metadata_can_supply_api_only_signal_without_body(self):
+        profile = self.resolver.resolve_records(
+            response_metadata=[
+                {
+                    "normalized_url": "/api/items",
+                    "content_type": "application/json",
+                    "status_code": 200,
+                }
+            ]
+        )
+
+        self.assertEqual(profile.profile, MODULE.PROFILE_API_ONLY)
+
 
 if __name__ == "__main__":
     unittest.main()
