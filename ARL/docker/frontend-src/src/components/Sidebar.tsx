@@ -98,7 +98,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
             <h3 className={cn("hidden px-3 mb-2 text-[11px] font-semibold leading-4 tracking-wide opacity-80 lg:block", group.color)}>
               {group.label}
             </h3>
-            <ul className="menu w-full p-0 gap-1">
+            <ul className="w-full list-none space-y-1 p-0">
               {group.items.map((item) => (
                 <li key={item.id} className="w-full">
                   <button
@@ -114,7 +114,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden lg:inline">{item.label}</span>
+                    <span className="hidden flex-1 text-left lg:inline">{item.label}</span>
                   </button>
                 </li>
               ))}
