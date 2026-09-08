@@ -66,6 +66,54 @@ def extract_detected_service(service_name, product=""):
     return ""
 
 
+def resolve_service_result(
+    service_name="",
+    product="",
+    npoc_scheme="",
+    port=None,
+    proto="tcp",
+    use_registry=True,
+):
+    """把 Nmap/NPoC 观测统一为服务识别结果。
+
+    端口仅能产生弱候选；Registry 不可用时保留旧的服务名提取逻辑，避免服务
+    规范文件故障把整个端口结果吞掉。
+    """
+
+    if use_registry:
+        try:
+            from app.services.service_fingerprint_registry import get_service_registry
+
+            result = get_service_registry().normalize_result(
+                nmap_service=service_name,
+                nmap_product=product,
+                npoc_scheme=npoc_scheme,
+                port=port,
+                proto=proto,
+            )
+            if result.get("service"):
+                return result
+        except (AttributeError, ImportError, TypeError, ValueError) as exc:
+            # Registry 属增强面，失败时继续使用兼容归一化；调用方仍可保留端口结果。
+            fallback_reason = type(exc).__name__
+        else:
+            fallback_reason = "empty_registry_result"
+    else:
+        fallback_reason = "registry_disabled"
+
+    raw_name = extract_detected_service(service_name=service_name, product=product)
+    service = normalize_scheme(raw_name, use_registry=False)
+    source = "nmap_service_name" if str(service_name or "").strip() else "legacy_passthrough"
+    return {
+        "service": service,
+        "confirmed": bool(service),
+        "confidence": 90 if service else 0,
+        "sources": [source] if service else [],
+        "fallback_reason": fallback_reason,
+        "conflict": None,
+    }
+
+
 def build_sniffer_targets(task, full_port=False):
     """从两种任务端口模型构建去重后的协议识别目标。"""
     all_targets = []

@@ -26,6 +26,7 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
         return
     try:
         resolver = resolver_type()
+        strategy_builder = getattr(services, "build_wih_strategy_plan", None)
         profiles = getattr(discovery_context, "target_profiles", None)
         if not isinstance(profiles, dict):
             profiles = {}
@@ -60,6 +61,27 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
             ]
             profile = resolver.resolve_records(site_records, site_responses)
             profile_payload = profile.to_dict()
+            if callable(strategy_builder):
+                try:
+                    strategy = strategy_builder(
+                        profile,
+                        browser_enabled=bool(getattr(Config, "BROWSER_INTEL_ENABLE", False)),
+                        auth_boundary_enabled=bool(
+                            task.options.get("wih_auth_boundary_enable", False)
+                        ),
+                        budget_sec=getattr(Config, "WIH_TOTAL_BUDGET_SEC", 0),
+                        metrics=(
+                            discovery_context.metrics_snapshot()
+                            if callable(getattr(discovery_context, "metrics_snapshot", None))
+                            else {}
+                        ),
+                    )
+                    profile_payload["strategy"] = strategy.to_dict()
+                except (AttributeError, TypeError, ValueError) as exc:
+                    logger.debug(
+                        "wih target strategy build failed error_type:%s",
+                        type(exc).__name__,
+                    )
             changed = profiles.get(site_text) != profile_payload
             profiles[site_text] = profile_payload
             if changed and callable(record_metric):
@@ -75,6 +97,30 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
         logger.debug(
             "wih target profile resolve failed error_type:{}".format(type(exc).__name__)
         )
+
+
+def _browser_runtime_sites(scan_sites, discovery_context):
+    """只把画像明确建议 runtime 的站点交给浏览器 Collector。
+
+    旧测试或旧任务没有画像时返回原集合，保持兼容；画像已经生成后，unknown/
+    SSR/API-only 不会因为全局开关开启而自动扩大到浏览器采集。
+    """
+
+    sites = list(scan_sites or [])
+    profiles = getattr(discovery_context, "target_profiles", None)
+    if not isinstance(profiles, dict):
+        return sites
+    selected = []
+    for site in sites:
+        payload = profiles.get(str(site or "").strip())
+        if not isinstance(payload, dict):
+            return sites
+        strategy = payload.get("strategy")
+        if not isinstance(strategy, dict):
+            return sites
+        if "browser_runtime" in list(strategy.get("selected_collectors") or []):
+            selected.append(site)
+    return selected
 
 
 def _wih_primary_fully_succeeded(stage_metrics) -> bool:
@@ -674,7 +720,10 @@ class WihOrchestrator(object):
         # 计划 6 第 8 批（P0-05）：浏览器运行时采集接入统一 Registry 消费面。
         # flag 关闭不新增子阶段（legacy 行为面不变）；管线回退导致 Registry 未
         # 挂载时整段跳过；采集/摄取任何异常只隔离本阶段，不影响 WIH 主链路。
-        if scan_sites and api_unified_enabled and bool(
+        browser_sites = _browser_runtime_sites(
+            scan_sites, getattr(task, "discovery_context", None)
+        )
+        if browser_sites and api_unified_enabled and bool(
                 getattr(Config, "BROWSER_INTEL_ENABLE", False)):
             browser_registry = getattr(
                 getattr(task, "discovery_context", None),
@@ -683,9 +732,9 @@ class WihOrchestrator(object):
                 try:
                     browser_results = task._run_substage(
                         "wih_browser_intel",
-                        lambda: services.run_browser_intel_scan(scan_sites),
-                        detail="sites={}".format(len(scan_sites)),
-                        input_count=len(scan_sites),
+                        lambda: services.run_browser_intel_scan(browser_sites),
+                        detail="sites={}".format(len(browser_sites)),
+                        input_count=len(browser_sites),
                     ) or {}
                     ingested = services.ingest_browser_runtime_events(
                         browser_registry, browser_results)
@@ -696,7 +745,7 @@ class WihOrchestrator(object):
                         discovery_ctx = getattr(task, "discovery_context", None)
                         if discovery_ctx is not None:
                             discovery_ctx.record_metric(
-                                "external_network_browser_intel", len(scan_sites))
+                                "external_network_browser_intel", len(browser_sites))
                     except Exception as exc:
                         logger.debug(
                             "browser external metric failed error_type:{}".format(

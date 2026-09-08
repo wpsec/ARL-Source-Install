@@ -21,6 +21,7 @@ from app.services.dns_query import (
 from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
 from app.services.task_result_write_service import TaskResultWriteService
+from app.services.service_detection import resolve_service_result
 from app.services.wildcardDomain import (
     domain_info_hits_wildcard_profile,
     domain_info_hits_wildcard_profile_with_details,
@@ -1330,14 +1331,22 @@ class DomainNetworkStageService(object):
         nmap_merged = 0
         npoc_merged = 0
 
-        def _append_item(service_name, ip, port_id, product="", version="", source=""):
+        def _append_item(service_name, ip, port_id, product="", version="", source="",
+                         npoc_scheme="", proto="tcp"):
             nonlocal merged_total, nmap_merged, npoc_merged
-            raw_name = task._extract_detected_service(
+            service_result = resolve_service_result(
                 service_name=service_name,
                 product=product,
+                npoc_scheme=npoc_scheme,
+                port=port_id,
+                proto=proto,
+                use_registry=True,
             )
-            service = task._normalize_scheme(raw_name)
-            if not service:
+            service = str(service_result.get("service") or "").strip()
+            if not service or (
+                not service_result.get("confirmed")
+                and list(service_result.get("sources") or []) == ["port_only"]
+            ):
                 return
 
             ip = str(ip or "").strip()
@@ -1358,12 +1367,17 @@ class DomainNetworkStageService(object):
             normalized_product = str(product or "").strip()
             if not normalized_product:
                 normalized_product = service
-            service_map[service].append({
+            service_info = {
                 "ip": ip,
                 "port_id": port_id,
                 "product": normalized_product,
                 "version": str(version or "").strip(),
-            })
+                "service_confidence": service_result.get("confidence", 0),
+                "service_sources": list(service_result.get("sources") or []),
+            }
+            if service_result.get("conflict"):
+                service_info["service_conflict"] = service_result["conflict"]
+            service_map[service].append(service_info)
             merged_total += 1
             if source == "nmap":
                 nmap_merged += 1
@@ -1381,6 +1395,7 @@ class DomainNetworkStageService(object):
                     product=getattr(port_item, "product", ""),
                     version=getattr(port_item, "version", ""),
                     source="nmap",
+                    proto=getattr(port_item, "protocol", "tcp"),
                 )
 
         for item in utils.conn_db("npoc_service").find({"task_id": task.task_id}):
@@ -1391,6 +1406,8 @@ class DomainNetworkStageService(object):
                 product=item.get("scheme", ""),
                 version=item.get("version", ""),
                 source="npoc",
+                npoc_scheme=item.get("scheme", ""),
+                proto=item.get("protocol", item.get("proto", "tcp")),
             )
 
         for service_name, info_list in service_map.items():

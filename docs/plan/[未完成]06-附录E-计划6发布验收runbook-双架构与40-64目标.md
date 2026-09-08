@@ -1,6 +1,6 @@
 # 06 附录 E · 计划 6 发布验收 runbook（双架构 + 40/64 目标）
 
-状态：**未完成执行**（2026-09-08 Review 修订：统一 API 开关接线、任务提交、脱敏证据流程和 worker consumer 健康监督代码已补齐；旧镜像现场样本已归档，真实重部署执行仍待部署方完成）。
+状态：**未完成执行**（2026-09-08 Review 修订：统一 API 开关接线、任务提交、脱敏证据流程和 worker consumer 健康监督代码已补齐；本轮又补充离线代码门禁入口，真实重部署执行仍待部署方完成）。
 
 适用门禁：计划 6 §十二验收条件、§十三发布回滚流程、第 11 批（40/64 目标、双架构、Rust 模式升级、端到端 ≤5%）。**计划 5 的 x86 指纹切换门禁不在本文范围**（那份是 `docs/plan/[未完成]05-附录D-x86放行runbook.md`）。
 
@@ -345,6 +345,18 @@ done
 `celery consumer health check failed`，该轮不得进入 40 目标验收。该检查用于覆盖“Celery
 主进程/PID 仍存活但 AMQP consumer 已消失”的故障模式，不替代任务终态、RabbitMQ 队列和
 Endpoint 导出。
+
+## 5.2 开发期离线代码门禁
+
+在不连接 Mongo、RabbitMQ、Web API 或外部目标的情况下，可运行：
+
+```bash
+python3 scripts/plan567-code-check.py --plan 6
+```
+
+该命令逐模块启动独立 Python 进程，检查统一 API 模型、Parser、Registry、shadow、发布组
+离线比较器和 WIH baseline 校验器。它只能证明代码回归通过，不能替代本 runbook 的双架构、
+40/64 目标、Rust 性能或真实 worker consumer 门禁。
 
 ## 6. 完成定义
 

@@ -468,7 +468,7 @@ class DomainTask(CommonTask):
 
     @staticmethod
     def _normalize_scheme(value):
-        return normalize_scheme(value, use_registry=False)
+        return normalize_scheme(value, use_registry=True)
 
     @staticmethod
     def _extract_detected_service(service_name, product=""):
@@ -486,7 +486,7 @@ class DomainTask(CommonTask):
         return build_sniffer_targets(self, full_port=full_port)
 
     def _apply_npoc_service_result(self, sniffer_items):
-        return apply_npoc_service_result(self, sniffer_items, use_registry=False)
+        return apply_npoc_service_result(self, sniffer_items, use_registry=True)
 
     @property
     def domain_word_file(self) -> str:

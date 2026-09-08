@@ -1,6 +1,6 @@
 # 计划 7：通用 Web/API 资产证据图与智能验证可行性分析
 
-状态：[未完成][开发中]，已落盘第一批最小 TargetProfile/EvidenceGraph 契约与标准库单测；已接入 WIH 画像记录面，但未改变默认 Collector 和扫描策略。
+状态：[未完成][开发中]，已落盘第一批最小 TargetProfile/EvidenceGraph 契约与标准库单测；已接入 WIH 画像记录面和有界策略层。策略层只对 browser runtime 做画像与显式开关约束，不改变其他默认扫描阶段和结果写回语义。
 
 ## 一、重新定位
 
@@ -439,10 +439,13 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 - 已实现 `ARL/app/services/evidence_graph.py`：提供节点/关系的确定性幂等合并、节点/边预算和脱敏快照；原始 URL、正文和认证材料不进入图快照。
 - 已实现 `ARL/app/services/evidence_graph_adapter.py`：只读汇聚候选图、API 文档、Endpoint 和 Response Registry，按父目标/文档/响应建立关系，重复同步保持幂等。
 - 已增加 `ResponseRegistry.snapshot_metadata()`：向诊断/证据图暴露不含正文和 Header 的有界响应摘要。
-- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`、`ARL/test/test_response_registry_snapshot.py`，当前 22 项契约测试通过。
+- 已增加 `ARL/test/test_target_profile.py`、`ARL/test/test_evidence_graph.py`、`ARL/test/test_evidence_graph_adapter.py`、`ARL/test/test_response_registry_snapshot.py`，相关证据图/响应契约回归通过。
 - WIH 主阶段和收尾阶段均会刷新任务内画像；收尾画像可以消费 ResponseRegistry 的摘要信号，但仍不读取或保存完整响应，也不自动切换 Collector。
 - 证据图同步计数和节点/边数量进入现有任务诊断快照，保持仅诊断用途，不写入 Mongo 结果文档。
-- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，不改变默认 Collector 和扫描策略。
+- 已实现 `wih_strategy.py`：将画像、显式开关、任务预算和低收益/WAF 指标映射为确定性 Collector 决策；browser runtime 只有在画像建议且开关显式开启时才接收目标，L2/L3 不会自动发送专门验证请求。
+- 已实现 `controlled_verification_policy.py`：统一 L0/L1/L2/L3 决策，GET/HEAD 为默认 L1，POST 必须同时具备只读标记和 allowlist，写入/专门方法进入 skipped/L3 语义；WIH endpoint probe 已接入该策略。
+- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；认证边界对比、HAR/代理导入、协议 Collector 和真实 40/64 门禁仍未实现或未运行。
+- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，策略层仅对 browser runtime 做有界、显式开关控制，不改变其他默认扫描阶段和结果写回语义。
 
 - [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；
 - [ ] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；

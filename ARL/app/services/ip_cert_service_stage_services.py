@@ -10,6 +10,7 @@ IPTask 仍通过同名方法提供兼容入口。
 
 from app import utils
 from app.services import fetchCert
+from app.services.service_detection import resolve_service_result
 from app.services.task_result_write_service import TaskResultWriteService
 
 
@@ -212,14 +213,21 @@ class IPServiceSummaryStageService(object):
         npoc_merged = 0
 
         def _append_item(service_name, ip, port_id, product="", version="", source="",
-                         confidence=None, sources=None, conflict=None):
+                         confidence=None, sources=None, conflict=None, npoc_scheme="", proto="tcp"):
             nonlocal merged_total, nmap_merged, npoc_merged
-            raw_name = task._extract_detected_service(
+            service_result = resolve_service_result(
                 service_name=service_name,
                 product=product,
+                npoc_scheme=npoc_scheme,
+                port=port_id,
+                proto=proto,
+                use_registry=True,
             )
-            service = task._normalize_scheme(raw_name)
-            if not service:
+            service = str(service_result.get("service") or "").strip()
+            if not service or (
+                not service_result.get("confirmed")
+                and list(service_result.get("sources") or []) == ["port_only"]
+            ):
                 return
 
             ip = str(ip or "").strip()
@@ -248,12 +256,15 @@ class IPServiceSummaryStageService(object):
                 "version": str(version or "").strip(),
             }
             # 计划5 第5阶段增量观测字段（附加式，不改既有字段语义）
-            if confidence is not None:
-                doc["service_confidence"] = confidence
-            if sources:
-                doc["service_sources"] = list(sources)
-            if conflict:
-                doc["service_conflict"] = conflict
+            doc["service_confidence"] = (
+                confidence if confidence is not None else service_result.get("confidence")
+            )
+            merged_sources = list(sources or service_result.get("sources") or [])
+            if merged_sources:
+                doc["service_sources"] = list(dict.fromkeys(merged_sources))
+            merged_conflict = conflict or service_result.get("conflict")
+            if merged_conflict:
+                doc["service_conflict"] = merged_conflict
             service_map[service].append(doc)
             merged_total += 1
             if source == "nmap":
@@ -275,6 +286,7 @@ class IPServiceSummaryStageService(object):
                     confidence=port_item.get("service_confidence"),
                     sources=port_item.get("service_sources"),
                     conflict=port_item.get("service_conflict"),
+                    proto=port_item.get("protocol", "tcp"),
                 )
 
         # 2) npoc 明细补充（用于兜底合并来源）
@@ -286,6 +298,8 @@ class IPServiceSummaryStageService(object):
                 product=item.get("scheme", ""),
                 version=item.get("version", ""),
                 source="npoc",
+                npoc_scheme=item.get("scheme", ""),
+                proto=item.get("protocol", item.get("proto", "tcp")),
             )
 
         for service_name, info_list in service_map.items():

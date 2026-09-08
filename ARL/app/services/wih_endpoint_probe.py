@@ -7,7 +7,7 @@ single-flight 合并并发抓取、成功响应回填 registry 供其它策略�
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -15,6 +15,7 @@ from app import utils
 from app.config import Config
 
 from .api_unified_shadow import shadow_probe_failed, shadow_probe_start
+from .controlled_verification_policy import ControlledVerificationPolicy
 
 logger = utils.get_logger()
 
@@ -207,6 +208,15 @@ def _should_skip(item: Dict) -> str:
 
     if _has_response(item):
         return ""
+    # 所有主动 Endpoint 验证先过统一安全策略。POST 只有在调用方同时提供
+    # safe_read=true 与 allowlisted_post=true 时才可进入 L1；否则只保留发现结果。
+    policy = ControlledVerificationPolicy(
+        allowlisted_post=_is_explicit_true(item.get("allowlisted_post")),
+    )
+    decision = policy.decide(item)
+    if not decision.allowed:
+        return "受控验证策略跳过: {}".format(decision.reason_code)
+
     if method in _DANGEROUS_METHODS:
         return "危险 HTTP 方法 {}，未主动验证".format(method)
     if method not in _ACTIVE_METHODS:
@@ -215,6 +225,12 @@ def _should_skip(item: Dict) -> str:
         body_label = body_kind or content_type or "POST"
         return "{} 请求体可能产生副作用，未主动验证".format(body_label)
     return ""
+
+
+def _is_explicit_true(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _probe_request_profile(method: str, item: Dict) -> str:

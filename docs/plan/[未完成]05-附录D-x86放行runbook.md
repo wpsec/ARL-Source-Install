@@ -7,6 +7,17 @@
 > 前置：镜像已含 `app/dicts/site_fingerprints.json.gz`、`service_fingerprints.json.gz`
 > （Dockerfile `COPY ARL/app/ app/` 覆盖）。服务映射层默认已生效，无需单独放行。
 
+## 开发期离线代码门禁（不替代 x86 放行）
+
+在暂不连接真实 Mongo、Redis、RabbitMQ 或外部目标时，先在仓库根目录执行：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/plan567-code-check.py --plan 5
+```
+
+该门禁覆盖规则注册表、服务注册表、统一指纹构建和现有接线回归，且每个测试模块隔离运行，避免测试 bootstrap 互相污染。
+通过只表示当前代码层回归通过；x86 真实规则对账、容器镜像加载、unified 灰度和观测期仍必须按下面的门禁 1-3 执行，未执行前不得标记为放行完成。
+
 ---
 
 ## 门禁 1 · 规则集对照（机器自动对账，必须绿灯）

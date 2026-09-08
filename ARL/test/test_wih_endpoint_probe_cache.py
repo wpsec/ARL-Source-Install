@@ -76,15 +76,34 @@ class TestProbeCache(unittest.TestCase):
         ctx = DiscoveryContext("task-1")
         a = {"url": "http://api.example.com/search", "method": "POST",
              "content_type": "application/json",
+             "safe_read": True, "allowlisted_post": True,
              "request_template": {"body": {"q": "1"}, "body_text": ""}}
         b = {"url": "http://api.example.com/search", "method": "POST",
              "content_type": "application/json",
+             "safe_read": True, "allowlisted_post": True,
              "request_template": {"body": {"q": "2"}, "body_text": ""}}
         self.probe_mod._probe_one(dict(a), dns_policy_cache={}, discovery_context=ctx)
         self.probe_mod._probe_one(dict(b), dns_policy_cache={}, discovery_context=ctx)
         self.assertEqual(2, len(self.calls))
         self.probe_mod._probe_one(dict(a), dns_policy_cache={}, discovery_context=ctx)
         self.assertEqual(2, len(self.calls), "相同 body 的 POST 应命中缓存")
+
+    def test_post_without_read_only_allowlist_is_not_sent(self):
+        ctx = DiscoveryContext("task-1")
+        out = self.probe_mod._probe_one(
+            {
+                "url": "http://api.example.com/mutate",
+                "method": "POST",
+                "content_type": "application/json",
+                "request_template": {"body": {"enabled": True}},
+            },
+            dns_policy_cache={},
+            discovery_context=ctx,
+        )
+
+        self.assertEqual("skipped", out["verification_status"])
+        self.assertEqual(0, len(self.calls))
+        self.assertIn("post_not_allowlisted", out["verification_note"])
 
     def test_blocked_lease_does_not_leak_fetch_slot(self):
         # WAF blocked 拒发路径：探测作为 single-flight 先行者拿到槽位后被
