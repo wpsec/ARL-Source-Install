@@ -610,6 +610,11 @@
     background-color: transparent;
   }
 
+  .arl-app .arl-checkbox-card > span {
+    min-width: 0;
+    flex: 1 1 0%;
+  }
+
   /* ghost 信息在暗色主题中不能依赖透明背景和浏览器默认文字色。 */
   .arl-app .badge-ghost {
     border-color: var(--brand-border);
@@ -762,6 +767,11 @@
   border-color: color-mix(in oklab, var(--brand-danger) 55%, var(--brand-border));
   background-color: color-mix(in oklab, var(--brand-danger) 48%, var(--brand-card));
   color: var(--brand-error-content);
+}
+
+.arl-app .arl-checkbox-card:has(> input[type='checkbox']:checked) {
+  border-color: color-mix(in oklab, var(--brand-accent) 70%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--brand-accent) 12%, var(--color-base-100));
 }
 
 .arl-app input:not([type='checkbox']):not([type='radio']):disabled,

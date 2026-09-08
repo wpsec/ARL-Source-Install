@@ -14,6 +14,7 @@ import { flattenPayloadFields, getPayloadValue, updatePayloadValue } from '../do
 import type {JsonValue, ModuleAction} from '../domain/types';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
@@ -733,7 +734,7 @@ export function ActionDialog({
                         {section.keys.map((fieldKey) => (
                           <label
                             key={fieldKey}
-                            className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition"
+                            className={CONSOLE_CHECKBOX_CARD_CLASS}
                           >
                             <input
                               type="checkbox"
@@ -967,7 +968,7 @@ export function ActionDialog({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyEnable}
@@ -977,7 +978,7 @@ export function ActionDialog({
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className={CONSOLE_CHECKBOX_CARD_CLASS}>
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyKbEnable}
@@ -1357,7 +1358,7 @@ export function ActionDialog({
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {filteredPolicyOptions.map((item) => (
-                    <label key={item.key} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.key} className={CONSOLE_CHECKBOX_CARD_CLASS}>
                       <input
                         type="checkbox"
                         checked={Boolean(getPayloadValue(formPayload, getPolicyPath(item.key)))}
@@ -1396,7 +1397,7 @@ export function ActionDialog({
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyPocOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className={CONSOLE_CHECKBOX_CARD_CLASS}>
                       <input
                         type="checkbox"
                         checked={selectedPolicyPocNames.includes(item.plugin_name)}
@@ -1438,7 +1439,7 @@ export function ActionDialog({
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyBruteOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className={CONSOLE_CHECKBOX_CARD_CLASS}>
                       <input
                         type="checkbox"
                         checked={selectedPolicyBruteNames.includes(item.plugin_name)}

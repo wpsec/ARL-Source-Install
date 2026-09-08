@@ -27,7 +27,7 @@ export const CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS =
   'btn btn-sm h-8 min-h-8 whitespace-nowrap border border-base-300 bg-base-100 px-2.5 text-xs text-base-content hover:border-primary/45 hover:bg-base-200 hover:text-base-content';
 
 export const CONSOLE_TEXT_BUTTON_CLASS =
-  'border-0 bg-transparent p-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100 disabled:cursor-not-allowed disabled:opacity-50';
+  'border-0 bg-transparent p-0 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100 disabled:cursor-not-allowed disabled:opacity-90 disabled:text-content-muted';
 
 export const CONSOLE_PRIMARY_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-primary`;
 
