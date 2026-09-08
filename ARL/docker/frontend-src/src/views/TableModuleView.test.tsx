@@ -71,6 +71,36 @@ describe('TableModuleView(task) 页面级', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 60));
     expect(mainListCalls().length).toBe(1);
   });
+
+  it('service 模块重挂载后仍展示 service_info 的 IP/端口和产品', async () => {
+    installFetchMock({
+      routes: {
+        '/api/service/': [200, {
+          code: 200,
+          data: {
+            items: [{
+              _id: 'service-1',
+              service_name: 'https',
+              service_info: [{ ip: '192.0.2.10', port_id: 443, product: 'nginx' }],
+            }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = renderViewWithClient(client, 'service');
+    await waitFor(() => expect(screen.getByText('192.0.2.10:443')).toBeTruthy());
+    expect(screen.getByText('https')).toBeTruthy();
+    expect(screen.getByText('nginx')).toBeTruthy();
+
+    first.unmount();
+    renderViewWithClient(client, 'service');
+    await waitFor(() => expect(screen.getByText('192.0.2.10:443')).toBeTruthy());
+    expect(screen.getByText('nginx')).toBeTruthy();
+  });
 });
 
 describe('TableModuleView Phase 3 选项/共享读取（React Query）', () => {
