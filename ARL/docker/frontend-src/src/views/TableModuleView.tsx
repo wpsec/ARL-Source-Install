@@ -86,6 +86,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_BUTTON_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
@@ -4441,7 +4442,7 @@ export function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page <= 1}
-                className="btn btn-ghost btn-sm btn-square border border-base-300 disabled:opacity-40"
+                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -4497,7 +4498,7 @@ export function TableModuleView({
                   void loadRows({ page: nextPage });
                 }}
                 disabled={page >= totalPages}
-                className="btn btn-ghost btn-sm btn-square border border-base-300 disabled:opacity-40"
+                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -4540,7 +4541,7 @@ export function TableModuleView({
               <button
                 onClick={closeTaskReportExportFeedback}
                 disabled={taskReportExportBusy}
-                className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
+                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
                 title={taskReportExportBusy ? '导出进行中，暂不可关闭' : '关闭'}
               >
                 <X className="w-5 h-5" />
@@ -4646,7 +4647,7 @@ export function TableModuleView({
               <button
                 onClick={closeRiskDialog}
                 disabled={riskDialogSubmitting}
-                className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
+                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4727,7 +4728,7 @@ export function TableModuleView({
                 <button
                   onClick={closePolicyTaskDialog}
                   disabled={policyTaskSubmitting}
-                  className="btn btn-ghost btn-square btn-sm disabled:opacity-40"
+                  className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -4858,7 +4859,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={closeRiskRecordDetail}
-                  className="btn btn-ghost btn-square btn-sm"
+                  className={CONSOLE_ICON_BUTTON_CLASS}
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -4913,7 +4914,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="btn btn-ghost btn-square btn-sm"
+                  className={CONSOLE_ICON_BUTTON_CLASS}
                   title="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -5103,7 +5104,7 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="btn btn-ghost btn-square btn-sm"
+                className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -5276,7 +5277,7 @@ export function TableModuleView({
               </div>
               <button
                 onClick={() => setTaskErrorDialog(null)}
-                className="btn btn-ghost btn-square btn-sm"
+                className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -5325,7 +5326,7 @@ export function TableModuleView({
               </div>
               <button
                 onClick={() => closeDeleteConfirmDialog(false)}
-                className="btn btn-ghost btn-square btn-sm"
+                className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭"
               >
                 <X className="w-5 h-5" />
@@ -5361,7 +5362,7 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={() => setScreenshotPreview(null)}
-                className="btn btn-ghost btn-square btn-sm"
+                className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭预览"
               >
                 <X className="w-5 h-5" />

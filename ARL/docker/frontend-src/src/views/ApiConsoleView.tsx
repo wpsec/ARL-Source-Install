@@ -21,6 +21,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
   CONSOLE_PAGE_CLASS,
   CONSOLE_PANEL_CLASS,
@@ -1148,7 +1149,7 @@ export function ApiConsoleView({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setBatchTestDialogOpen(false)}
-                className="btn btn-ghost btn-square btn-sm"
+                className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭"
               >
                 <X className="w-5 h-5" />
