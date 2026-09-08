@@ -50,6 +50,9 @@ describe('SystemMonitorMiniWidget', () => {
     expect(screen.getByText('1.2 GB')).toBeTruthy();
     expect(screen.getByText('3.4 GB')).toBeTruthy();
     expect(screen.getByText('86')).toBeTruthy();
+    expect(screen.getByText('累计发送')).toBeTruthy();
+    expect(screen.getByText('累计接收')).toBeTruthy();
+    expect(screen.getByText('进程数量')).toBeTruthy();
     expect(screen.getByText('CPU').className).toContain('shrink-0');
     expect(screen.getByText('CPU').parentElement?.className).toContain('justify-between');
     expect(screen.getByRole('group', { name: 'CPU、内存与网速' }).className).toContain('rounded-box');

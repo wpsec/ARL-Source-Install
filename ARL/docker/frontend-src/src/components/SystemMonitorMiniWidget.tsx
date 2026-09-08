@@ -137,24 +137,24 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
       </div>
 
       <div className="hidden xl:grid h-11 shrink-0 grid-cols-3 items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3">
-        <div className="min-w-[3.5rem] text-center">
+        <div className="min-w-[3.5rem] text-center" aria-label="累计发送流量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />
-            <span className="text-[10px] font-semibold leading-3">发送</span>
+            <span className="whitespace-nowrap text-[10px] font-semibold leading-3">累计发送</span>
           </div>
           <p className="whitespace-nowrap text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.network_total_sent)}</p>
         </div>
-        <div className="min-w-[3.5rem] text-center">
+        <div className="min-w-[3.5rem] text-center" aria-label="累计接收流量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowDown className="h-3 w-3" />
-            <span className="text-[10px] font-semibold leading-3">接收</span>
+            <span className="whitespace-nowrap text-[10px] font-semibold leading-3">累计接收</span>
           </div>
           <p className="whitespace-nowrap text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.network_total_recv)}</p>
         </div>
-        <div className="min-w-[3.5rem] text-center">
+        <div className="min-w-[3.5rem] text-center" aria-label="进程数量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <Activity className="h-3 w-3" />
-            <span className="text-[10px] font-semibold leading-3">进程</span>
+            <span className="whitespace-nowrap text-[10px] font-semibold leading-3">进程数量</span>
           </div>
           <p className="whitespace-nowrap text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.process_count)}</p>
         </div>
