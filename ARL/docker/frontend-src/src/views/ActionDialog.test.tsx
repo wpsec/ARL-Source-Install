@@ -91,6 +91,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     expect(footer.className).toContain('border-t');
     expect(footer.className).toContain('flex-col');
     expect(footer.parentElement?.classList.contains('arl-modal-box')).toBe(true);
+    expect(footer.parentElement?.classList.contains('arl-modal-tall')).toBe(true);
     expect(screen.getByRole('button', { name: '取消' }).className).toContain('w-full');
     expect(screen.getByRole('button', { name: '执行' }).className).toContain('w-full');
   });

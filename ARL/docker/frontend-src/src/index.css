@@ -479,6 +479,12 @@
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
   }
 
+  /* 长表单必须拥有确定的高度，才能让 flex 中间区收缩并把操作栏固定在视口内。 */
+  .arl-modal-box.arl-modal-tall {
+    height: min(92vh, 64rem);
+    min-height: 0;
+  }
+
   /* 弹窗内容由调用方组合；统一允许每一段按视口收缩，避免长 ID/URL 撑破 box。 */
   .arl-modal-box > * {
     min-width: 0;

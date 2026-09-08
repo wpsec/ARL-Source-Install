@@ -69,6 +69,7 @@ export function ActionDialog({
   const isPolicySelectionRequired = isTaskScheduleCreate || isAssetScopeAddScheduler;
   const isGithubSchedulerAction = action.id === 'github_scheduler_add' || action.id === 'github_scheduler_update';
   const isPolicyAction = action.id === 'policy_add' || action.id === 'policy_edit';
+  const isLongFormAction = isTaskCreate || isPolicyAction || isTaskScheduleCreate;
   const shouldLoadDictOptions = isTaskCreate || isPolicyAction;
   const fields = useMemo(() => flattenPayloadFields(formPayload), [formPayload]);
   const displayFields = useMemo(
@@ -565,7 +566,7 @@ export function ActionDialog({
     <Modal
       open
       onClose={onClose}
-      boxClass={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl!' : 'max-w-3xl!'}`}
+      boxClass={`w-full ${isLongFormAction ? 'arl-modal-tall max-w-5xl!' : 'max-w-3xl!'}`}
     >
         <div className="shrink-0 px-4 py-4 border-b border-base-300 bg-base-200 flex items-center justify-between sm:px-6">
           <div className="min-w-0">
