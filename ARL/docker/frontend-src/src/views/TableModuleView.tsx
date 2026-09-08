@@ -2174,8 +2174,9 @@ export function TableModuleView({
     if (module.id !== 'policy') return;
     const name = policyTaskName.trim();
     const normalizedTargets = policyTaskTarget
-      .replace(/,/g, '\n')
+      .replace(/[,，；;、]/g, '\n')
       .split(/\r?\n/)
+      .flatMap((line) => line.split(/\s+/))
       .map((item) => item.trim())
       .filter((item) => item);
 
@@ -3447,9 +3448,10 @@ export function TableModuleView({
                       {columns.map((column) => {
                         const formattedCellText = formatModuleCellValue(module.id, column, row);
                         const wrapCell = shouldWrapCell(module.id, column) || formattedCellText.includes('\n');
+                        const cellAlignmentClass = isCenteredTableColumn(module.id, column) ? 'text-center' : 'text-left';
                         const baseClassName = wrapCell
-                          ? 'px-4 py-3 align-top text-sm whitespace-pre-wrap break-all text-left leading-relaxed min-w-[220px] max-w-[560px]'
-                          : 'px-4 py-3 align-middle text-sm whitespace-nowrap text-left';
+                          ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-[220px] max-w-[560px]`
+                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}`;
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);
@@ -4799,14 +4801,14 @@ export function TableModuleView({
                   className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[180px]`}
                   placeholder={
                     policyTaskTag === 'risk_cruising'
-                      ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
-                      : '请输入目标，支持IP、IP段、域名'
+                      ? 'http://10.0.1.1:8081/\n10.0.1.1:2222'
+                      : 'example.com\n10.0.1.1\n10.0.1.0/24'
                   }
                 />
                 <p className="text-xs text-content-muted">
                   {policyTaskTag === 'risk_cruising'
-                    ? '请输入确定的目标，不会进行端口扫描,如: http://10.0.1.1:8081/ 10.0.1.1:2222'
-                    : '请输入目标，支持IP、IP段、域名。支持一行一个。'}
+                    ? '请输入确定的目标，每行一个；此任务不会进行端口扫描。'
+                    : '请输入目标，支持 IP、IP 段、域名；每行一个。'}
                 </p>
               </div>
 
@@ -5302,13 +5304,13 @@ export function TableModuleView({
               </button>
             </div>
 
-            <div className="px-6 py-4 border-b border-base-300 bg-base-100 text-sm space-y-1">
+            <div className="shrink-0 min-w-0 px-6 py-4 border-b border-base-300 bg-base-100 text-sm space-y-1">
               <div><span className="text-content-muted">任务名：</span>{taskErrorDialog.taskName}</div>
               <div><span className="text-content-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
               <div><span className="text-content-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
             </div>
 
-            <div className="p-6 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
+            <div className="min-h-0 min-w-0 flex-1 p-6 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
               {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
                 <div key={`${log.time}-${log.stage}-${index}`} className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
@@ -5331,6 +5333,15 @@ export function TableModuleView({
                   当前任务没有记录到详细异常日志（可能是历史任务或异常详情落库前的任务）。
                 </div>
               )}
+            </div>
+            <div className="shrink-0 min-w-0 flex justify-end border-t border-base-300 bg-base-100 px-6 py-4">
+              <button
+                type="button"
+                onClick={() => setTaskErrorDialog(null)}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
+              >
+                关闭
+              </button>
             </div>
         </Modal>
       ) : null}
