@@ -35,7 +35,7 @@ export const CONSOLE_SECONDARY_BUTTON_CLASS =
   `${CONSOLE_BUTTON_CLASS} border border-base-300 bg-base-100 text-base-content hover:border-primary/45 hover:bg-base-300/70 hover:text-base-content`;
 
 export const CONSOLE_CARD_ACTION_CLASS =
-  'flex h-auto min-h-0 w-full min-w-0 items-start justify-start rounded-box border border-base-300 bg-base-100 text-left text-base-content transition-colors hover:border-primary/45 hover:bg-base-200 hover:text-base-content focus-visible:outline-none';
+  'flex h-auto min-h-0 w-full min-w-0 cursor-pointer items-start justify-start rounded-box border border-base-300 bg-base-100 text-left text-base-content transition-colors hover:border-primary/45 hover:bg-base-200 hover:text-base-content focus-visible:outline-none';
 
 export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 
