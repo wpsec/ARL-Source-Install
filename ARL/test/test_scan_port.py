@@ -3,9 +3,14 @@ from unittest.mock import patch
 from app.tasks.domain import FindSite, scan_port
 from app.modules import IPInfo, ScanPortType, DomainInfo
 from app import services
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
 class TestCDNName(unittest.TestCase):
+    @legacy_network_test
     def test_scan_port(self):
         scan_port_option = {
             "ports": ScanPortType.TEST,
@@ -23,6 +28,7 @@ class TestCDNName(unittest.TestCase):
         for info in ip_info_list:
             self.assertTrue(info.cdn_name)
 
+    @legacy_network_test
     def test_scan_port_skip(self):
         scan_port_option = {
             "ports": ScanPortType.TEST,

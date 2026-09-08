@@ -17,6 +17,8 @@
     python3 scripts/check-test-hygiene.py                  # 全量扫描
     python3 scripts/check-test-hygiene.py test_x test_y    # 指定模块（自动补前缀）
 退出码：0=全部干净且全部可执行；1=存在污染或加载失败。
+
+默认不会启用历史外网测试；授权目标扫描应由独立扫描服务器执行。
 """
 import os
 import signal
@@ -27,6 +29,10 @@ import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 ARL_ROOT = REPO_ROOT / "ARL"
+# 源码仓库保留 /<repo>/ARL/{app,test}，发布镜像统一为 /code/{app,test}；
+# 工具必须按实际布局解析，不能依赖软链构造第二套根目录。
+if not (ARL_ROOT / "test").is_dir() and (REPO_ROOT / "test").is_dir():
+    ARL_ROOT = REPO_ROOT
 
 CHECKER = r'''
 import sys, unittest, io, contextlib

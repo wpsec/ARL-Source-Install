@@ -2,6 +2,10 @@ import unittest
 from unittest.mock import patch
 from app.services.fofaClient import fofa_query_result, fofa_query, FofaClient
 from app.config import Config
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
 class TestFofa(unittest.TestCase):
@@ -43,6 +47,7 @@ class TestFofa(unittest.TestCase):
         self.assertEqual(mock_http_req.call_count, 2)
         self.assertEqual(_sleep.call_count, 1)
 
+    @legacy_network_test
     def test_vip_level(self):
         if not Config.FOFA_KEY or not Config.FOFA_KEY:
             self.fail("please set fofa key in config-docker.yaml")
@@ -60,11 +65,13 @@ class TestFofa(unittest.TestCase):
 
         print("当前用户: {}, 帐号类型:{} ".format(Config.FOFA_EMAIL, vip_level_map[vip_level]))
 
+    @legacy_network_test
     def test_query(self):
         data = fofa_query('test', page_size=1)
         print(data)
         self.assertTrue(data["size"] >= 1)
 
+    @legacy_network_test
     def test_query_result(self):
         results = fofa_query_result('ip="8.8.8.8" && port="53"', page_size=100)
 

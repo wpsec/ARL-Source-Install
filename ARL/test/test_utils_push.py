@@ -2,8 +2,13 @@ import unittest
 from app import services
 from app.utils import push
 from app.config import Config
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
+@legacy_network_test
 class TestUtilsPush(unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(TestUtilsPush, self).__init__(*args, **kwargs)

@@ -3,8 +3,13 @@ import sys
 import unittest
 from app.services.dns_query import run_query_plugin
 from app import utils
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
+@legacy_network_test
 class TestQueryPlugin(unittest.TestCase):
     def test_run_query_plugin(self):
         logger = utils.get_logger()

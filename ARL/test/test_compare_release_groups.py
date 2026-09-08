@@ -2,9 +2,13 @@ import importlib.util
 import json
 import unittest
 from pathlib import Path
+try:
+    from test._layout import PROJECT_ROOT
+except ImportError:
+    from _layout import PROJECT_ROOT
 
 
-MODULE_PATH = Path(__file__).resolve().parents[2] / "scripts" / "compare-release-groups.py"
+MODULE_PATH = PROJECT_ROOT / "scripts" / "compare-release-groups.py"
 SPEC = importlib.util.spec_from_file_location("compare_release_groups", MODULE_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader

@@ -21,6 +21,10 @@ MONGO="arlmongo-${TAG}"
 REDIS="arlredis-${TAG}"
 RABBIT="arlrabbit-${TAG}"
 APP="arl-reg-${TAG}"
+NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
+PIP_INDEX_URL="${ARL_PIP_INDEX_URL:-${PIP_INDEX_URL:-https://pypi.mirrors.ustc.edu.cn/simple/}}"
+PLAYWRIGHT_DOWNLOAD_HOST="${ARL_PLAYWRIGHT_DOWNLOAD_HOST:-${PLAYWRIGHT_DOWNLOAD_HOST:-https://cdn.npmmirror.com/binaries/playwright}}"
+BUILD_NETWORK="${DOCKER_BUILD_NETWORK:-host}"
 # 宿主轻依赖基线（python3.9，无 xing/arl_accel，2026-09-06 记录）：
 # Ran 768, failures=20, errors=197, skipped=49 —— 容器基线以本脚本产出为准。
 
@@ -30,8 +34,26 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 echo "[1/6] build ${IMAGE} (${PLATFORM})"
-docker buildx build --platform "${PLATFORM}" \
-    --file ARL/docker/Dockerfile --tag "${IMAGE}" --load --progress quiet .
+BUILD_ARGS=(
+    --build-arg BUILDKIT_INLINE_CACHE=1
+    --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
+    --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}"
+    --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}"
+)
+if docker buildx version >/dev/null 2>&1; then
+    docker buildx build --platform "${PLATFORM}" \
+        --network "${BUILD_NETWORK}" --pull=false \
+        --file ARL/docker/Dockerfile --tag "${IMAGE}" --load --progress quiet \
+        "${BUILD_ARGS[@]}" .
+elif [ "${DOCKER_BUILDKIT:-1}" = "1" ]; then
+    DOCKER_BUILDKIT=1 docker build \
+        --network "${BUILD_NETWORK}" --pull=false \
+        --file ARL/docker/Dockerfile --tag "${IMAGE}" \
+        "${BUILD_ARGS[@]}" .
+else
+    echo "[ERROR] docker buildx unavailable and DOCKER_BUILDKIT is disabled" >&2
+    exit 1
+fi
 
 echo "[2/6] sidecars (mongo auth / redis / rabbitmq，别名=config-docker.yaml 主机名)"
 docker network create "${NETWORK}" 2>/dev/null || true
@@ -78,19 +100,15 @@ print("[OK] regression runtime config rewritten (mongodb/redis/rabbitmq aliases)
 PYEOF
 
 echo "[4/6] full unittest discover (image source == repo HEAD at build time)"
-docker exec -w /code -e PYTHONPATH=. "${APP}" \
+docker exec -w /code -e PYTHONPATH=. -e ARL_RUN_LEGACY_NETWORK_TESTS=0 "${APP}" \
     sh -c 'python3 -m unittest discover -s test -p "test_*.py" > /tmp/discover.log 2>&1; tail -6 /tmp/discover.log'
 docker cp "${APP}:/tmp/discover.log" "/tmp/arlreg-${TAG}-discover.log"
 grep -cE "^(FAIL|ERROR):" "/tmp/arlreg-${TAG}-discover.log" || true
 
 echo "[5/6] test hygiene rescan + native smoke"
-# hygiene 工具按 `Path(__file__).resolve().parents[1]` 推导 repo root（期望
-# <root>/scripts/check-test-hygiene.py 布局），并 glob <root>/ARL/test/。容器内
-# 镜像布局为 /code/{app,test}，构造 /tmp/hyg/{scripts,ARL} 等价布局：工具真身
-# 放 scripts/（不能用软链，resolve 会跟随链接丢布局），ARL 子项用软链。
-docker exec "${APP}" sh -c 'rm -rf /tmp/hyg && mkdir -p /tmp/hyg/scripts /tmp/hyg/ARL && ln -sfn /code/app /tmp/hyg/ARL/app && ln -sfn /code/test /tmp/hyg/ARL/test'
-docker cp scripts/check-test-hygiene.py "${APP}:/tmp/hyg/scripts/check-test-hygiene.py"
-docker exec "${APP}" python3 /tmp/hyg/scripts/check-test-hygiene.py > "/tmp/arlreg-${TAG}-hygiene.log" 2>&1 || true
+# 镜像统一使用 /code/{app,test,scripts}，不再构造临时 ARL 软链布局。
+docker exec -e ARL_RUN_LEGACY_NETWORK_TESTS=0 "${APP}" \
+    python3 /code/scripts/check-test-hygiene.py > "/tmp/arlreg-${TAG}-hygiene.log" 2>&1 || true
 tail -4 "/tmp/arlreg-${TAG}-hygiene.log"
 docker exec "${APP}" python3 /usr/local/share/arl/arl_accel_smoke_test.py \
     && echo "[OK] native smoke passed"

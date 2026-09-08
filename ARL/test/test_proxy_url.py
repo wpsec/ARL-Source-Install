@@ -1,10 +1,15 @@
 import unittest
 from app.config import Config
 from app.utils import http_req, get_logger, get_title
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 logger = get_logger()
 
 
+@legacy_network_test
 class TestProxyURL(unittest.TestCase):
     def test_proxy_url(self):
         self.assertTrue(Config.PROXY_URL)

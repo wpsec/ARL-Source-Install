@@ -17,6 +17,10 @@ import re
 import sys
 import types
 import unittest
+try:
+    from test._layout import PROJECT_ROOT
+except ImportError:
+    from _layout import PROJECT_ROOT
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 SITE_GZ = ROOT_DIR / "app" / "dicts" / "site_fingerprints.json.gz"
@@ -97,7 +101,7 @@ def bootstrap():
         REDIS_PASSWORD = ""
         REDIS_CACHE_EXPIRE = 0
         web_app_rule = str(ROOT_DIR / "app" / "dicts" / "webapp.json")
-        FINGERPRINT = str(ROOT_DIR.parent / "tools" / "finger.json")
+        FINGERPRINT = str(PROJECT_ROOT / "tools" / "finger.json")
         KSCAN_FINGERPRINT_ENABLE = True
         KSCAN_FINGERPRINT_FILE = str(ROOT_DIR / "app" / "dicts" / "kscan_fingerprint.local.json")
         KSCAN_FINGERPRINT_NAME_PREFIX = ""

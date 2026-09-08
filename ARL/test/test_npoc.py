@@ -3,6 +3,10 @@ import unittest
 import time
 from app.services import npoc
 from app.config import Config
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 class TestUtilsNpoc(unittest.TestCase):
     def __init__(self, *args, **kwargs):
@@ -14,9 +18,11 @@ class TestUtilsNpoc(unittest.TestCase):
         print("plugins", len(plugins))
         self.assertTrue(len(plugins) >= 10)
 
+    @legacy_network_test
     def test_sync_2_db(self):
         npoc.sync_to_db(del_flag=True)
 
+    @legacy_network_test
     def test_run_all_poc(self):
         n = npoc.NPoC(tmp_dir=Config.TMP_PATH)
         targets = ["https://www.baidu.com/"]
@@ -24,10 +30,12 @@ class TestUtilsNpoc(unittest.TestCase):
         if ret:
             print(ret)
 
+    @legacy_network_test
     def test_run_poc_cnt(self):
         targets = ["https://www.baidu.com/"]
         self.run_all_poc(targets)
 
+    @legacy_network_test
     def test_run_poc(self):
         names = ["Thinkphp5_RCE"]
         targets = ["https://www.baidu.com/"]
@@ -48,6 +56,7 @@ class TestUtilsNpoc(unittest.TestCase):
 
         print("done")
 
+    @legacy_network_test
     def test_result_set_run_poc(self):
         from app import utils
         from bson import ObjectId

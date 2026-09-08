@@ -3,8 +3,13 @@ from app import services, utils
 from app.tasks import domain
 from app import modules
 from app.services import altDNS
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
+@legacy_network_test
 class TestDomain(unittest.TestCase):
     def test_alt_dns(self):
         c = ['www.baidu.com', 'map.baidu.com', 'test.baidu.com']

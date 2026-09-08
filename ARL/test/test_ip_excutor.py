@@ -1,7 +1,12 @@
 import unittest
 from app.tasks.scheduler import IPExecutor
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
+@legacy_network_test
 class TestIPExec(unittest.TestCase):
     def test_ip_exec_1(self):
         target = "10.0.83.16"

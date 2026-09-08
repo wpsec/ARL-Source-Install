@@ -26,7 +26,9 @@ RUN set -eux; \
       echo "[ERROR] unsupported package manager in frontend_builder"; \
       exit 127; \
     fi; \
-    command -v node >/dev/null 2>&1 || (echo "[ERROR] node command not found" && exit 127); \
+    command -v node >/dev/null 2>&1 || (echo "[ERROR] node command not found" && exit 127)
+
+RUN --mount=type=cache,id=arl-npm,target=/root/.npm set -eux; \
     npm_exec() { \
       if command -v npm >/dev/null 2>&1; then \
         if npm "$@"; then return 0; fi; \
@@ -60,7 +62,7 @@ RUN set -eux; \
       echo "[ERROR] frontend-src/package-lock.json missing; production build must run npm ci" >&2; \
       exit 1; \
     fi; \
-    npm_exec ci --no-audit --no-fund
+    npm_exec ci --cache /root/.npm --no-audit --no-fund
 
 # 前端构建会读取 ../../version.txt，这里映射到 /version.txt
 COPY ARL/version.txt /version.txt
@@ -96,6 +98,8 @@ FROM rockylinux:8
 WORKDIR /code
 ARG TARGETARCH
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG PIP_INDEX_URL=https://pypi.mirrors.ustc.edu.cn/simple/
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
 ARG RUST_VERSION=1.85.1
@@ -113,7 +117,7 @@ RUN set -eux; \
         -e 's|^#baseurl=http://dl.rockylinux.org/$contentdir|baseurl=https://mirrors.aliyun.com/rockylinux|g' \
         -i /etc/yum.repos.d/Rocky-*.repo; \
     mkdir -p /root/.pip; \
-    printf '[global]\nindex-url = https://pypi.mirrors.ustc.edu.cn/simple/\ntimeout = 120\n' > /root/.pip/pip.conf; \
+    printf '[global]\nindex-url = %s\ntimeout = 120\n' "${PIP_INDEX_URL}" > /root/.pip/pip.conf; \
     dnf install -y epel-release; \
     sed -e 's|^metalink=|#metalink=|g' \
         -e 's|^mirrorlist=|#mirrorlist=|g' \
@@ -201,17 +205,24 @@ RUN set -eux; \
     pip3 --version; \
     rm -rf "/tmp/Python-${PYTHON_VERSION}" "/tmp/Python-${PYTHON_VERSION}.tgz"
 
-COPY ARL-NPoC/ /opt/ARL-NPoC/
 COPY ARL/requirements.txt /code/requirements.txt
-COPY ARL/native/arl_accel/ /code/native/arl_accel/
-COPY tools/playwright/ /tmp/playwright-offline/
-# 安装 Python 依赖，并安装 Playwright 浏览器（离线优先）
-RUN set -eux; \
+RUN --mount=type=cache,id=arl-pip-${TARGETARCH},target=/root/.cache/pip set -eux; \
     pip3 install --upgrade "pip<24.1" "setuptools<81" wheel; \
-    pip3 install --no-cache-dir -r /code/requirements.txt; \
-    pip3 install --no-cache-dir -e /opt/ARL-NPoC/; \
-    python3 -c 'import xing' >/dev/null 2>&1 || { echo '[ERROR] ARL-NPoC xing import validation failed'; exit 1; }; \
-    pip3 install --no-cache-dir dnslib==0.9.16 pycryptodomex==3.16.0 requests_ntlm==1.1.0; \
+    pip3 install -r /code/requirements.txt; \
+    pip3 install dnslib==0.9.16 pycryptodomex==3.16.0 requests_ntlm==1.1.0; \
+    python3 -c 'import psutil, flask, pymongo, celery, dnslib, playwright'; \
+    python3 -c 'from Cryptodome.Cipher import AES'; \
+    python3 -c 'from requests_ntlm import HttpNtlmAuth'
+
+# NPoC 源码单独成层，修改业务源码时不重新下载基础 Python 依赖。
+COPY ARL-NPoC/ /opt/ARL-NPoC/
+RUN --mount=type=cache,id=arl-pip-${TARGETARCH},target=/root/.cache/pip set -eux; \
+    pip3 install -e /opt/ARL-NPoC/; \
+    python3 -c 'import xing' >/dev/null 2>&1 || { echo '[ERROR] ARL-NPoC xing import validation failed'; exit 1; }
+
+COPY tools/playwright/ /tmp/playwright-offline/
+# 浏览器下载单独成层，并使用 BuildKit cache mount；依赖源码变化不再重复下载 Chromium。
+RUN --mount=type=cache,id=arl-playwright-${TARGETARCH},target=/root/.cache/arl-playwright set -eux; \
     OFFLINE_DIR="/tmp/playwright-offline"; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
@@ -219,36 +230,42 @@ RUN set -eux; \
       arm64|aarch64) PW_ARCH="arm64" ;; \
       *) PW_ARCH="$ARCH" ;; \
     esac; \
-    mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"; \
+    BROWSER_CACHE="/root/.cache/arl-playwright"; \
+    mkdir -p "${BROWSER_CACHE}" "${PLAYWRIGHT_BROWSERS_PATH}"; \
     extract_playwright_tar() { \
       TAR_FILE="$1"; \
       TMP_PW_DIR="/tmp/ms-playwright-extract"; \
       rm -rf "${TMP_PW_DIR}" && mkdir -p "${TMP_PW_DIR}"; \
       tar -xzf "${TAR_FILE}" -C "${TMP_PW_DIR}"; \
       if [ -d "${TMP_PW_DIR}/ms-playwright" ]; then \
-        cp -a "${TMP_PW_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+        cp -a "${TMP_PW_DIR}/ms-playwright/." "${BROWSER_CACHE}/"; \
       else \
-        cp -a "${TMP_PW_DIR}/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+        cp -a "${TMP_PW_DIR}/." "${BROWSER_CACHE}/"; \
       fi; \
       rm -rf "${TMP_PW_DIR}"; \
     }; \
     if [ -d "${OFFLINE_DIR}/ms-playwright" ] && [ -n "$(ls -A "${OFFLINE_DIR}/ms-playwright" 2>/dev/null)" ]; then \
-      cp -a "${OFFLINE_DIR}/ms-playwright/." "${PLAYWRIGHT_BROWSERS_PATH}/"; \
+      cp -a "${OFFLINE_DIR}/ms-playwright/." "${BROWSER_CACHE}/"; \
     elif [ -f "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz" ]; then \
       extract_playwright_tar "${OFFLINE_DIR}/ms-playwright-${PW_ARCH}.tar.gz"; \
     elif [ -f "${OFFLINE_DIR}/ms-playwright.tar.gz" ]; then \
       extract_playwright_tar "${OFFLINE_DIR}/ms-playwright.tar.gz"; \
     else \
-      PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright \
+      PLAYWRIGHT_BROWSERS_PATH="${BROWSER_CACHE}" \
+      PLAYWRIGHT_DOWNLOAD_HOST="${PLAYWRIGHT_DOWNLOAD_HOST}" \
         python3 -m playwright install chromium || \
       echo "[WARN] playwright browser install failed, screenshot will fallback when unavailable"; \
-    fi
+    fi; \
+    cp -a "${BROWSER_CACHE}/." "${PLAYWRIGHT_BROWSERS_PATH}/"
 
 # 与 ncrack/python/go 同规：tools/rust/ 下有离线包则优先使用（国内网络
 # 对 static.rust-lang.org 不稳，镜像站 rust-static 路径全部 404/假 200）。
 # BuildKit bind mount：离线包只进构建过程，不作为 174MB 层烘进镜像。
 # 在与生产运行时相同的 Rocky/glibc 基线中构建 abi3 wheel，避免构建机 glibc 版本高于运行时。
-RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline set -eux; \
+COPY ARL/native/arl_accel/ /code/native/arl_accel/
+RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline \
+    --mount=type=cache,id=arl-cargo-${TARGETARCH},target=/usr/local/cargo \
+    --mount=type=cache,id=arl-pip-${TARGETARCH},target=/root/.cache/pip set -eux; \
     ARCH="${TARGETARCH:-$(uname -m)}"; \
     case "$ARCH" in \
       amd64|x86_64) RUST_ARCH="x86_64-unknown-linux-gnu" ;; \
@@ -283,15 +300,16 @@ RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline set -eux; \
       --exclude="${RUST_DIR}/llvm-bitcode-linker-preview"; \
     "./${RUST_DIR}/install.sh" --prefix=/usr/local --disable-ldconfig \
       --components="rustc,cargo,rust-std-${RUST_ARCH}"; \
+    export CARGO_HOME=/usr/local/cargo; \
     rustc --version; \
     cargo --version; \
-    pip3 install --no-cache-dir "maturin==${MATURIN_VERSION}"; \
+    pip3 install "maturin==${MATURIN_VERSION}"; \
     cd /code/native/arl_accel; \
     python3 -m maturin build --release --strip --compatibility manylinux_2_28 --interpreter python3; \
-    pip3 install --no-cache-dir target/wheels/arl_accel-*.whl; \
+    pip3 install target/wheels/arl_accel-*.whl; \
     python3 /code/native/arl_accel/smoke_test.py; \
     cd /code; \
-    rm -rf "/tmp/rust-${RUST_VERSION}-${RUST_ARCH}" "${RUST_TARBALL}" /root/.cargo /root/.rustup /code/native/arl_accel
+    rm -rf "/tmp/rust-${RUST_VERSION}-${RUST_ARCH}" "${RUST_TARBALL}" /root/.rustup /code/native/arl_accel
 
 COPY ARL/app/ app/
 COPY ARL/docker/config-docker.yaml /code/docker/config-docker.yaml
@@ -302,7 +320,9 @@ ARG MASSDNS_COMMIT=6bfa47197d78e68b79041d494e280174cb2d6ae1
 ARG MASSDNS_REPOSITORY=https://github.com/blechschmidt/massdns.git
 ARG MASSDNS_OFFLINE_ARCHIVE=massdns-6bfa47197d78e68b79041d494e280174cb2d6ae1.tar.gz
 COPY tools/massdns/ /tmp/massdns-offline/
-RUN set -eux; \
+RUN --mount=type=cache,id=arl-go-build-${TARGETARCH},target=/root/.cache/go-build \
+    --mount=type=cache,id=arl-go-mod-${TARGETARCH},target=/go/pkg/mod \
+    --mount=type=cache,id=arl-npm,target=/root/.npm set -eux; \
     MASSDNS_SRC="/tmp/massdns"; \
     OFFLINE_DIR="/tmp/massdns-offline"; \
     if [ -n "${MASSDNS_OFFLINE_ARCHIVE}" ] && [ -s "${OFFLINE_DIR}/${MASSDNS_OFFLINE_ARCHIVE}" ]; then \
@@ -363,6 +383,9 @@ RUN set -eux; \
     tar -C /usr/local -xzf "${GO_TGZ}"; \
     export PATH="/usr/local/go/bin:${PATH}"; \
     export GOPROXY="https://goproxy.cn,direct"; \
+    export GOPATH=/go; \
+    export GOMODCACHE=/go/pkg/mod; \
+    export GOCACHE=/root/.cache/go-build; \
     go version; \
     cd /code/tools/wih; \
     GOOS=linux GOARCH="${GO_ARCH}" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /usr/bin/wih .; \
@@ -370,14 +393,14 @@ RUN set -eux; \
     npm --version; \
     npm config set registry "${NPM_REGISTRY}"; \
     export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1; \
-    if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi; \
+    if [ -f package-lock.json ]; then npm ci --cache /root/.npm --no-audit --no-fund; else npm install --cache /root/.npm --no-audit --no-fund; fi; \
     node -e "require('playwright'); console.log('node-playwright-ok')"; \
     mkdir -p /usr/local/share/arl; \
     rm -rf /usr/local/share/arl/wih; \
     cp -a /code/tools/wih /usr/local/share/arl/wih; \
     test -f /usr/local/share/arl/wih/config/rules.yml; \
     cd /code; \
-    rm -rf /usr/local/go /root/go /tmp/go-build "${GO_TGZ}"; \
+    rm -rf /usr/local/go /tmp/go-build "${GO_TGZ}"; \
     ln -sf /code/app/tools/phantomjs /usr/bin/phantomjs; \
     case "$ARCH" in \
       amd64|x86_64) NUCLEI_ARCH="amd64" ;; \
@@ -406,3 +429,6 @@ RUN set -eux; \
     nmap --version >/dev/null; \
     nuclei -version >/dev/null; \
     test -x /usr/bin/wih
+
+# 回归工具随镜像提供，统一从 /code/{app,test,scripts} 运行，不再构造临时 ARL 软链布局。
+COPY scripts/ /code/scripts/

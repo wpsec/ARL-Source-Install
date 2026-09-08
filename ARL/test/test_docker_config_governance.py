@@ -17,8 +17,12 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+try:
+    from test._layout import PROJECT_ROOT
+except ImportError:
+    from _layout import PROJECT_ROOT
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = PROJECT_ROOT
 ARL_ROOT = REPO_ROOT / "ARL"
 DOCKER_DIR = ARL_ROOT / "docker"
 COMPOSE_FILE = DOCKER_DIR / "docker-compose.yml"

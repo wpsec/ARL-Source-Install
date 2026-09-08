@@ -1,4 +1,8 @@
 import unittest
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 IMPORT_ERROR = None
 try:
@@ -43,6 +47,7 @@ class TestCDNName(unittest.TestCase):
         self.assertTrue('title="test title"' in human_rule)
         self.assertTrue('url="/zentao/user"' in human_rule)
 
+    @legacy_network_test
     def test_fetch_fingerprint(self):
         site = "https://www.baidu.com/"
         conn = utils.http_req(site)

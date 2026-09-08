@@ -2,8 +2,13 @@ import unittest
 from app import utils
 from app.modules import TaskStatus, TaskType
 from app import tasks as wrap_tasks
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
+@legacy_network_test
 class TestDomainTaskSearchSpider(unittest.TestCase):
     def test_domain_task_search_spider(self):
         target = "tophant.com"

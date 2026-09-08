@@ -2,6 +2,10 @@ import unittest
 from app.modules import SiteAutoTag
 from app.services import auto_tag
 from app.services.fetchSite import fetch_site
+try:
+    from test._network_test_guard import legacy_network_test
+except ImportError:
+    from _network_test_guard import legacy_network_test
 
 
 class TestCDNName(unittest.TestCase):
@@ -27,6 +31,7 @@ class TestCDNName(unittest.TestCase):
         auto_tag(item)
         self.assertTrue(item["tag"][0] == SiteAutoTag.ENTRY)
 
+    @legacy_network_test
     def test_200(self):
         site_info_list = fetch_site(["https://www.baidu.com"])
         auto_tag(site_info_list)

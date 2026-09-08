@@ -5,9 +5,13 @@ import subprocess
 import sys
 import unittest
 from unittest import mock
+try:
+    from test._layout import PROJECT_ROOT
+except ImportError:
+    from _layout import PROJECT_ROOT
 
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "check-test-hygiene.py"
+SCRIPT = PROJECT_ROOT / "scripts" / "check-test-hygiene.py"
 SPEC = importlib.util.spec_from_file_location("check_test_hygiene", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
