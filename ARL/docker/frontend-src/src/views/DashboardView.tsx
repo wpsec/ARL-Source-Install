@@ -40,6 +40,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_WARNING_CLASS,
+  CONSOLE_CARD_ACTION_CLASS,
   CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
   CONSOLE_PAGE_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
@@ -611,7 +612,7 @@ export function DashboardView({
               <button
                 key={entry.id}
                 onClick={() => onOpenModule(entry.id)}
-                className="btn btn-ghost h-auto min-h-0 justify-start border border-base-300 bg-base-100 p-4 text-left hover:border-primary/45 hover:bg-base-200"
+                className={`${CONSOLE_CARD_ACTION_CLASS} p-4`}
               >
                 <div className="flex items-start gap-3">
                   <div className={`p-2 rounded-box bg-base-200 border border-base-300 ${entry.color}`}>

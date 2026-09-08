@@ -20,6 +20,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
+  CONSOLE_CARD_ACTION_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
@@ -874,7 +875,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
                   key={profile.id}
                   type="button"
                   onClick={() => applyScanProfile(profile)}
-                  className={`btn btn-ghost h-auto min-h-0 w-full justify-start border p-3 text-left text-base-content transition hover:text-base-content ${
+                  className={`${CONSOLE_CARD_ACTION_CLASS} p-3 ${
                     isMatched
                       ? 'border-accent bg-accent/10'
                       : 'border-base-300 bg-base-100 hover:bg-base-200'
