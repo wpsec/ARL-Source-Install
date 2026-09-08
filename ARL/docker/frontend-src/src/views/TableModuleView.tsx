@@ -87,6 +87,8 @@ import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
@@ -4626,7 +4628,7 @@ export function TableModuleView({
                 <button
                   onClick={closeTaskReportExportFeedback}
                   disabled={taskReportExportBusy}
-                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40`}
                 >
                   {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
                 </button>
@@ -4702,14 +4704,14 @@ export function TableModuleView({
                 <button
                   onClick={closeRiskDialog}
                   disabled={riskDialogSubmitting}
-                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40`}
                 >
                   取消
                 </button>
                 <button
                   onClick={() => void submitAssetSiteRiskTask()}
                   disabled={riskDialogSubmitting}
-                  className="btn btn-primary"
+                  className={CONSOLE_PRIMARY_BUTTON_CLASS}
                 >
                   {riskDialogSubmitting ? '下发中...' : '确认下发'}
                 </button>
@@ -4802,14 +4804,14 @@ export function TableModuleView({
                 <button
                   onClick={closePolicyTaskDialog}
                   disabled={policyTaskSubmitting}
-                  className="btn btn-ghost border border-base-300 disabled:opacity-40"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40`}
                 >
                   取消
                 </button>
                 <button
                   onClick={() => void submitPolicyTask()}
                   disabled={policyTaskSubmitting}
-                  className="btn btn-primary"
+                  className={CONSOLE_PRIMARY_BUTTON_CLASS}
                 >
                   {policyTaskSubmitting ? '下发中...' : '确认下发'}
                 </button>
@@ -5082,7 +5084,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={closeWihEndpointDetail}
-                  className="btn btn-ghost border border-base-300"
+                  className={CONSOLE_SECONDARY_BUTTON_CLASS}
                 >
                   关闭
                 </button>
@@ -5259,7 +5261,7 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={closeAiDenoiseDetail}
-                className="btn btn-ghost border border-base-300"
+                className={CONSOLE_SECONDARY_BUTTON_CLASS}
               >
                 关闭
               </button>
@@ -5340,13 +5342,13 @@ export function TableModuleView({
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => closeDeleteConfirmDialog(false)}
-                  className="btn btn-ghost border border-base-300"
+                  className={CONSOLE_SECONDARY_BUTTON_CLASS}
                 >
                   取消
                 </button>
                 <button
                   onClick={() => closeDeleteConfirmDialog(true)}
-                  className="btn btn-error"
+                  className="btn btn-error btn-sm h-10 min-h-10"
                 >
                   {deleteConfirmDialog.confirmText}
                 </button>

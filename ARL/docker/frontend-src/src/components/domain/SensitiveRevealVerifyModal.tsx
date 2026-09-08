@@ -1,5 +1,10 @@
 import { X } from 'lucide-react';
-import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_INPUT_CLASS } from '../../ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_INPUT_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
+} from '../../ui/classes';
 import { Modal } from '../ui/Modal';
 
 export type SensitiveRevealVerifyModalProps = {
@@ -72,7 +77,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           <button
             type="button"
             onClick={props.onClose}
-            className="btn btn-ghost border border-base-300"
+            className={CONSOLE_SECONDARY_BUTTON_CLASS}
             disabled={props.loading}
           >
             取消
@@ -80,7 +85,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           <button
             type="button"
             onClick={props.onConfirm}
-            className="btn btn-primary disabled:opacity-60"
+            className={`${CONSOLE_PRIMARY_BUTTON_CLASS} disabled:opacity-60`}
             disabled={props.loading}
           >
             {props.loading ? '验证中...' : '验证并显示'}

@@ -29,7 +29,9 @@ import {
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SELECT_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
 
@@ -1735,7 +1737,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void saveAiConfig()}
-            className="btn btn-primary gap-2 disabled:opacity-60"
+            className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={isActionBusy}
           >
             <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />
@@ -2542,14 +2544,14 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="btn btn-ghost border border-base-300"
+                className={CONSOLE_SECONDARY_BUTTON_CLASS}
               >
                 取消
               </button>
               <button
                 type="button"
                 onClick={saveProviderConfigDraft}
-                className="btn btn-primary"
+                className={CONSOLE_PRIMARY_BUTTON_CLASS}
               >
                 保存
               </button>
@@ -2598,7 +2600,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="btn btn-ghost border border-base-300"
+                className={CONSOLE_SECONDARY_BUTTON_CLASS}
               >
                 取消
               </button>
@@ -2608,7 +2610,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   const ok = addCompatProvider();
                   if (ok) setCompatDialogOpen(false);
                 }}
-                className="btn btn-primary"
+                className={CONSOLE_PRIMARY_BUTTON_CLASS}
               >
                 确认添加
               </button>
@@ -2638,7 +2640,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setShowRestartModal(false)}
-                className="btn btn-primary"
+                className={CONSOLE_PRIMARY_BUTTON_CLASS}
               >
                 我知道了
               </button>
@@ -2682,7 +2684,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="btn btn-ghost border border-base-300"
+                className={CONSOLE_SECONDARY_BUTTON_CLASS}
               >
                 关闭
               </button>
@@ -2744,7 +2746,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="btn btn-ghost border border-base-300"
+                className={CONSOLE_SECONDARY_BUTTON_CLASS}
               >
                 关闭
               </button>

@@ -16,6 +16,8 @@ import {
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
@@ -1543,7 +1545,7 @@ export function ActionDialog({
           <div className="flex justify-end gap-3">
             <button
               onClick={onClose}
-              className="btn btn-ghost border border-base-300"
+              className={CONSOLE_SECONDARY_BUTTON_CLASS}
             >
               取消
             </button>
@@ -1873,7 +1875,7 @@ export function ActionDialog({
                   setLoading(false);
                 }
               }}
-              className="btn btn-primary"
+              className={CONSOLE_PRIMARY_BUTTON_CLASS}
               disabled={loading}
             >
               {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction || isAssetScopeAddScope || isAssetScopeAddScheduler || isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? '确定' : '执行'}

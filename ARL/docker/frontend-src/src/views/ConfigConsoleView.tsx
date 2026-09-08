@@ -1460,7 +1460,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-3 bg-base-100">
               <button
                 onClick={() => setShowRestartModal(false)}
-                className="btn btn-primary"
+                className={CONSOLE_PRIMARY_BUTTON_CLASS}
               >
                 我知道了
               </button>

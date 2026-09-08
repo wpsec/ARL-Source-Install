@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ReactNode } from 'react';
-import { CONSOLE_ALERT_ERROR_CLASS } from '../../ui/classes';
+import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from '../../ui/classes';
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -36,7 +36,7 @@ export class ViewErrorBoundary extends React.Component<Props, State> {
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
-                  className="btn btn-primary"
+                  className={CONSOLE_PRIMARY_BUTTON_CLASS}
                 >
                   刷新重试
                 </button>

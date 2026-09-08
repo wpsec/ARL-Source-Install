@@ -1244,7 +1244,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                 <button
                   type="button"
                   onClick={() => setBatchTestDialogOpen(false)}
-                  className="btn btn-ghost border border-base-300"
+                  className={CONSOLE_SECONDARY_BUTTON_CLASS}
                 >
                   关闭
                 </button>
