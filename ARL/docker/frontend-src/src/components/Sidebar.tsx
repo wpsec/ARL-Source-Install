@@ -22,11 +22,11 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
-    { id: 'nord', label: '北欧极光', color: 'bg-[#79a8c3]' },
-    { id: 'midnight', label: '午夜科技', color: 'bg-[#5a94cb]' },
-    { id: 'slate', label: '专业灰蓝', color: 'bg-[#63a4d6]' },
-    { id: 'titanium', label: '钛金黑', color: 'bg-[#3794ff]' },
-    { id: 'sandstone', label: '砂岩白', color: 'bg-[#7b6d62]' },
+    { id: 'nord', label: '北欧极光', color: 'bg-[#8aa5ad]' },
+    { id: 'midnight', label: '午夜科技', color: 'bg-[#6f8da4]' },
+    { id: 'slate', label: '专业灰蓝', color: 'bg-[#7898ad]' },
+    { id: 'titanium', label: '钛金黑', color: 'bg-[#7893a8]' },
+    { id: 'sandstone', label: '砂岩白', color: 'bg-[#71675d]' },
   ];
 
   const navGroups = [
@@ -81,13 +81,13 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
 
       <div className="px-6 py-2">
         <motion.button 
-          whileHover={{ scale: 1.02, backgroundColor: '#292524' }}
+          whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
-          className="w-full bg-fixed-dark text-fixed-white font-black py-4 px-6 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl shadow-black/20"
+          className="w-full bg-brand-accent text-white font-black py-4 px-6 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-2xl shadow-black/20"
         >
-          <Plus className="w-5 h-5 text-fixed-white stroke-[3px]" />
-          <span className="text-fixed-white text-base tracking-tight">新建任务</span>
+          <Plus className="w-5 h-5 text-white stroke-[3px]" />
+          <span className="text-white text-base tracking-tight">新建任务</span>
         </motion.button>
       </div>
 
@@ -137,7 +137,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                 className={cn(
                   "w-6 h-6 rounded-lg transition-all border-2",
                   t.color,
-                  theme === t.id ? "border-white scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
+                  theme === t.id ? "border-base-content scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
                 )}
               />
             ))}
