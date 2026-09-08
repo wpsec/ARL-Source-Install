@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query';
 import { requestApi } from '../api/client';
 import { formatPercent, normalizeValue, parseNumericValue } from '../domain/format';
 import { PageHeader } from '../layout/PageHeader';
+import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_PANEL_CLASS } from '../ui/classes';
 
 const MONITOR_POLL_INTERVAL_MS = 3000;
 
@@ -205,32 +206,38 @@ export function SystemMonitorView({ token }: { token: string }) {
         }
       />
 
-      {error ? <div role="alert" className="alert alert-error text-sm py-3">{error}</div> : null}
+      {error ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{error}</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {resourceCards.map((item) => (
-          <div key={item.title} className="bg-base-200 border border-base-300 p-5 rounded-box shadow-sm">
-            <div className="flex items-center justify-between mb-5">
-              <div className={`p-2.5 rounded-box bg-base-100 border border-base-300 ${item.color}`}>
-                <item.icon className="w-5 h-5" />
+          <div key={item.title} className={CONSOLE_PANEL_CLASS}>
+            <div className="card-body p-5">
+              <div className="flex items-center justify-between mb-5">
+                <div className={`p-2.5 rounded-box bg-base-100 border border-base-300 ${item.color}`}>
+                  <item.icon className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-black text-base-content/60">{item.detail}</span>
               </div>
-              <span className="text-xs font-black text-content-muted">{item.detail}</span>
-            </div>
-            <h3 className="text-xs font-medium tracking-wide text-base-content/60 mb-1">{item.title}</h3>
-            <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
-            <div className="h-2 mt-4 rounded-full bg-base-100 border border-base-300 overflow-hidden">
-              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, item.percent))}%` }} />
+              <h3 className="text-xs font-medium tracking-wide text-base-content/60 mb-1">{item.title}</h3>
+              <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
+              <progress
+                className="progress progress-primary w-full mt-4"
+                value={Math.min(100, Math.max(0, item.percent))}
+                max="100"
+                aria-label={`${item.title} ${item.detail}`}
+              />
             </div>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
-          <h3 className="text-lg font-semibold tracking-tight mb-6">资源使用趋势</h3>
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+        <div className={CONSOLE_PANEL_CLASS}>
+          <div className="card-body p-6">
+            <h3 className="card-title text-lg font-semibold tracking-tight mb-2">资源使用趋势</h3>
+            <div className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
                 <XAxis dataKey="time" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
@@ -238,16 +245,18 @@ export function SystemMonitorView({ token }: { token: string }) {
                 <Line type="monotone" dataKey="cpu" stroke="var(--brand-accent)" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="ram" stroke="var(--brand-secondary)" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="disk" stroke="var(--brand-warning)" strokeWidth={2.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
-        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
-          <h3 className="text-lg font-semibold tracking-tight mb-6">网络流量趋势</h3>
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
+        <div className={CONSOLE_PANEL_CLASS}>
+          <div className="card-body p-6">
+            <h3 className="card-title text-lg font-semibold tracking-tight mb-2">网络流量趋势</h3>
+            <div className="h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="systemMonitorNetIn" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--brand-secondary)" stopOpacity={0.28} />
@@ -264,24 +273,25 @@ export function SystemMonitorView({ token }: { token: string }) {
                 <Tooltip contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
                 <Area type="monotone" dataKey="net_in" stroke="var(--brand-secondary)" fillOpacity={1} fill="url(#systemMonitorNetIn)" strokeWidth={2.5} />
                 <Area type="monotone" dataKey="net_out" stroke="var(--brand-accent)" fillOpacity={1} fill="url(#systemMonitorNetOut)" strokeWidth={2.5} />
-              </AreaChart>
-            </ResponsiveContainer>
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
-          <p className="text-xs text-base-content/60 tracking-wide">累计发送流量</p>
-          <p className="text-2xl font-semibold mt-1">{normalizeValue(resource?.network_total_sent)}</p>
+      <div className="stats stats-vertical md:stats-horizontal w-full bg-base-200 border border-base-300 shadow-sm">
+        <div className="stat px-5 py-4">
+          <div className="stat-title text-base-content/60">累计发送流量</div>
+          <div className="stat-value text-2xl">{normalizeValue(resource?.network_total_sent)}</div>
         </div>
-        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
-          <p className="text-xs text-base-content/60 tracking-wide">累计接收流量</p>
-          <p className="text-2xl font-semibold mt-1">{normalizeValue(resource?.network_total_recv)}</p>
+        <div className="stat px-5 py-4">
+          <div className="stat-title text-base-content/60">累计接收流量</div>
+          <div className="stat-value text-2xl">{normalizeValue(resource?.network_total_recv)}</div>
         </div>
-        <div className="bg-base-200 border border-base-300 rounded-box p-4 shadow-sm">
-          <p className="text-xs text-base-content/60 tracking-wide">进程数量 / 启动时间</p>
-          <p className="text-lg font-semibold mt-1">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</p>
+        <div className="stat px-5 py-4">
+          <div className="stat-title text-base-content/60">进程数量 / 启动时间</div>
+          <div className="stat-value text-lg">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</div>
         </div>
       </div>
     </div>

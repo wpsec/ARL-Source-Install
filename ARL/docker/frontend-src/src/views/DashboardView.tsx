@@ -36,6 +36,11 @@ import {
 import { formatCpuSummary, formatUsageSummary } from '../domain/system';
 import type {OpenModuleHandler} from '../domain/types';
 import { PageHeader } from '../layout/PageHeader';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_WARNING_CLASS,
+  CONSOLE_PANEL_CLASS,
+} from '../ui/classes';
 
 const EMPTY_STATS = {
   task: 0,
@@ -307,12 +312,12 @@ export function DashboardView({
     { id: 'asset_scope', label: '资产分组', desc: '维护范围并执行批量导出', icon: Globe, color: 'text-error' },
   ];
   const levelClassMap: Record<string, string> = {
-    INFO: 'text-emerald-400',
+    INFO: 'text-success',
     WARN: 'text-warning',
     WARNING: 'text-warning',
     ERROR: 'text-error',
     CRIT: 'text-error',
-    DEBUG: 'text-sky-400',
+    DEBUG: 'text-info',
   };
 
   const formatLogTime = (value: any): string => {
@@ -335,10 +340,13 @@ export function DashboardView({
         <span>{title}</span>
         <span className="text-base-content">{formatPercent(percent)}</span>
       </div>
-      <div className="h-1.5 bg-base-100 rounded-full overflow-hidden border border-base-300">
-        <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
-      </div>
-      <p className="text-[10px] text-content-muted">{detail}</p>
+      <progress
+        className="progress progress-primary w-full"
+        value={Math.min(100, Math.max(0, percent))}
+        max="100"
+        aria-label={`${title} ${formatPercent(percent)}`}
+      />
+      <p className="text-[10px] text-base-content/60">{detail}</p>
     </div>
   );
 
@@ -373,32 +381,35 @@ export function DashboardView({
         }
       />
 
-      {error ? <div className="text-sm text-error border border-error/30 bg-error/10 rounded-xl px-4 py-3">{error}</div> : null}
+      {error ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{error}</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card) => (
-          <div key={card.title} className="bg-base-200 border border-base-300 p-5 rounded-box hover:border-primary/50 transition-colors group shadow-sm">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
-                <card.icon className="w-6 h-6" />
+          <div key={card.title} className={`${CONSOLE_PANEL_CLASS} group transition-colors hover:border-primary/50`}>
+            <div className="card-body p-5">
+              <div className="flex justify-between items-start mb-4">
+                <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
+                  <card.icon className="w-6 h-6" />
+                </div>
+                <div className={`badge gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
+                  {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {card.change}
+                </div>
               </div>
-              <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${card.isUp ? 'text-success bg-success/10' : 'text-error bg-error/10'}`}>
-                {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                {card.change}
-              </div>
+              <h3 className="text-base-content/60 text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
+              <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
             </div>
-            <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
-            <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
-          <h3 className="text-xl font-black tracking-tight mb-8">资产增长趋势 (7日)</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData}>
+        <div className={`lg:col-span-2 ${CONSOLE_PANEL_CLASS}`}>
+          <div className="card-body p-6">
+            <h3 className="card-title text-xl font-black tracking-tight mb-2">资产增长趋势 (7日)</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData}>
                 <defs>
                   <linearGradient id="colorAssetsTrend" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--brand-accent)" stopOpacity={0.3} />
@@ -410,16 +421,18 @@ export function DashboardView({
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
                 <Area type="monotone" dataKey="assets" stroke="var(--brand-accent)" strokeWidth={3} fillOpacity={1} fill="url(#colorAssetsTrend)" />
-              </AreaChart>
-            </ResponsiveContainer>
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
-        <div className="bg-base-200 border border-base-300 p-6 rounded-box shadow-sm">
-          <h3 className="text-xl font-black tracking-tight mb-8">资产分布概览</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={assetOverviewData} layout="vertical">
+        <div className={CONSOLE_PANEL_CLASS}>
+          <div className="card-body p-6">
+            <h3 className="card-title text-xl font-black tracking-tight mb-2">资产分布概览</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={assetOverviewData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" horizontal={false} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
@@ -434,93 +447,99 @@ export function DashboardView({
                     <Cell key={`asset-overview-${index}`} fill={entry?.color || '#64748b'} />
                   ))}
                 </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-base-200 border border-base-300 p-6 rounded-box flex flex-col shadow-sm">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="p-2 bg-secondary/10 rounded-xl">
-              <Activity className="w-5 h-5 text-secondary" />
+        <div className={`${CONSOLE_PANEL_CLASS} flex flex-col`}>
+          <div className="card-body p-6 flex-1">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-box bg-secondary/10">
+                <Activity className="w-5 h-5 text-secondary" />
+              </div>
+              <h3 className="card-title text-xl font-black tracking-tight">系统监控</h3>
             </div>
-            <h3 className="text-xl font-black tracking-tight">系统监控</h3>
-          </div>
-          <div className="space-y-6 flex-1">
-            {renderUsageBar('CPU 负载', cpuPercent, formatCpuSummary(deviceInfo))}
-            {renderUsageBar('内存占用', memoryPercent, formatUsageSummary(memoryInfo))}
-            {renderUsageBar('磁盘占用', diskPercent, formatUsageSummary(diskInfo))}
-            <div className="h-28 mt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={netData}>
-                  <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="space-y-6">
+              {renderUsageBar('CPU 负载', cpuPercent, formatCpuSummary(deviceInfo))}
+              {renderUsageBar('内存占用', memoryPercent, formatUsageSummary(memoryInfo))}
+              {renderUsageBar('磁盘占用', diskPercent, formatUsageSummary(diskInfo))}
+              <div className="h-28 mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={netData}>
+                    <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-base-200 border border-base-300 p-6 rounded-box flex flex-col shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-accent/10 rounded-xl">
-                <Terminal className="w-5 h-5 text-accent" />
-              </div>
-              <h3 className="text-xl font-black tracking-tight">实时扫描日志</h3>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                const next = !isLogPaused;
-                setIsLogPaused(next);
-                // 继续时立即补一帧（对齐原 loadRecentLogs(force) 语义）。
-                if (!next) {
-                  void logsQuery.refetch();
-                }
-              }}
-                className={`text-xs font-black uppercase tracking-wider px-2 hover:underline ${isLogPaused ? 'text-warning' : 'text-secondary'}`}
-              >
-                {isLogPaused ? '继续' : '暂停'}
-              </button>
-              <button
-                onClick={() => void logsQuery.refetch()}
-                className="text-xs font-black text-accent uppercase tracking-wider hover:underline px-2"
-              >
-                刷新日志
-              </button>
-            </div>
-          </div>
-          <div className="flex-1 bg-base-100 border border-base-300 rounded-box p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
-            {isLogPaused ? (
-              <div className="mb-2 text-warning border border-warning/30 bg-warning/10 rounded-lg px-2 py-1">扫描日志已暂停自动刷新</div>
-            ) : null}
-            {logsData.map((log, index) => {
-              const level = String(log?.level || 'INFO').toUpperCase();
-              const source = String(log?.source || 'SYSTEM').toUpperCase();
-              return (
-                <div key={`${source}-${level}-${index}`} className="py-2 border-b border-base-300 last:border-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-content-muted'}`}>{level}</span>
-                    <span className="text-content-muted">{source}</span>
-                    <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
-                  </div>
-                  <p className="text-base-content/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
+        <div className={`${CONSOLE_PANEL_CLASS} flex flex-col`}>
+          <div className="card-body p-6 flex-1">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-box bg-accent/10">
+                  <Terminal className="w-5 h-5 text-accent" />
                 </div>
-              );
-            })}
+                <h3 className="card-title text-xl font-black tracking-tight">实时扫描日志</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const next = !isLogPaused;
+                    setIsLogPaused(next);
+                    // 继续时立即补一帧（对齐原 loadRecentLogs(force) 语义）。
+                    if (!next) {
+                      void logsQuery.refetch();
+                    }
+                  }}
+                  className={`btn btn-ghost btn-xs ${isLogPaused ? 'text-warning' : 'text-secondary'}`}
+                >
+                  {isLogPaused ? '继续' : '暂停'}
+                </button>
+                <button
+                  onClick={() => void logsQuery.refetch()}
+                  className="btn btn-ghost btn-xs text-accent"
+                >
+                  刷新日志
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-base-100 border border-base-300 rounded-box p-4 font-mono text-[11px] overflow-y-auto max-h-[520px] min-h-[460px]">
+              {isLogPaused ? (
+                <div role="status" className={`${CONSOLE_ALERT_WARNING_CLASS} mb-2 py-2`}>扫描日志已暂停自动刷新</div>
+              ) : null}
+              {logsData.map((log, index) => {
+                const level = String(log?.level || 'INFO').toUpperCase();
+                const source = String(log?.source || 'SYSTEM').toUpperCase();
+                return (
+                  <div key={`${source}-${level}-${index}`} className="py-2 border-b border-base-300 last:border-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-base-content/60'}`}>{level}</span>
+                      <span className="text-base-content/60">{source}</span>
+                      <span className="ml-auto text-base-content/60">{formatLogTime(log?.time)}</span>
+                    </div>
+                    <p className="text-base-content/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-        <div className="xl:col-span-2 bg-base-200 border border-base-300 rounded-box p-6 space-y-4 shadow-sm">
+        <div className={`xl:col-span-2 ${CONSOLE_PANEL_CLASS}`}>
+          <div className="card-body p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-black tracking-tight">最近任务</h3>
             <button
               onClick={() => onOpenModule('task')}
-              className="text-sm font-black text-accent border border-accent/30 px-4 py-2 rounded-xl hover:bg-accent/10 transition"
+              className="btn btn-ghost btn-sm text-accent"
             >
               查看全部
             </button>
@@ -573,19 +592,21 @@ export function DashboardView({
               </tbody>
             </table>
           </div>
+          </div>
         </div>
 
-        <div className="bg-base-200 border border-base-300 rounded-box p-6 shadow-sm">
+        <div className={CONSOLE_PANEL_CLASS}>
+          <div className="card-body p-6">
           <h3 className="text-lg font-black mb-4">快捷入口</h3>
           <div className="grid grid-cols-1 gap-3">
             {quickModules.map((entry) => (
               <button
                 key={entry.id}
                 onClick={() => onOpenModule(entry.id)}
-                className="text-left bg-base-100 border border-base-300 rounded-box p-4 hover:border-primary/45 hover:bg-base-200 transition-colors"
+                className="btn btn-ghost h-auto min-h-0 justify-start border border-base-300 bg-base-100 p-4 text-left hover:border-primary/45 hover:bg-base-200"
               >
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg bg-base-200 border border-base-300 ${entry.color}`}>
+                  <div className={`p-2 rounded-box bg-base-200 border border-base-300 ${entry.color}`}>
                     <entry.icon className="w-4 h-4" />
                   </div>
                   <div>
@@ -595,6 +616,7 @@ export function DashboardView({
                 </div>
               </button>
             ))}
+          </div>
           </div>
         </div>
       </div>

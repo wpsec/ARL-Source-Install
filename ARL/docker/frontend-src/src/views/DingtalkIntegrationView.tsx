@@ -17,9 +17,12 @@ import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { PageHeader } from '../layout/PageHeader';
 import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PANEL_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
 
@@ -414,7 +417,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="钉钉集成" description="在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。" />
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">配置状态</div>
           <div className="flex items-center gap-2">
@@ -451,12 +454,12 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+          <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
             {error}
           </div>
         ) : null}
         {success ? (
-          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+          <div role="status" className={CONSOLE_ALERT_SUCCESS_CLASS}>
             {success}
           </div>
         ) : null}
@@ -477,7 +480,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-5 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-5`}>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-xs font-bold text-content-muted block">
@@ -533,7 +536,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
               type="checkbox"
               checked={form.kb_enable}
               onChange={(event) => updateBoolField('kb_enable', event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+              className="checkbox checkbox-primary checkbox-sm"
             />
             <span className="font-medium">启用知识库推送</span>
           </label>
@@ -542,7 +545,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
               type="checkbox"
               checked={form.ssl_cert_notify_enable}
               onChange={(event) => updateBoolField('ssl_cert_notify_enable', event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+              className="checkbox checkbox-primary checkbox-sm"
             />
             <span className="font-medium">SSL证书过期通知</span>
           </label>
@@ -765,7 +768,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void runDingtalkTest()}

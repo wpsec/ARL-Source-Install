@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { CONSOLE_INPUT_CLASS } from '../../ui/classes';
+import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_INPUT_CLASS } from '../../ui/classes';
 import { Modal } from '../ui/Modal';
 
 export type SensitiveRevealVerifyModalProps = {
@@ -63,7 +63,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
             />
           </div>
           {props.error ? (
-            <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+            <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
               {props.error}
             </div>
           ) : null}

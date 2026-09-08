@@ -11,7 +11,14 @@ import {
 } from '../domain/format';
 import { flattenPayloadFields, getPayloadValue, updatePayloadValue } from '../domain/payload';
 import type {JsonValue, ModuleAction} from '../domain/types';
-import { UNIFIED_SELECT_CLASS } from '../ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_FILE_INPUT_CLASS,
+  CONSOLE_INPUT_CLASS,
+  CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_TEXTAREA_MONO_CLASS,
+  UNIFIED_SELECT_CLASS,
+} from '../ui/classes';
 
 export function ActionDialog({
   token,
@@ -579,7 +586,7 @@ export function ActionDialog({
                   const nextFile = event.target.files?.[0] || null;
                   setFile(nextFile);
                 }}
-                className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border file:border-base-300 file:bg-base-100 file:text-base-content"
+                className={CONSOLE_FILE_INPUT_CLASS}
               />
             </div>
           ) : null}
@@ -592,7 +599,7 @@ export function ActionDialog({
                   value={taskName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="例如：生产资产扫描-03"
                 />
               </div>
@@ -622,7 +629,7 @@ export function ActionDialog({
               </div>
 
               {taskDomainDictError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskDomainDictError}
                 </div>
               ) : null}
@@ -652,7 +659,7 @@ export function ActionDialog({
               </div>
 
               {taskFileLeakDictError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskFileLeakDictError}
                 </div>
               ) : null}
@@ -664,7 +671,7 @@ export function ActionDialog({
                     value={taskTarget}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
-                    className="w-full min-h-[132px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                    className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[132px]`}
                     placeholder={'example.com\napi.example.com\n1.2.3.4'}
                   />
                   <p className="text-[11px] text-content-muted">可输入多个目标，支持换行、空格或逗号分隔，提交时会自动归一化。</p>
@@ -691,7 +698,7 @@ export function ActionDialog({
                       value={taskPortCustom}
                       disabled={!editable}
                       onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'port_custom', event.target.value))}
-                      className="mt-2 w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                      className={`${CONSOLE_INPUT_MONO_CLASS} mt-2`}
                       placeholder="例如：80,443,8080,10000-10100"
                     />
                   ) : null}
@@ -721,13 +728,13 @@ export function ActionDialog({
                         {section.keys.map((fieldKey) => (
                           <label
                             key={fieldKey}
-                            className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition"
+                            className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition"
                           >
                             <input
                               type="checkbox"
                               checked={Boolean(formPayload?.[fieldKey])}
                               disabled={!editable}
-                              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                              className="checkbox checkbox-primary checkbox-sm"
                               onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
                             />
                             <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
@@ -747,8 +754,8 @@ export function ActionDialog({
                   <input
                     value={fofaTaskName}
                     disabled={!editable}
-                    onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
+                    className={CONSOLE_INPUT_CLASS}
                     placeholder="请输入任务名称"
                   />
                 </div>
@@ -786,7 +793,7 @@ export function ActionDialog({
                     setFormPayload((prev) => updatePayloadValue(prev, 'query', event.target.value));
                     setFofaResultSize(null);
                   }}
-                  className="w-full min-h-[160px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[160px]`}
                   placeholder={`请输入 ${currentMeasureProviderLabel} 原生语法（支持多行输入）\n${measureProviderExamples[fofaProvider] || measureProviderExamples.fofa}`}
                 />
                 <p className="text-[11px] text-content-muted">
@@ -848,7 +855,7 @@ export function ActionDialog({
                     value={taskScheduleName}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                    className={CONSOLE_INPUT_CLASS}
                     placeholder="请输入计划任务名称"
                   />
                 </div>
@@ -923,7 +930,7 @@ export function ActionDialog({
                     value={taskScheduleStartDate}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'start_date', fromDatetimeLocalValue(event.target.value)))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                    className={CONSOLE_INPUT_CLASS}
                   />
                 </div>
               ) : (
@@ -933,7 +940,7 @@ export function ActionDialog({
                     value={taskScheduleCron}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                    className={CONSOLE_INPUT_MONO_CLASS}
                     placeholder="例如：0 */6 * * *"
                   />
                 </div>
@@ -945,7 +952,7 @@ export function ActionDialog({
                   value={taskScheduleTarget}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'target', event.target.value))}
-                  className="w-full min-h-[148px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[148px]`}
                   placeholder={
                     taskScheduleTag === 'risk_cruising'
                       ? 'http://10.0.1.1:8081/\n10.0.1.1:2222'
@@ -955,22 +962,22 @@ export function ActionDialog({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                    className="checkbox checkbox-primary checkbox-sm"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_enable', event.target.checked))}
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={taskScheduleNotifyKbEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                    className="checkbox checkbox-primary checkbox-sm"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'notify_kb_enable', event.target.checked))}
                   />
                   <span className="font-medium">推送钉钉知识库</span>
@@ -978,7 +985,7 @@ export function ActionDialog({
               </div>
 
               {taskSchedulePolicyError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskSchedulePolicyError}
                 </div>
               ) : null}
@@ -991,7 +998,7 @@ export function ActionDialog({
                   value={githubSchedulerName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入任务名"
                 />
               </div>
@@ -1002,7 +1009,7 @@ export function ActionDialog({
                   value={githubSchedulerKeyword}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'keyword', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={CONSOLE_INPUT_MONO_CLASS}
                   placeholder="例如：AKIA"
                 />
               </div>
@@ -1013,28 +1020,28 @@ export function ActionDialog({
                   value={githubSchedulerCron}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'cron', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={CONSOLE_INPUT_MONO_CLASS}
                   placeholder="例如：0 */6 * * *"
                 />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={githubSchedulerDingdingNotify}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                    className="checkbox checkbox-primary checkbox-sm"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'dingding_notify', event.target.checked))}
                   />
                   <span className="font-medium">钉钉通知</span>
                 </label>
-                <label className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
+                <label className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm hover:border-accent/50 transition">
                   <input
                     type="checkbox"
                     checked={githubSchedulerKbNotifyEnable}
                     disabled={!editable}
-                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                    className="checkbox checkbox-primary checkbox-sm"
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'kb_notify_enable', event.target.checked))}
                   />
                   <span className="font-medium">推送钉钉知识库</span>
@@ -1065,7 +1072,7 @@ export function ActionDialog({
                   value={scopeGroupName}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="例如：生产外网资产"
                 />
               </div>
@@ -1076,7 +1083,7 @@ export function ActionDialog({
                   value={scopeText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
-                  className="w-full min-h-[168px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[168px]`}
                   placeholder={
                     scopeType === 'ip'
                       ? '1.1.1.1\n1.1.1.0/24\n1.1.1.1-1.1.1.100'
@@ -1096,7 +1103,7 @@ export function ActionDialog({
                   value={scopeGroupName}
                   disabled={!isAssetScopeUpdate || !editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'name', event.target.value))}
-                  className="w-full rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="取资产组名称"
                 />
               </div>
@@ -1108,7 +1115,7 @@ export function ActionDialog({
                   value={scopeAddTargetText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'scope', event.target.value))}
-                  className="w-full min-h-[168px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[168px]`}
                   placeholder={'example.com\napi.example.com'}
                 />
                 <p className="text-[11px] text-content-muted">支持多行或逗号分割。</p>
@@ -1120,7 +1127,7 @@ export function ActionDialog({
                     value={scopeBlackText}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'black_scope', event.target.value))}
-                    className="w-full min-h-[96px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                    className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px]`}
                     placeholder={'test.example.com'}
                   />
                   <p className="text-[11px] text-content-muted">可留空，支持多行或逗号分割。</p>
@@ -1135,7 +1142,7 @@ export function ActionDialog({
                   value={scopeMonitorRangeText}
                   disabled={!editable}
                   onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'domain', event.target.value))}
-                  className="w-full min-h-[148px] rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                  className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[148px]`}
                   placeholder={'example.com\napi.example.com'}
                 />
               </div>
@@ -1153,7 +1160,7 @@ export function ActionDialog({
                         const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
                         setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
                       }}
-                      className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 pr-10 text-sm"
+                      className={`${CONSOLE_INPUT_CLASS} pr-10`}
                     />
                     <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-muted">小时</span>
                   </div>
@@ -1179,7 +1186,7 @@ export function ActionDialog({
                 </div>
               </div>
               {taskSchedulePolicyError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskSchedulePolicyError}
                 </div>
               ) : null}
@@ -1199,7 +1206,7 @@ export function ActionDialog({
                       const safeHours = Number.isFinite(nextHours) ? Math.max(1, Math.floor(nextHours)) : 1;
                       setFormPayload((prev) => updatePayloadValue(prev, 'interval', safeHours * 3600));
                     }}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 pr-10 text-sm"
+                    className={`${CONSOLE_INPUT_CLASS} pr-10`}
                   />
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-muted">小时</span>
                 </div>
@@ -1214,7 +1221,7 @@ export function ActionDialog({
                     value={policyName}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyNamePath, event.target.value))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                    className={CONSOLE_INPUT_CLASS}
                     placeholder="请输入策略名称"
                   />
                 </div>
@@ -1224,7 +1231,7 @@ export function ActionDialog({
                     value={policyDesc}
                     disabled={!editable}
                     onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, policyDescPath, event.target.value))}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                    className={CONSOLE_INPUT_CLASS}
                     placeholder="请输入策略描述"
                   />
                 </div>
@@ -1283,12 +1290,12 @@ export function ActionDialog({
               </div>
 
               {taskDomainDictError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskDomainDictError}
                 </div>
               ) : null}
               {taskFileLeakDictError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {taskFileLeakDictError}
                 </div>
               ) : null}
@@ -1319,7 +1326,7 @@ export function ActionDialog({
                     value={policyPortCustom}
                     disabled={!editable}
                     onChange={(event) => updatePolicyValue('ip_config.port_custom', event.target.value)}
-                    className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm font-mono"
+                    className={CONSOLE_INPUT_MONO_CLASS}
                     placeholder="80,443,8080"
                   />
                 </div>
@@ -1340,18 +1347,18 @@ export function ActionDialog({
                 <input
                   value={policySearchKeyword}
                   onChange={(event) => setPolicySearchKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入关键字进行查询"
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {filteredPolicyOptions.map((item) => (
-                    <label key={item.key} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.key} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={Boolean(getPayloadValue(formPayload, getPolicyPath(item.key)))}
                         disabled={!editable}
                         onChange={(event) => updatePolicyValue(item.key, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                        className="checkbox checkbox-primary checkbox-sm"
                       />
                       <span className="truncate">{item.label}</span>
                     </label>
@@ -1379,18 +1386,18 @@ export function ActionDialog({
                 <input
                   value={policyPocKeyword}
                   onChange={(event) => setPolicyPocKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入关键字筛选 PoC"
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyPocOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={selectedPolicyPocNames.includes(item.plugin_name)}
                         disabled={!editable}
                         onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                        className="checkbox checkbox-primary checkbox-sm"
                       />
                       <span className="truncate">{item.vul_name || item.plugin_name}</span>
                     </label>
@@ -1421,18 +1428,18 @@ export function ActionDialog({
                 <input
                   value={policyBruteKeyword}
                   onChange={(event) => setPolicyBruteKeyword(event.target.value)}
-                  className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                  className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入关键字筛选弱口令插件"
                 />
                 <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
                   {filteredPolicyBruteOptions.map((item) => (
-                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm">
+                    <label key={item.plugin_name} className="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 px-3 py-2 text-sm">
                       <input
                         type="checkbox"
                         checked={selectedPolicyBruteNames.includes(item.plugin_name)}
                         disabled={!editable}
                         onChange={(event) => togglePolicyPluginSelection('brute_config', item.plugin_name, event.target.checked)}
-                        className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                        className="checkbox checkbox-primary checkbox-sm"
                       />
                       <span className="truncate">{item.vul_name || item.plugin_name}</span>
                     </label>
@@ -1447,7 +1454,7 @@ export function ActionDialog({
                 <div className="text-xs text-content-muted">PoC 列表加载中...</div>
               ) : null}
               {policyPluginError ? (
-                <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>
                   {policyPluginError}
                 </div>
               ) : null}
@@ -1468,13 +1475,13 @@ export function ActionDialog({
                       {!isTaskCreate && !isPolicyAction ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                     </label>
                     {isBoolean ? (
-                      <label className="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-3 py-2.5 text-sm">
+                      <label className="flex items-center justify-between rounded-box border border-base-300 bg-base-100 px-3 py-2.5 text-sm">
                         <span className="font-semibold">{value ? '启用' : '关闭'}</span>
                         <input
                           type="checkbox"
                           checked={value}
                           disabled={disabled}
-                          className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
+                          className="checkbox checkbox-primary"
                           onChange={(event) => {
                             setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.checked));
                           }}
@@ -1489,7 +1496,7 @@ export function ActionDialog({
                           const next = Number(event.target.value || '0');
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, next));
                         }}
-                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                        className={CONSOLE_INPUT_CLASS}
                       />
                     ) : isComplex ? (
                       <input
@@ -1504,7 +1511,7 @@ export function ActionDialog({
                           setError('');
                         }}
                         placeholder="多个值请用逗号分隔"
-                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                        className={CONSOLE_INPUT_CLASS}
                       />
                     ) : (
                       <input
@@ -1513,7 +1520,7 @@ export function ActionDialog({
                         onChange={(event) => {
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, event.target.value));
                         }}
-                        className="w-full rounded-xl border border-base-300 bg-base-100 px-3 py-2 text-sm"
+                        className={CONSOLE_INPUT_CLASS}
                       />
                     )}
                   </div>
@@ -1530,7 +1537,7 @@ export function ActionDialog({
           ) : null}
 
           {error ? (
-            <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">{error}</div>
+            <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>{error}</div>
           ) : null}
 
           <div className="flex justify-end gap-3">

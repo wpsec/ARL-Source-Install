@@ -17,3 +17,13 @@ export const CONSOLE_FILE_INPUT_CLASS =
   'file-input file-input-bordered flex-1 h-10 text-sm text-base-content';
 
 export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
+
+// 统一控制台的信息层级，避免各页面用不同的自定义边框表达相同状态。
+export const CONSOLE_PANEL_CLASS =
+  'card card-border bg-base-200 border-base-300 shadow-sm';
+
+export const CONSOLE_ALERT_ERROR_CLASS = 'alert alert-error alert-soft text-sm';
+
+export const CONSOLE_ALERT_SUCCESS_CLASS = 'alert alert-success alert-soft text-sm';
+
+export const CONSOLE_ALERT_WARNING_CLASS = 'alert alert-warning alert-soft text-sm';

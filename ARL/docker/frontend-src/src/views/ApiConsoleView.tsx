@@ -18,7 +18,12 @@ import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../layout/PageHeader';
-import { CONSOLE_INPUT_MONO_CLASS } from '../ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_SUCCESS_CLASS,
+  CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PANEL_CLASS,
+} from '../ui/classes';
 
 export function ApiConsoleView({ token }: { token: string }) {
   type ServiceApiForm = {
@@ -953,7 +958,7 @@ export function ApiConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">API 凭据配置</div>
           <div className="flex items-center gap-2">
@@ -998,12 +1003,12 @@ export function ApiConsoleView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+          <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
             {error}
           </div>
         ) : null}
         {success ? (
-          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+          <div role="status" className={CONSOLE_ALERT_SUCCESS_CLASS}>
             {success}
           </div>
         ) : null}
@@ -1026,7 +1031,7 @@ export function ApiConsoleView({ token }: { token: string }) {
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {providers.map((provider) => (
-          <div key={provider.id} className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
+          <div key={provider.id} className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-black tracking-wide break-all">
@@ -1063,7 +1068,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                       type="checkbox"
                       checked={Boolean(form[provider.enableKey])}
                       onChange={(event) => updateBoolField(provider.enableKey, event.target.checked)}
-                      className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                      className="checkbox checkbox-primary checkbox-sm"
                     />
                     <span>{provider.enableLabel}</span>
                   </label>
@@ -1118,11 +1123,8 @@ export function ApiConsoleView({ token }: { token: string }) {
 
             {providerTestResultMap[provider.id] ? (
               <div
-                className={`text-xs rounded-lg px-3 py-2 border ${
-                  providerTestResultMap[provider.id].ok
-                    ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/30'
-                    : 'text-error bg-error/10 border-error/30'
-                }`}
+                role={providerTestResultMap[provider.id].ok ? 'status' : 'alert'}
+                className={providerTestResultMap[provider.id].ok ? CONSOLE_ALERT_SUCCESS_CLASS : CONSOLE_ALERT_ERROR_CLASS}
               >
                 <div>{providerTestResultMap[provider.id].message}</div>
                 {providerTestResultMap[provider.id].detail ? <div className="mt-1 font-mono opacity-80 break-all whitespace-pre-wrap">{providerTestResultMap[provider.id].detail}</div> : null}
@@ -1151,22 +1153,22 @@ export function ApiConsoleView({ token }: { token: string }) {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
-                <div className="bg-base-100 border border-base-300 rounded-box px-3 py-3">
-                  <div className="text-content-muted">已验证</div>
-                  <div className="mt-1 text-2xl font-black">{batchTestSummary.total}</div>
+              <div className="stats stats-vertical sm:stats-horizontal w-full bg-base-100 border border-base-300">
+                <div className="stat p-3">
+                  <div className="stat-title text-xs text-base-content/60">已验证</div>
+                  <div className="stat-value text-2xl">{batchTestSummary.total}</div>
                 </div>
-                <div className="bg-emerald-400/10 border border-emerald-400/30 rounded-xl px-3 py-3">
-                  <div className="text-emerald-300">成功</div>
-                  <div className="mt-1 text-2xl font-black text-emerald-300">{batchTestSummary.successCount}</div>
+                <div className="stat p-3">
+                  <div className="stat-title text-xs text-success">成功</div>
+                  <div className="stat-value text-2xl text-success">{batchTestSummary.successCount}</div>
                 </div>
-                <div className="bg-error/10 border border-error/30 rounded-xl px-3 py-3">
-                  <div className="text-error">失败</div>
-                  <div className="mt-1 text-2xl font-black text-error">{batchTestSummary.failCount}</div>
+                <div className="stat p-3">
+                  <div className="stat-title text-xs text-error">失败</div>
+                  <div className="stat-value text-2xl text-error">{batchTestSummary.failCount}</div>
                 </div>
-                <div className="bg-base-100 border border-base-300 rounded-box px-3 py-3">
-                  <div className="text-content-muted">完成时间</div>
-                  <div className="mt-1 font-mono break-all">{batchTestSummary.testedAt || '-'}</div>
+                <div className="stat p-3">
+                  <div className="stat-title text-xs text-base-content/60">完成时间</div>
+                  <div className="stat-desc mt-1 font-mono break-all text-base-content">{batchTestSummary.testedAt || '-'}</div>
                 </div>
               </div>
 
@@ -1177,20 +1179,20 @@ export function ApiConsoleView({ token }: { token: string }) {
               ) : null}
 
               {batchTestError ? (
-                <div className="text-sm text-error bg-error/10 border border-error/30 rounded-xl px-3 py-2">
+                <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
                   {batchTestError}
                 </div>
               ) : null}
 
               {batchTesting ? (
-                <div className="flex items-center gap-3 rounded-box border border-base-300 bg-base-100 px-4 py-4 text-sm">
+                <div role="status" className="alert alert-info alert-soft text-sm">
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   <span>正在验证已配置的 API，请稍候...</span>
                 </div>
               ) : null}
 
               {!batchTesting && batchTestResults.length === 0 ? (
-                <div className="rounded-box border border-base-300 bg-base-100 px-4 py-8 text-sm text-content-muted text-center">
+                <div role="status" className="alert alert-info alert-soft justify-center text-sm">
                   暂无需要验证的已配置 API。
                 </div>
               ) : null}
@@ -1206,7 +1208,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                         <div
                           className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full shrink-0 ${
                             item.ok
-                              ? 'bg-emerald-400/10 text-emerald-300 border border-emerald-400/30'
+                              ? 'bg-success/10 text-success border border-success/30'
                               : 'bg-error/10 text-error border border-error/30'
                           }`}
                         >
@@ -1215,7 +1217,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <div className="text-sm font-black">{item.label}</div>
-                            <div className={`text-xs font-semibold ${item.ok ? 'text-emerald-300' : 'text-error'}`}>
+                            <div className={`text-xs font-semibold ${item.ok ? 'text-success' : 'text-error'}`}>
                               {item.ok ? '验证成功' : '验证失败'}
                             </div>
                           </div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ReactNode } from 'react';
+import { CONSOLE_ALERT_ERROR_CLASS } from '../../ui/classes';
 
 type Props = { children: ReactNode };
 type State = { error: Error | null };
@@ -25,17 +26,21 @@ export class ViewErrorBoundary extends React.Component<Props, State> {
     if (this.state.error) {
       return (
         <div className="p-8">
-          <div className="max-w-lg mx-auto rounded-2xl border border-error/40 bg-error/10 p-6 space-y-4">
-            <h4 className="font-black text-error">页面加载失败</h4>
-            <p className="text-sm text-content-muted break-all">{this.state.error.message || String(this.state.error)}</p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="btn btn-primary"
-              >
-                刷新重试
-              </button>
+          <div className="card card-border bg-base-200 border-base-300 shadow-sm max-w-lg mx-auto">
+            <div className="card-body p-6 space-y-4">
+              <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
+                <span className="font-black">页面加载失败</span>
+              </div>
+              <p className="text-sm text-base-content/60 break-all">{this.state.error.message || String(this.state.error)}</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="btn btn-primary"
+                >
+                  刷新重试
+                </button>
+              </div>
             </div>
           </div>
         </div>

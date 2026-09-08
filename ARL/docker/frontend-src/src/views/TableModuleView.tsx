@@ -83,7 +83,7 @@ import {
   isSensitiveWihRow,
 } from '../domain/wih';
 import { PageHeader } from '../layout/PageHeader';
-import { UNIFIED_SELECT_CLASS } from '../ui/classes';
+import { CONSOLE_INPUT_CLASS, UNIFIED_SELECT_CLASS } from '../ui/classes';
 import { ActionDialog } from './ActionDialog';
 
 export function TableModuleView({
@@ -3044,7 +3044,7 @@ export function TableModuleView({
                             type={field.inputType === 'number' ? 'number' : 'text'}
                             value={String(searchForm?.[field.key] ?? '')}
                             placeholder={field.placeholder}
-                            className="w-full bg-base-100 border border-base-300 rounded-xl py-2.5 px-3 text-sm text-base-content placeholder:text-content-muted focus:outline-none focus:border-accent"
+                            className={`${CONSOLE_INPUT_CLASS} placeholder:text-base-content/50`}
                             onChange={(event) => {
                               const value = event.target.value;
                               setSearchForm((prev) => ({ ...prev, [field.key]: value }));
@@ -3202,7 +3202,7 @@ export function TableModuleView({
                   setPage(1);
                 }}
                 placeholder={module.quickFilterKey ? `快速筛选字段: ${module.quickFilterKey}` : '快速筛选'}
-                className="w-full bg-base-100 border border-base-300 rounded-xl py-2.5 pl-9 pr-3 text-sm"
+                className={`${CONSOLE_INPUT_CLASS} pl-9`}
               />
             </div>
 

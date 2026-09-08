@@ -18,8 +18,11 @@ import { requestApi } from '../api/client';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../layout/PageHeader';
 import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_INPUT_CLASS,
+  CONSOLE_PANEL_CLASS,
   CONSOLE_SELECT_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
@@ -770,7 +773,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
     <div className="p-8 space-y-6">
       <PageHeader title="配置管理" description="支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。" />
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-4 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
         <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
           <div className="text-sm font-bold tracking-wide">扫描配置</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -812,12 +815,12 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
 
         {error ? (
-          <div className="text-xs text-error bg-error/10 border border-error/30 rounded-lg px-3 py-2">
+          <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
             {error}
           </div>
         ) : null}
         {success ? (
-          <div className="text-xs text-emerald-400 bg-emerald-400/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+          <div role="status" className={CONSOLE_ALERT_SUCCESS_CLASS}>
             {success}
           </div>
         ) : null}
@@ -854,7 +857,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
         </div>
       </div>
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-5 space-y-5 shadow-sm">
+      <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-5`}>
         <div className="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
           <div className="text-xs font-black tracking-wide text-base-content">预定义资源档位</div>
           <div className="text-xs text-content-muted">
@@ -868,10 +871,10 @@ export function ConfigConsoleView({ token }: { token: string }) {
                   key={profile.id}
                   type="button"
                   onClick={() => applyScanProfile(profile)}
-                  className={`text-left rounded-xl border p-3 transition ${
+                  className={`btn btn-ghost h-auto min-h-0 w-full justify-start border p-3 text-left transition ${
                     isMatched
                       ? 'border-accent bg-accent/10'
-                      : 'border-base-300 hover:bg-base-200'
+                      : 'border-base-300 bg-base-100 hover:bg-base-200'
                   }`}
                 >
                   <div className="text-sm font-bold">{profile.label}</div>
@@ -883,10 +886,10 @@ export function ConfigConsoleView({ token }: { token: string }) {
               );
             })}
             <div
-              className={`text-left rounded-xl border p-3 transition ${
+              className={`card card-border bg-base-100 p-3 text-left transition ${
                 isCustomScanProfileMatched
                   ? 'border-accent bg-accent/10'
-                  : 'border-base-300 bg-base-100'
+                  : 'border-base-300'
               }`}
             >
               <div className="text-sm font-bold">自定义配置</div>
@@ -1286,7 +1289,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               type="checkbox"
               checked={Boolean(urlfinderUrlProbeEnable)}
               onChange={(event) => setUrlfinderUrlProbeEnable(event.target.checked)}
-              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+              className="checkbox checkbox-primary checkbox-sm"
             />
             <label htmlFor="config-urlfinder-url-probe-enable" className="text-xs font-bold text-content-muted">
               启用 URLFinder URL 可达性探测并入 URL 信息
