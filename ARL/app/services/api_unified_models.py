@@ -695,6 +695,11 @@ class UnifiedApiEndpoint:
         if not self.url:
             raise ValueError("endpoint url must not be empty")
         self.method = canonical_method(self.method)
+        if self.request_semantics == "unknown":
+            if self.method in {"GET", "HEAD", "OPTIONS"}:
+                self.request_semantics = "read_only"
+            elif self.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                self.request_semantics = "write"
         api_type = str(self.api_type or "rest").strip().lower()
         if api_type not in API_TYPES:
             raise ValueError("unsupported api_type: {}".format(api_type))

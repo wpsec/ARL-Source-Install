@@ -1453,7 +1453,7 @@ export const modules: ModuleConfig[] = [
     showIndex: true,
     quickFilterKey: 'url',
     // 主列用接口自身的 url（请求报文目标）；page_url 仅保留在详情弹窗与搜索中
-    columns: ['target', 'url', 'method', 'status_code', 'response_size', 'ai_analysis', 'detail_action'],
+    columns: ['target', 'url', 'method', 'status_code', 'response_size', 'verification_status', 'manual_review_required', 'ai_analysis', 'detail_action'],
     sortableColumns: ['status_code', 'response_size'],
     columnLabels: {
       target: '目标',
@@ -1462,6 +1462,8 @@ export const modules: ModuleConfig[] = [
       method: '方法',
       status_code: '状态码',
       response_size: '响应大小',
+      verification_status: '验证状态',
+      manual_review_required: '人工复核',
       ai_analysis: 'AI分析',
       detail_action: '详情信息',
     },
@@ -1482,6 +1484,33 @@ export const modules: ModuleConfig[] = [
       },
       { key: 'status_code', label: '状态码', placeholder: '请输入状态码进行搜索', inputType: 'number' },
       { key: 'response_size', label: '响应大小', placeholder: '请输入响应大小进行搜索', inputType: 'number' },
+      {
+        key: 'verification_status',
+        label: '验证状态',
+        placeholder: '请选择验证状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '待验证', value: 'pending' },
+          { label: '已验证只读', value: 'verified_read' },
+          { label: '认证边界异常候选', value: 'auth_anomaly_candidate' },
+          { label: '已阻断', value: 'blocked' },
+          { label: '已跳过', value: 'skipped' },
+          { label: '失败', value: 'failed' },
+          { label: '降级', value: 'degraded' },
+        ],
+      },
+      {
+        key: 'manual_review_required',
+        label: '人工复核',
+        placeholder: '请选择人工复核状态',
+        inputType: 'select',
+        options: [
+          { label: '全部', value: '' },
+          { label: '需要复核', value: 'true' },
+          { label: '无需复核', value: 'false' },
+        ],
+      },
       {
         key: 'ai_analysis',
         label: 'AI分析',

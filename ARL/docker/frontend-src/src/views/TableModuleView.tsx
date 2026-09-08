@@ -77,6 +77,8 @@ import {
   buildWihEndpointResponsePacket,
   formatWihEndpointAiFillStatus,
   formatWihEndpointMetric,
+  formatWihVerificationReasons,
+  formatWihVerificationStatus,
   getWihRecordTypeTagClass,
   isSensitiveWihRow,
 } from '../domain/wih';
@@ -3637,6 +3639,33 @@ export function TableModuleView({
                           );
                         }
 
+                        if (module.id === 'wih_endpoint' && column === 'verification_status') {
+                          const status = String(row?.verification_status || '').trim().toLowerCase();
+                          const statusClass = status === 'auth_anomaly_candidate'
+                            ? 'badge badge-warning gap-1'
+                            : status === 'verified_read'
+                              ? 'badge badge-success gap-1'
+                              : status === 'failed' || status === 'degraded'
+                                ? 'badge badge-error gap-1'
+                                : 'badge badge-ghost border border-base-300';
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={statusClass}>{formatWihVerificationStatus(row)}</span>
+                            </td>
+                          );
+                        }
+
+                        if (module.id === 'wih_endpoint' && column === 'manual_review_required') {
+                          const required = Boolean(row?.manual_review_required || row?.auth_anomaly_candidate);
+                          return (
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                              <span className={required ? 'badge badge-warning' : 'badge badge-ghost border border-base-300'}>
+                                {required ? '需要复核' : '无需复核'}
+                              </span>
+                            </td>
+                          );
+                        }
+
                         if ((module.id === 'nuclei_result' || module.id === 'vuln') && column === 'detail_action') {
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
@@ -4899,6 +4928,12 @@ export function TableModuleView({
                   <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     AI填充：{aiFillStatusText}
                   </span>
+                  <span className={detailRow?.auth_anomaly_candidate ? 'badge badge-warning px-2.5 py-3 text-xs font-semibold' : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold'}>
+                    验证：{formatWihVerificationStatus(detailRow)}
+                  </span>
+                  {detailRow?.manual_review_required || detailRow?.auth_anomaly_candidate ? (
+                    <span className="badge badge-warning px-2.5 py-3 text-xs font-semibold">需要人工复核</span>
+                  ) : null}
                 </div>
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -4978,6 +5013,18 @@ export function TableModuleView({
                     <div className="text-xs text-content-muted">
                       {normalizeValueNoTruncate(detailRow?.verification_note)}
                     </div>
+                    <div className="text-xs text-content-muted">
+                      认证边界：{formatWihVerificationReasons(detailRow)}
+                    </div>
+                    {detailRow?.auth_boundary_comparison && typeof detailRow.auth_boundary_comparison === 'object' ? (
+                      <div className="space-y-1 text-xs text-content-muted">
+                        {Object.entries(detailRow.auth_boundary_comparison).map(([profile, summary]: [string, any]) => (
+                          <div key={profile}>
+                            {profile}：{String(summary?.status_code || '-')} / {String(summary?.content_type || '-')}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     {normalizeValueNoTruncate(detailRow?.verification_method) !== '-' ? (
                       <div className="text-xs text-content-muted">
                         探测方法：{normalizeValueNoTruncate(detailRow?.verification_method)}

@@ -127,6 +127,27 @@ export function formatWihEndpointAiFillStatus(row: any): string {
   return mapping[value] || '-';
 }
 
+export function formatWihVerificationStatus(row: any): string {
+  const value = String(row?.verification_status || '').trim().toLowerCase();
+  const mapping: Record<string, string> = {
+    pending: '待验证',
+    verified_read: '已验证只读',
+    auth_anomaly_candidate: '认证边界异常候选',
+    blocked: '已阻断',
+    skipped: '已跳过',
+    failed: '失败',
+    degraded: '降级',
+  };
+  return mapping[value] || '-';
+}
+
+export function formatWihVerificationReasons(row: any): string {
+  const reasons = Array.isArray(row?.verification_reason_codes)
+    ? row.verification_reason_codes
+    : [];
+  return reasons.map((item: unknown) => String(item || '').trim()).filter(Boolean).join('、') || '-';
+}
+
 export const WIH_SENSITIVE_RECORD_TYPE_SET = new Set([
   'app_key',
   'api_key',
