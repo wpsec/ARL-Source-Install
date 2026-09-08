@@ -548,6 +548,13 @@
     max-width: none;
   }
 
+  /* ghost 信息在暗色主题中不能依赖透明背景和浏览器默认文字色。 */
+  .arl-app .badge-ghost {
+    border-color: var(--brand-border);
+    background-color: var(--brand-bg);
+    color: var(--brand-text);
+  }
+
   /* 禁用态仍要保留可辨识文字；透明度由调用方控制，颜色不能随主题沉入背景。 */
   .arl-app .btn:disabled,
   .arl-app .btn[aria-disabled='true'] {

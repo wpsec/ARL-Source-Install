@@ -377,7 +377,7 @@ export function MainShell() {
           </div>
           <div className="navbar-end w-auto min-w-0 shrink-0 gap-1.5 xl:gap-2">
             <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
-            <span className="badge badge-ghost h-9 max-w-28 truncate px-2 xl:px-3 text-xs xl:text-sm font-medium">{username}</span>
+            <span className="badge badge-ghost h-9 max-w-28 truncate border border-base-300 bg-base-100 px-2 text-xs font-medium text-base-content xl:px-3 xl:text-sm">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
               className={CONSOLE_ICON_BUTTON_CLASS}

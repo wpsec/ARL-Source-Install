@@ -2900,7 +2900,7 @@ export function TableModuleView({
   const rowOperateButtonClass = `${CONSOLE_SECONDARY_BUTTON_CLASS} text-sm font-medium shrink-0`;
   const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
   const taskReportMenuItemClass =
-    'block w-full text-left px-3 py-2 text-sm font-medium hover:bg-base-300/60 transition-colors';
+    'block w-full text-left px-3 py-2 text-sm font-medium text-base-content hover:bg-base-300/60 hover:text-base-content focus-visible:bg-base-300/60 focus-visible:text-base-content transition-colors';
   const rowOperateColumnWidthClass = showAssetScopeRowOperate
     ? 'min-w-[760px]'
     : showTaskRowOperate

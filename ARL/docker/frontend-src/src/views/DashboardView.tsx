@@ -40,6 +40,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_WARNING_CLASS,
+  CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
   CONSOLE_PAGE_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
@@ -501,13 +502,13 @@ export function DashboardView({
                       void logsQuery.refetch();
                     }
                   }}
-                  className={`btn btn-ghost btn-xs ${isLogPaused ? 'text-warning' : 'text-secondary'}`}
+                  className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} ${isLogPaused ? '!border-warning/50 !bg-warning/10 !text-warning hover:!border-warning/70 hover:!bg-warning/15' : '!border-secondary/50 !bg-secondary/10 !text-secondary hover:!border-secondary/70 hover:!bg-secondary/15'}`}
                 >
                   {isLogPaused ? '继续' : '暂停'}
                 </button>
                 <button
                   onClick={() => void logsQuery.refetch()}
-                  className="btn btn-ghost btn-xs text-accent"
+                  className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !border-accent/50 !bg-accent/10 !text-accent hover:!border-accent/70 hover:!bg-accent/15`}
                 >
                   刷新日志
                 </button>
@@ -543,7 +544,7 @@ export function DashboardView({
             <h3 className="text-xl font-black tracking-tight">最近任务</h3>
             <button
               onClick={() => onOpenModule('task')}
-              className="btn btn-ghost btn-sm text-accent"
+              className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !h-9 !min-h-9 !px-3 !text-accent`}
             >
               查看全部
             </button>
