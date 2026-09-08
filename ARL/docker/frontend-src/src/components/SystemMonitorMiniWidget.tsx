@@ -79,7 +79,7 @@ function MetricRow({
   color: string;
 }) {
   return (
-    <div className="flex h-10 w-[104px] shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-100 px-2">
+    <div className="flex h-10 w-[82px] xl:w-[92px] 2xl:w-[104px] shrink-0 items-center gap-1 rounded-box border border-base-300 bg-base-100 px-1.5 xl:px-2">
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-1">
@@ -127,7 +127,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
   return (
     <section className="hidden min-w-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
       <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-200 px-2.5" title={statusLabel}>
-        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-accent/10 text-accent">
+        <div className="flex h-6 w-6 items-center justify-center rounded-box bg-accent/10 text-accent">
           <Activity className="h-3.5 w-3.5" />
         </div>
         <span className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
@@ -139,7 +139,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
-      <div className="flex h-10 shrink-0 items-center gap-2 rounded-box border border-base-300 bg-base-100 px-2.5">
+      <div className="hidden 2xl:flex h-10 shrink-0 items-center gap-2 rounded-box border border-base-300 bg-base-100 px-2.5">
         <div className="min-w-0 text-center">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />

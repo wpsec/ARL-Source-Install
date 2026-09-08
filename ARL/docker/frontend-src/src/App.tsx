@@ -26,6 +26,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
 import type {JsonValue, ModuleAction, OpenModuleHandler} from './domain/types';
 import { LoginView } from './views/LoginView';
+import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_INPUT_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from './ui/classes';
 
 // 路由级代码分割（docs/04 Phase 4）：视图按需加载，首屏 bundle 不再包含全部页面。
 const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
@@ -363,13 +364,13 @@ export function MainShell() {
       <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
-        <header className="navbar sticky top-0 z-20 min-h-16 px-6 border-b border-base-300 bg-base-100">
-          <div className="flex-1 min-w-0 text-sm text-base-content/60 truncate" role="status">
+        <header className="navbar sticky top-0 z-20 min-h-16 px-4 xl:px-6 border-b border-base-300 bg-base-100">
+          <div className="flex-1 min-w-0 text-xs xl:text-sm text-base-content/60 truncate" role="status">
             {globalNotice || ' '}
           </div>
-          <div className="navbar-end gap-2">
+          <div className="navbar-end min-w-0 gap-1.5 xl:gap-2">
             <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
-            <span className="badge badge-ghost h-9 px-3 text-sm font-medium">{username}</span>
+            <span className="badge badge-ghost h-9 max-w-28 truncate px-2 xl:px-3 text-xs xl:text-sm font-medium">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
               className="btn btn-ghost btn-sm btn-square"
@@ -444,29 +445,29 @@ export function MainShell() {
                 placeholder="旧密码"
                 value={passwdForm.old_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, old_password: event.target.value }))}
-                className="input input-bordered w-full"
+                className={CONSOLE_INPUT_CLASS}
               />
               <input
                 type="password"
                 placeholder="新密码"
                 value={passwdForm.new_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, new_password: event.target.value }))}
-                className="input input-bordered w-full"
+                className={CONSOLE_INPUT_CLASS}
               />
               <input
                 type="password"
                 placeholder="确认新密码"
                 value={passwdForm.check_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, check_password: event.target.value }))}
-                className="input input-bordered w-full"
+                className={CONSOLE_INPUT_CLASS}
               />
 
-              {passwdError ? <div role="alert" className="alert alert-error text-sm py-3">{passwdError}</div> : null}
+              {passwdError ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{passwdError}</div> : null}
 
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className="btn btn-primary w-full"
+                className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full`}
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>

@@ -2236,7 +2236,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs font-black tracking-wide text-base-content">Token用量统计与AI对话日志</div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[120px]">
+            <div className="relative w-full sm:w-auto sm:min-w-[120px]">
               <select
                 value={usageLogStatus}
                 onChange={(event) => setUsageLogStatus(event.target.value)}
@@ -2250,7 +2250,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </select>
               <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
-            <div className="relative min-w-[180px]">
+            <div className="relative w-full sm:w-auto sm:min-w-[180px]">
               <select
                 value={usageLogScene}
                 onChange={(event) => setUsageLogScene(event.target.value)}
@@ -2266,7 +2266,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </select>
               <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
             </div>
-            <div className="relative min-w-[120px]">
+            <div className="relative w-full sm:w-auto sm:min-w-[120px]">
               <select
                 value={usageLogLimit}
                 onChange={(event) => setUsageLogLimit(event.target.value)}

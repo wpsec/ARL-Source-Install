@@ -21,7 +21,12 @@ import { useQuery } from '@tanstack/react-query';
 import { requestApi } from '../api/client';
 import { formatPercent, normalizeValue, parseNumericValue } from '../domain/format';
 import { PageHeader } from '../layout/PageHeader';
-import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_PANEL_CLASS } from '../ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_PAGE_CLASS,
+  CONSOLE_PANEL_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
+} from '../ui/classes';
 
 const MONITOR_POLL_INTERVAL_MS = 3000;
 
@@ -186,7 +191,7 @@ export function SystemMonitorView({ token }: { token: string }) {
   ];
 
   return (
-    <div className="p-6 lg:p-8 space-y-8">
+    <div className={`${CONSOLE_PAGE_CLASS} xl:space-y-8`}>
       <PageHeader
         title="系统监控"
         description="实时监控主机资源、CPU、内存、磁盘与网络流量趋势"
@@ -196,7 +201,7 @@ export function SystemMonitorView({ token }: { token: string }) {
           <p className="text-sm font-mono">{updatedAt || '-'}</p>
           <button
             onClick={() => void monitorQuery.refetch()}
-            className="btn btn-ghost border border-base-300"
+            className={CONSOLE_SECONDARY_BUTTON_CLASS}
             disabled={loading}
           >
             <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />

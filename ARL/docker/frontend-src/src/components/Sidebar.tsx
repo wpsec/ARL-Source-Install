@@ -73,25 +73,25 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   ];
 
   return (
-    <aside className="w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
-      <div className="px-5 py-5 border-b border-base-300">
+    <aside className="w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
+      <div className="px-4 xl:px-5 py-4 xl:py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
         <BrandLogo size="md" />
       </div>
 
-      <div className="px-4 py-4">
+      <div className="px-3 xl:px-4 py-3 xl:py-4">
         <motion.button 
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
-          className="btn btn-primary w-full gap-2 shadow-sm"
+          className="btn btn-primary btn-sm h-10 min-h-10 w-full gap-2 shadow-sm"
         >
           <Plus className="w-4 h-4" strokeWidth={2.5} />
           <span>新建任务</span>
         </motion.button>
       </div>
 
-      <nav className="flex-1 px-3 py-2 space-y-6">
+      <nav className="flex-1 px-2.5 xl:px-3 py-2 space-y-5">
         {navGroups.map((group) => (
           <div key={group.label}>
             <h3 className={cn("px-3 mb-2 text-[11px] font-semibold tracking-wide opacity-80", group.color)}>
@@ -103,7 +103,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "w-full justify-start gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      "min-h-10 w-full justify-start gap-3 rounded-box px-3 py-2 text-sm font-medium transition-colors",
                       activeView === item.id
                         ? "bg-primary/12 text-primary font-semibold"
                         : "text-base-content/70 hover:bg-base-300/60 hover:text-base-content"
@@ -121,7 +121,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
 
       </nav>
 
-      <div className="p-4 border-t border-base-300 space-y-4">
+      <div className="p-3 xl:p-4 border-t border-base-300 space-y-4">
         <div className="space-y-2">
           <div className="flex items-center gap-2 px-2 text-base-content/70">
             <Palette className="w-3.5 h-3.5" />

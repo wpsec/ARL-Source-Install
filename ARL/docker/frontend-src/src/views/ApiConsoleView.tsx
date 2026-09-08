@@ -22,7 +22,10 @@ import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PAGE_CLASS,
   CONSOLE_PANEL_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
 } from '../ui/classes';
 
 export function ApiConsoleView({ token }: { token: string }) {
@@ -955,7 +958,7 @@ export function ApiConsoleView({ token }: { token: string }) {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className={CONSOLE_PAGE_CLASS}>
       <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
 
       <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
@@ -968,7 +971,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                 setSuccess('');
                 void serviceApiQuery.refetch();
               }}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               disabled={loading || batchTesting || Boolean(testingProviderId)}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -976,7 +979,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void testConfiguredServiceApis()}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <CheckCircle2 className={`w-4 h-4 ${batchTesting ? 'animate-pulse' : ''}`} />
@@ -985,7 +988,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             <button
               type="button"
               onClick={toggleSensitiveDisplay}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={batchTesting || Boolean(testingProviderId) || loading || saving}
             >
               <Eye className="w-4 h-4" />
@@ -993,7 +996,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void saveServiceApiConfig()}
-              className="btn btn-primary gap-2 disabled:opacity-60"
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={saving || loading || batchTesting || Boolean(testingProviderId)}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />

@@ -22,7 +22,10 @@ import {
   CONSOLE_CHECKBOX_CARD_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
+  CONSOLE_PAGE_CLASS,
   CONSOLE_PANEL_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
 
@@ -414,7 +417,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
   };
 
   return (
-    <div className="p-8 space-y-6">
+    <div className={CONSOLE_PAGE_CLASS}>
       <PageHeader title="钉钉集成" description="在浏览器中维护钉钉机器人与知识库配置，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），支持资产报告链接等参数统一管理。" />
 
       <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
@@ -427,7 +430,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
                 setSuccess('');
                 void dingtalkConfigQuery.refetch();
               }}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               disabled={loading}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -436,7 +439,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
             <button
               type="button"
               onClick={toggleSensitiveDisplay}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={saving || loading}
             >
               <Eye className="w-4 h-4" />
@@ -444,7 +447,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void saveDingtalkConfig()}
-              className="btn btn-primary gap-2 disabled:opacity-60"
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={saving || loading}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />

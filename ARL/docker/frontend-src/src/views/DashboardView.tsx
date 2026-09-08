@@ -39,6 +39,9 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_WARNING_CLASS,
+  CONSOLE_PAGE_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_PANEL_CLASS,
 } from '../ui/classes';
 
@@ -351,7 +354,7 @@ export function DashboardView({
   );
 
   return (
-    <div className="p-6 lg:p-8 space-y-8">
+    <div className={`${CONSOLE_PAGE_CLASS} xl:space-y-8`}>
       <PageHeader
         title="我的仪表盘"
         description="互联网资产自动化收集系统 · 实时监控中"
@@ -362,7 +365,7 @@ export function DashboardView({
           <div className="flex gap-2 justify-end">
             <button
               onClick={onQuickCreateTask}
-              className="btn btn-primary"
+              className={CONSOLE_PRIMARY_BUTTON_CLASS}
             >
               <Plus className="w-[18px] h-[18px]" />
               新建任务
@@ -371,7 +374,7 @@ export function DashboardView({
               onClick={() => {
                 void dashboardQuery.refetch();
               }}
-              className="btn btn-ghost border border-base-300"
+              className={CONSOLE_SECONDARY_BUTTON_CLASS}
             >
               <RefreshCw className={`w-[18px] h-[18px] ${loading ? 'animate-spin' : ''}`} />
               刷新

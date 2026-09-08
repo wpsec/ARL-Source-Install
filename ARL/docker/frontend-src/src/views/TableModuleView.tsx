@@ -86,6 +86,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_INPUT_CLASS,
+  CONSOLE_PAGE_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
@@ -2911,7 +2912,7 @@ export function TableModuleView({
               : '';
 
   return (
-    <div ref={tableRootRef} className="p-6 lg:p-8 space-y-6">
+    <div ref={tableRootRef} className={CONSOLE_PAGE_CLASS}>
       {success ? (
         <div className="fixed inset-x-0 top-5 z-[80] flex justify-center px-4 pointer-events-none">
           <div role="status" className="alert alert-success w-full max-w-[30rem] py-3 text-sm">

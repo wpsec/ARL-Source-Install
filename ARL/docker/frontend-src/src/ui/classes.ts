@@ -16,6 +16,15 @@ export const CONSOLE_TEXTAREA_MONO_CLASS =
 export const CONSOLE_FILE_INPUT_CLASS =
   'file-input file-input-bordered flex-1 h-10 text-sm text-base-content';
 
+export const CONSOLE_PAGE_CLASS = 'p-4 sm:p-6 xl:p-8 space-y-6';
+
+export const CONSOLE_BUTTON_CLASS = 'btn btn-sm h-10 min-h-10';
+
+export const CONSOLE_PRIMARY_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-primary`;
+
+export const CONSOLE_SECONDARY_BUTTON_CLASS =
+  `${CONSOLE_BUTTON_CLASS} btn-ghost border border-base-300`;
+
 export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 
 // 统一控制台的信息层级，避免各页面用不同的自定义边框表达相同状态。

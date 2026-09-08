@@ -22,8 +22,11 @@ import {
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_INPUT_CLASS,
+  CONSOLE_PAGE_CLASS,
   CONSOLE_PANEL_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SELECT_CLASS,
+  CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
 } from '../ui/classes';
 
@@ -770,7 +773,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
     loading || saving || domainUploading || fileLeakUploading || nucleiPocUpdating || afrogPocUpdating;
 
   return (
-    <div className="p-8 space-y-6">
+    <div className={CONSOLE_PAGE_CLASS}>
       <PageHeader title="配置管理" description="支持配置域名爆破字典、目录扫描字典、扫描并发、端口扫描默认超时/并行度、Nuclei / afrog 参数、Web/Celery 运行并发、黑名单IP与域名解析器，并提供低/中/高性能预定义档位，保存后写入运行配置（容器内 /code/app/config.yaml，对应宿主机 config-runtime.yaml），重启后生效。" />
 
       <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-4`}>
@@ -781,7 +784,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
               onClick={() => {
                 void scanConfigQuery.refetch();
               }}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               disabled={isConfigActionBusy}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -789,7 +792,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('nuclei')}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${nucleiPocUpdating ? 'animate-spin' : ''}`} />
@@ -797,7 +800,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void updatePocRepo('afrog')}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               <GitBranch className={`w-4 h-4 ${afrogPocUpdating ? 'animate-spin' : ''}`} />
@@ -805,7 +808,7 @@ export function ConfigConsoleView({ token }: { token: string }) {
             </button>
             <button
               onClick={() => void saveScanConfig()}
-              className="btn btn-primary gap-2 disabled:opacity-60"
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={isConfigActionBusy}
             >
               <Settings className={`w-4 h-4 ${saving ? 'animate-spin' : ''}`} />

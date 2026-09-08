@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Lock, User } from 'lucide-react';
 import BrandLogo from '../components/BrandLogo';
+import { CONSOLE_INPUT_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from '../ui/classes';
 
 export function LoginView({
   onLogin,
@@ -48,7 +49,7 @@ export function LoginView({
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 autoComplete="off"
-                className="input input-bordered w-full pl-12 text-base"
+                className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
                 placeholder="请输入用户名"
               />
             </div>
@@ -64,7 +65,7 @@ export function LoginView({
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete="new-password"
-                className="input input-bordered w-full pl-12 text-base"
+                className={`${CONSOLE_INPUT_CLASS} pl-12 text-base`}
                 placeholder="请输入密码"
               />
             </div>
@@ -79,7 +80,7 @@ export function LoginView({
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary w-full text-base"
+            className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full text-base`}
           >
             {loading ? '登录中...' : '登录系统'}
           </button>
