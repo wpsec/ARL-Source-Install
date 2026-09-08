@@ -200,6 +200,88 @@ def _collect_live_celery_task_ids(timeout_sec=1.5):
     return set(snapshot.get("task_id_set") or set()), bool(snapshot.get("ok"))
 
 
+def _inspect_worker_queue_health(expected_queue_map, hostname="", timeout_sec=1.5):
+    """
+    检查指定 Celery worker 是否仍向预期队列注册 consumer。
+
+    仅检查主进程 PID 无法发现 AMQP channel 已关闭但 OS 进程仍存活的情况；
+    这里使用 control inspect 的 active_queues 作为控制面/consumer 联合信号。
+    """
+    expected = {
+        str(worker_name or "").strip(): str(queue_name or "").strip()
+        for worker_name, queue_name in dict(expected_queue_map or {}).items()
+        if str(worker_name or "").strip() and str(queue_name or "").strip()
+    }
+    if not expected:
+        return {
+            "ok": False,
+            "inspect_ok": False,
+            "checks": {},
+            "error": "no_expected_workers",
+        }
+
+    try:
+        inspect = celery.control.inspect(timeout=timeout_sec)
+        active_queues = inspect.active_queues() or {}
+    except Exception as exc:
+        error_text = safe_error_text(exc)
+        logger.warning("inspect worker queue health failed error:%s", error_text)
+        return {
+            "ok": False,
+            "inspect_ok": False,
+            "checks": {},
+            "error": error_text,
+        }
+    if not isinstance(active_queues, dict):
+        logger.warning("inspect worker queue health returned invalid payload")
+        return {
+            "ok": False,
+            "inspect_ok": False,
+            "checks": {},
+            "error": "invalid_active_queues_payload",
+        }
+
+    hostname_text = str(hostname or "").strip()
+    checks = {}
+    for worker_name, expected_queue in expected.items():
+        exact_worker_name = "{}@{}".format(worker_name, hostname_text) if hostname_text else ""
+        candidate_names = []
+        if exact_worker_name and exact_worker_name in active_queues:
+            candidate_names = [exact_worker_name]
+        elif not hostname_text:
+            prefix = "{}@".format(worker_name)
+            candidate_names = [
+                str(reply_name or "").strip()
+                for reply_name in active_queues
+                if str(reply_name or "").strip().startswith(prefix)
+            ]
+
+        observed_queues = set()
+        for candidate_name in candidate_names:
+            queue_items = active_queues.get(candidate_name)
+            if not isinstance(queue_items, list):
+                continue
+            for item in queue_items:
+                if isinstance(item, dict):
+                    queue_name = str(item.get("name", "") or "").strip()
+                    if queue_name:
+                        observed_queues.add(queue_name)
+
+        checks[worker_name] = {
+            "healthy": expected_queue in observed_queues,
+            "expected_queue": expected_queue,
+            "worker": candidate_names[0] if candidate_names else exact_worker_name,
+            "observed_queues": sorted(observed_queues),
+        }
+
+    return {
+        "ok": all(item.get("healthy") for item in checks.values()),
+        "inspect_ok": True,
+        "checks": checks,
+        "error": "",
+    }
+
+
 def _get_broker_queue_metrics(queue_names):
     """
     使用 broker 被动声明读取队列状态，不修改队列状态。
@@ -481,7 +563,35 @@ def _task_query_id(task_id):
     return task_id
 
 
-def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
+def _resolve_domain_deep_dispatch_queue():
+    """
+    选择深度阶段队列，并在重队列 consumer 不可用时回退到主队列。
+
+    深度阶段必须先把实际队列写入任务账本，再发布 broker 消息，
+    否则 worker 重启恢复时会把已投递到主队列的消息误判为 arlheavy 积压。
+    """
+    try:
+        from app.helpers.task import is_dispatch_queue_available
+
+        if is_dispatch_queue_available("arlheavy"):
+            return "arlheavy", "progressive_domain_deep"
+    except Exception as exc:
+        logger.warning(
+            "resolve domain deep dispatch queue failed error:%s",
+            safe_error_text(exc),
+        )
+
+    logger.warning("domain deep queue arlheavy unavailable, fallback to arltask")
+    return "arltask", "progressive_domain_deep:fallback=arlheavy_unavailable"
+
+
+def _mark_domain_deep_dispatch_ready(
+    task_id,
+    target,
+    task_options,
+    queue_name="arlheavy",
+    queue_reason="progressive_domain_deep",
+):
     """为深度消息建立可恢复的持久状态，再发送 broker 消息。"""
     query_id = _task_query_id(task_id)
     try:
@@ -509,6 +619,11 @@ def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
         # 已经有一个发布者或消费者接管该任务时，调用方不能再次发送消息。
         return True, False
 
+    safe_queue_name = str(queue_name or "arlheavy").strip().lower()
+    if safe_queue_name not in {"arltask", "arlheavy"}:
+        safe_queue_name = "arltask"
+    safe_queue_reason = str(queue_reason or "progressive_domain_deep").strip()[:160]
+    safe_queue_reason = safe_queue_reason or "progressive_domain_deep"
     now_ts = int(time.time())
     now_text = utils.curr_date()
     update = {
@@ -518,13 +633,13 @@ def _mark_domain_deep_dispatch_ready(task_id, target, task_options):
                 "stage": "domain_deep",
                 "status": "queued",
                 "target": str(target or "").strip(),
-                "queue": "arlheavy",
+                "queue": safe_queue_name,
                 "queued_at": now_text,
                 "dispatch_ts": now_ts,
                 "celery_id": "",
             },
-            "dispatch_queue": "arlheavy",
-            "dispatch_queue_reason": "progressive_domain_deep",
+            "dispatch_queue": safe_queue_name,
+            "dispatch_queue_reason": safe_queue_reason,
             "dispatch_ts": now_ts,
         }
     }
@@ -576,8 +691,13 @@ def _mark_domain_deep_dispatch_failed(task_id, reason):
 
 def enqueue_domain_deep_task(task_id, target, task_options):
     """投递深度阶段，并把 broker 状态写入任务文档以支持重启恢复。"""
+    queue_name, queue_reason = _resolve_domain_deep_dispatch_queue()
     dispatch_ready, should_dispatch = _mark_domain_deep_dispatch_ready(
-        task_id, target, task_options
+        task_id,
+        target,
+        task_options,
+        queue_name=queue_name,
+        queue_reason=queue_reason,
     )
     if not dispatch_ready:
         return False
@@ -591,18 +711,24 @@ def enqueue_domain_deep_task(task_id, target, task_options):
             "target": target,
             "options": task_options,
             "task_id": str(task_id),
-            "dispatch_queue": "arlheavy",
+            "dispatch_queue": queue_name,
         },
     }
     try:
-        async_result = arl_task_heavy.apply_async(args=[payload], queue="arlheavy")
+        queue_task = _resolve_queue_task(queue_name)
+        async_result = queue_task.apply_async(args=[payload], queue=queue_name)
         celery_id = str(getattr(async_result, "id", "") or async_result or "")
         query_id = _task_query_id(task_id)
         utils.conn_db("task").update_one(
             {"_id": query_id, "status": "deep_scan_pending", "deep_scan.status": "queued"},
             {"$set": {"deep_scan.celery_id": celery_id}},
         )
-        logger.info("domain deep task queued task_id:%s queue:arlheavy", task_id)
+        logger.info(
+            "domain deep task queued task_id:%s queue:%s reason:%s",
+            task_id,
+            queue_name,
+            queue_reason,
+        )
         return True
     except Exception as exc:
         safe_error = safe_error_text(exc)
@@ -651,20 +777,26 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
     """恢复已持久化但未完成投递或 worker 中断的深度阶段。"""
     live_guard = _collect_live_task_recovery_guard(
         timeout_sec=inspect_timeout_sec,
-        queue_names=("arlheavy",),
+        queue_names=("arltask", "arlheavy"),
     )
     if not live_guard.get("trusted"):
         logger.warning("skip orphan domain deep recovery because live inspection is untrusted")
         return {"requeued": 0, "skipped": 0, "failed": 0}
 
-    queue_count_map, queue_ok = _get_broker_queue_message_counts(("arlheavy",))
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(("arltask", "arlheavy"))
     if not queue_ok:
         logger.warning("skip orphan domain deep recovery because broker inspection failed")
         return {"requeued": 0, "skipped": 0, "failed": 0}
 
     now_ts = int(time.time())
     cutoff_ts = now_ts - max(int(grace_sec or 0), 10)
-    projection = {"target": 1, "options": 1, "deep_scan": 1, "status": 1}
+    projection = {
+        "target": 1,
+        "options": 1,
+        "deep_scan": 1,
+        "dispatch_queue": 1,
+        "status": 1,
+    }
     try:
         items = list(utils.conn_db("task").find(
             {
@@ -693,8 +825,13 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
         if celery_id and celery_id in live_task_id_set:
             result["skipped"] += 1
             continue
+        dispatch_queue = str(
+            deep_scan.get("queue") or item.get("dispatch_queue") or "arlheavy"
+        ).strip().lower()
+        if dispatch_queue not in {"arltask", "arlheavy"}:
+            dispatch_queue = "arlheavy"
         if str(deep_scan.get("status") or "").strip().lower() == "queued" and int(
-            queue_count_map.get("arlheavy", 0) or 0
+            queue_count_map.get(dispatch_queue, 0) or 0
         ) > 0:
             result["skipped"] += 1
             continue
@@ -1371,7 +1508,10 @@ def domain_deep_task(options):
         logger.info("skip domain deep task task_id:{} status:{}".format(task_id, status))
         return
 
-    celery_id = str(getattr(getattr(arl_task_heavy, "request", None), "id", "") or "")
+    current_request = getattr(getattr(celery, "current_task", None), "request", None)
+    celery_id = str(getattr(current_request, "id", "") or "")
+    if not celery_id:
+        celery_id = str(getattr(getattr(arl_task_heavy, "request", None), "id", "") or "")
     if not _claim_domain_deep_task(task_id, celery_id=celery_id):
         logger.info("skip duplicate domain deep task task_id:%s", task_id)
         return

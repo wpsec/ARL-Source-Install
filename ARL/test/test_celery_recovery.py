@@ -410,6 +410,73 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertEqual(int(celery.conf.broker_heartbeat), 120)
         self.assertEqual(float(celery.conf.broker_heartbeat_checkrate), 2.0)
 
+    @patch.object(celerytask_module.celery.control, "inspect")
+    def test_worker_queue_health_requires_expected_worker_consumer(self, mock_inspect):
+        mock_inspect.return_value.active_queues.return_value = {
+            "arlheavy@worker-a": [{"name": "arlheavy"}],
+            "arltask@worker-a": [{"name": "arltask"}],
+        }
+
+        health = celerytask_module._inspect_worker_queue_health(
+            {"arlheavy": "arlheavy", "arltask": "arltask"},
+            hostname="worker-a",
+        )
+
+        self.assertTrue(health["ok"])
+        self.assertTrue(health["checks"]["arlheavy"]["healthy"])
+        self.assertEqual("arlheavy@worker-a", health["checks"]["arlheavy"]["worker"])
+
+    @patch.object(celerytask_module.celery.control, "inspect")
+    def test_worker_queue_health_detects_live_pid_without_consumer(self, mock_inspect):
+        mock_inspect.return_value.active_queues.return_value = {
+            "arltask@worker-a": [{"name": "arltask"}],
+        }
+
+        health = celerytask_module._inspect_worker_queue_health(
+            {"arlheavy": "arlheavy", "arltask": "arltask"},
+            hostname="worker-a",
+        )
+
+        self.assertFalse(health["ok"])
+        self.assertFalse(health["checks"]["arlheavy"]["healthy"])
+        self.assertEqual([], health["checks"]["arlheavy"]["observed_queues"])
+
+    @patch.object(celerytask_module.celery.control, "inspect")
+    def test_worker_queue_health_treats_control_plane_error_as_unhealthy(self, mock_inspect):
+        mock_inspect.return_value.active_queues.side_effect = TimeoutError("control timeout")
+
+        health = celerytask_module._inspect_worker_queue_health(
+            {"arlheavy": "arlheavy"},
+            hostname="worker-a",
+        )
+
+        self.assertFalse(health["ok"])
+        self.assertFalse(health["inspect_ok"])
+
+    def test_domain_deep_queue_falls_back_when_heavy_consumer_is_unavailable(self):
+        fake_app = types.ModuleType("app")
+        fake_app.__path__ = []
+        fake_helpers = types.ModuleType("app.helpers")
+        fake_helpers.__path__ = []
+        fake_task_helper = types.ModuleType("app.helpers.task")
+        fake_task_helper.is_dispatch_queue_available = lambda queue_name: False
+
+        with patch.dict(
+            sys.modules,
+            {
+                "app": fake_app,
+                "app.helpers": fake_helpers,
+                "app.helpers.task": fake_task_helper,
+            },
+        ):
+            queue_name, reason = celerytask_module._resolve_domain_deep_dispatch_queue()
+
+        self.assertEqual("arltask", queue_name)
+        self.assertEqual(
+            "progressive_domain_deep:fallback=arlheavy_unavailable",
+            reason,
+        )
+
     def test_build_live_task_recovery_guard_marks_partial_inspect_untrusted(self):
         guard = celerytask_module._build_live_task_recovery_guard(
             live_ok=True,

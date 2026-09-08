@@ -27,3 +27,9 @@
 - 首轮实锤：`arl_web` 重启循环 16 次，`gunicorn -w` 收到 EFFECTIVE 诊断 JSON（stdout 污染）。
 - 修复后新镜像 `arl:local(fe18afc)` 预验证：`import app.config` stdout **0 字节**；命令替换捕获 worker 数 = **纯 `6`**；镜像内 `/usr/bin/start_web.sh` 含整数校验兜底（取末行 + 非数字回退默认）。
 - **完整 compose 拉起待用户在机器上创建 `ARL/docker/.env`**（nginx 基础认证参数由部署方提供，不入库、不入证据目录、不由开发侧生成）；web 容器零重启 + 连续健康检查两项在 .env 就绪后闭环。
+
+## 现场扫描运行时证据（2026-09-08，探索性样本）
+
+- 该批扫描使用了修复提交前的 `arl:local` 镜像；`domain_deep` 在服务信息收尾处重复触发旧调用错误，另有 ACK timeout 与 `arlheavy` consumer 短时消失证据。
+- 该批只作为故障定位和版本一致性证据，不计入 40/64 目标、Endpoint 集合或 p95 验收；完整脱敏记录见 [当前 HEAD 复核 §11](../[Review进行中]计划6第9-11批当前HEAD复核-20260907.md)。
+- 新增的 worker consumer 健康监督和 `domain_deep` 主队列回退必须在重建镜像后重新采集，不能用本批旧镜像快照代替。

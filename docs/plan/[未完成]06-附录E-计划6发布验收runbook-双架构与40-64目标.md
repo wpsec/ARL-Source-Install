@@ -1,6 +1,6 @@
 # 06 附录 E · 计划 6 发布验收 runbook（双架构 + 40/64 目标）
 
-状态：**未完成执行**（2026-09-08 Review 修订：统一 API 开关接线、任务提交和脱敏证据流程已补齐；真实执行仍待部署方完成）。
+状态：**未完成执行**（2026-09-08 Review 修订：统一 API 开关接线、任务提交、脱敏证据流程和 worker consumer 健康监督代码已补齐；旧镜像现场样本已归档，真实重部署执行仍待部署方完成）。
 
 适用门禁：计划 6 §十二验收条件、§十三发布回滚流程、第 11 批（40/64 目标、双架构、Rust 模式升级、端到端 ≤5%）。**计划 5 的 x86 指纹切换门禁不在本文范围**（那份是 `docs/plan/[未完成]05-附录D-x86放行runbook.md`）。
 
@@ -330,6 +330,22 @@ done
 
 回滚后仍需保留 `$EVID/` 现场（任务导出、日志）供归因，不得事后改写证据。
 
+## 5.1 Worker consumer/control-plane 运行时检查
+
+重建并强制重建 worker 后，必须确认启动日志同时出现四个队列的健康标记：
+
+```bash
+for container in arl_worker_1 arl_worker_2; do
+  docker logs --since 2m --timestamps "$container" 2>&1 \
+    | grep -E 'worker consumer health inspect_ok=1 healthy=1 .*arlheavy=1.*arltask=1'
+done
+```
+
+在单目标 smoke 运行期间，继续采集同一日志窗口；若出现 `healthy=0`，或连续三次
+`celery consumer health check failed`，该轮不得进入 40 目标验收。该检查用于覆盖“Celery
+主进程/PID 仍存活但 AMQP consumer 已消失”的故障模式，不替代任务终态、RabbitMQ 队列和
+Endpoint 导出。
+
 ## 6. 完成定义
 
 - [ ] 两架构 §1 全绿（含 hygiene polluted=0）
@@ -338,3 +354,4 @@ done
 - [ ] §4 40 目标专项四要点出数
 - [ ] 64 目标两轮（冷/热）与首批 p95 门禁
 - [ ] 以上齐备后才进入 `API_UNIFIED_ENABLE` 默认切换评审（§十三流程）；任一缺失保持默认关闭，不以本地单测或 qemu 数据替代。
+- [ ] worker consumer/control-plane 启动与运行期检查通过，单目标 smoke 无健康告警。

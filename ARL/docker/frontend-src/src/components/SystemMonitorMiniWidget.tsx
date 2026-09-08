@@ -3,7 +3,7 @@ import { Activity, ArrowDown, ArrowUp, Cpu, Database, Network, ExternalLink } fr
 import { requestApi } from '../api/client';
 import { formatPercent, normalizeValue, parseNumericValue } from '../domain/format';
 
-const MONITOR_POLL_INTERVAL_MS = 15000;
+const MONITOR_POLL_INTERVAL_MS = 3000;
 
 type MonitorPoint = {
   time?: string;
@@ -105,6 +105,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
     },
     enabled: Boolean(token),
     refetchInterval: MONITOR_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
     retry: 0,
   });
 

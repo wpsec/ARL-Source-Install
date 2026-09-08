@@ -218,6 +218,66 @@ assert_worker_stable() {
   return 0
 }
 
+check_worker_consumer_health() {
+  local output
+  local status
+
+  if output="$(PYTHONPATH=/code python3 - <<'PY'
+import socket
+
+from app import celerytask
+
+health = celerytask._inspect_worker_queue_health(
+    {
+        "arlgithub": "arlgithub",
+        "arlheavy": "arlheavy",
+        "arlweb": "arlweb",
+        "arltask": "arltask",
+    },
+    hostname=socket.gethostname(),
+    timeout_sec=1.5,
+)
+checks = health.get("checks") or {}
+summary = " ".join(
+    "{}={}".format(name, int(bool(item.get("healthy"))))
+    for name, item in sorted(checks.items())
+)
+print(
+    "worker consumer health inspect_ok={} healthy={} {}".format(
+        int(bool(health.get("inspect_ok"))),
+        int(bool(health.get("ok"))),
+        summary,
+    ).strip()
+)
+if not health.get("ok"):
+    raise SystemExit(1)
+PY
+  )"; then
+    [ -n "${output}" ] && echo "${output}"
+    return 0
+  fi
+
+  status="$?"
+  [ -n "${output}" ] && echo "${output}"
+  return "${status}"
+}
+
+wait_for_worker_consumers() {
+  local attempts=0
+
+  # 启动后给 Celery 注册 pidbox/consumer 的时间，避免把正常启动竞态当成故障。
+  while [ "${attempts}" -lt 15 ]; do
+    if check_worker_consumer_health; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    sleep 2
+  done
+
+  echo "[ERROR] celery workers did not register all expected consumers"
+  return 1
+}
+
 handle_worker_exit() {
   local worker_name="$1"
   local exit_code="$2"
@@ -272,8 +332,15 @@ assert_worker_stable "arlgithub" "${GITHUB_PID}"
 assert_worker_stable "arlheavy" "${HEAVY_PID}"
 assert_worker_stable "arlweb" "${WEB_PID}"
 assert_worker_stable "arltask" "${TASK_PID}"
+if ! wait_for_worker_consumers; then
+  terminate_children "${GITHUB_PID}" "${HEAVY_PID}" "${WEB_PID}" "${TASK_PID}"
+  exit 1
+fi
 
 trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
+
+HEALTH_CHECK_TICKS=0
+HEALTH_FAILURES=0
 
 while true; do
   for worker_info in \
@@ -319,6 +386,22 @@ while true; do
     terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
     exit "${EXIT_CODE}"
   done
+
+  HEALTH_CHECK_TICKS=$((HEALTH_CHECK_TICKS + 1))
+  if [ "${HEALTH_CHECK_TICKS}" -ge 15 ]; then
+    HEALTH_CHECK_TICKS=0
+    if check_worker_consumer_health; then
+      HEALTH_FAILURES=0
+    else
+      HEALTH_FAILURES=$((HEALTH_FAILURES + 1))
+      echo "[WARN] celery consumer health check failed consecutive=${HEALTH_FAILURES}/3"
+      if [ "${HEALTH_FAILURES}" -ge 3 ]; then
+        echo "[ERROR] celery consumer health stayed unhealthy, stopping container for broker re-registration"
+        terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
+        exit 1
+      fi
+    fi
+  fi
 
   sleep 2
 done

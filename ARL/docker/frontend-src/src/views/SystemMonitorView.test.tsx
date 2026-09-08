@@ -1,4 +1,4 @@
-// 系统监控页级测试（计划 4 监控批次）：主查询水合、15s 轮询、
+// 系统监控页级测试（计划 4 监控批次）：主查询水合、3s 轮询、
 // 主查询失败回退 dashboard、双失败错误呈现、刷新按钮 refetch。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -71,13 +71,13 @@ describe('SystemMonitorView（React Query 轮询）', () => {
     expect(calls.some((c) => c.url.includes('/console/dashboard'))).toBe(false);
   });
 
-  it('15s 轮询：refetchInterval 触发第二次主查询', async () => {
+  it('3s 轮询：refetchInterval 触发第二次主查询', async () => {
     const calls = installFetchMock({
       routes: { '/console/system_monitor/': [200, MONITOR_PAYLOAD] },
     });
     renderView();
     await vi.waitFor(() => expect(calls.filter((c) => c.url.includes('system_monitor')).length).toBe(1));
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(3000);
     await vi.waitFor(() => expect(calls.filter((c) => c.url.includes('system_monitor')).length).toBe(2));
   });
 

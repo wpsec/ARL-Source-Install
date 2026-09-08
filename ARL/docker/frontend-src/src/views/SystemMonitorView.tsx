@@ -22,14 +22,14 @@ import { requestApi } from '../api/client';
 import { formatPercent, normalizeValue, parseNumericValue } from '../domain/format';
 import { PageHeader } from '../layout/PageHeader';
 
-const MONITOR_POLL_INTERVAL_MS = 15000;
+const MONITOR_POLL_INTERVAL_MS = 3000;
 
 function fallbackTimestamp() {
   return new Date().toLocaleString('zh-CN', { hour12: false });
 }
 
 export function SystemMonitorView({ token }: { token: string }) {
-  // 数据层迁移（计划 4 监控批次）：主查询 15s 轮询替代手写 setInterval；
+  // 数据层迁移（计划 4 监控批次）：主查询 3s 轮询替代手写 setInterval；
   // 主查询失败时启用 dashboard 回退查询（与原 loadFallback 同语义）。
   // 本视图纯读取无 mutation，展示数据全部由 query 派生，无本地快照状态。
   const monitorQuery = useQuery({
@@ -43,6 +43,7 @@ export function SystemMonitorView({ token }: { token: string }) {
       return data;
     },
     refetchInterval: MONITOR_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: false,
     retry: 0,
   });
 

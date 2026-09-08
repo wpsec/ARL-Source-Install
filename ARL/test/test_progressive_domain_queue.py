@@ -56,20 +56,69 @@ class TestProgressiveDomainQueue(unittest.TestCase):
         )
         async_result = SimpleNamespace(id="celery-deep-1")
         with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
-            with patch.object(celerytask_module.arl_task_heavy, "apply_async", return_value=async_result):
-                self.assertTrue(
-                    celerytask_module.enqueue_domain_deep_task(
-                        self.TASK_ID,
-                        "example.com",
-                        {"port_scan": True},
+            with patch.object(
+                celerytask_module,
+                "_resolve_domain_deep_dispatch_queue",
+                return_value=("arlheavy", "progressive_domain_deep"),
+            ):
+                with patch.object(
+                    celerytask_module.arl_task_heavy,
+                    "apply_async",
+                    return_value=async_result,
+                ):
+                    self.assertTrue(
+                        celerytask_module.enqueue_domain_deep_task(
+                            self.TASK_ID,
+                            "example.com",
+                            {"port_scan": True},
+                        )
                     )
-                )
 
         self.assertGreaterEqual(len(collection.update_calls), 2)
         ready_update = collection.update_calls[0][1]
         self.assertEqual("queued", ready_update["$set"]["deep_scan"]["status"])
+        self.assertEqual("arlheavy", ready_update["$set"]["deep_scan"]["queue"])
         id_update = collection.update_calls[-1][1]
         self.assertEqual("celery-deep-1", id_update["$set"]["deep_scan.celery_id"])
+
+    def test_enqueue_falls_back_to_main_queue_when_heavy_consumer_unavailable(self):
+        collection = _FakeCollection(
+            documents=[{"status": "deep_scan_pending", "deep_scan": {}}],
+            modified_count=1,
+        )
+        async_result = SimpleNamespace(id="celery-main-deep-1")
+        with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+            with patch.object(
+                celerytask_module,
+                "_resolve_domain_deep_dispatch_queue",
+                return_value=(
+                    "arltask",
+                    "progressive_domain_deep:fallback=arlheavy_unavailable",
+                ),
+            ):
+                with patch.object(
+                    celerytask_module.arl_task,
+                    "apply_async",
+                    return_value=async_result,
+                ) as publish:
+                    self.assertTrue(
+                        celerytask_module.enqueue_domain_deep_task(
+                            self.TASK_ID,
+                            "example.com",
+                            {"port_scan": True},
+                        )
+                    )
+
+        ready_update = collection.update_calls[0][1]
+        self.assertEqual("arltask", ready_update["$set"]["deep_scan"]["queue"])
+        self.assertEqual("arltask", ready_update["$set"]["dispatch_queue"])
+        self.assertEqual(
+            "progressive_domain_deep:fallback=arlheavy_unavailable",
+            ready_update["$set"]["dispatch_queue_reason"],
+        )
+        publish.assert_called_once()
+        self.assertEqual("arltask", publish.call_args.kwargs["queue"])
+        self.assertEqual("arltask", publish.call_args.args[0][0]["data"]["dispatch_queue"])
 
     def test_recovery_requeues_stale_deep_message(self):
         stale_ts = int(time.time()) - 120
