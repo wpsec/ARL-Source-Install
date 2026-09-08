@@ -611,8 +611,9 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
-    width: 100%;
-    max-width: none;
+    display: flex;
+    width: 100% !important;
+    max-width: none !important;
   }
 
   .arl-sidebar .arl-sidebar-nav-item:not(.arl-sidebar-nav-item-active) {
@@ -625,8 +626,20 @@
     flex: 1 1 0%;
   }
 
-  .arl-sidebar .arl-sidebar-nav-item-active {
-    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  .arl-sidebar .arl-sidebar-nav-item-active,
+  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent) !important;
+  }
+
+  @media (min-width: 1024px) {
+    .arl-sidebar .arl-sidebar-nav-item > span {
+      display: flex;
+      min-height: 2.5rem;
+      align-items: center;
+      justify-content: flex-start;
+      width: auto;
+      flex: 1 1 auto;
+    }
   }
 
   .arl-app .arl-checkbox-card > span {

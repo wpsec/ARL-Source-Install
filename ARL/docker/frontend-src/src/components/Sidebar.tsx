@@ -111,7 +111,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
+                      "arl-sidebar-nav-item group flex min-h-10 !w-full !max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
                         ? "arl-sidebar-nav-item-active bg-primary/12 font-semibold text-primary"
                         : "!bg-transparent text-content-muted hover:bg-transparent hover:text-base-content",
