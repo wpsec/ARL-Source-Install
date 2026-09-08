@@ -50,6 +50,7 @@ describe('SystemMonitorMiniWidget', () => {
     expect(screen.getByText('1.2 GB')).toBeTruthy();
     expect(screen.getByText('3.4 GB')).toBeTruthy();
     expect(screen.getByText('86')).toBeTruthy();
+    expect(screen.getByText('CPU').className).toContain('shrink-0');
     expect(screen.getByRole('region', { name: '系统监控摘要' }).className).toContain('shrink-0');
     expect(screen.getByTestId('system-monitor-icon')).toBeTruthy();
     expect(screen.queryByText('实时运行')).toBeNull();

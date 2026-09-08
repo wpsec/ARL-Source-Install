@@ -79,12 +79,12 @@ function MetricRow({
   color: string;
 }) {
   return (
-    <div className="flex h-10 w-[82px] xl:w-[92px] 2xl:w-[104px] shrink-0 items-center gap-1 rounded-box border border-base-300 bg-base-100 px-1.5 xl:px-2">
+    <div className="flex h-10 w-[104px] xl:w-[112px] 2xl:w-[120px] shrink-0 items-center gap-1 rounded-box border border-base-300 bg-base-100 px-1.5 xl:px-2">
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-1">
-          <span className="truncate text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
-          <span className="shrink-0 text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
+          <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
+          <span className="min-w-0 truncate text-right text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
         </div>
         <Sparkline data={data} dataKey={dataKey} color={color} />
       </div>
