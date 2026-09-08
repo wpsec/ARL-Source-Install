@@ -27,6 +27,8 @@ import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_SUCCESS_CLASS,
   CONSOLE_CHECKBOX_CARD_CLASS,
+  CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
   CONSOLE_PAGE_CLASS,
@@ -1861,14 +1863,14 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => setDefaultAiProvider(providerId)}
-                    className="btn btn-ghost btn-xs border border-base-300"
+                    className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
                   >
                     设为默认
                   </button>
                   <button
                     type="button"
                     onClick={() => openProviderConfigDialog(providerId)}
-                    className="btn btn-ghost btn-xs border border-base-300"
+                    className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
                   >
                     配置
                   </button>
@@ -2016,7 +2018,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setDialogSystemPromptOpen((prev) => !prev)}
-                className="btn btn-ghost btn-xs border border-base-300"
+                className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
               >
                 {dialogSystemPromptOpen ? '收起可选参数' : '展开可选参数'}
               </button>
@@ -2180,7 +2182,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => sopUploadInputRef.current?.click()}
-                className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-60`}
                 disabled={sopUploading}
               >
                 选择文件
@@ -2189,7 +2191,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={clearSopUploadSelection}
-                className="btn btn-ghost btn-sm h-10 border border-base-300 whitespace-nowrap disabled:opacity-60"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-60`}
                 disabled={sopUploading || !sopUploadFile}
               >
                 清空
@@ -2199,7 +2201,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
           <button
             type="button"
             onClick={() => void uploadAiSop()}
-            className="btn btn-ghost btn-sm h-10 border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={sopUploading}
           >
             <Upload className={`w-4 h-4 ${sopUploading ? 'animate-pulse' : ''}`} />
@@ -2289,7 +2291,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               onClick={() => {
                 void usageQuery.refetch();
               }}
-              className="btn btn-ghost btn-xs border border-base-300 gap-2 disabled:opacity-60"
+              className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               disabled={usageLoading}
             >
               <RefreshCw className={`w-4 h-4 ${usageLoading ? 'animate-spin' : ''}`} />
@@ -2423,7 +2425,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   <button
                     type="button"
                     onClick={() => setUsageLogDetail(item)}
-                    className="btn btn-ghost btn-xs border border-base-300"
+                    className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
                   >
                     查看详情
                   </button>
@@ -2451,7 +2453,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={closeProviderConfigDialog}
-                className="btn btn-ghost btn-square btn-xs border border-base-300"
+                className={CONSOLE_ICON_BUTTON_CLASS}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2569,7 +2571,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setCompatDialogOpen(false)}
-                className="btn btn-ghost btn-square btn-xs border border-base-300"
+                className={CONSOLE_ICON_BUTTON_CLASS}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2658,7 +2660,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setUsageLogDetail(null)}
-                className="btn btn-ghost btn-square btn-xs border border-base-300 shrink-0"
+                className={`${CONSOLE_ICON_BUTTON_CLASS} shrink-0`}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2702,7 +2704,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               <button
                 type="button"
                 onClick={() => setAiTestDialogOpen(false)}
-                className="btn btn-ghost btn-square btn-xs border border-base-300"
+                className={CONSOLE_ICON_BUTTON_CLASS}
               >
                 <X className="w-4 h-4" />
               </button>
