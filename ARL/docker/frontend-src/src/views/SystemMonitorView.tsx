@@ -202,7 +202,7 @@ export function SystemMonitorView({ token }: { token: string }) {
         title="系统监控"
         description="实时监控主机资源、CPU、内存、磁盘与网络流量趋势"
         actions={
-          <div className="text-right space-y-2">
+          <div className="min-w-0 w-full space-y-2 text-right xl:w-auto">
           <p className="text-xs font-black text-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{updatedAt || '-'}</p>
           <button

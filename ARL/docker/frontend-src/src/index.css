@@ -619,6 +619,8 @@
 
   /* 选中背景归属于完整按钮，文字区随 flex-1 铺满，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
+    display: flex;
+    min-width: 0;
     width: 100%;
     max-width: none;
   }
@@ -629,8 +631,10 @@
 
   .arl-sidebar .arl-sidebar-nav-item {
     display: flex;
+    flex: 1 1 100% !important;
     width: 100% !important;
     max-width: none !important;
+    align-self: stretch;
   }
 
   .arl-sidebar .arl-sidebar-nav-item:not(.arl-sidebar-nav-item-active) {
@@ -656,8 +660,8 @@
       min-height: 2.5rem;
       align-items: center;
       justify-content: flex-start;
-      width: auto;
-      flex: 1 1 auto;
+      width: auto !important;
+      flex: 1 1 auto !important;
     }
   }
 

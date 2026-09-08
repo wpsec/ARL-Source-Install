@@ -370,7 +370,7 @@ export function DashboardView({
         title="我的仪表盘"
         description="互联网资产自动化收集系统 · 实时监控中"
         actions={
-          <div className="text-right space-y-2">
+          <div className="min-w-0 w-full space-y-2 text-right xl:w-auto">
           <p className="text-xs font-black text-accent uppercase tracking-widest">最后更新</p>
           <p className="text-sm font-mono">{lastUpdatedAt || '-'}</p>
           <div className="flex gap-2 justify-end">
@@ -585,7 +585,7 @@ export function DashboardView({
                           {taskId ? (
                             <button
                               onClick={() => onOpenModule('site', { task_id: taskId })}
-                              className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left`}
+                              className={`${CONSOLE_TEXT_BUTTON_CLASS} max-w-full break-all text-left text-accent hover:underline`}
                               title="点击查看该任务详情"
                             >
                               {normalizeValue(task?.name)}
@@ -621,13 +621,13 @@ export function DashboardView({
                 onClick={() => onOpenModule(entry.id)}
                 className={`${CONSOLE_CARD_ACTION_CLASS} p-4`}
               >
-                <div className="flex items-start gap-3">
+                <div className="flex min-w-0 w-full items-start gap-3">
                   <div className={`p-2 rounded-box bg-base-200 border border-base-300 ${entry.color}`}>
                     <entry.icon className="w-4 h-4" />
                   </div>
-                  <div>
-                    <p className="font-black text-sm">{entry.label}</p>
-                    <p className="text-xs text-content-muted mt-1">{entry.desc}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-black text-sm">{entry.label}</p>
+                    <p className="mt-1 break-words text-xs text-content-muted">{entry.desc}</p>
                   </div>
                 </div>
               </button>

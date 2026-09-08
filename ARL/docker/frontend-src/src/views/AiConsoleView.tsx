@@ -778,7 +778,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
   const aiInputMonoClass = CONSOLE_INPUT_MONO_CLASS;
   const aiSelectWrapClass = 'relative w-full';
   const aiUploadFilenameClass =
-    'flex-1 h-10 rounded-box border border-base-300 bg-base-100 px-3 text-sm text-content-muted flex items-center truncate';
+    'min-w-0 flex-1 h-10 rounded-box border border-base-300 bg-base-100 px-3 text-sm text-content-muted flex items-center truncate';
 
   const clearSopUploadSelection = useCallback(() => {
     setSopUploadFile(null);
