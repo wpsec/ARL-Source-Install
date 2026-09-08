@@ -12,8 +12,8 @@ describe('formatModuleCellValue 多值字段', () => {
     })).toBe('80\n443');
 
     expect(formatModuleCellValue('domain', 'source', {
-      source: 'arl, chaos',
-    })).toBe('arl\nchaos');
+      source: 'arl，chaos、fofa',
+    })).toBe('arl\nchaos\nfofa');
   });
 
   it('未知数组字段也按行展示，避免回退为逗号串', () => {

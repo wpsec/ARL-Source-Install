@@ -1507,7 +1507,7 @@ export function ActionDialog({
                         disabled={disabled}
                         onChange={(event) => {
                           const nextValues = event.target.value
-                            .split(/[\r\n,]+/)
+                            .split(/[\r\n,，；、]+/)
                             .map((item) => item.trim())
                             .filter((item) => item);
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, nextValues));

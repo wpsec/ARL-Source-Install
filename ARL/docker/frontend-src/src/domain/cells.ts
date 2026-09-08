@@ -137,7 +137,7 @@ export function formatModuleCellValue(moduleId: string, column: string, row: any
       ...(Array.isArray(row?.sources) ? row.sources : [row?.sources]),
       value,
     ]
-      .flatMap((item) => String(item ?? '').split(','))
+      .flatMap((item) => String(item ?? '').split(/[,，;；、\r\n]+/))
       .map((item) => item.trim())
       .filter((item) => item && item !== '-');
     return Array.from(new Set(sourceList)).join('\n') || '-';
