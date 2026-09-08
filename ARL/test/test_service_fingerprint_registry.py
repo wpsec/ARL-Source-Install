@@ -82,6 +82,7 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
     def test_alias_canonical(self):
         self.assertEqual(self.registry.canonical("ms-wbt-server"), "rdp")
         self.assertEqual(self.registry.canonical("SSL/HTTP"), "https")
+        self.assertEqual(self.registry.canonical("http-proxy"), "http")
         self.assertEqual(self.registry.canonical("domain"), "dns")
         self.assertEqual(self.registry.canonical("psql"), "postgres")
         self.assertEqual(self.registry.canonical("proxy_https"), "proxy")

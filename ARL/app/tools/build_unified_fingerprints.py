@@ -255,7 +255,7 @@ def load_extra_rules(path, merger):
 # --- 服务指纹内置基线（覆盖仓库内置 NPoC sniffer 与现有 Nmap 映射；结构即消费契约） ---
 # (name, nmap_service_names, npoc_schemes, transports, nmap_product_hints)
 SERVICE_SEED = [
-    ("http", ["http", "www"], ["http"], [{"proto": "tcp", "ports": [80, 8080, 8888]}], []),
+    ("http", ["http", "http-proxy", "www"], ["http"], [{"proto": "tcp", "ports": [80, 8080, 8888]}], []),
     ("https", ["https", "ssl/http"], ["https"], [{"proto": "tcp", "ports": [443, 8443]}], []),
     ("ssh", ["ssh"], ["ssh"], [{"proto": "tcp", "ports": [22]}], ["openssh", "dropbear", "libssh"]),
     ("ftp", ["ftp"], ["ftp"], [{"proto": "tcp", "ports": [21]}], ["vsftpd", "proftpd", "pure-ftpd"]),
