@@ -92,6 +92,7 @@ import {
   CONSOLE_PAGE_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
+  CONSOLE_TEXT_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
@@ -3508,7 +3509,7 @@ export function TableModuleView({
                                         [scopeExpandKey]: !isExpanded,
                                       }))
                                     }
-                                    className="text-xs font-semibold text-accent hover:underline"
+                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                                   >
                                     {isExpanded ? '收起' : '显示全部'}
                                   </button>
@@ -3518,7 +3519,7 @@ export function TableModuleView({
                                   onClick={() =>
                                     void copyTextToClipboard(scopeLines.length > 0 ? scopeLines.join('\n') : scopeText, '资产范围')
                                   }
-                                  className="text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                                 >
                                   复制
                                 </button>
@@ -3551,7 +3552,7 @@ export function TableModuleView({
                                       [scheduleTargetExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 block text-left text-xs font-semibold text-accent hover:underline`}
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -3584,7 +3585,7 @@ export function TableModuleView({
                                       [taskOptionExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block text-left text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 block text-left text-xs font-semibold text-accent hover:underline`}
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -3734,7 +3735,7 @@ export function TableModuleView({
                                 <button
                                   type="button"
                                   onClick={() => void copyTextToClipboard(copyPayload, copyLabel)}
-                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
                                 >
                                   复制
                                 </button>
@@ -3761,7 +3762,7 @@ export function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => onOpenModule(destinationModule, nextFilters)}
-                                className="text-accent hover:underline font-semibold"
+                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline font-semibold`}
                                 title={column === 'ip_count' ? '跳转到IP并自动按C段筛选' : '跳转到子域名并自动按C段筛选'}
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -3815,7 +3816,7 @@ export function TableModuleView({
                                 <button
                                   type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className="text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
                                   title="点击查看该任务详情"
                                 >
                                   {targetText}
@@ -3971,7 +3972,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="text-accent hover:underline text-left inline-block w-full"
+                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
                                 title="点击查看该任务详情"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4019,7 +4020,7 @@ export function TableModuleView({
                                       [siteHeaderExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-left text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -4055,7 +4056,7 @@ export function TableModuleView({
                                       [siteFingerExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-left text-xs font-semibold text-accent hover:underline"
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -4136,7 +4137,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubSchedulerDetail(id)}
-                                className="text-accent hover:underline text-left inline-block w-full"
+                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
                                 title="查看该监控任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4150,7 +4151,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubTaskDetail(id)}
-                                className="text-accent hover:underline text-left inline-block w-full"
+                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
                                 title="查看该任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4876,7 +4877,7 @@ export function TableModuleView({
                       <button
                         type="button"
                         onClick={() => void copyTextToClipboard(verifyRaw, verifyLabel)}
-                        className="text-xs font-semibold text-accent hover:underline"
+                        className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                       >
                         复制
                       </button>
@@ -4956,7 +4957,7 @@ export function TableModuleView({
                       <button
                         type="button"
                         onClick={() => void copyTextToClipboard(detailUrl, urlLabel)}
-                        className="text-xs font-semibold text-accent hover:underline"
+                        className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                       >
                         复制
                       </button>
@@ -5043,7 +5044,7 @@ export function TableModuleView({
                         <button
                           type="button"
                           onClick={() => void copyTextToClipboard(requestPacket, '请求报文')}
-                          className="text-xs font-semibold text-accent hover:underline"
+                          className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                         >
                           复制
                         </button>
@@ -5060,7 +5061,7 @@ export function TableModuleView({
                         <button
                           type="button"
                           onClick={() => void copyTextToClipboard(responsePacket, '回复报文')}
-                          className="text-xs font-semibold text-accent hover:underline"
+                          className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
                         >
                           复制
                         </button>

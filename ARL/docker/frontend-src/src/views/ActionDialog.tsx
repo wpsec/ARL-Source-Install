@@ -20,6 +20,7 @@ import {
   CONSOLE_INPUT_MONO_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
+  CONSOLE_TEXT_BUTTON_CLASS,
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
@@ -718,7 +719,7 @@ export function ActionDialog({
                   <button
                     type="button"
                     onClick={() => setAllTaskFeatures(!allTaskFeaturesEnabled)}
-                    className="text-xs font-bold text-accent hover:underline"
+                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
                     disabled={!editable || taskFeatureKeys.length === 0}
                   >
                     {allTaskFeaturesEnabled ? '取消全选' : '全选'}
@@ -1341,7 +1342,7 @@ export function ActionDialog({
                   <h5 className="text-sm font-black">基础扫描配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-accent hover:underline"
+                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
                     onClick={() => setPolicyOptionAll(!policyOptionAllEnabled)}
                     disabled={!editable}
                   >
@@ -1375,7 +1376,7 @@ export function ActionDialog({
                   <h5 className="text-sm font-black">PoC 配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-accent hover:underline"
+                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
                     onClick={() =>
                       setPolicyPluginConfig(
                         'poc_config',
@@ -1417,7 +1418,7 @@ export function ActionDialog({
                   <h5 className="text-sm font-black">弱口令爆破配置</h5>
                   <button
                     type="button"
-                    className="text-xs font-bold text-accent hover:underline"
+                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
                     onClick={() =>
                       setPolicyPluginConfig(
                         'brute_config',

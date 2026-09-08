@@ -45,6 +45,7 @@ import {
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
   CONSOLE_PANEL_CLASS,
+  CONSOLE_TEXT_BUTTON_CLASS,
 } from '../ui/classes';
 
 const EMPTY_STATS = {
@@ -576,7 +577,7 @@ export function DashboardView({
                           {taskId ? (
                             <button
                               onClick={() => onOpenModule('site', { task_id: taskId })}
-                              className="text-accent hover:underline text-left"
+                              className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left`}
                               title="点击查看该任务详情"
                             >
                               {normalizeValue(task?.name)}
