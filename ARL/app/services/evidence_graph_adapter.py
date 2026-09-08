@@ -51,6 +51,7 @@ def sync_discovery_context(
     candidate_limit: int = 0,
     document_limit: int = 0,
     endpoint_limit: int = 0,
+    response_limit: int = 0,
 ) -> Dict[str, int]:
     """同步现有 Registry；函数只读 Registry，不触发请求或结果写回。"""
 
@@ -60,6 +61,7 @@ def sync_discovery_context(
     summary = {"nodes_added": 0, "edges_added": 0, "skipped": 0}
     _sync_candidates(discovery_context, evidence_graph, summary, candidate_limit)
     _sync_api_registry(discovery_context, evidence_graph, summary, document_limit, endpoint_limit)
+    _sync_responses(discovery_context, evidence_graph, summary, response_limit)
     return summary
 
 
@@ -119,6 +121,62 @@ def _sync_api_registry(
         return
     _sync_documents(registry, graph, summary, document_limit)
     _sync_endpoints(registry, graph, summary, endpoint_limit)
+
+
+def _sync_responses(
+    discovery_context: Any,
+    graph: EvidenceGraph,
+    summary: Dict[str, int],
+    limit: int,
+) -> None:
+    registry = getattr(discovery_context, "response_registry", None)
+    snapshot = getattr(registry, "snapshot_metadata", None)
+    if not callable(snapshot):
+        return
+    try:
+        responses = list(snapshot())
+    except (AttributeError, TypeError, ValueError):
+        summary["skipped"] += 1
+        return
+    if limit and limit > 0:
+        responses = responses[: int(limit)]
+    for response in responses:
+        if not isinstance(response, Mapping):
+            summary["skipped"] += 1
+            continue
+        normalized_url = str(response.get("normalized_url") or "").strip()
+        if not normalized_url:
+            summary["skipped"] += 1
+            continue
+        method = str(response.get("method") or "GET").upper()
+        request_profile = str(response.get("request_profile") or "default")
+        identity = "|".join((normalized_url, method, request_profile))
+        try:
+            response_id = graph.add_node(
+                "response",
+                identity,
+                status="observed",
+                confidence="observed",
+                sources=(response.get("source") or "response_registry",)
+                + tuple(response.get("consumers") or ()),
+                attributes={
+                    "http_method": method,
+                    "request_profile": request_profile,
+                    "content_type": response.get("content_type") or "",
+                    "status_code": response.get("status_code") or 0,
+                },
+            )
+            summary["nodes_added"] += 1
+            resource_id = graph.add_node(
+                "resource",
+                normalized_url,
+                sources=("response_registry",),
+            )
+            summary["nodes_added"] += 1
+            if graph.add_edge(resource_id, response_id, "observed_as", evidence=(request_profile,)):
+                summary["edges_added"] += 1
+        except (KeyError, TypeError, ValueError, OverflowError):
+            summary["skipped"] += 1
 
 
 def _sync_documents(registry: Any, graph: EvidenceGraph, summary: Dict[str, int], limit: int) -> None:

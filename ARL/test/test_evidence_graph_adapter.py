@@ -76,12 +76,27 @@ class _ApiRegistry:
         ]
 
 
+class _ResponseRegistry:
+    def snapshot_metadata(self):
+        return [
+            {
+                "normalized_url": "resource-1",
+                "method": "GET",
+                "request_profile": "html_get",
+                "status_code": 200,
+                "content_type": "text/html",
+                "source": "page_intel",
+                "consumers": ["urlfinder"],
+            }
+        ]
+
 class _Context:
     def __init__(self):
         self.candidate_registry = _CandidateRegistry(
             [_Candidate("candidate-key-1", "endpoint-1", "endpoint", "target-1")]
         )
         self.api_candidate_registry = _ApiRegistry()
+        self.response_registry = _ResponseRegistry()
 
 
 class EvidenceGraphAdapterTest(unittest.TestCase):
@@ -94,8 +109,8 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
 
         self.assertEqual(first["skipped"], 0)
         self.assertEqual(second["skipped"], 0)
-        self.assertEqual(graph.node_count, 4)
-        self.assertEqual(graph.edge_count, 4)
+        self.assertEqual(graph.node_count, 6)
+        self.assertEqual(graph.edge_count, 5)
 
     def test_snapshot_never_contains_candidate_or_registry_raw_identity(self):
         context = _Context()
@@ -106,6 +121,7 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
         self.assertNotIn("endpoint-id-1", serialized)
         self.assertNotIn("document-1", serialized)
         self.assertNotIn("endpoint-1", serialized)
+        self.assertNotIn("resource-1", serialized)
         self.assertEqual(graph["skipped"], 0)
 
     def test_graph_budget_is_soft_for_scan_pipeline(self):

@@ -354,6 +354,26 @@ class ResponseRegistry:
                 consumers=frozenset(item.consumers),
             )
 
+    def snapshot_metadata(self) -> List[Dict[str, Any]]:
+        """返回不含正文和 Header 的有界响应摘要，供诊断/证据图消费。"""
+
+        with self._lock:
+            return [
+                {
+                    "normalized_url": item.normalized_url,
+                    "method": item.method,
+                    "request_profile": item.request_profile,
+                    "status_code": item.status_code,
+                    "content_type": item.content_type,
+                    "body_hash": item.body_hash,
+                    "body_truncated": bool(item.body_truncated),
+                    "source": item.source,
+                    "fetched_at": item.fetched_at,
+                    "consumers": sorted(item.consumers),
+                }
+                for item in self._items.values()
+            ]
+
 
 @dataclass
 class CandidateRecord:
