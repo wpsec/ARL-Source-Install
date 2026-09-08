@@ -55,7 +55,7 @@ function Sparkline({ data, dataKey, color }: { data: MonitorPoint[]; dataKey: 'c
   const lastPoint = points.split(' ').at(-1)?.split(',') || [];
 
   return (
-    <div className="h-6 min-w-0 w-full" aria-hidden="true">
+    <div className="h-4 min-w-0 w-full" aria-hidden="true">
       <svg viewBox="0 0 76 28" className="h-full w-full overflow-visible" focusable="false">
         <polyline points={points} fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         {lastPoint.length === 2 ? <circle cx={lastPoint[0]} cy={lastPoint[1]} r="2" fill={color} /> : null}
@@ -85,10 +85,8 @@ function MetricRow({
     <div className={`flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-baseline justify-between gap-1.5">
-          <span className="shrink-0 whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
-          <span className="min-w-0 truncate text-right text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
-        </div>
+        <span className="block whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
+        <span className="block min-w-0 truncate text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
         <div className="mt-0.5">
           <Sparkline data={data} dataKey={dataKey} color={color} />
         </div>
@@ -125,9 +123,9 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
     ? history
     : [{ cpu: cpuPercent, ram: memoryPercent, net: networkRate }];
   return (
-    <section className="hidden shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
+    <section className="hidden max-w-full shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
       <div
-        className="flex h-11 w-[380px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
+        className="flex h-12 w-[300px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
         role="group"
         aria-label="CPU、内存与网速"
       >
@@ -136,7 +134,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
-      <div className="hidden xl:grid h-11 shrink-0 grid-cols-3 items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3">
+      <div className="hidden h-12 shrink-0 grid-cols-3 items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 xl:grid">
         <div className="min-w-[3.5rem] text-center" aria-label="累计发送流量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />
