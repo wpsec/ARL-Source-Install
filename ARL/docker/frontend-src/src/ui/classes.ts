@@ -21,7 +21,7 @@ export const CONSOLE_PAGE_CLASS = 'min-w-0 w-full max-w-[1920px] mx-auto p-4 sm:
 export const CONSOLE_BUTTON_CLASS = 'btn btn-sm h-10 min-h-10 whitespace-nowrap';
 
 export const CONSOLE_ICON_BUTTON_CLASS =
-  'btn btn-ghost btn-sm btn-square border border-base-300 text-base-content hover:border-primary/45 hover:bg-base-300/70 hover:text-base-content';
+  'btn btn-sm btn-square border border-base-300 bg-base-100 text-base-content hover:border-primary/45 hover:bg-base-300/70 hover:text-base-content';
 
 export const CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS =
   'btn btn-sm h-8 min-h-8 whitespace-nowrap border border-base-300 bg-base-100 px-2.5 text-xs text-base-content hover:border-primary/45 hover:bg-base-200 hover:text-base-content';
@@ -29,7 +29,7 @@ export const CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS =
 export const CONSOLE_PRIMARY_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-primary`;
 
 export const CONSOLE_SECONDARY_BUTTON_CLASS =
-  `${CONSOLE_BUTTON_CLASS} btn-ghost border border-base-300 text-base-content hover:border-primary/45 hover:bg-base-300/70`;
+  `${CONSOLE_BUTTON_CLASS} border border-base-300 bg-base-100 text-base-content hover:border-primary/45 hover:bg-base-300/70 hover:text-base-content`;
 
 export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 
