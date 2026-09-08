@@ -626,9 +626,8 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-row-active {
-    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card));
-    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border));
-    box-shadow: inset 3px 0 0 var(--color-primary);
+    background-color: transparent;
+    border-color: transparent;
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
@@ -652,8 +651,9 @@
 
   .arl-sidebar .arl-sidebar-nav-row-active > .arl-sidebar-nav-item,
   .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
-    background-color: transparent !important;
-    border-color: transparent !important;
+    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
+    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;
+    box-shadow: inset 3px 0 0 var(--color-primary);
     color: var(--brand-accent) !important;
   }
 

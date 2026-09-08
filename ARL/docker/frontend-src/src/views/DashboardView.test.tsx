@@ -74,6 +74,7 @@ describe('DashboardView（React Query）', () => {
     expect(screen.getByText('我的仪表盘')).toBeTruthy();
     expect(screen.getByText('总计 12')).toBeTruthy();
     expect(screen.getByText('总计 7')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '暂无网络趋势数据' })).toBeTruthy();
     // stats 已带 domain_total 等字段：不再发 /domain/ 等明细 count。
     expect(calls.some((c) => c.url.includes('/domain/'))).toBe(false);
   });

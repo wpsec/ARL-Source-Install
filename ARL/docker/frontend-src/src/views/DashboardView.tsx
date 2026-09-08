@@ -317,7 +317,7 @@ export function DashboardView({
     { name: '服务', value: Number(stats.service_total || 0), color: 'var(--color-success)' },
     { name: 'URL', value: Number(stats.url_total || 0), color: 'var(--color-warning)' },
   ];
-  const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
+  const hasNetworkTrend = networkTrend.length > 0;
   const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
   const quickModules = [
     { id: 'task', label: '任务管理', desc: '下发、停止、导出扫描任务', icon: Activity, color: 'text-accent' },
@@ -481,12 +481,16 @@ export function DashboardView({
               {renderUsageBar('CPU 负载', cpuPercent, formatCpuSummary(deviceInfo))}
               {renderUsageBar('内存占用', memoryPercent, formatUsageSummary(memoryInfo))}
               {renderUsageBar('磁盘占用', diskPercent, formatUsageSummary(diskInfo))}
-              <div className="h-28 mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={netData}>
-                    <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="mt-4 flex h-28 items-center justify-center rounded-box border border-dashed border-base-300 bg-base-100/60 px-4 text-xs text-content-muted">
+                {hasNetworkTrend ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={networkTrend}>
+                      <Area type="monotone" dataKey="in" stroke="var(--brand-accent)" fill="var(--brand-accent)" fillOpacity={0.1} strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <span role="status" aria-label="暂无网络趋势数据">暂无网络趋势数据</span>
+                )}
               </div>
             </div>
           </div>
