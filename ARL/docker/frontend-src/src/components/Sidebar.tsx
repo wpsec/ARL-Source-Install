@@ -106,7 +106,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     className={cn(
                       "flex min-h-10 w-full items-center justify-center rounded-box px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
-                        ? "bg-primary/12 text-primary font-semibold"
+                        ? "bg-primary/12 text-primary font-semibold shadow-sm ring-1 ring-inset ring-primary/25"
                         : "text-content-muted hover:bg-base-300/60 hover:text-base-content",
                     )}
                     title={item.label}
