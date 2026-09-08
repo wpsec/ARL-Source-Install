@@ -479,6 +479,12 @@
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
   }
 
+  /* 弹窗内容由调用方组合；统一允许每一段按视口收缩，避免长 ID/URL 撑破 box。 */
+  .arl-modal-box > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   /* 所有弹窗直接子级的头/底栏都要保留尺寸；长内容只允许滚动区收缩。 */
   .arl-modal-box > .border-b,
   .arl-modal-box > .border-t {
