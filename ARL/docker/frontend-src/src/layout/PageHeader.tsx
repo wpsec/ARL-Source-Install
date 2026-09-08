@@ -17,7 +17,7 @@ export function PageHeader({
     <header className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
       <div className="min-w-0">
         <h1 className="break-words text-2xl font-semibold tracking-tight">{title}</h1>
-        {description ? <p className="text-sm text-base-content/60 mt-1.5 max-w-3xl">{description}</p> : null}
+        {description ? <p className="text-sm text-content-muted mt-1.5 max-w-3xl">{description}</p> : null}
       </div>
       {actions ? <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto">{actions}</div> : null}
     </header>

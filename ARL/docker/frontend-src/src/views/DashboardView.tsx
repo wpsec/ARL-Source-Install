@@ -349,7 +349,7 @@ export function DashboardView({
         max="100"
         aria-label={`${title} ${formatPercent(percent)}`}
       />
-      <p className="text-[10px] text-base-content/60">{detail}</p>
+      <p className="text-[10px] text-content-muted">{detail}</p>
     </div>
   );
 
@@ -399,7 +399,7 @@ export function DashboardView({
                   {card.change}
                 </div>
               </div>
-              <h3 className="text-base-content/60 text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
+              <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
               <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
             </div>
           </div>
@@ -522,9 +522,9 @@ export function DashboardView({
                 return (
                   <div key={`${source}-${level}-${index}`} className="py-2 border-b border-base-300 last:border-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-base-content/60'}`}>{level}</span>
-                      <span className="text-base-content/60">{source}</span>
-                      <span className="ml-auto text-base-content/60">{formatLogTime(log?.time)}</span>
+                      <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-content-muted'}`}>{level}</span>
+                      <span className="text-content-muted">{source}</span>
+                      <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
                     </div>
                     <p className="text-base-content/80 break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                   </div>

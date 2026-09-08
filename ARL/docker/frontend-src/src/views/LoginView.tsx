@@ -26,7 +26,7 @@ export function LoginView({
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight leading-tight">
               互联网资产自动化收集系统
             </h1>
-            <p className="text-sm text-base-content/60 mt-1">
+            <p className="text-sm text-content-muted mt-1">
               版本：{__ARL_VERSION__}
             </p>
           </div>
@@ -43,7 +43,7 @@ export function LoginView({
           <div className="space-y-2">
             <label className="label py-0 text-sm font-medium">用户名</label>
             <div className="relative">
-              <User className="w-5 h-5 text-base-content/50 absolute left-4 top-1/2 -translate-y-1/2" />
+              <User className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 name="arl_username"
                 value={username}
@@ -58,7 +58,7 @@ export function LoginView({
           <div className="space-y-2">
             <label className="label py-0 text-sm font-medium">密码</label>
             <div className="relative">
-              <Lock className="w-5 h-5 text-base-content/50 absolute left-4 top-1/2 -translate-y-1/2" />
+              <Lock className="w-5 h-5 text-content-muted absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="password"
                 name="arl_password"

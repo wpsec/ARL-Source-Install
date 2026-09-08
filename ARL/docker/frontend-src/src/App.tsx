@@ -40,7 +40,7 @@ const ActionDialog = lazy(() => import('./views/ActionDialog').then((m) => ({ de
 
 function ViewFallback() {
   return (
-    <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-base-content/60">
+    <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-content-muted">
       <span className="loading loading-spinner loading-sm" aria-label="加载中" />
       页面加载中…
     </div>
@@ -365,7 +365,7 @@ export function MainShell() {
 
       <main ref={mainScrollRef} className="relative z-10 flex-1 overflow-y-auto custom-scrollbar">
         <header className="navbar sticky top-0 z-20 min-h-16 px-4 xl:px-6 border-b border-base-300 bg-base-100">
-          <div className="flex-1 min-w-0 text-xs xl:text-sm text-base-content/60 truncate" role="status">
+          <div className="flex-1 min-w-0 text-xs xl:text-sm text-content-muted truncate" role="status">
             {globalNotice || ' '}
           </div>
           <div className="navbar-end min-w-0 gap-1.5 xl:gap-2">

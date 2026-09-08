@@ -3050,7 +3050,7 @@ export function TableModuleView({
                             type={field.inputType === 'number' ? 'number' : 'text'}
                             value={String(searchForm?.[field.key] ?? '')}
                             placeholder={field.placeholder}
-                            className={`${CONSOLE_INPUT_CLASS} placeholder:text-base-content/50`}
+                            className={`${CONSOLE_INPUT_CLASS} placeholder:text-content-muted`}
                             onChange={(event) => {
                               const value = event.target.value;
                               setSearchForm((prev) => ({ ...prev, [field.key]: value }));
@@ -4506,7 +4506,7 @@ export function TableModuleView({
           </div>
         </div>
       ) : (
-        <div className="bg-base-200 border border-base-300 rounded-box p-10 text-center text-base-content/60 text-sm shadow-sm">
+        <div className="bg-base-200 border border-base-300 rounded-box p-10 text-center text-content-muted text-sm shadow-sm">
           该模块为操作中心，无列表数据。请使用上方动作按钮执行。
         </div>
       )}

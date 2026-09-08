@@ -31,7 +31,7 @@ export class ViewErrorBoundary extends React.Component<Props, State> {
               <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>
                 <span className="font-black">页面加载失败</span>
               </div>
-              <p className="text-sm text-base-content/60 break-all">{this.state.error.message || String(this.state.error)}</p>
+              <p className="text-sm text-content-muted break-all">{this.state.error.message || String(this.state.error)}</p>
               <div className="flex gap-2">
                 <button
                   type="button"

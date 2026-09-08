@@ -151,8 +151,8 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
           <div className="card-body p-3 gap-1">
             <span className="text-xs font-semibold">互联网资产自动化收集系统</span>
             <div className="flex items-center gap-1 min-w-0">
-              <span className="text-[10px] text-base-content/60 shrink-0">系统版本：</span>
-              <span className="text-[10px] text-base-content/60 tracking-wide truncate">
+              <span className="text-[10px] text-content-muted shrink-0">系统版本：</span>
+              <span className="text-[10px] text-content-muted tracking-wide truncate">
                 {__ARL_VERSION__}
               </span>
             </div>

@@ -1158,7 +1158,7 @@ export function ApiConsoleView({ token }: { token: string }) {
             <div className="p-6 space-y-4">
               <div className="stats stats-vertical sm:stats-horizontal w-full bg-base-100 border border-base-300">
                 <div className="stat p-3">
-                  <div className="stat-title text-xs text-base-content/60">已验证</div>
+                  <div className="stat-title text-xs text-content-muted">已验证</div>
                   <div className="stat-value text-2xl">{batchTestSummary.total}</div>
                 </div>
                 <div className="stat p-3">
@@ -1170,7 +1170,7 @@ export function ApiConsoleView({ token }: { token: string }) {
                   <div className="stat-value text-2xl text-error">{batchTestSummary.failCount}</div>
                 </div>
                 <div className="stat p-3">
-                  <div className="stat-title text-xs text-base-content/60">完成时间</div>
+                  <div className="stat-title text-xs text-content-muted">完成时间</div>
                   <div className="stat-desc mt-1 font-mono break-all text-base-content">{batchTestSummary.testedAt || '-'}</div>
                 </div>
               </div>

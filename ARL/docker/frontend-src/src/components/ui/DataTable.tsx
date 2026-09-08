@@ -87,7 +87,7 @@ export function DataTable<Row extends object>({
                 <th
                   key={column.key}
                   className={`${cellPad} text-sm font-semibold whitespace-nowrap ${
-                    column.headerClass ?? 'text-base-content/60 text-center'
+                    column.headerClass ?? 'text-content-muted text-center'
                   }`}
                 >
                   {column.header}
@@ -99,7 +99,7 @@ export function DataTable<Row extends object>({
         <tbody>
           {loading ? (
             <tr>
-              <td colSpan={columns.length} className={`${cellPad} text-center text-base-content/60`}>
+              <td colSpan={columns.length} className={`${cellPad} text-center text-content-muted`}>
                 <span className="inline-flex items-center gap-2">
                   <span className="loading loading-spinner loading-xs" />
                   加载中…
@@ -108,7 +108,7 @@ export function DataTable<Row extends object>({
             </tr>
           ) : rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className={`${cellPad} text-center text-base-content/60`}>
+              <td colSpan={columns.length} className={`${cellPad} text-center text-content-muted`}>
                 {emptyText}
               </td>
             </tr>

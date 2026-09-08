@@ -221,9 +221,9 @@ export function SystemMonitorView({ token }: { token: string }) {
                 <div className={`p-2.5 rounded-box bg-base-100 border border-base-300 ${item.color}`}>
                   <item.icon className="w-5 h-5" />
                 </div>
-                <span className="text-xs font-black text-base-content/60">{item.detail}</span>
+                <span className="text-xs font-black text-content-muted">{item.detail}</span>
               </div>
-              <h3 className="text-xs font-medium tracking-wide text-base-content/60 mb-1">{item.title}</h3>
+              <h3 className="text-xs font-medium tracking-wide text-content-muted mb-1">{item.title}</h3>
               <p className="text-2xl font-semibold tracking-tight">{item.value}</p>
               <progress
                 className="progress progress-primary w-full mt-4"
@@ -287,15 +287,15 @@ export function SystemMonitorView({ token }: { token: string }) {
 
       <div className="stats stats-vertical md:stats-horizontal w-full bg-base-200 border border-base-300 shadow-sm">
         <div className="stat px-5 py-4">
-          <div className="stat-title text-base-content/60">累计发送流量</div>
+          <div className="stat-title text-content-muted">累计发送流量</div>
           <div className="stat-value text-2xl">{normalizeValue(resource?.network_total_sent)}</div>
         </div>
         <div className="stat px-5 py-4">
-          <div className="stat-title text-base-content/60">累计接收流量</div>
+          <div className="stat-title text-content-muted">累计接收流量</div>
           <div className="stat-value text-2xl">{normalizeValue(resource?.network_total_recv)}</div>
         </div>
         <div className="stat px-5 py-4">
-          <div className="stat-title text-base-content/60">进程数量 / 启动时间</div>
+          <div className="stat-title text-content-muted">进程数量 / 启动时间</div>
           <div className="stat-value text-lg">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</div>
         </div>
       </div>
