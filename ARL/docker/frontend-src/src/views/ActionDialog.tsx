@@ -15,6 +15,7 @@ import type {JsonValue, ModuleAction} from '../domain/types';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_INPUT_MONO_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
@@ -571,7 +572,7 @@ export function ActionDialog({
               {action.method} {action.path}
             </p>
           </div>
-          <button onClick={onClose} className="btn btn-ghost btn-square btn-sm">
+          <button onClick={onClose} className={CONSOLE_ICON_BUTTON_CLASS}>
             <X className="w-5 h-5" />
           </button>
         </div>

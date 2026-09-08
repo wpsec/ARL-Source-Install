@@ -26,7 +26,12 @@ import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
 import type {JsonValue, ModuleAction, OpenModuleHandler} from './domain/types';
 import { LoginView } from './views/LoginView';
-import { CONSOLE_ALERT_ERROR_CLASS, CONSOLE_INPUT_CLASS, CONSOLE_PRIMARY_BUTTON_CLASS } from './ui/classes';
+import {
+  CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
+  CONSOLE_INPUT_CLASS,
+  CONSOLE_PRIMARY_BUTTON_CLASS,
+} from './ui/classes';
 
 // 路由级代码分割（docs/04 Phase 4）：视图按需加载，首屏 bundle 不再包含全部页面。
 const DashboardView = lazy(() => import('./views/DashboardView').then((m) => ({ default: m.DashboardView })));
@@ -375,14 +380,14 @@ export function MainShell() {
             <span className="badge badge-ghost h-9 max-w-28 truncate px-2 xl:px-3 text-xs xl:text-sm font-medium">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
-              className="btn btn-ghost btn-sm btn-square"
+              className={CONSOLE_ICON_BUTTON_CLASS}
               title="修改密码"
             >
               <Lock className="w-4 h-4" />
             </button>
             <button
               onClick={() => void doLogout()}
-              className="btn btn-ghost btn-sm btn-square"
+              className={CONSOLE_ICON_BUTTON_CLASS}
               title="退出"
             >
               <X className="w-4 h-4" />
@@ -437,7 +442,7 @@ export function MainShell() {
         <Modal open onClose={() => setPasswdDialogOpen(false)} boxClass="w-full max-w-md!">
             <div className="flex items-center justify-between border-b border-base-300 px-6 py-4">
               <h4 className="text-lg font-semibold">修改密码</h4>
-              <button onClick={() => setPasswdDialogOpen(false)} className="btn btn-ghost btn-sm btn-square">
+              <button onClick={() => setPasswdDialogOpen(false)} className={CONSOLE_ICON_BUTTON_CLASS}>
                 <X className="w-4 h-4" />
               </button>
             </div>

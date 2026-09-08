@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
   CONSOLE_SECONDARY_BUTTON_CLASS,
@@ -33,7 +34,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           <button
             type="button"
             onClick={props.onClose}
-            className="btn btn-ghost btn-square btn-sm"
+            className={CONSOLE_ICON_BUTTON_CLASS}
             title="关闭"
           >
             <X className="w-5 h-5" />

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, ArrowDown, ArrowUp, Cpu, Database, Network, ExternalLink } from 'lucide-react';
 import { requestApi } from '../api/client';
 import { formatPercent, normalizeValue, parseNumericValue } from '../domain/format';
+import { CONSOLE_ICON_BUTTON_CLASS } from '../ui/classes';
 
 const MONITOR_POLL_INTERVAL_MS = 3000;
 
@@ -162,7 +163,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
       <button
         type="button"
         onClick={onOpen}
-        className="btn btn-ghost btn-square btn-sm border border-base-300 text-content-muted hover:text-accent"
+        className={CONSOLE_ICON_BUTTON_CLASS}
         title="打开系统监控"
         aria-label="打开系统监控"
       >
