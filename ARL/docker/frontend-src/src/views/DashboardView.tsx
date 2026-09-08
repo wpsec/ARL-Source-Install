@@ -301,10 +301,10 @@ export function DashboardView({
   // 回退模式下不要把“总资产数”伪装成“7日增长趋势”。
   const trendData = assetTrend.length > 0 ? assetTrend : buildEmptyAssetTrend();
   const assetOverviewData = [
-    { name: '子域名', value: Number(stats.domain_total || 0), color: '#14b8a6' },
-    { name: 'IP', value: Number(stats.ip_total || 0), color: '#3b82f6' },
-    { name: '服务', value: Number(stats.service_total || 0), color: '#22c55e' },
-    { name: 'URL', value: Number(stats.url_total || 0), color: '#f97316' },
+    { name: '子域名', value: Number(stats.domain_total || 0), color: 'var(--color-secondary)' },
+    { name: 'IP', value: Number(stats.ip_total || 0), color: 'var(--color-info)' },
+    { name: '服务', value: Number(stats.service_total || 0), color: 'var(--color-success)' },
+    { name: 'URL', value: Number(stats.url_total || 0), color: 'var(--color-warning)' },
   ];
   const netData = networkTrend.length > 0 ? networkTrend : [{ time: '13:40', in: 120, out: 80 }];
   const logsData = recentLogs.length > 0 ? recentLogs : [{ level: 'INFO', source: 'SCAN', msg: '暂无扫描日志数据', time: '' }];
@@ -422,7 +422,7 @@ export function DashboardView({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
                 <XAxis dataKey="name" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
+                <Tooltip contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
                 <Area type="monotone" dataKey="assets" stroke="var(--brand-accent)" strokeWidth={3} fillOpacity={1} fill="url(#colorAssetsTrend)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -439,15 +439,15 @@ export function DashboardView({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" horizontal={false} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--brand-card)', border: '1px solid var(--brand-border)', borderRadius: '16px' }} />
+                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
                 <Bar
                   dataKey="value"
                   radius={[8, 8, 8, 8]}
                   barSize={30}
-                  background={{ fill: 'rgba(148,163,184,0.12)', radius: 8 }}
+                  background={{ fill: 'var(--color-base-300)', radius: 8 }}
                 >
                   {assetOverviewData.map((entry, index) => (
-                    <Cell key={`asset-overview-${index}`} fill={entry?.color || '#64748b'} />
+                    <Cell key={`asset-overview-${index}`} fill={entry?.color || 'var(--color-base-content)'} />
                   ))}
                 </Bar>
                 </BarChart>

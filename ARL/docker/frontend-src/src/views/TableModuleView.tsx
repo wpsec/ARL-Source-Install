@@ -3407,7 +3407,7 @@ export function TableModuleView({
                   const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
 
                   return (
-                    <tr key={id || `row-${page}-${rowIndex}`} className="border-b border-base-300/60 hover:bg-white/5 transition">
+                    <tr key={id || `row-${page}-${rowIndex}`} className="border-b border-base-300/60 hover:bg-base-200/60 transition">
                       <td className="px-4 py-3 text-center align-middle">
                         <input
                           type="checkbox"

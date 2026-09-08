@@ -22,11 +22,11 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
-    { id: 'nord', label: '北欧极光', color: 'bg-[#8aa5ad]' },
-    { id: 'midnight', label: '午夜科技', color: 'bg-[#6f8da4]' },
-    { id: 'slate', label: '专业灰蓝', color: 'bg-[#7898ad]' },
-    { id: 'titanium', label: '钛金黑', color: 'bg-[#7893a8]' },
-    { id: 'sandstone', label: '砂岩白', color: 'bg-[#71675d]' },
+    { id: 'nord', label: '北欧极光', color: 'var(--theme-swatch-nord)' },
+    { id: 'midnight', label: '午夜科技', color: 'var(--theme-swatch-midnight)' },
+    { id: 'slate', label: '专业灰蓝', color: 'var(--theme-swatch-slate)' },
+    { id: 'titanium', label: '钛金黑', color: 'var(--theme-swatch-titanium)' },
+    { id: 'sandstone', label: '砂岩白', color: 'var(--theme-swatch-sandstone)' },
   ];
 
   const navGroups = [
@@ -137,9 +137,9 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                 title={t.label}
                 className={cn(
                   "w-6 h-6 rounded-full transition-all border-2",
-                  t.color,
                   theme === t.id ? "border-base-content scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
                 )}
+                  style={{ backgroundColor: t.color }}
                   aria-label={t.label}
                   aria-pressed={theme === t.id}
                 />
