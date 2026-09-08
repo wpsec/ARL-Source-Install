@@ -1542,7 +1542,10 @@ export function ActionDialog({
             <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>{error}</div>
           ) : null}
 
-          <div data-testid="action-dialog-footer" className="shrink-0 flex justify-end gap-3 border-t border-base-300 pt-4">
+          <div
+            data-testid="action-dialog-footer"
+            className="shrink-0 -mx-6 -mb-6 flex items-center justify-end gap-3 border-t border-base-300 bg-base-100 px-6 py-4"
+          >
             <button
               onClick={onClose}
               className={CONSOLE_SECONDARY_BUTTON_CLASS}
