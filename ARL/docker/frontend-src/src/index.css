@@ -594,20 +594,22 @@
     min-height: 0;
   }
 
-  /* 选中背景归属于整行，按钮只负责铺满点击区域，避免出现嵌套色块。 */
+  /* 选中背景归属于完整按钮，文字区随 flex-1 铺满，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
     width: 100%;
     max-width: none;
   }
 
   .arl-sidebar .arl-sidebar-nav-row-active {
-    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
     box-shadow: inset 3px 0 0 var(--color-primary);
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
     width: 100%;
     max-width: none;
+  }
+
+  .arl-sidebar .arl-sidebar-nav-item:not(.arl-sidebar-nav-item-active) {
     background-color: transparent;
   }
 
@@ -618,7 +620,7 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-item-active {
-    background-color: transparent;
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
   }
 
   .arl-app .arl-checkbox-card > span {
