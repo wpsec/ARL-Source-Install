@@ -1401,12 +1401,18 @@ class DiscoveryContext:
     def observation_snapshot(self) -> Dict[str, Any]:
         """收尾观测输出：只做诊断日志，不进入 Mongo 文档，避免改变对外结果。"""
 
+        graph = getattr(self, "evidence_graph", None)
+        graph_snapshot = {
+            "nodes": int(getattr(graph, "node_count", 0) or 0),
+            "edges": int(getattr(graph, "edge_count", 0) or 0),
+        }
         return {
             "task_id": self.task_id,
             "metrics": self.metrics_snapshot(),
             "events": dict(self.event_counts),
             "responses": len(self.response_registry),
             "candidates": len(self.candidate_registry),
+            "evidence_graph": graph_snapshot,
             "candidate_evict_callback_failures": getattr(
                 self.candidate_registry, "evict_callback_failed_count", 0),
             "waf": self.waf_policy.snapshot(),

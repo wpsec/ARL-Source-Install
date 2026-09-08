@@ -70,6 +70,12 @@ def sync_discovery_context(
         resource_index,
     )
     _sync_responses(discovery_context, evidence_graph, summary, response_limit, resource_index)
+    record_metric = getattr(discovery_context, "record_metric", None)
+    if callable(record_metric):
+        record_metric("evidence_graph_sync_total")
+        record_metric("evidence_graph_node_sync_total", summary["nodes_added"])
+        record_metric("evidence_graph_edge_sync_total", summary["edges_added"])
+        record_metric("evidence_graph_skip_total", summary["skipped"])
     return summary
 
 

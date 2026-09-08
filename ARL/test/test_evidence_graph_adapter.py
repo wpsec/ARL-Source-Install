@@ -97,6 +97,10 @@ class _Context:
         )
         self.api_candidate_registry = _ApiRegistry()
         self.response_registry = _ResponseRegistry()
+        self.metrics = {}
+
+    def record_metric(self, name, amount=1):
+        self.metrics[name] = int(self.metrics.get(name, 0) or 0) + int(amount or 0)
 
 
 class EvidenceGraphAdapterTest(unittest.TestCase):
@@ -111,6 +115,8 @@ class EvidenceGraphAdapterTest(unittest.TestCase):
         self.assertEqual(second["skipped"], 0)
         self.assertEqual(graph.node_count, 5)
         self.assertEqual(graph.edge_count, 5)
+        self.assertEqual(context.metrics["evidence_graph_sync_total"], 2)
+        self.assertGreater(context.metrics["evidence_graph_node_sync_total"], 0)
 
     def test_snapshot_never_contains_candidate_or_registry_raw_identity(self):
         context = _Context()
