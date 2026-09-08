@@ -487,6 +487,17 @@
     row-gap: 0.75rem;
   }
 
+  /* 标题、接口路径和任务名可能很长；头部内容必须先收缩，关闭按钮保持可见。 */
+  .arl-modal-box > .border-b > :first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
+  }
+
+  .arl-modal-box > .border-b > :last-child {
+    flex-shrink: 0;
+  }
+
   /* 弹窗底栏是共享结构；窄屏让操作按钮各占一行，避免文字或点击区域被挤出视口。 */
   @media (max-width: 640px) {
     .arl-modal-box > .border-b,
