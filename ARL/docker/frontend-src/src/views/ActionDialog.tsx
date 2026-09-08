@@ -1591,7 +1591,7 @@ export function ActionDialog({
                   if (isTaskCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedTargets = String(payload.target || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .map((item) => item.trim())
                       .filter((item) => item);
@@ -1603,7 +1603,7 @@ export function ActionDialog({
                     const resolvedFileLeakDict = normalizedFileLeakDict || fallbackFileLeakDict;
                     const normalizedPortScanType = String(payload.port_scan_type || 'test').trim().toLowerCase();
                     const normalizedPortCustom = String(payload.port_custom || '')
-                      .replace(/，/g, ',')
+                      .replace(/[，；、]/g, ',')
                       .replace(/\s+/g, ',')
                       .split(',')
                       .map((item) => item.trim())
@@ -1654,7 +1654,7 @@ export function ActionDialog({
                   if (isTaskScheduleCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedTargets = String(payload.target || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
                       .map((item) => item.trim())
@@ -1728,7 +1728,7 @@ export function ActionDialog({
                   if (isAssetScopeCreate && editable) {
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedScopes = String(payload.scope || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
                       .map((item) => item.trim())
@@ -1750,13 +1750,13 @@ export function ActionDialog({
                     const scopeId = String(payload.scope_id || '').trim();
                     const normalizedName = String(payload.name || '').trim();
                     const normalizedScopes = String(payload.scope || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
                       .map((item) => item.trim())
                       .filter((item) => item);
                     const normalizedBlackScopes = String(payload.black_scope || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
                       .map((item) => item.trim())
@@ -1792,7 +1792,7 @@ export function ActionDialog({
                     const normalizedName = String(payload.name || '').trim();
                     const interval = Number(payload.interval || 0);
                     const normalizedTargets = String(payload.domain || '')
-                      .replace(/,/g, '\n')
+                      .replace(/[,，；;、]/g, '\n')
                       .split(/\r?\n/)
                       .flatMap((line) => line.split(/\s+/))
                       .map((item) => item.trim())
@@ -1842,7 +1842,7 @@ export function ActionDialog({
 
                     const normalizedPortScanType = String(getPayloadValue(payload, getPolicyPath('ip_config.port_scan_type')) || 'test').trim().toLowerCase();
                     const normalizedPortCustom = String(getPayloadValue(payload, getPolicyPath('ip_config.port_custom')) || '')
-                      .replace(/，/g, ',')
+                      .replace(/[，；、]/g, ',')
                       .replace(/\s+/g, ',')
                       .split(',')
                       .map((item) => item.trim())
