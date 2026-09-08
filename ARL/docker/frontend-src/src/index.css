@@ -785,6 +785,14 @@
   background-color: color-mix(in oklab, var(--brand-accent) 12%, var(--color-base-100));
 }
 
+/* neutral badge 不能把卡片背景色同时当成文字色，否则深色主题会失去对比度。 */
+.arl-app .badge-neutral {
+  --badge-color: var(--brand-text-muted);
+  color: var(--brand-text-muted);
+  border-color: color-mix(in oklab, var(--brand-text-muted) 32%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--brand-text-muted) 10%, var(--color-base-100));
+}
+
 .arl-app input:not([type='checkbox']):not([type='radio']):disabled,
 .arl-app select:disabled,
 .arl-app textarea:disabled,
