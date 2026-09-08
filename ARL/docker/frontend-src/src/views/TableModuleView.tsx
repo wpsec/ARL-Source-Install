@@ -86,6 +86,7 @@ import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_BUTTON_CLASS,
+  CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
@@ -3108,11 +3109,9 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setHyperlinkEnabled((prev) => !prev)}
-                  className={`${CONSOLE_BUTTON_CLASS} border transition ${
-                    hyperlinkEnabled
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
-                  }`}
+                  className={hyperlinkEnabled
+                    ? `${CONSOLE_BUTTON_CLASS} border border-accent bg-accent/10 text-accent`
+                    : CONSOLE_SECONDARY_BUTTON_CLASS}
                   title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
                 >
                   超链接
@@ -3167,11 +3166,9 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setTaskCompactMode((prev) => !prev)}
-                  className={`${CONSOLE_BUTTON_CLASS} border transition ${
-                    taskCompactMode
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
-                  }`}
+                  className={taskCompactMode
+                    ? `${CONSOLE_BUTTON_CLASS} border border-accent bg-accent/10 text-accent`
+                    : CONSOLE_SECONDARY_BUTTON_CLASS}
                   title={taskCompactMode ? '当前为简洁模式，点击切换完整模式' : '当前为完整模式，点击切换简洁模式'}
                 >
                   {taskCompactMode ? '简洁模式' : '完整模式'}
@@ -3234,11 +3231,9 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={() => setHyperlinkEnabled((prev) => !prev)}
-                className={`btn btn-sm border transition ${
-                  hyperlinkEnabled
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
-                }`}
+                className={hyperlinkEnabled
+                  ? `${CONSOLE_BUTTON_CLASS} border border-accent bg-accent/10 text-accent`
+                  : CONSOLE_SECONDARY_BUTTON_CLASS}
                 title={hyperlinkEnabled ? '已开启超链接，点击关闭' : '默认关闭，点击开启超链接'}
               >
                 超链接
@@ -3679,7 +3674,7 @@ export function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openRiskRecordDetail(module.id, row, rowIndex)}
-                                className="btn btn-ghost btn-xs border border-base-300 text-accent"
+                                className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !text-accent`}
                               >
                                 查看详情
                               </button>
@@ -3693,7 +3688,7 @@ export function TableModuleView({
                               <button
                                 type="button"
                                 onClick={() => openWihEndpointDetail(row, rowIndex)}
-                                className="btn btn-ghost btn-xs border border-base-300 text-accent"
+                                className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !text-accent`}
                               >
                                 查看详情
                               </button>
@@ -3831,7 +3826,7 @@ export function TableModuleView({
                                     event.stopPropagation();
                                     void copyTextToClipboard(copyPayload, '目标');
                                   }}
-                                  className="btn btn-ghost btn-xs shrink-0 border border-base-300 text-accent"
+                                  className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} shrink-0 !text-accent`}
                                   title="复制目标"
                                 >
                                   复制
