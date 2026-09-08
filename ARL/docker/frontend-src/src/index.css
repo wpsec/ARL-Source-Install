@@ -583,7 +583,7 @@
     min-height: 0;
   }
 
-  /* 选中底色由整行 li 承担，按钮保持透明，避免只包住图标和文字的局部色块。 */
+  /* 让按钮和文字共同占满整行，避免选中态出现外层与内层两块不同底色。 */
   .arl-sidebar .arl-sidebar-nav-row {
     width: 100%;
     max-width: none;
@@ -595,7 +595,13 @@
     background-color: transparent;
   }
 
-  .arl-sidebar .arl-sidebar-nav-row-active {
+  .arl-sidebar .arl-sidebar-nav-item > span {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 0%;
+  }
+
+  .arl-sidebar .arl-sidebar-nav-item-active {
     background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
   }
 

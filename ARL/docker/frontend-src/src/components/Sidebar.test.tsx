@@ -39,6 +39,8 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeButton.className).toContain('w-full');
     expect(activeButton.className).toContain('lg:!w-full');
     expect(activeButton.className).toContain('min-w-0');
+    expect(activeButton.className).toContain('arl-sidebar-nav-item-active');
+    expect(activeButton.className).toContain('bg-primary/12');
     expect(activeLabel?.className).toContain('w-full');
     expect(activeLabel?.className).toContain('flex-1');
     expect(activeLabel?.className).toContain('lg:flex');
@@ -46,7 +48,7 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeLabel?.className).toContain('justify-start');
     expect(activeRow?.className).toContain('arl-sidebar-nav-row');
     expect(activeRow?.className).toContain('w-full');
-    expect(activeRow?.className).toContain('bg-primary/12');
+    expect(activeRow?.className).not.toContain('bg-primary/12');
 
     const newScanButton = screen.getByRole('button', { name: '新建任务' });
     expect(newScanButton.className).toContain('btn-primary');
