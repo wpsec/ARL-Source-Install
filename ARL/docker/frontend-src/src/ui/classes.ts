@@ -18,7 +18,7 @@ export const CONSOLE_FILE_INPUT_CLASS =
 
 export const CONSOLE_PAGE_CLASS = 'min-w-0 w-full max-w-[1920px] mx-auto p-4 sm:p-6 xl:p-8 space-y-6';
 
-export const CONSOLE_BUTTON_CLASS = 'btn btn-sm h-10 min-h-10';
+export const CONSOLE_BUTTON_CLASS = 'btn btn-sm h-10 min-h-10 whitespace-nowrap';
 
 export const CONSOLE_PRIMARY_BUTTON_CLASS = `${CONSOLE_BUTTON_CLASS} btn-primary`;
 

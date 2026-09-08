@@ -506,6 +506,11 @@
     line-height: var(--brand-line-height);
   }
 
+  /* 长域名、路径和提示文本不能把响应式表单列撑出容器，避免输入框边缘被裁切。 */
+  .arl-app .grid > * {
+    min-width: 0;
+  }
+
   body {
     @apply bg-brand-bg font-sans antialiased transition-colors duration-300;
     color: var(--brand-text);
