@@ -1,6 +1,6 @@
 # 计划 6：统一 API 解析与 Endpoint Registry 重构
 
-状态：第 1–10 批及整改轮、紧急修复 T0-T6/R6 已完成；第 11 批 T11-0/T11-1 已于 2026-09-07 经当前 HEAD 复核判定 Accept。arm64 compose 全栈第四轮为 `Ran 875/29F/122E/18S`，hygiene `149/149 clean`，native smoke 与双 corpus strict 全绿；amd64 真机全量回归为 `Ran 875/31F/123E/18S`，native smoke、双 corpus strict 和 Rust 基准已执行，最新证据见 [第 9–11 批当前 HEAD 复核](<../review/[Review进行中]计划6第9-11批当前HEAD复核-20260907.md>) 与 [附录 E 发布验收 runbook](<./[未完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md>)。当前仍处于第 11 批发布验收阶段：40/64 目标对照、端到端 ≤5%、完整 production runtime smoke 和发布流程决策未完成；`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow，默认切换仍禁止。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)（URL 观测语义以 §4.16 三层数据契约为准）。
+状态：**开发完成**。第 1–11 批及整改轮、紧急修复 T0-T6/R6 已完成；第 11 批 T11-0/T11-1 已于 2026-09-07 经当前 HEAD 复核判定 Accept。arm64 compose 全栈第四轮为 `Ran 875/29F/122E/18S`，hygiene `149/149 clean`，native smoke 与双 corpus strict 全绿；amd64 真机全量回归为 `Ran 875/31F/123E/18S`，native smoke、双 corpus strict 和 Rust 基准已执行，最新证据见 [第 9–11 批当前 HEAD 复核](<../review/[Review进行中]计划6第9-11批当前HEAD复核-20260907.md>) 与 [附录 E 发布验收 runbook](<./[未完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md>)。当前仍处于第 11 批发布验收阶段：40/64 目标对照、端到端 ≤5%、完整 production runtime smoke 和发布流程决策未完成；`API_UNIFIED_ENABLE` 默认 False、`RUST_ACCEL_API_UNIFIED_MODE` 默认 shadow，默认切换仍禁止。契约冻结面见 [06-附录A](<../completed/[已完成]06-附录A-API契约冻结清单.md>)（URL 观测语义以 §4.16 三层数据契约为准）。
 
 ## 一、总体结论
 
@@ -885,7 +885,7 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 ### 数据与状态边界收口（2026-09-06，第 8 批后紧急修复轮）
 
 第 8 批代码提交后独立复审与用户裁定产生本专项，执行依据为
-`docs/plan/[进行中]紧急修复-统一发现系统数据与状态边界收口.md`（T0-T6），要点：
+`docs/plan/[开发完成]紧急修复-统一发现系统数据与状态边界收口.md`（T0-T6），要点：
 
 - T0（本节所属提交）：契约冻结——附录A §4.16 三层数据契约生效，§4.4/§4.12 URL 语义
   加改判指针，本计划 §2.2/§4.2/§4.3 同步；原 Review 的"parent_target 脱敏"项撤销。

@@ -1,8 +1,8 @@
 # 04 计划4：UI 体系重构（daisyUI 组件层 + 骨架拆分 + 性能）
 
-状态：**执行中——Step1/2 与 Phase 0-4 代码面完成（2026-09-04），双架构镜像构建链已验证，UI 级容器 smoke、页面联调与视觉走查待完成**。启动前提：**x86 构建与基础 smoke 验证已满足**；64 目标性能门禁与生产部署验收不前置，仍按总计划排在全部重构最后执行。
+状态：**开发完成**——Step1/2 与 Phase 0-4 代码面已完成，双架构镜像构建链已验证；UI 级容器 smoke、页面联调与视觉走查仍待用户 review。64 目标性能门禁与生产部署验收不前置，仍按总计划执行。
 
-> 执行期勘误（2026-09-04）：①"现状诊断"节的 *frontend-src 无 package-lock.json* 表述过期——lock 一直存在于磁盘但被 `ARL/.gitignore` 屏蔽，现已加例外纳入 git，Dockerfile `有 lock 即走 npm ci` 分支自动生效；②可切换主题实际为 5 套（sandstone 默认/midnight/slate/nord/titanium，见 ThemeContext），不止 brand/midnight 两套，daisy 主题注册按 5+1（brand 兜底 :root）落地，AA 验收覆盖全部 6 套；③docs/03 路径已迁至 `docs/plan/[进行中]03-计划3-实施批次与验收回归.md`。执行记录与指标对照见文末"执行记录"节。
+> 执行期勘误（2026-09-04）：①"现状诊断"节的 *frontend-src 无 package-lock.json* 表述过期——lock 一直存在于磁盘但被 `ARL/.gitignore` 屏蔽，现已加例外纳入 git，Dockerfile `有 lock 即走 npm ci` 分支自动生效；②可切换主题实际为 5 套（sandstone 默认/midnight/slate/nord/titanium，见 ThemeContext），不止 brand/midnight 两套，daisy 主题注册按 5+1（brand 兜底 :root）落地，AA 验收覆盖全部 6 套；③docs/03 路径已迁至 `docs/plan/[开发完成]03-计划3-实施批次与验收回归.md`。执行记录与指标对照见文末"执行记录"节。
 
 ## 决策结论（TL;DR）
 

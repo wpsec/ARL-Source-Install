@@ -24,7 +24,7 @@ bash scripts/lighthouse-ui.sh     # 静态壳 Lighthouse 基线，阈值 lightho
 
 证据输出到 `reports/`（已 gitignore）。浏览器阶段在线模式见脚本头注释（`UI_SMOKE_URL`，用于授权环境的 Modal 链路复验）。
 
-## 目录结构（docs/plan/[进行中]04 计划4 重构后）
+## 目录结构（docs/plan/[开发完成]04 计划4 重构后）
 
 ```
 src/
