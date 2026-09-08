@@ -83,7 +83,11 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     renderDialog(newClient());
 
     const footer = await screen.findByTestId('action-dialog-footer');
+    const content = screen.getByTestId('action-dialog-content');
+    expect(content.className).toContain('min-w-0');
+    expect(content.className).toContain('min-h-0');
     expect(footer.className).toContain('shrink-0');
+    expect(footer.className).toContain('min-w-0');
     expect(footer.className).toContain('border-t');
     expect(footer.className).toContain('flex-col');
     expect(footer.parentElement?.classList.contains('arl-modal-box')).toBe(true);

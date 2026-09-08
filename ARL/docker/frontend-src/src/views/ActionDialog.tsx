@@ -568,7 +568,7 @@ export function ActionDialog({
       boxClass={`w-full ${isTaskCreate || isPolicyAction || isTaskScheduleCreate ? 'max-w-5xl!' : 'max-w-3xl!'}`}
     >
         <div className="shrink-0 px-4 py-4 border-b border-base-300 bg-base-200 flex items-center justify-between sm:px-6">
-          <div>
+          <div className="min-w-0">
             <h4 className="text-lg font-black">{action.label}</h4>
             <p className="text-xs text-content-muted font-mono mt-1">
               {action.method} {action.path}
@@ -579,7 +579,7 @@ export function ActionDialog({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden space-y-4 p-4 sm:p-6">
+        <div data-testid="action-dialog-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden space-y-4 p-4 sm:p-6">
           {action.description ? <p className="text-sm text-content-muted">{action.description}</p> : null}
 
           {action.fileFieldName ? (
@@ -598,7 +598,7 @@ export function ActionDialog({
           ) : null}
 
           {isTaskCreate ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">任务名称</label>
                 <input
@@ -753,7 +753,7 @@ export function ActionDialog({
               </div>
             </div>
           ) : isFofaAction ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               {isFofaSubmitAction ? (
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-content-muted">任务名称</label>
@@ -853,7 +853,7 @@ export function ActionDialog({
               ) : null}
             </div>
           ) : isTaskScheduleCreate ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-sm font-semibold text-content-muted">名称</label>
@@ -997,7 +997,7 @@ export function ActionDialog({
               ) : null}
             </div>
           ) : isGithubSchedulerAction ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-content-muted">任务名</label>
                 <input
@@ -1055,7 +1055,7 @@ export function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeCreate ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">资产类别</label>
                 <div className="relative">
@@ -1102,7 +1102,7 @@ export function ActionDialog({
               </div>
             </div>
           ) : isAssetScopeAddScope || isAssetScopeUpdate ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">资产组名称</label>
                 <input
@@ -1141,7 +1141,7 @@ export function ActionDialog({
               ) : null}
             </div>
           ) : isAssetScopeAddScheduler ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">范围</label>
                 <textarea
@@ -1198,7 +1198,7 @@ export function ActionDialog({
               ) : null}
             </div>
           ) : (isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? (
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-content-muted">运行间隔</label>
                 <div className="relative">
@@ -1219,7 +1219,7 @@ export function ActionDialog({
               </div>
             </div>
           ) : isPolicyAction ? (
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-content-muted">策略名称</label>
@@ -1466,7 +1466,7 @@ export function ActionDialog({
               ) : null}
             </div>
           ) : (
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
+            <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden custom-scrollbar pl-1 pr-1">
               {displayFields.map((field) => {
                 const value = field.value;
                 const disabled = !editable;
@@ -1550,7 +1550,7 @@ export function ActionDialog({
 
         <div
           data-testid="action-dialog-footer"
-          className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
+          className="shrink-0 min-w-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
         >
             <button
               onClick={onClose}
