@@ -31,6 +31,13 @@ const CREATE_TASK_ACTION = {
   path: '/task/',
 } as any;
 
+const GENERIC_ARRAY_ACTION = {
+  id: 'generic_array_action',
+  label: '通用动作',
+  method: 'POST',
+  path: '/generic/',
+} as any;
+
 function renderDialog(client: QueryClient) {
   return render(
     <QueryClientProvider client={client}>
@@ -38,6 +45,20 @@ function renderDialog(client: QueryClient) {
         token="tk-action"
         action={CREATE_TASK_ACTION}
         initialPayload={{}}
+        onClose={vi.fn()}
+        onSubmit={vi.fn(async () => {})}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+function renderGenericArrayDialog(client: QueryClient) {
+  return render(
+    <QueryClientProvider client={client}>
+      <ActionDialog
+        token="tk-action"
+        action={GENERIC_ARRAY_ACTION}
+        initialPayload={{ targets: ['alpha.example', 'beta.example'] }}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => {})}
       />
@@ -66,6 +87,12 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     expect(footer.className).toContain('border-t');
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '执行' })).toBeTruthy();
+  });
+
+  it('通用数组字段以多行文本框回显', () => {
+    renderGenericArrayDialog(newClient());
+    const textarea = screen.getByPlaceholderText('多个值请换行输入') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('alpha.example\nbeta.example');
   });
 
   it('水合选项列表并按“大字典优先”补齐 payload 默认值', async () => {

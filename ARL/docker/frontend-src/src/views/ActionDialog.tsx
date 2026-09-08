@@ -1501,19 +1501,19 @@ export function ActionDialog({
                         className={CONSOLE_INPUT_CLASS}
                       />
                     ) : isComplex ? (
-                      <input
-                        value={Array.isArray(value) ? value.join(',') : String(value ?? '')}
+                      <textarea
+                        value={Array.isArray(value) ? value.join('\n') : String(value ?? '')}
                         disabled={disabled}
                         onChange={(event) => {
                           const nextValues = event.target.value
-                            .split(',')
+                            .split(/[\r\n,]+/)
                             .map((item) => item.trim())
                             .filter((item) => item);
                           setFormPayload((prev) => updatePayloadValue(prev, field.path, nextValues));
                           setError('');
                         }}
-                        placeholder="多个值请用逗号分隔"
-                        className={CONSOLE_INPUT_CLASS}
+                        placeholder="多个值请换行输入"
+                        className={`${CONSOLE_TEXTAREA_MONO_CLASS} min-h-[96px] leading-relaxed`}
                       />
                     ) : (
                       <input
