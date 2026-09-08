@@ -483,6 +483,22 @@
   .arl-modal-box > .border-b,
   .arl-modal-box > .border-t {
     flex-shrink: 0;
+    flex-wrap: wrap;
+    row-gap: 0.75rem;
+  }
+
+  /* 弹窗底栏是共享结构；窄屏让操作按钮各占一行，避免文字或点击区域被挤出视口。 */
+  @media (max-width: 640px) {
+    .arl-modal-box > .border-b,
+    .arl-modal-box > .border-t {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+
+    .arl-modal-box > .border-t > .btn {
+      flex: 1 1 100%;
+      width: 100%;
+    }
   }
 
   .arl-modal-box > .overflow-y-auto {
