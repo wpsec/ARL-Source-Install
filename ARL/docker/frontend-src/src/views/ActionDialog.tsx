@@ -9,6 +9,7 @@ import {
   humanizeField,
   toDatetimeLocalValue,
 } from '../domain/format';
+import { formatCellArrayValue } from '../domain/cells';
 import { flattenPayloadFields, getPayloadValue, updatePayloadValue } from '../domain/payload';
 import type {JsonValue, ModuleAction} from '../domain/types';
 import {
@@ -1502,7 +1503,7 @@ export function ActionDialog({
                       />
                     ) : isComplex ? (
                       <textarea
-                        value={Array.isArray(value) ? value.join('\n') : String(value ?? '')}
+                        value={Array.isArray(value) ? formatCellArrayValue(value) : String(value ?? '')}
                         disabled={disabled}
                         onChange={(event) => {
                           const nextValues = event.target.value
