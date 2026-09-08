@@ -583,16 +583,20 @@
     min-height: 0;
   }
 
-  /* 菜单项不用 DaisyUI btn 的内部背景层，避免文字区和整行出现两种底色。 */
+  /* 选中底色由整行 li 承担，按钮保持透明，避免只包住图标和文字的局部色块。 */
+  .arl-sidebar .arl-sidebar-nav-row {
+    width: 100%;
+    max-width: none;
+  }
+
   .arl-sidebar .arl-sidebar-nav-item {
     width: 100%;
     max-width: none;
     background-color: transparent;
   }
 
-  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
+  .arl-sidebar .arl-sidebar-nav-row-active {
     background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
-    color: var(--color-primary);
   }
 
   /* ghost 信息在暗色主题中不能依赖透明背景和浏览器默认文字色。 */

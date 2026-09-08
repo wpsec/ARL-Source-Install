@@ -31,6 +31,7 @@ describe('Sidebar 整行菜单布局', () => {
 
     const activeButton = screen.getByRole('button', { name: '仪表盘' });
     const activeLabel = activeButton.querySelector('span');
+    const activeRow = activeButton.parentElement;
 
     expect(activeButton.getAttribute('aria-current')).toBe('page');
     expect(activeButton.className).toContain('arl-sidebar-nav-item');
@@ -43,7 +44,9 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeLabel?.className).toContain('lg:flex');
     expect(activeLabel?.className).toContain('self-stretch');
     expect(activeLabel?.className).toContain('justify-start');
-    expect(activeButton.parentElement?.className).toContain('w-full');
+    expect(activeRow?.className).toContain('arl-sidebar-nav-row');
+    expect(activeRow?.className).toContain('w-full');
+    expect(activeRow?.className).toContain('bg-primary/12');
   });
 
   it('非选中项不复用选中态标记', () => {

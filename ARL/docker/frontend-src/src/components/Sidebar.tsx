@@ -100,14 +100,22 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
             </h3>
             <ul className="flex w-full list-none flex-col space-y-1 p-0">
               {group.items.map((item) => (
-                <li key={item.id} className="w-full">
+                <li
+                  key={item.id}
+                  className={cn(
+                    "arl-sidebar-nav-row w-full rounded-box",
+                    activeView === item.id
+                      ? "arl-sidebar-nav-row-active bg-primary/12 shadow-sm ring-1 ring-inset ring-primary/25"
+                      : "hover:bg-base-300/60",
+                  )}
+                >
                   <button
                     onClick={() => onViewChange(item.id)}
                     className={cn(
-                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
+                      "arl-sidebar-nav-item group flex min-h-10 w-full max-w-none min-w-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent bg-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:!w-full lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
-                        ? "bg-primary/12 text-primary font-semibold shadow-sm ring-1 ring-inset ring-primary/25"
-                        : "bg-transparent text-content-muted hover:bg-base-300/60 hover:text-base-content",
+                        ? "text-primary font-semibold"
+                        : "text-content-muted hover:bg-transparent hover:text-base-content",
                     )}
                     title={item.label}
                     aria-label={item.label}
