@@ -29,6 +29,12 @@ import {
 } from '../ui/classes';
 
 const MONITOR_POLL_INTERVAL_MS = 3000;
+const CHART_TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: 'var(--color-base-200)',
+  border: '1px solid var(--color-base-300)',
+  borderRadius: 'var(--radius-box)',
+  color: 'var(--brand-text)',
+};
 
 function fallbackTimestamp() {
   return new Date().toLocaleString('zh-CN', { hour12: false });
@@ -246,7 +252,7 @@ export function SystemMonitorView({ token }: { token: string }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
                 <XAxis dataKey="time" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
+                <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} labelStyle={{ color: 'var(--brand-text)' }} itemStyle={{ color: 'var(--brand-text)' }} />
                 <Line type="monotone" dataKey="cpu" stroke="var(--brand-accent)" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="ram" stroke="var(--brand-secondary)" strokeWidth={2.5} dot={false} />
                 <Line type="monotone" dataKey="disk" stroke="var(--brand-warning)" strokeWidth={2.5} dot={false} />
@@ -275,7 +281,7 @@ export function SystemMonitorView({ token }: { token: string }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
                 <XAxis dataKey="time" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
+                <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} labelStyle={{ color: 'var(--brand-text)' }} itemStyle={{ color: 'var(--brand-text)' }} />
                 <Area type="monotone" dataKey="net_in" stroke="var(--brand-secondary)" fillOpacity={1} fill="url(#systemMonitorNetIn)" strokeWidth={2.5} />
                 <Area type="monotone" dataKey="net_out" stroke="var(--brand-accent)" fillOpacity={1} fill="url(#systemMonitorNetOut)" strokeWidth={2.5} />
                 </AreaChart>

@@ -64,6 +64,13 @@ const EMPTY_STATS = {
   new_assets_today: 0,
 };
 
+const CHART_TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: 'var(--color-base-200)',
+  border: '1px solid var(--color-base-300)',
+  borderRadius: 'var(--radius-box)',
+  color: 'var(--brand-text)',
+};
+
 export function DashboardView({
   token,
   onOpenModule,
@@ -426,7 +433,7 @@ export function DashboardView({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" vertical={false} />
                 <XAxis dataKey="name" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} dy={10} />
                 <YAxis stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
+                <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} labelStyle={{ color: 'var(--brand-text)' }} itemStyle={{ color: 'var(--brand-text)' }} />
                 <Area type="monotone" dataKey="assets" stroke="var(--brand-accent)" strokeWidth={3} fillOpacity={1} fill="url(#colorAssetsTrend)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -443,7 +450,7 @@ export function DashboardView({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--brand-border)" horizontal={false} />
                 <XAxis type="number" hide />
                 <YAxis dataKey="name" type="category" stroke="var(--brand-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'var(--color-base-200)', border: '1px solid var(--color-base-300)', borderRadius: 'var(--radius-box)' }} />
+                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={CHART_TOOLTIP_CONTENT_STYLE} labelStyle={{ color: 'var(--brand-text)' }} itemStyle={{ color: 'var(--brand-text)' }} />
                 <Bar
                   dataKey="value"
                   radius={[8, 8, 8, 8]}
