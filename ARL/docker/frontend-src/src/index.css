@@ -240,7 +240,7 @@
   --theme-swatch-slate: #71d0ff;
   --theme-swatch-nord: #7de2d0;
   --theme-swatch-titanium: #f3b96a;
-  --theme-swatch-sandstone: #a45d22;
+  --theme-swatch-sandstone: #9b4f1c;
   --brand-card-surface-alpha: 0.74;
   --brand-card-elevated-alpha: 0.84;
   --brand-shell-alpha: 0.78;
@@ -390,13 +390,13 @@
   --brand-card: #faf9f6;
   --brand-card-rgb: 250, 249, 246;
   --brand-border: #cec4b8;
-  --brand-accent: #a45d22;
+  --brand-accent: #9b4f1c;
   --brand-accent-rgb: 164, 93, 34;
   --brand-accent-strong: #7f4316;
   --brand-accent-contrast: #ffffff;
   --brand-secondary: #2f6f80;
   --brand-secondary-rgb: 47, 111, 128;
-  --brand-warning: #b45309;
+  --brand-warning: #a84a08;
   --brand-warning-rgb: 180, 83, 9;
   --brand-danger: #b4233b;
   --brand-danger-rgb: 180, 35, 59;
