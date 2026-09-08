@@ -553,6 +553,11 @@
     min-width: 0;
   }
 
+  .arl-app .arl-page-header-actions > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   /* 配置键、接口路径等无空格文本不能把标签或信息卡片撑出容器。 */
   .arl-app .font-mono {
     overflow-wrap: anywhere;

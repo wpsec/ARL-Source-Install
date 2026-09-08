@@ -19,7 +19,7 @@ export function PageHeader({
         <h1 className="break-words text-2xl font-black tracking-tight">{title}</h1>
         {description ? <p className="min-w-0 max-w-3xl break-words text-sm text-content-muted mt-1.5">{description}</p> : null}
       </div>
-      {actions ? <div className="flex min-w-0 w-full max-w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">{actions}</div> : null}
+      {actions ? <div className="arl-page-header-actions flex min-w-0 w-full max-w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">{actions}</div> : null}
     </header>
   );
 }
