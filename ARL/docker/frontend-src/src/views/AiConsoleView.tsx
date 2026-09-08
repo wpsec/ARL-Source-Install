@@ -1698,13 +1698,13 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
     <div className={CONSOLE_PAGE_CLASS}>
       <div className={`${CONSOLE_PANEL_CLASS} p-5 space-y-5`}>
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-bold tracking-wide">AI管理</div>
           <div className="text-xs text-content-muted mt-1">
             统一管理 AI 提供方、默认模型选择、对话参数与 SOP。每家 AI 独立配置，运行期每次仅使用一个默认模型。
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {
@@ -1833,8 +1833,8 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               apiKeyUrl: '',
             };
             return (
-              <div key={provider.id} className="rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
-                <div className="flex items-start justify-between gap-2">
+              <div key={provider.id} className="min-w-0 rounded-box border border-base-300 bg-base-100 p-3 space-y-3">
+                <div className="flex min-w-0 items-start justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={`h-10 w-10 rounded-box border flex items-center justify-center text-[11px] font-black tracking-wide ${providerMeta.logoClass}`}>
                       {providerMeta.logo}
@@ -1846,7 +1846,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                       </div>
                     </div>
                   </div>
-                  <div className={`badge badge-soft gap-1 text-[11px] ${
+                  <div className={`badge badge-soft shrink-0 gap-1 text-[11px] ${
                     configured
                       ? 'badge-success'
                       : 'badge-ghost border border-base-300'
@@ -1856,9 +1856,9 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   </div>
                 </div>
                 <div className="text-[11px] text-content-muted space-y-1">
-                  <div className="truncate">分析模型：{profile?.model || provider.default_model || '-'}</div>
-                  <div className="truncate">思考模型：{profile?.reasoning_model || provider.default_reasoning_model || '-'}</div>
-                  <div className="font-mono truncate">API Base URL：{profile?.base_url || provider.base_url || '-'}</div>
+                  <div className="min-w-0 truncate">分析模型：{profile?.model || provider.default_model || '-'}</div>
+                  <div className="min-w-0 truncate">思考模型：{profile?.reasoning_model || provider.default_reasoning_model || '-'}</div>
+                  <div className="min-w-0 font-mono truncate">API Base URL：{profile?.base_url || provider.base_url || '-'}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -2449,7 +2449,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 <div className={`h-8 w-8 rounded-box border flex items-center justify-center text-[10px] font-black tracking-wide ${providerConfigMeta.logoClass}`}>
                   {providerConfigMeta.logo}
                 </div>
-                <div className="text-sm font-black tracking-wide truncate">配置 {providerConfigLabel}</div>
+                <div className="min-w-0 text-sm font-black tracking-wide truncate">配置 {providerConfigLabel}</div>
               </div>
               <button
                 type="button"
