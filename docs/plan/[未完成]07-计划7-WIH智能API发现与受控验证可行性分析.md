@@ -444,7 +444,8 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 - 证据图同步计数和节点/边数量进入现有任务诊断快照，保持仅诊断用途，不写入 Mongo 结果文档。
 - 已实现 `wih_strategy.py`：将画像、显式开关、任务预算和低收益/WAF 指标映射为确定性 Collector 决策；browser runtime 只有在画像建议且开关显式开启时才接收目标，L2/L3 不会自动发送专门验证请求。
 - 已实现 `controlled_verification_policy.py`：统一 L0/L1/L2/L3 决策，GET/HEAD 为默认 L1，POST 必须同时具备只读标记和 allowlist，写入/专门方法进入 skipped/L3 语义；WIH endpoint probe 已接入该策略。
-- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；认证边界对比、HAR/代理导入、协议 Collector 和真实 40/64 门禁仍未实现或未运行。
+- 已实现 `wih_har_import.py`：将 HAR 公开观测转换为统一 Endpoint Registry 资产，保留方法、参数名、请求体类型和鉴权类型摘要；URL 敏感 query 值、Header/Cookie 值和请求体不落资产，已观测项进入 `covered` 不再主动探测。
+- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；认证边界对比、代理导入、协议 Collector 和真实 40/64 门禁仍未实现或未运行。
 - 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，策略层仅对 browser runtime 做有界、显式开关控制，不改变其他默认扫描阶段和结果写回语义。
 
 - [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；

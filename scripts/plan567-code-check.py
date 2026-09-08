@@ -40,6 +40,7 @@ PLAN_TESTS = {
         "test_discovery_observation_snapshot",
         "test_wih_strategy",
         "test_controlled_verification_policy",
+        "test_wih_har_import",
         "test_wih_endpoint_probe_cache",
         "test_wih_orchestrator",
     ),
