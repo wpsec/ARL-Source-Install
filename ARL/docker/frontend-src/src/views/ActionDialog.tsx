@@ -1481,7 +1481,7 @@ export function ActionDialog({
                       {!isTaskCreate && !isPolicyAction ? <span className="ml-2 text-[10px] font-mono opacity-70">{field.path}</span> : null}
                     </label>
                     {isBoolean ? (
-                      <label className="flex items-center justify-between rounded-box border border-base-300 bg-base-100 px-3 py-2.5 text-sm">
+                      <label className={`${CONSOLE_CHECKBOX_CARD_CLASS} justify-between`}>
                         <span className="font-semibold">{value ? '启用' : '关闭'}</span>
                         <input
                           type="checkbox"
