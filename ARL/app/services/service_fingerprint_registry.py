@@ -21,6 +21,14 @@ from app.config import Config
 logger = logging.getLogger(__name__)
 
 SUPPORTED_SERVICE_FORMATS = {"arl_service_fingerprint_v1"}
+LOW_CONF_SERVICE_NAMES = frozenset({
+    "",
+    "unknown",
+    "tcpwrapped",
+    "wrapped",
+    "ssl/unknown",
+    "unrecognized",
+})
 
 _service_registry_instance = None
 _service_registry_lock = threading.Lock()
@@ -101,16 +109,16 @@ class ServiceFingerprintRegistry:
         """
         candidates = []
         scheme_key = str(npoc_scheme or "").strip().lower()
-        if scheme_key:
+        if scheme_key and scheme_key not in LOW_CONF_SERVICE_NAMES:
             candidates.append({"source": "npoc_scheme", "value": scheme_key,
                                "service": self._canonical_key(scheme_key), "weight": 100})
         nmap_key = str(nmap_service or "").strip().lower()
-        if nmap_key:
+        if nmap_key and nmap_key not in LOW_CONF_SERVICE_NAMES:
             candidates.append({"source": "nmap_service_name", "value": nmap_key,
                                "service": self._canonical_key(nmap_key), "weight": 90})
         product_key = str(nmap_product or "").strip().lower()
         if product_key and self.ok:
-            hit = self.alias_map.get(product_key)
+            hit = self._lookup_product(product_key)
             if hit:
                 candidates.append({"source": "nmap_product_version", "value": product_key,
                                    "service": hit["name"], "weight": 80})
@@ -143,6 +151,18 @@ class ServiceFingerprintRegistry:
                         "sources": ["port_only"], "conflict": None}
 
         return {"service": "", "confirmed": False, "confidence": 0, "sources": [], "conflict": None}
+
+    def _lookup_product(self, product_key):
+        """匹配精确产品名及其带版本的 Nmap 提示。"""
+        hit = self.alias_map.get(product_key)
+        if hit:
+            return hit
+        for alias, candidate in sorted(self.alias_map.items(), key=lambda item: len(item[0]), reverse=True):
+            if candidate["priority"] != "nmap_product_version":
+                continue
+            if product_key.startswith(alias + " ") or product_key.startswith(alias + "/"):
+                return candidate
+        return None
 
     def _canonical_key(self, key):
         if not self.ok:

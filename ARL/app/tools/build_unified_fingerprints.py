@@ -189,7 +189,8 @@ class Merger:
 # --- 源加载器 ---
 
 def load_webapp(path, merger):
-    data = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as source:
+        data = json.load(source)
     for name, rule in data.items():
         branches = []
         for field, key in (("header", "headers"), ("body", "html"), ("title", "title")):
@@ -203,7 +204,8 @@ def load_webapp(path, merger):
 
 
 def load_finger_json(path, merger):
-    entries = json.load(open(path, encoding="utf-8"))["fingerprint"]
+    with open(path, encoding="utf-8") as source:
+        entries = json.load(source)["fingerprint"]
     for it in entries:
         name = it.get("cms") or ""
         method = it.get("method")
@@ -225,7 +227,8 @@ def load_finger_json(path, merger):
 
 
 def _load_human_rule_source(path, source, merger):
-    data = json.load(open(path, encoding="utf-8"))
+    with open(path, encoding="utf-8") as source_file:
+        data = json.load(source_file)
     entries = data.get("fingerprint", data) if isinstance(data, dict) else data
     count = 0
     for it in entries:
@@ -347,7 +350,8 @@ def validate_service_document(doc):
 
 
 def sha256_file(path):
-    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+    with open(path, "rb") as source:
+        return hashlib.sha256(source.read()).hexdigest()
 
 
 def serialize_document(doc, pretty=False):
@@ -367,7 +371,6 @@ def serialize_document(doc, pretty=False):
 def atomic_write_json(path, doc, compress=False, pretty=False):
     """临时文件 + fsync + last-good 备份 + os.replace；任何异常都不留半成品目标文件。"""
     payload = serialize_document(doc, pretty=pretty)
-    mode = "wb" if compress else "w"
     target = path + ".gz" if compress else path
     import gzip
     raw = payload.encode("utf-8")
@@ -375,8 +378,9 @@ def atomic_write_json(path, doc, compress=False, pretty=False):
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".fpbuild_", suffix=".json")
     try:
         if compress:
-            with gzip.GzipFile(fileobj=os.fdopen(fd, "wb"), mode="wb", compresslevel=9) as f:
-                f.write(raw)
+            with os.fdopen(fd, "wb") as raw_file:
+                with gzip.GzipFile(fileobj=raw_file, mode="wb", compresslevel=9) as f:
+                    f.write(raw)
         else:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)
@@ -481,7 +485,10 @@ def main(argv=None):
 
     site_target = args.site_out + (".gz" if args.compress else "")
     service_target = args.service_out + (".gz" if args.compress else "")
-    site_backup = open(site_target, "rb").read() if os.path.isfile(site_target) else None
+    site_backup = None
+    if os.path.isfile(site_target):
+        with open(site_target, "rb") as previous_site:
+            site_backup = previous_site.read()
     try:
         atomic_write_json(args.site_out, site, compress=args.compress, pretty=args.pretty)
         atomic_write_json(args.service_out, service_doc, compress=args.compress, pretty=args.pretty)

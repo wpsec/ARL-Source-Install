@@ -22,14 +22,18 @@ SERVICE_GZ = ROOT_DIR / "app" / "dicts" / "service_fingerprints.json.gz"
 # 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
 # 理念保留。
 _HYGIENE_SHARED_SLOTS = (
-    "app", "app.utils", "app.config", "app.modules",
-    "app.services", "app.services.fingerprints", "app.tools",
+    # 本测试只临时覆盖 app/app.config；不要恢复 app.utils，避免在同进程
+    # 运行 site registry 测试时覆盖其 Mongo fake。
+    "app", "app.config", "app.services", "app.services.fingerprints", "app.tools",
 )
 _HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+_HYGIENE_OWNED = {}
 
 
 def tearDownModule():
     for _name, _original in _HYGIENE_PRE.items():
+        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
+            continue
         if _original is None:
             sys.modules.pop(_name, None)
         else:
@@ -54,6 +58,11 @@ def bootstrap():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    _HYGIENE_OWNED.update({
+        name: sys.modules.get(name)
+        for name in _HYGIENE_SHARED_SLOTS
+        if sys.modules.get(name) is not None
+    })
     return module, config_module.Config
 
 
@@ -98,6 +107,12 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
         self.assertEqual(res["confidence"], 90)
         self.assertTrue(res["confirmed"])
 
+    def test_nmap_product_version_is_normalized(self):
+        res = self.registry.normalize_result(nmap_product="OpenSSH 9.6p1")
+        self.assertEqual(res["service"], "ssh")
+        self.assertEqual(res["confidence"], 80)
+        self.assertEqual(res["sources"], ["nmap_product_version"])
+
     def test_port_only_is_weak_candidate(self):
         res = self.registry.normalize_result(port=3306, proto="tcp")
         self.assertEqual(res["service"], "mysql")
@@ -112,8 +127,9 @@ class ServiceFingerprintRegistryTest(unittest.TestCase):
 
     def test_unknown_no_conclusion(self):
         res = self.registry.normalize_result(nmap_service="unknown", port=None)
-        # unknown 不在别名表 → passthrough "unknown"：由调用方保留 pending 语义（confirmed 但可低置信）
-        self.assertIn(res["service"], ("", "unknown"))
+        self.assertEqual(res["service"], "")
+        self.assertFalse(res["confirmed"])
+        self.assertEqual(res["sources"], [])
 
     def test_missing_file_passthrough(self):
         reg = MOD.ServiceFingerprintRegistry(str(ROOT_DIR / "app" / "dicts" / "no_such_service.json.gz"))

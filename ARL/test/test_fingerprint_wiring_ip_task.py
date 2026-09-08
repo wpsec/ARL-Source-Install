@@ -54,8 +54,10 @@ class FingerprintWiringIpTaskTest(unittest.TestCase):
         self.assertEqual(port_info["service_name"], "https")
         self.assertEqual(port_info["service_confidence"], 100)
         self.assertEqual(port_info["service_sources"], ["npoc_scheme"])
-        self.assertTrue(port_info.get("service_conflict"), "unknown 与 https 并存应留冲突证据")
-        self.assertEqual(port_info["service_conflict"]["rejected"][0]["service"], "unknown")
+        self.assertIsNone(
+            port_info.get("service_conflict"),
+            "unknown 不是有效识别结论，不应制造虚假冲突",
+        )
 
     def test_normalize_scheme_goes_through_canonical_file(self):
         task = self._fake_task({})

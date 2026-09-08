@@ -4,7 +4,7 @@
 - v1 正确性优先：全量判定保证零遗漏；icon_hash 精确桶/统计桶先行建设，
   真正的剪枝召回（AC 自动机/Rust 批量）在性能阶段接入，且必须先过 §2.3.1
   一致性门禁（索引结果==全量结果）。任何快路径都不得改变命中集合。
-- 证据判断零新轮子：规则以 canonical_rule 走运行时同一 parse/evaluate（FingerPrint），
+- 证据判断零新轮子：规则以规范 match 结构执行 all/any/excludes，
   置信度直读编译产物（编译期已做合并与 bonus，运行时不再二次 merge）。
 - 失败语义：文件缺失/损坏/format 不符 → ok=False，调用方必须显式降级 legacy，
   禁止空规则静默启动（05 第4阶段冷启动约束）。
@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 
 from app.config import Config
@@ -25,7 +26,6 @@ from app.fp_common import (
     parse_human_rule,
     to_human_rule,
 )
-from app.services.fingerprint import FingerPrint
 from app.services.fingerprint_cache import split_fingerprint_result_items
 
 # 架构 Review 轮 2：解析函数在 fp_common 零依赖公共层（单一实现，05 §零.1）。
@@ -109,14 +109,12 @@ class SiteFingerprintRegistry:
         return self
 
     def _build_rule(self, item):
-        canonical = item.get("canonical_rule") or ""
         return {
             "id": item.get("id", ""),
             "name": item.get("name", ""),
             "confidence": int(item.get("confidence", 70)),
             "sources": list(item.get("sources", [])),
             "match": item.get("match", {}),
-            "fp": FingerPrint(item.get("name", ""), canonical),
         }
 
     def _fail(self, reason):
@@ -167,7 +165,6 @@ class SiteFingerprintRegistry:
                         existing["sources"].append("mongo_user")
                     existing["canonical_rule"] = to_human_rule(existing["match"])
                     existing["confidence"] = int(estimate_human_rule_confidence(existing["canonical_rule"]))
-                    existing["fp"] = FingerPrint(existing["name"], existing["canonical_rule"])
                 overlay += 1
         except Exception as exc:
             # Mongo 不可达：基线照常服务（冷启动兜底），显式记录不静默
@@ -261,24 +258,51 @@ class SiteFingerprintRegistry:
         items = []
         matched_ids = set()
         for rule in self.candidate_indices(variables):
-            if self._rule_hits(rule, variables):
+            matched, fields = self._rule_result(rule, variables)
+            if matched:
                 matched_ids.add(rule["id"])
-                items.append(self._to_item(rule, variables))
+                items.append(self._to_item(rule, fields))
         for rule in self.rules:
             if rule["id"] in matched_ids:
                 continue
-            if self._rule_hits(rule, variables):
-                items.append(self._to_item(rule, variables))
+            matched, fields = self._rule_result(rule, variables)
+            if matched:
+                items.append(self._to_item(rule, fields))
         return items
 
     def _rule_hits(self, rule, variables):
+        matched, _fields = self._rule_result(rule, variables)
+        return matched
+
+    def _rule_result(self, rule, variables):
         try:
-            return bool(rule["fp"].identify(variables))
+            return self._evaluate_rule(rule, variables)
         except Exception as exc:
-            # pyparsing 偶发解析失败：与运行时旧链一致跳过该规则（identify_detail 同款 except 语义），
-            # 但必须计数带 rule id（Review 轮 2 闭环 05 §2.6 观测预留）。
+            # 无效 regex 等单条规则异常不能中断整批识别，但必须计数带 rule id。
             self._record_rule_error(rule, exc)
-            return False
+            return False, []
+
+    def _evaluate_rule(self, rule, variables):
+        """按规范 match 结构判定 all/any/excludes，并返回实际命中字段。
+
+        运行时不能复用 legacy pyparsing evaluator：规范文件允许 regex 和
+        not_equals，而 legacy evaluator 对这两类规则的语义并不完整。
+        """
+        match = rule.get("match") or {}
+        matched_fields = set()
+        branch_matched = False
+        for branch in match.get("any", []):
+            conditions = branch.get("all", [])
+            if all(self._condition_hits(cond, variables) for cond in conditions):
+                branch_matched = True
+                matched_fields.update(str(cond.get("field", "")) for cond in conditions)
+                break
+        if not branch_matched:
+            return False, []
+
+        if any(self._condition_hits(cond, variables) for cond in match.get("excludes", [])):
+            return False, []
+        return True, sorted(field for field in matched_fields if field)
 
     def _record_rule_error(self, rule, exc):
         rid = str(rule.get("id") or rule.get("name") or "?")[:120]
@@ -316,30 +340,28 @@ class SiteFingerprintRegistry:
                 "overlay_error": self._overlay_error,
             }
 
-    def _to_item(self, rule, variables):
-        fields = []
-        for branch in rule["match"].get("any", []):
-            for cond in branch.get("all", []):
-                if self._cond_hits(cond, variables):
-                    fields.append(cond["field"])
-                    break
+    def _to_item(self, rule, fields):
         return {
             "name": rule["name"],
             "confidence": rule["confidence"],
             "sources": rule["sources"],
-            "match_fields": sorted(set(fields)),
+            "match_fields": fields,
         }
 
     @staticmethod
-    def _cond_hits(cond, variables):
+    def _condition_hits(cond, variables):
         field_value = str(variables.get(cond["field"], "") or "")
-        value = cond["value"]
+        value = str(cond.get("value", ""))
         op = cond["operator"]
         if op == "contains":
             return value in field_value
         if op == "equals":
             return field_value == value
-        return False
+        if op == "not_equals":
+            return field_value != value
+        if op == "regex":
+            return re.search(value, field_value) is not None
+        raise ValueError("unsupported fingerprint operator: {}".format(op))
 
 
 def split_unified_items(items):

@@ -6,6 +6,7 @@
 
 
 LOW_CONF_SERVICE_NAMES = {
+    "",
     "unknown",
     "tcpwrapped",
     "wrapped",
@@ -103,6 +104,8 @@ def resolve_service_result(
 
     raw_name = extract_detected_service(service_name=service_name, product=product)
     service = normalize_scheme(raw_name, use_registry=False)
+    if service in LOW_CONF_SERVICE_NAMES:
+        service = ""
     source = "nmap_service_name" if str(service_name or "").strip() else "legacy_passthrough"
     return {
         "service": service,

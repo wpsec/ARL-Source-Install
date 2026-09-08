@@ -30,6 +30,19 @@ class ServiceDetectionRegistryTest(unittest.TestCase):
         self.assertEqual(80, result["confidence"])
         self.assertEqual(["nmap_product_version"], result["sources"])
 
+    def test_low_confidence_service_is_not_confirmed_when_registry_fallback_runs(self):
+        with mock.patch.object(
+            DETECTION, "normalize_scheme", side_effect=lambda value, use_registry=False: value
+        ):
+            result = DETECTION.resolve_service_result(
+                service_name="unknown", use_registry=False
+            )
+
+        self.assertEqual("", result["service"])
+        self.assertFalse(result["confirmed"])
+        self.assertEqual(0, result["confidence"])
+        self.assertEqual([], result["sources"])
+
 
 if __name__ == "__main__":
     unittest.main()

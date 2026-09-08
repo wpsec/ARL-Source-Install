@@ -59,10 +59,13 @@ _HYGIENE_SHARED_SLOTS = (
     "app.services", "app.services.fingerprints", "app.tools",
 )
 _HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+_HYGIENE_OWNED = {}
 
 
 def tearDownModule():
     for _name, _original in _HYGIENE_PRE.items():
+        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
+            continue
         if _original is None:
             sys.modules.pop(_name, None)
         else:
@@ -127,6 +130,11 @@ def bootstrap():
     svc.fingerprint_cache = cache
     registry_mod = _load("app.services.site_fingerprint_registry", ROOT_DIR / "app" / "services" / "site_fingerprint_registry.py")
     svc.site_fingerprint_registry = registry_mod
+    _HYGIENE_OWNED.update({
+        name: sys.modules.get(name)
+        for name in _HYGIENE_SHARED_SLOTS
+        if sys.modules.get(name) is not None
+    })
     return registry_mod, config_module.Config
 
 
@@ -345,20 +353,53 @@ class RuntimeBuildDecouplingTest(unittest.TestCase):
         self.assertEqual('body="decouple-marker-x" && title="T"', fp.to_human_rule(match))
 
 
+class SiteFingerprintStructuredOperatorTest(unittest.TestCase):
+    """规范 match 结构的操作符和排除条件必须由运行时真实执行。"""
+
+    def _registry(self, match):
+        reg = REGISTRY.SiteFingerprintRegistry(path=str(SITE_GZ))
+        reg.rules = [{
+            "id": "site:operator-test",
+            "name": "OperatorTest",
+            "confidence": 90,
+            "sources": ["test"],
+            "match": match,
+        }]
+        reg.icon_index = {}
+        reg.ok = True
+        return reg
+
+    def test_not_equals_and_regex(self):
+        reg = self._registry({
+            "any": [{"all": [
+                {"field": "header", "operator": "not_equals", "value": "blocked"},
+                {"field": "body", "operator": "regex", "value": r"nginx/\d+\.\d+"},
+            ]}],
+            "excludes": [],
+        })
+        item = reg.match({"header": "ok", "body": "nginx/1.18", "title": "", "icon_hash": "0"})
+        self.assertEqual(["body", "header"], item[0]["match_fields"])
+        self.assertEqual([], reg.match({"header": "blocked", "body": "nginx/1.18", "icon_hash": "0"}))
+
+    def test_excludes_remove_otherwise_matching_rule(self):
+        reg = self._registry({
+            "any": [{"all": [{"field": "body", "operator": "contains", "value": "product-marker"}]}],
+            "excludes": [{"field": "title", "operator": "contains", "value": "blocked"}],
+        })
+        self.assertEqual(1, len(reg.match({"body": "product-marker", "title": "ok", "icon_hash": "0"})))
+        self.assertEqual([], reg.match({"body": "product-marker", "title": "blocked page", "icon_hash": "0"}))
+
+
 class SiteFingerprintRuleErrorObservabilityTest(unittest.TestCase):
     """规则判定异常：跳过合法，静默非法（计数 + rule id + 不新增轮子）。"""
 
     def _registry_with_broken_rule(self):
         reg = REGISTRY.SiteFingerprintRegistry(path=str(SITE_GZ))
-        match, _problems = REGISTRY.parse_human_rule('body="nginx"')
-
-        class _Boom:
-            def identify(self, _variables):
-                raise RuntimeError("pyparsing boom")
+        match, _problems = REGISTRY.parse_human_rule('body~="["')
 
         reg.rules = [{
             "id": "site:broken-rule", "name": "Broken", "confidence": 90,
-            "sources": [], "match": match, "fp": _Boom(),
+            "sources": [], "match": match,
         }]
         reg.icon_index = {}
         reg.ok = True

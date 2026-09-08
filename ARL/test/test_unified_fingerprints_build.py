@@ -53,10 +53,15 @@ _HYGIENE_SHARED_SLOTS = (
     "app.services", "app.services.fingerprints", "app.tools",
 )
 _HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
+_HYGIENE_OWNED = {}
 
 
 def tearDownModule():
     for _name, _original in _HYGIENE_PRE.items():
+        # 多个计划 5 测试模块可能在收集期先后安装不同 fake；只恢复仍由
+        # 本模块持有的对象，避免覆盖后加载模块的隔离环境。
+        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
+            continue
         if _original is None:
             sys.modules.pop(_name, None)
         else:
@@ -116,6 +121,11 @@ def bootstrap():
     config_module.Config = Config
     sys.modules["app.config"] = config_module
     app_pkg.config = config_module
+    _HYGIENE_OWNED.update({
+        name: sys.modules.get(name)
+        for name in _HYGIENE_SHARED_SLOTS
+        if sys.modules.get(name) is not None
+    })
     svc.expr = _load("app.services.expr", ROOT_DIR / "app" / "services" / "expr.py")
     svc.fingerprint = _load("app.services.fingerprint", ROOT_DIR / "app" / "services" / "fingerprint.py")
     svc.kscan_fingerprint = _load("app.services.kscan_fingerprint", ROOT_DIR / "app" / "services" / "kscan_fingerprint.py")
@@ -294,7 +304,8 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
             site_out = os.path.join(d, "site.json")
             service_out = os.path.join(d, "service.json")
             BUILD.main(main_argv(site_out, service_out))
-            site_before = open(site_out, encoding="utf-8").read()
+            with open(site_out, encoding="utf-8") as site_file:
+                site_before = site_file.read()
 
             real_writer = BUILD.atomic_write_json
 
@@ -306,10 +317,13 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
             with mock.patch.object(BUILD, "atomic_write_json", side_effect=fail_on_service):
                 with self.assertRaises(OSError):
                     BUILD.main(main_argv(site_out, service_out))
-            self.assertEqual(open(site_out, encoding="utf-8").read(), site_before, "site 被部分更新或回滚失败")
+            with open(site_out, encoding="utf-8") as site_file:
+                restored_site = site_file.read()
+            self.assertEqual(restored_site, site_before, "site 被部分更新或回滚失败")
             # last-good 存在且可解析
             self.assertTrue(os.path.isfile(site_out + ".last-good"))
-            json.load(open(site_out + ".last-good", encoding="utf-8"))
+            with open(site_out + ".last-good", encoding="utf-8") as last_good:
+                json.load(last_good)
 
     def test_compress_roundtrip(self):
         import gzip
