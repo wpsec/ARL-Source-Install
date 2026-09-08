@@ -1242,15 +1242,15 @@ export function ApiConsoleView({ token }: { token: string }) {
                 </div>
               ) : null}
 
-              <div className="flex justify-end">
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setBatchTestDialogOpen(false)}
-                  className={CONSOLE_SECONDARY_BUTTON_CLASS}
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
                 >
                   关闭
                 </button>
-              </div>
             </div>
         </Modal>
       ) : null}

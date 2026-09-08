@@ -4639,14 +4639,16 @@ export function TableModuleView({
                 <p className="text-xs text-content-muted">
                   {taskReportExportBusy ? '导出进行中，请稍候...' : '导出流程已结束'}
                 </p>
-                <button
-                  onClick={closeTaskReportExportFeedback}
-                  disabled={taskReportExportBusy}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40`}
-                >
-                  {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
-                </button>
               </div>
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                onClick={closeTaskReportExportFeedback}
+                disabled={taskReportExportBusy}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
+              >
+                {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
+              </button>
             </div>
         </Modal>
       ) : null}
@@ -4714,22 +4716,22 @@ export function TableModuleView({
                 </div>
               ) : null}
 
-              <div className="flex flex-col gap-2 border-t border-base-300 pt-4 sm:flex-row sm:justify-end sm:gap-3">
-                <button
-                  onClick={closeRiskDialog}
-                  disabled={riskDialogSubmitting}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => void submitAssetSiteRiskTask()}
-                  disabled={riskDialogSubmitting}
-                  className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
-                >
-                  {riskDialogSubmitting ? '下发中...' : '确认下发'}
-                </button>
-              </div>
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                onClick={closeRiskDialog}
+                disabled={riskDialogSubmitting}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitAssetSiteRiskTask()}
+                disabled={riskDialogSubmitting}
+                className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
+              >
+                {riskDialogSubmitting ? '下发中...' : '确认下发'}
+              </button>
             </div>
         </Modal>
       ) : null}
@@ -4814,22 +4816,22 @@ export function TableModuleView({
                 </div>
               ) : null}
 
-              <div className="flex flex-col gap-2 border-t border-base-300 pt-4 sm:flex-row sm:justify-end sm:gap-3">
-                <button
-                  onClick={closePolicyTaskDialog}
-                  disabled={policyTaskSubmitting}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => void submitPolicyTask()}
-                  disabled={policyTaskSubmitting}
-                  className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
-                >
-                  {policyTaskSubmitting ? '下发中...' : '确认下发'}
-                </button>
-              </div>
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                onClick={closePolicyTaskDialog}
+                disabled={policyTaskSubmitting}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => void submitPolicyTask()}
+                disabled={policyTaskSubmitting}
+                className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
+              >
+                {policyTaskSubmitting ? '下发中...' : '确认下发'}
+              </button>
             </div>
         </Modal>
       ) : null}
@@ -5353,20 +5355,20 @@ export function TableModuleView({
               <p className="text-sm text-content-muted whitespace-pre-wrap break-all leading-relaxed">
                 {deleteConfirmDialog.message}
               </p>
-              <div className="flex flex-col gap-2 border-t border-base-300 pt-4 sm:flex-row sm:justify-end sm:gap-3">
-                <button
-                  onClick={() => closeDeleteConfirmDialog(false)}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
-                >
-                  取消
-                </button>
-                <button
-                  onClick={() => closeDeleteConfirmDialog(true)}
-                  className={`${CONSOLE_DANGER_BUTTON_CLASS} w-full sm:w-auto`}
-                >
-                  {deleteConfirmDialog.confirmText}
-                </button>
-              </div>
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end sm:gap-3">
+              <button
+                onClick={() => closeDeleteConfirmDialog(false)}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => closeDeleteConfirmDialog(true)}
+                className={`${CONSOLE_DANGER_BUTTON_CLASS} w-full sm:w-auto`}
+              >
+                {deleteConfirmDialog.confirmText}
+              </button>
             </div>
         </Modal>
       ) : null}

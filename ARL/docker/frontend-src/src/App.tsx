@@ -470,11 +470,12 @@ export function MainShell() {
               />
 
               {passwdError ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{passwdError}</div> : null}
-
+            </div>
+            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end">
               <button
                 onClick={() => void changePassword()}
                 disabled={passwdLoading}
-                className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full`}
+                className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full sm:w-auto`}
               >
                 {passwdLoading ? '提交中...' : '提交并重新登录'}
               </button>
