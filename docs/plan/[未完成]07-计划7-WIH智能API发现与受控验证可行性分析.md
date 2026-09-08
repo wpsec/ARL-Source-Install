@@ -1,6 +1,6 @@
 # 计划 7：通用 Web/API 资产证据图与智能验证可行性分析
 
-状态：[未完成][开发中]，已落盘第一批最小 TargetProfile/EvidenceGraph 契约与标准库单测；已接入 WIH 画像记录面和有界策略层。策略层只对 browser runtime 做画像与显式开关约束，不改变其他默认扫描阶段和结果写回语义。
+状态：[未完成][开发中]，核心开发链路已落盘，真实多目标/双架构验收仍按用户安排暂不执行。当前已接入 TargetProfile、EvidenceGraph、统一 Endpoint 契约、自适应调度、HAR 导入和 L0/L1/L2 受控验证摘要；运行时仍保持默认安全和兼容策略。
 
 ## 一、重新定位
 
@@ -445,12 +445,16 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 - 已实现 `wih_strategy.py`：将画像、显式开关、任务预算和低收益/WAF 指标映射为确定性 Collector 决策；browser runtime 只有在画像建议且开关显式开启时才接收目标，L2/L3 不会自动发送专门验证请求。
 - 已实现 `controlled_verification_policy.py`：统一 L0/L1/L2/L3 决策，GET/HEAD 为默认 L1，POST 必须同时具备只读标记和 allowlist，写入/专门方法进入 skipped/L3 语义；WIH endpoint probe 已接入该策略。
 - 已实现 `wih_har_import.py`：将 HAR 公开观测转换为统一 Endpoint Registry 资产，保留方法、参数名、请求体类型和鉴权类型摘要；URL 敏感 query 值、Header/Cookie 值和请求体不落资产，已观测项进入 `covered` 不再主动探测。
-- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；认证边界对比、代理导入、协议 Collector 和真实 40/64 门禁仍未实现或未运行。
-- 本轮暂不勾选下列完整批次项：Endpoint 契约、安全分级和 golden corpus 仍需与现有 Registry/Collector 接入时一起冻结；画像和证据图只记录到任务内上下文，策略层仅对 browser runtime 做有界、显式开关控制，不改变其他默认扫描阶段和结果写回语义。
+- 已实现 `wih_adaptive_scheduler.py`：按预期证据、置信度、请求/时间成本、WAF 风险和来源数量排序，提供 host 配额、阶段预算、低信息增益、重复覆盖和 pending/skipped 原因；WIH 编排收尾会记录诊断计划，但暂不替换既有 Registry claim 顺序。
+- 已实现 `wih_auth_boundary.py`：只接收状态码、Content-Type、结构 hash 和长度区间等白名单摘要，支持 anonymous/invalid_auth/authorized 三类 profile 作业描述，输出 `auth_anomaly_candidate` 与人工复核原因；不会接收或保存凭据、请求体和完整响应。
+- 已扩展统一 Endpoint 契约：增加 `request_semantics`、`evidence_ids`、`verification_status`、`verification_reason_codes` 和 `manual_review_required`，Registry 合并时执行证据并集和验证语义升级。
+- 已扩展 WIH Endpoint API/UI：支持按验证状态、认证边界异常候选和人工复核筛选，详情页展示认证边界摘要与原因。
+- 已增加 `scripts/plan567-code-check.py --plan 7`，计划 7 当前离线代码回归通过；真实认证 profile 执行、协议 Collector 全覆盖和 40/64 门禁仍未运行。
+- 本轮暂不勾选完整验收项：golden corpus、独立 `api_verify` 执行器、GraphQL/WSDL/WebSocket 运行时完整 Collector、跨架构和性能观察仍需后续开发/部署验证；画像和证据图仍只记录到任务内上下文，不改变默认扫描阶段和结果写回语义。
 
-- [ ] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 契约；
-- [ ] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；
-- [ ] 冻结目标范围、重定向、认证 profile、敏感信息和原始响应保存策略；
+- [x] 冻结 `TargetProfile`、EvidenceGraph 节点/关系和 Endpoint 最小字段契约；
+- [x] 冻结 L0/L1 默认开启、L2 显式开启、L3 不进入 WIH 自动链路；
+- [x] 冻结目标范围、重定向、认证 profile、敏感信息和原始响应保存策略；
 - [ ] 建立传统 MVC、SSR、SPA、API-only、GraphQL、SOAP、WebSocket、HAR 和未知系统 golden corpus。
 
 ### 第 2 批：统一响应和证据图
@@ -474,17 +478,17 @@ Rust 不负责目标画像的最终决策、认证、网络、WAF、漏洞判断
 
 ### 第 5 批：运行时补证和自适应调度
 
-- [ ] 目标画像不足时才启用 browser runtime；
-- [ ] 建立信息增益评分、候选优先级和低收益停止规则；
-- [ ] 接入 HAR/代理导入，支持无页面 API-only 目标；
-- [ ] 每个策略输出新增证据、请求成本和停止原因。
+- [x] 目标画像不足时才启用 browser runtime；
+- [x] 建立信息增益评分、候选优先级和低收益停止规则；
+- [x] 接入 HAR 导入，支持无页面 API-only 目标；代理运行时导入仍待补充；
+- [x] 调度计划输出新增候选、请求成本和停止原因；实际请求消费仍保留旧 claim 顺序。
 
 ### 第 6 批：受控验证和 ARL 人工复核
 
-- [ ] 实现 L1 安全读取、L2 认证边界对比和 `api_verify` 独立调度；
-- [ ] 输出 `auth_anomaly_candidate`、`blocked`、`skipped`、`pending`、`failed` 和 `degraded`；
-- [ ] ARL 展示 Endpoint、参数摘要、调用链、来源、响应状态、认证对比和人工复核理由；
-- [ ] 不自动执行 L3 专门安全测试。
+- [ ] 实现 L1 安全读取、L2 认证边界对比和 `api_verify` 独立调度；当前已完成安全策略、摘要比较和结果契约，独立请求执行器仍待补充；
+- [x] 统一 Endpoint 契约可输出 `auth_anomaly_candidate`、`blocked`、`skipped`、`pending`、`failed` 和 `degraded` 等验证语义；
+- [x] ARL 展示 Endpoint、验证状态、认证对比摘要和人工复核理由；调用链/参数来源的完整详情仍待证据图 adapter 扩展；
+- [x] 不自动执行 L3 专门安全测试。
 
 ### 第 7 批：性能和 Rust 评估
 
