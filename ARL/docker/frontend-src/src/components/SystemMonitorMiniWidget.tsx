@@ -125,7 +125,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
   const statusAriaLabel = unavailable ? '资源状态不可用' : isInitialLoading ? '资源状态同步中' : '资源状态';
 
   return (
-    <section className="hidden min-w-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
+    <section className="hidden shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
       <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-box border border-base-300 bg-base-200 px-2.5" aria-label={statusAriaLabel}>
         <div className="flex h-6 w-6 items-center justify-center rounded-box bg-accent/10 text-accent">
           <Activity className="h-3.5 w-3.5" />
