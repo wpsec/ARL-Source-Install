@@ -2671,11 +2671,11 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               </div>
               <div className="space-y-2 rounded-box border border-base-300 bg-base-100 p-3">
                 <div className="text-xs font-semibold">用户输入</div>
-                <pre className="max-h-[220px] overflow-auto text-xs rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
+                <pre className="max-h-[220px] overflow-auto text-xs rounded-box border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {usageLogDetail.request_text || '-'}
                 </pre>
                 <div className="text-xs font-semibold pt-1">AI回复</div>
-                <pre className="max-h-[260px] overflow-auto text-xs rounded-lg border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
+                <pre className="max-h-[260px] overflow-auto text-xs rounded-box border border-base-300/70 bg-base-100 px-3 py-2 whitespace-pre-wrap break-all">
                   {usageLogDetail.reply_text || usageLogDetail.error_message || '-'}
                 </pre>
               </div>

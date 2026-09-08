@@ -32,7 +32,7 @@ export function CheckboxCard({
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {hint ? <span className="text-[11px] text-content-muted">{hint}</span> : null}
+      {hint ? <span className="text-[11px] leading-relaxed text-content-muted">{hint}</span> : null}
     </label>
   );
 }
