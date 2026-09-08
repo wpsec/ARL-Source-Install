@@ -2018,7 +2018,8 @@ class DomainPostProcessStageService(object):
             or task.options.get("service_detection")
             or task.options.get("npoc_service_detection")
         ):
-            self.run_save_service_info()
+            # 服务结果由网络阶段持有；后置阶段只负责触发收尾，避免迁移后调用失效入口。
+            DomainNetworkStageService(task).run_save_service_info()
 
         if task.options.get("poc_config"):
             TaskPipeline(task).run_stage(

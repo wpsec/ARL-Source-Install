@@ -523,6 +523,17 @@ class TestDomainStageServices(unittest.TestCase):
         self.assertEqual([], task.calls)
         self.assertEqual([], task.executor.names)
 
+    def test_post_process_service_delegates_service_persistence_to_network_stage(self):
+        task = _Task({"port_scan": True})
+
+        with patch.object(
+            DomainNetworkStageService,
+            "run_save_service_info",
+        ) as save_service_info:
+            DomainPostProcessStageService(task).run_poc()
+
+        save_service_info.assert_called_once_with()
+
     def test_site_service_marks_host_owned_terminal_finalize(self):
         # Review P0.4：域名深度流程的站点实例由宿主统一收尾，嵌套层不得二次执行。
         task = _Task()
