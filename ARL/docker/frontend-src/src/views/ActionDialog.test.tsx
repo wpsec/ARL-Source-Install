@@ -85,6 +85,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     const footer = await screen.findByTestId('action-dialog-footer');
     expect(footer.className).toContain('shrink-0');
     expect(footer.className).toContain('border-t');
+    expect(footer.parentElement?.classList.contains('arl-modal-box')).toBe(true);
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '执行' })).toBeTruthy();
   });

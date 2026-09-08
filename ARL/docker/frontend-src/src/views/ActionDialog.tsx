@@ -576,7 +576,7 @@ export function ActionDialog({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col p-6 space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-6 space-y-4">
           {action.description ? <p className="text-sm text-content-muted">{action.description}</p> : null}
 
           {action.fileFieldName ? (
@@ -1543,10 +1543,12 @@ export function ActionDialog({
             <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} text-xs py-2`}>{error}</div>
           ) : null}
 
-          <div
-            data-testid="action-dialog-footer"
-            className="shrink-0 -mx-6 -mb-6 flex items-center justify-end gap-3 border-t border-base-300 bg-base-100 px-6 py-4"
-          >
+        </div>
+
+        <div
+          data-testid="action-dialog-footer"
+          className="shrink-0 flex items-center justify-end gap-3 border-t border-base-300 bg-base-100 px-6 py-4"
+        >
             <button
               onClick={onClose}
               className={CONSOLE_SECONDARY_BUTTON_CLASS}
@@ -1884,7 +1886,6 @@ export function ActionDialog({
             >
               {loading ? '执行中...' : (isPolicyAction || isTaskScheduleCreate || isGithubSchedulerAction || isAssetScopeAddScope || isAssetScopeAddScheduler || isAssetScopeAddSiteMonitor || isAssetScopeAddWihMonitor) ? '确定' : '执行'}
             </button>
-          </div>
         </div>
     </Modal>
   );
