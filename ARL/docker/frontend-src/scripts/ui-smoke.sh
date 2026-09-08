@@ -27,6 +27,7 @@ SKIP_BUILD="${SKIP_BUILD:-0}"
 PULL_OK="${PULL_OK:-0}"
 
 DIST_DIR="$SRC_DIR/dist"
+SNAPSHOT_DIR="$SRC_DIR/../frontend"
 MANIFEST="$SUMMARY_DIR/dist-manifest.txt"
 RESULT_FILE="$SUMMARY_DIR/ui-smoke-result.txt"
 
@@ -92,6 +93,18 @@ ASSET_REF="$(grep -o '/assets/[^"]*\.js' "$DIST_DIR/index.html" | head -n1 || tr
 ASSET_PATH="$DIST_DIR$ASSET_REF"
 [ -f "$ASSET_PATH" ] || fail_phase "index.html 引用的资产不存在: $ASSET_REF"
 record "dist manifest + entry-asset 自洽" "PASS"
+
+# ---------- 阶段 2b: 遗留静态入口与源码构建一致 ----------
+# 当前生产 Dockerfile 从源码构建；worker/ARMWorker 等兼容入口仍直接复制
+# docker/frontend。两套入口必须服务同一份 hash 资产，否则用户会看到旧 UI。
+if [ -d "$SNAPSHOT_DIR" ]; then
+    if ! diff -rq "$DIST_DIR" "$SNAPSHOT_DIR" >/dev/null; then
+        fail_phase "docker/frontend 静态快照与 frontend-src/dist 不一致"
+    fi
+    record "docker/frontend 静态快照一致性" "PASS"
+else
+    record "docker/frontend 静态快照一致性" "SKIP(快照目录不存在)"
+fi
 
 # ---------- 阶段 3: 双架构容器 serve 一致性 ----------
 if [ -z "$PLATFORMS" ]; then
