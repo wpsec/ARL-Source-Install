@@ -67,6 +67,9 @@ def _load_console_module():
         find=lambda *args, **kwargs: [],
     )
 
+    service_module = types.ModuleType("app.routes.service")
+    service_module.count_service_records = lambda: 0
+
     app_module.utils = utils_module
 
     backup = {}
@@ -79,6 +82,7 @@ def _load_console_module():
         ("app.utils.device", utils_device_module),
         ("app.modules", modules_module),
         ("app.routes", routes_module),
+        ("app.routes.service", service_module),
     ):
         backup[name] = sys.modules.get(name)
         sys.modules[name] = module
