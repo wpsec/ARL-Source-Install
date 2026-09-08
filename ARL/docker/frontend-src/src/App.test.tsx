@@ -91,6 +91,7 @@ describe('App 鉴权流转', () => {
     await waitFor(() => expect(screen.getByRole('region', { name: '系统监控摘要' })).toBeTruthy());
     const monitor = screen.getByRole('region', { name: '系统监控摘要' });
     const userActionBar = monitor.parentElement;
+    expect(userActionBar?.className).toContain('shrink-0');
     expect(userActionBar?.querySelector('[title="修改密码"]')).toBeTruthy();
     expect(userActionBar?.textContent).toContain('bob');
     expect(monitor.nextElementSibling?.textContent).toContain('bob');

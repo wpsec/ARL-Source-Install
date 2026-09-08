@@ -368,7 +368,7 @@ export function MainShell() {
           <div className="flex-1 min-w-0 text-xs xl:text-sm text-content-muted truncate" role="status">
             {globalNotice || ' '}
           </div>
-          <div className="navbar-end min-w-0 gap-1.5 xl:gap-2">
+          <div className="navbar-end min-w-0 shrink-0 gap-1.5 xl:gap-2">
             <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
             <span className="badge badge-ghost h-9 max-w-28 truncate px-2 xl:px-3 text-xs xl:text-sm font-medium">{username}</span>
             <button
