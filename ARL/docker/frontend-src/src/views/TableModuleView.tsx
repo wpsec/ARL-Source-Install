@@ -3584,7 +3584,7 @@ export function TableModuleView({
                                       [taskOptionExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 block mx-auto text-xs font-semibold text-accent hover:underline"
+                                  className="mt-2 block text-left text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '显示全部'}
                                 </button>
@@ -3708,8 +3708,8 @@ export function TableModuleView({
                           const targetRaw = normalizeValueNoTruncate(row?.target);
                           const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[320px] max-w-[760px]">
-                              <div className="min-h-[24px] flex items-center justify-center whitespace-pre-wrap break-all leading-relaxed text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[320px] max-w-[760px]">
+                              <div className="min-h-[24px] flex items-center justify-start whitespace-pre-wrap break-all leading-relaxed text-left">
                                 {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
                                   ? renderTextWithHyperlink(displayUrl)
                                   : displayUrl}
@@ -3810,12 +3810,12 @@ export function TableModuleView({
                           );
                           const showTaskTargetStatTooltip = hasAny || hasWafSummary;
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[220px] max-w-[560px]">
-                              <div className="group relative flex items-start justify-center w-full gap-2">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[220px] max-w-[560px]">
+                              <div className="group relative flex items-start justify-start w-full gap-2">
                                 <button
                                   type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className="text-accent hover:underline font-mono whitespace-pre-wrap break-all text-center inline-block flex-1 leading-relaxed"
+                                  className="text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed"
                                   title="点击查看该任务详情"
                                 >
                                   {targetText}
@@ -3971,7 +3971,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openTaskLocalView(id)}
-                                className="text-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-left inline-block w-full"
                                 title="点击查看该任务详情"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4007,7 +4007,7 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
                             >
                               <div>{renderedText}</div>
                               {shouldCollapse ? (
@@ -4019,7 +4019,7 @@ export function TableModuleView({
                                       [siteHeaderExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
+                                  className="mt-2 text-left text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -4043,7 +4043,7 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
                             >
                               <div>{renderedText}</div>
                               {shouldCollapse ? (
@@ -4055,7 +4055,7 @@ export function TableModuleView({
                                       [siteFingerExpandKey]: !isExpanded,
                                     }))
                                   }
-                                  className="mt-2 text-xs font-semibold text-accent hover:underline"
+                                  className="mt-2 text-left text-xs font-semibold text-accent hover:underline"
                                 >
                                   {isExpanded ? '收起' : '展开'}
                                 </button>
@@ -4136,7 +4136,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubSchedulerDetail(id)}
-                                className="text-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-left inline-block w-full"
                                 title="查看该监控任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4150,7 +4150,7 @@ export function TableModuleView({
                             <td key={column} className={baseClassName}>
                               <button
                                 onClick={() => openGithubTaskDetail(id)}
-                                className="text-accent hover:underline text-center inline-block w-full"
+                                className="text-accent hover:underline text-left inline-block w-full"
                                 title="查看该任务结果"
                               >
                                 {formatModuleCellValue(module.id, column, row)}
@@ -4163,7 +4163,7 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-center whitespace-pre-wrap break-all leading-relaxed min-w-[260px] max-w-[640px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[260px] max-w-[640px]"
                             >
                               {formatModuleCellValue(module.id, column, row)}
                             </td>
