@@ -775,7 +775,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void runDingtalkTest()}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={testing || loading}
           >
             <Play className={`w-4 h-4 ${testing ? 'animate-spin' : ''}`} />
@@ -783,7 +783,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
           <button
             onClick={() => void loadWorkspaces()}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={loadingWorkspaces || loading}
           >
             <Globe className={`w-4 h-4 ${loadingWorkspaces ? 'animate-spin' : ''}`} />
@@ -791,7 +791,7 @@ export function DingtalkIntegrationView({ token }: { token: string }) {
           </button>
           <button
             onClick={() => void loadNodes()}
-            className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-60"
+            className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
             disabled={loadingNodes || loading}
           >
             <Database className={`w-4 h-4 ${loadingNodes ? 'animate-spin' : ''}`} />

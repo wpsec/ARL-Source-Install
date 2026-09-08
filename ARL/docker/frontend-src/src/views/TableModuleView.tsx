@@ -85,6 +85,7 @@ import {
 import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
+  CONSOLE_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
   CONSOLE_PAGE_CLASS,
   CONSOLE_PRIMARY_BUTTON_CLASS,
@@ -2947,11 +2948,9 @@ export function TableModuleView({
             <button
               key={item.id}
               onClick={() => onOpenModule(item.id)}
-              className={`btn btn-sm ${
-                module.id === item.id
-                  ? 'btn-primary'
-                  : 'btn-ghost border-base-300 text-content-muted hover:text-base-content'
-              }`}
+              className={module.id === item.id
+                ? CONSOLE_PRIMARY_BUTTON_CLASS
+                : CONSOLE_SECONDARY_BUTTON_CLASS}
             >
               {item.label}
             </button>
@@ -2963,7 +2962,7 @@ export function TableModuleView({
           {hasExternalFilters ? (
             <button
               onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
-              className="btn btn-primary btn-sm gap-1.5"
+              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-1.5`}
               title="返回任务管理"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -2974,11 +2973,9 @@ export function TableModuleView({
             <button
               key={item.id}
               onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
-              className={`btn btn-sm ${
-                module.id === item.id
-                  ? 'btn-primary'
-                  : 'btn-ghost border-base-300 text-content-muted hover:text-base-content'
-              }`}
+              className={module.id === item.id
+                ? CONSOLE_PRIMARY_BUTTON_CLASS
+                : CONSOLE_SECONDARY_BUTTON_CLASS}
             >
               {`${item.label} - ${
                 typeof taskDetailCounts[item.id] === 'number'
@@ -3008,7 +3005,7 @@ export function TableModuleView({
             {onClearExternalFilters ? (
               <button
                 onClick={onClearExternalFilters}
-                className="btn btn-ghost btn-xs border border-base-300"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} !h-8 !min-h-8 !px-2.5 text-xs`}
               >
                 清除筛选
               </button>
@@ -3089,7 +3086,7 @@ export function TableModuleView({
                     setPage(1);
                     void loadRows({ page: 1, forceRefresh: true });
                   }}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                   disabled={loading || !hasList}
                 >
                   <Search className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -3099,7 +3096,7 @@ export function TableModuleView({
               {hasList ? (
                 <button
                   onClick={clearSearchFilters}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                   disabled={loading || !hasList}
                 >
                   <RefreshCw className="w-4 h-4" />
@@ -3110,7 +3107,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setHyperlinkEnabled((prev) => !prev)}
-                  className={`btn btn-sm border transition ${
+                  className={`${CONSOLE_BUTTON_CLASS} border transition ${
                     hyperlinkEnabled
                       ? 'border-accent bg-accent/10 text-accent'
                       : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
@@ -3123,7 +3120,7 @@ export function TableModuleView({
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
                   onClick={() => void runExport()}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                 >
                   <Download className="w-4 h-4" />
                   {module.id === 'asset_site' || module.id === 'site'
@@ -3138,7 +3135,7 @@ export function TableModuleView({
               {module.id === 'asset_site' ? (
                 <button
                   onClick={() => void openAssetSiteRiskDialog()}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                   disabled={riskDialogLoading}
                 >
                   <Play className={`w-4 h-4 ${riskDialogLoading ? 'animate-spin' : ''}`} />
@@ -3148,7 +3145,7 @@ export function TableModuleView({
               {module.id === 'task' ? (
                 <button
                   onClick={openTaskGlobalView}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                 >
                   <Eye className="w-4 h-4" />
                   全局查看
@@ -3158,7 +3155,7 @@ export function TableModuleView({
                 <button
                   onClick={() => void openTaskViewByName()}
                   disabled={!taskNameSearchText}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-40 disabled:cursor-not-allowed`}
                   title="使用上方“任务名”搜索框内容查看同名任务"
                 >
                   <Eye className="w-4 h-4" />
@@ -3169,7 +3166,7 @@ export function TableModuleView({
                 <button
                   type="button"
                   onClick={() => setTaskCompactMode((prev) => !prev)}
-                  className={`btn btn-sm border transition ${
+                  className={`${CONSOLE_BUTTON_CLASS} border transition ${
                     taskCompactMode
                       ? 'border-accent bg-accent/10 text-accent'
                       : 'btn-ghost border-base-300 text-base-content hover:text-base-content'
@@ -3182,7 +3179,7 @@ export function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('ip')}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                 >
                   <Download className="w-4 h-4" />
                   导出IP列表
@@ -3191,7 +3188,7 @@ export function TableModuleView({
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
                   onClick={() => void runAssetIpExtraExport('domain')}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                 >
                   <Download className="w-4 h-4" />
                   导出关联域名
@@ -3216,7 +3213,7 @@ export function TableModuleView({
 
             <button
               onClick={() => void loadRows({ forceRefresh: true })}
-              className="btn btn-ghost btn-sm border border-base-300 gap-2"
+              className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               disabled={loading || !hasList}
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -3226,7 +3223,7 @@ export function TableModuleView({
             {module.exportPath && module.id !== 'task' ? (
               <button
                 onClick={() => void runExport()}
-                className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               >
                 <Download className="w-4 h-4" />
                 导出
@@ -3265,7 +3262,7 @@ export function TableModuleView({
                   key={action.id}
                   onClick={() => openActionDialog(action)}
                   disabled={disabled}
-                  className="btn btn-ghost btn-sm border border-base-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   {action.label}
                 </button>
@@ -3276,7 +3273,7 @@ export function TableModuleView({
                 type="button"
                 onClick={() => void stopAndDeleteSelectedTasks()}
                 disabled={selectedIds.length === 0 || taskStopAndDeleteLoading}
-                className="btn btn-ghost btn-sm border border-base-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40 disabled:cursor-not-allowed`}
                 title="先停止所选任务，再执行删除"
               >
                 {taskStopAndDeleteLoading ? '停止并删除中...' : '停止并删除'}
@@ -3288,7 +3285,7 @@ export function TableModuleView({
                   type="button"
                   onClick={() => toggleTaskReportExportMenu('batch')}
                   disabled={taskReportExportDisabled}
-                  className="btn btn-ghost btn-sm border border-base-300 gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-40 disabled:cursor-not-allowed`}
                 >
                   <Download className="w-4 h-4" />
                   {taskReportExportBusy ? '报告导出中...' : '报告导出'}
@@ -3313,7 +3310,7 @@ export function TableModuleView({
             {module.id === 'asset_scope' && module.exportPath ? (
               <button
                 onClick={() => void runExport()}
-                className="btn btn-ghost btn-sm border border-base-300 gap-2"
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
               >
                 <Download className="w-4 h-4" />
                 批量导出
