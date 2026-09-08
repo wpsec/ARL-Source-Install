@@ -738,3 +738,38 @@
   }
 
 }
+
+/* DaisyUI 默认禁用态会把文字降到很低的透明度；控制台需要保留状态信息可读，
+   同时用更柔和的表面色表达不可操作，而不是让控件沉入深色背景。 */
+.arl-app .btn:is(:disabled, [disabled], [aria-disabled='true']) {
+  opacity: 0.78;
+  border-color: var(--brand-border);
+  background-color: color-mix(in oklab, var(--brand-card) 88%, var(--brand-bg));
+  color: var(--brand-text-muted);
+}
+
+.arl-app .btn-primary:is(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: color-mix(in oklab, var(--brand-accent) 55%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--brand-accent) 58%, var(--brand-card));
+  color: var(--brand-accent-contrast);
+}
+
+.arl-app .btn-error:is(:disabled, [disabled], [aria-disabled='true']) {
+  border-color: color-mix(in oklab, var(--brand-danger) 55%, var(--brand-border));
+  background-color: color-mix(in oklab, var(--brand-danger) 48%, var(--brand-card));
+  color: var(--brand-error-content);
+}
+
+.arl-app input:not([type='checkbox']):not([type='radio']):disabled,
+.arl-app select:disabled,
+.arl-app textarea:disabled,
+.arl-app .file-input:disabled {
+  opacity: 0.9;
+  border-color: var(--brand-border);
+  background-color: var(--brand-card);
+  color: var(--brand-text-muted);
+}
+
+.arl-app input[type='checkbox']:disabled {
+  opacity: 0.68;
+}
