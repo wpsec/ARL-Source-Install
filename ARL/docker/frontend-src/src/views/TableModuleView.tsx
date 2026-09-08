@@ -1703,9 +1703,37 @@ export function TableModuleView({
   }, []);
 
   const isCenteredTableColumn = useCallback((moduleId: string, column: string) => {
-    if (column === 'ai_analysis' && aiDenoiseModuleId) return true;
+    // 文本类字段统一左对齐；状态、数字和操作类字段统一居中，避免同类列在不同模块漂移。
+    if (column === 'ai_analysis') return true;
     if (isLikelyIdColumn(column)) return true;
-    if (moduleId === 'wih' && column === 'record_type') return true;
+    if ([
+      'status',
+      'status_code',
+      'response_size',
+      'content_length',
+      'port',
+      'port_info.port_id',
+      'ip_count',
+      'domain_count',
+      'result_count',
+      'run_number',
+      'cnt',
+      'progress',
+      'type',
+      'scheme',
+      'method',
+      'scanner_type',
+      'vuln_severity',
+      'record_type',
+      'last_run_date',
+      'next_run_date',
+      'start_time',
+      'end_time',
+      'save_date',
+      'update_date',
+      'commit_date',
+      'created_at',
+    ].includes(column)) return true;
     if (
       moduleId === 'wih_endpoint'
       && ['method', 'verification_status', 'manual_review_required', 'detail_action'].includes(column)
@@ -1716,7 +1744,7 @@ export function TableModuleView({
     if (moduleId === 'task' && ['progress', 'status', 'start_time', 'end_time'].includes(column)) return true;
     if (moduleId === 'site' && column === 'screenshot') return true;
     return false;
-  }, [aiDenoiseModuleId]);
+  }, []);
 
   const moduleActions = module.actions || [];
   const visibleActions = useMemo(() => {

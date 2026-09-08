@@ -101,6 +101,34 @@ describe('TableModuleView(task) 页面级', () => {
     await waitFor(() => expect(screen.getByText('192.0.2.10:443')).toBeTruthy());
     expect(screen.getByText('nginx')).toBeTruthy();
   });
+
+  it('同类表格列统一对齐：文本靠左，状态与数字居中', async () => {
+    installFetchMock({
+      routes: {
+        '/api/domain/': [200, {
+          code: 200,
+          data: {
+            items: [{
+              _id: 'domain-alignment-1',
+              domain: 'alignment.example.com',
+              type: 'A',
+              record: '198.51.100.10',
+              ips: ['198.51.100.10'],
+              source: ['alignment-source'],
+            }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+    renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'domain');
+    await waitFor(() => expect(screen.getByText('alignment.example.com')).toBeTruthy());
+
+    expect(screen.getByText('alignment.example.com').closest('td')?.className).toContain('text-left');
+    expect(screen.getByText('A').closest('td')?.className).toContain('text-center');
+  });
 });
 
 describe('TableModuleView Phase 3 选项/共享读取（React Query）', () => {
