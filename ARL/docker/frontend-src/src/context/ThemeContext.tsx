@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useLayoutEffect, useState } from 'react';
 
 export type ThemeType = 'midnight' | 'slate' | 'nord' | 'titanium' | 'sandstone';
 
@@ -35,7 +35,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(THEME_DEFAULT_MIGRATION_KEY, '1');
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
