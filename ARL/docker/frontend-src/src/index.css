@@ -478,6 +478,16 @@
     border-radius: var(--radius-box);
     box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
   }
+
+  /* 所有弹窗直接子级的头/底栏都要保留尺寸；长内容只允许滚动区收缩。 */
+  .arl-modal-box > .border-b,
+  .arl-modal-box > .border-t {
+    flex-shrink: 0;
+  }
+
+  .arl-modal-box > .overflow-y-auto {
+    min-height: 0;
+  }
 }
 
 @layer base {
