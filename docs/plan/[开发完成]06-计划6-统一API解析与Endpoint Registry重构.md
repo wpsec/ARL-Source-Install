@@ -1007,6 +1007,8 @@ finalizer 跨周期显影语义未变。`API_UNIFIED_ENABLE` 默认 False：切�
 
 ## 当前状态（2026-09-07 第 7 批 + 整改轮 1/轮 2 + 第 8/9/10 批 + 第 11 批 T11-0/11-1 后）
 
+> 证据新鲜度：本节历史回归数字只对登记 revision 生效。任何 runbook、配置或回归 harness 修改后，必须按附录 E 在新 revision 和最终镜像上重跑；旧数字不得直接标记为当前 HEAD 验收。
+
 - [已完成] 第 1 批接口/结果契约冻结、golden corpus、legacy adapter、脱敏约束和幂等键定义已完成。
 - [已完成] 第 2 批 shadow metrics、ResponseRegistry 无副作用读取和 API 文档/Endpoint 探测观测接线已完成；该批不改变运行时输出。
 - [已完成] 第 3 批候选注册表、文档队列、状态机、来源聚合、幂等领取（重投 covered 跳过）、四道预算闸与 JS 发现文档当前任务回流已实现；`API_UNIFIED_ENABLE` 默认 False，生产行为面未切换。

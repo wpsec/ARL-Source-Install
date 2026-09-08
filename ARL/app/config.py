@@ -514,6 +514,14 @@ def refresh_runtime_config_best_effort(force=False):
             Config.URLFINDER_URL_PROBE_ENABLE = _safe_runtime_bool(
                 arl_conf.get("URLFINDER_URL_PROBE_ENABLE"), Config.URLFINDER_URL_PROBE_ENABLE
             )
+        if arl_conf.get("API_UNIFIED_ENABLE") is not None:
+            Config.API_UNIFIED_ENABLE = _safe_runtime_bool(
+                arl_conf.get("API_UNIFIED_ENABLE"), Config.API_UNIFIED_ENABLE
+            )
+        if arl_conf.get("API_UNIFIED_FALLBACK_ENABLE") is not None:
+            Config.API_UNIFIED_FALLBACK_ENABLE = _safe_runtime_bool(
+                arl_conf.get("API_UNIFIED_FALLBACK_ENABLE"), Config.API_UNIFIED_FALLBACK_ENABLE
+            )
         if arl_conf.get("RUST_ACCEL_ENABLE") is not None:
             Config.RUST_ACCEL_ENABLE = _safe_runtime_bool(
                 arl_conf.get("RUST_ACCEL_ENABLE"), Config.RUST_ACCEL_ENABLE
@@ -595,6 +603,12 @@ def refresh_runtime_config_best_effort(force=False):
 
         Config.URLFINDER_URL_PROBE_ENABLE = env_bool(
             "ARL_URLFINDER_URL_PROBE_ENABLE", Config.URLFINDER_URL_PROBE_ENABLE
+        )
+        Config.API_UNIFIED_ENABLE = env_bool(
+            "ARL_API_UNIFIED_ENABLE", Config.API_UNIFIED_ENABLE
+        )
+        Config.API_UNIFIED_FALLBACK_ENABLE = env_bool(
+            "ARL_API_UNIFIED_FALLBACK_ENABLE", Config.API_UNIFIED_FALLBACK_ENABLE
         )
         Config.RUST_ACCEL_ENABLE = env_bool(
             "ARL_RUST_ACCEL_ENABLE", Config.RUST_ACCEL_ENABLE
@@ -791,6 +805,10 @@ class Config(object):
     URLFINDER_SENSITIVE_NO_GAIN_BATCH_LIMIT = 2
     # 是否启用 URLFinder 提取 URL 的可达性探测并写入 URL 信息
     URLFINDER_URL_PROBE_ENABLE = True
+    # 是否启用统一 API 发现链路；默认关闭，发布验收通过后再评审切换
+    API_UNIFIED_ENABLE = False
+    # 统一 API 异常时是否回退 legacy；默认开启，便于发布阶段止损
+    API_UNIFIED_FALLBACK_ENABLE = True
     # 是否启用 Rust URL/JS 数据处理加速
     RUST_ACCEL_ENABLE = True
     # Rust 加速不可用时是否按当前批次回退 Python
@@ -1726,6 +1744,15 @@ try:
     if y["ARL"].get("RUST_ACCEL_ENABLE") is not None:
         Config.RUST_ACCEL_ENABLE = bool(y["ARL"]["RUST_ACCEL_ENABLE"])
 
+    if y["ARL"].get("API_UNIFIED_ENABLE") is not None:
+        Config.API_UNIFIED_ENABLE = safe_bool(
+            y["ARL"]["API_UNIFIED_ENABLE"], Config.API_UNIFIED_ENABLE
+        )
+    if y["ARL"].get("API_UNIFIED_FALLBACK_ENABLE") is not None:
+        Config.API_UNIFIED_FALLBACK_ENABLE = safe_bool(
+            y["ARL"]["API_UNIFIED_FALLBACK_ENABLE"], Config.API_UNIFIED_FALLBACK_ENABLE
+        )
+
     if y["ARL"].get("RUST_ACCEL_FALLBACK_ENABLE") is not None:
         Config.RUST_ACCEL_FALLBACK_ENABLE = bool(y["ARL"]["RUST_ACCEL_FALLBACK_ENABLE"])
     if y["ARL"].get("RUST_ACCEL_API_UNIFIED_MODE") is not None:
@@ -2454,6 +2481,12 @@ try:
     Config.RUST_ACCEL_ENABLE = env_bool(
         "ARL_RUST_ACCEL_ENABLE", Config.RUST_ACCEL_ENABLE
     )
+    Config.API_UNIFIED_ENABLE = env_bool(
+        "ARL_API_UNIFIED_ENABLE", Config.API_UNIFIED_ENABLE
+    )
+    Config.API_UNIFIED_FALLBACK_ENABLE = env_bool(
+        "ARL_API_UNIFIED_FALLBACK_ENABLE", Config.API_UNIFIED_FALLBACK_ENABLE
+    )
     Config.RUST_ACCEL_FALLBACK_ENABLE = env_bool(
         "ARL_RUST_ACCEL_FALLBACK_ENABLE", Config.RUST_ACCEL_FALLBACK_ENABLE
     )
@@ -2721,6 +2754,10 @@ try:
             "PORT_SCAN_BATCH_CONCURRENCY",
             "PORT_SCAN_BATCH_TIMEOUT_SEC",
             "PORT_SCAN_STAGE_TIMEOUT_SEC",
+            "API_UNIFIED_ENABLE",
+            "API_UNIFIED_FALLBACK_ENABLE",
+            "RUST_ACCEL_API_UNIFIED_MODE",
+            "RUST_ACCEL_API_UNIFIED_RUST_STAGES",
             "TASK_FINALIZER_ENABLE",
             "TASK_FINALIZER_DRAIN_ROUNDS",
             "TASK_FINALIZER_PENDING_MAX",

@@ -25,15 +25,22 @@
 git clone -b newUI https://github.com/wpsec/ARL-Source-Install.git
 cd ARL-Source-Install
 cp .env.example .env
-# 请修改密码～
+# 下面 4 个密码占位必须替换：BASIC_AUTH_PASSWORD、ARL_APP_PASSWORD、
+# MONGO_INITDB_ROOT_PASSWORD、RABBITMQ_DEFAULT_PASS；7 个必填键都不能留空。
 chmod +x build.sh start.sh scripts/quick-build.sh
 ./build.sh
 ./start.sh
 ```
 
+也可以不复制根 `.env` 直接执行 `./start.sh`；首次启动会在
+`ARL/docker/.env` 自动生成 Mongo/RabbitMQ 内部凭据，并交互要求输入 Basic Auth
+与 ARL 应用密码。直接使用 Docker Compose 时，请先复制并完整填写对应 `.env`。
+
 ### 注意！
 
-可提前开代理下载Playwright 以提升部署速度
+构建脚本默认使用国内 npm、PyPI 和 Playwright 镜像；网络策略不同可在 `.env` 中覆盖
+`ARL_FRONTEND_NPM_REGISTRY`、`ARL_PIP_INDEX_URL` 和 `ARL_PLAYWRIGHT_DOWNLOAD_HOST`。
+也可提前下载 Playwright 以提升部署速度。
 
 参考文档：
 
@@ -59,10 +66,9 @@ tools/playwright/README.md
   - 密码：必须在 `.env` 中设置 `BASIC_AUTH_PASSWORD`，系统不再提供默认密码
 - ARL 应用默认账号：
   - 用户名：`.env` 中 `ARL_APP_USERNAME`（默认 `admin`）
-  - 密码：建议在 `.env` 中显式设置 `ARL_APP_PASSWORD`，生产环境不要依赖 Compose 默认值
+  - 密码：必须在 `.env` 中显式设置 `ARL_APP_PASSWORD`，不能依赖默认值
   - 说明：仅在 Mongo 数据卷首次初始化时生效。若已存在 `arl_db`，需清理数据卷后重新初始化。
-- 支持1-2个 Worker
-  - 在 .env 中镜像配置
+- 支持 1-2 个 Worker：在 `.env` 中设置 `ARL_WORKER_REPLICAS`，默认值为 `2`。
 
 ### 更新
 
@@ -78,7 +84,7 @@ git pull
 
 ```plain
 # .env
-ARL_WORKER_REPLICAS=1   # 可选: 1 或 2，默认 1
+ARL_WORKER_REPLICAS=2   # 可选: 1 或 2，默认 2
 ```
 
 ## 深度重构成果

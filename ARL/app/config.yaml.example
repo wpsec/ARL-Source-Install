@@ -269,6 +269,10 @@ ARL:
   AUTH: true
   #API 认证key, 可以访问api/doc查看文档
   API_KEY: ""
+  # 统一 API 发现链路默认关闭；发布验收通过后再评审切换
+  API_UNIFIED_ENABLE: false
+  # 统一 API 异常时回退 legacy，发布阶段默认开启
+  API_UNIFIED_FALLBACK_ENABLE: true
   BLACK_IPS:
     - 127.0.0.0/8
     - 0.0.0.0/8
@@ -599,6 +603,9 @@ ARL:
   RUST_ACCEL_ENABLE: true
   # Rust 加速不可用或单批异常时是否回退 Python
   RUST_ACCEL_FALLBACK_ENABLE: true
+  # 统一 API 面 Rust 通道默认观察态；仅发布门禁通过的 stage 可切 rust
+  RUST_ACCEL_API_UNIFIED_MODE: "shadow"
+  RUST_ACCEL_API_UNIFIED_RUST_STAGES: "unified_normalize,unified_method"
   # 是否启用 URLFinder URL 可达性探测并写入 URL 信息
   URLFINDER_URL_PROBE_ENABLE: true
   # URLFinder URL 可达性探测单次最多目标数

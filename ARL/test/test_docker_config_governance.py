@@ -135,8 +135,12 @@ class TestWeakCredentialPathsRemoved(unittest.TestCase):
                 "MONGO_INITDB_ROOT_PASSWORD",
                 "RABBITMQ_DEFAULT_USER",
                 "RABBITMQ_DEFAULT_PASS",
+                "ARL_API_UNIFIED_ENABLE",
+                "ARL_API_UNIFIED_FALLBACK_ENABLE",
+                "ARL_RUST_ACCEL_API_UNIFIED_MODE",
+                "ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES",
             ):
-                self.assertIn(key, env_keys, f"{service} 缺少凭据透传 {key}")
+                self.assertIn(key, env_keys, f"{service} 缺少应用配置透传 {key}")
 
     def test_compose_required_variables_covered_by_examples(self):
         content = read(COMPOSE_FILE)
@@ -268,6 +272,8 @@ class TestCredentialInjectionChain(unittest.TestCase):
             "MONGO_INITDB_ROOT_PASSWORD": FIXTURE_MONGO_PASS,
             "RABBITMQ_DEFAULT_USER": "arl_svc",
             "RABBITMQ_DEFAULT_PASS": FIXTURE_AMQP_PASS,
+            "ARL_API_UNIFIED_ENABLE": "true",
+            "ARL_API_UNIFIED_FALLBACK_ENABLE": "false",
         }
         code = (
             "from urllib.parse import quote_plus\n"
@@ -276,6 +282,8 @@ class TestCredentialInjectionChain(unittest.TestCase):
             "ok &= quote_plus(%r) in Config.MONGO_URL\n"
             "ok &= Config.MONGO_URL.split('://', 1)[1].startswith('svc_root:%%s@' %% quote_plus(%r))\n"
             "ok &= quote_plus(%r) in Config.CELERY_BROKER_URL\n"
+            "ok &= Config.API_UNIFIED_ENABLE is True\n"
+            "ok &= Config.API_UNIFIED_FALLBACK_ENABLE is False\n"
             "raise SystemExit(0 if ok else 1)\n"
         ) % (FIXTURE_MONGO_PASS, FIXTURE_MONGO_PASS, FIXTURE_AMQP_PASS)
         proc = TestStartupArgContamination._run_python(self, code, env)

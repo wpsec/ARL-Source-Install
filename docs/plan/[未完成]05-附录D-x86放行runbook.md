@@ -14,9 +14,19 @@
 目的：确认 unified 相对 legacy 的**召回减少**每一条都能归因到误报治理动作，杜绝"解释不了的丢失"。
 
 ```bash
-docker cp scripts/fingerprint-ruleset-diff.py arl_web:/tmp/fpdiff.py
+set -o pipefail
+docker cp scripts/fingerprint-ruleset-diff.py arl_web:/tmp/fpdiff.py || {
+  echo "复制门禁脚本失败，禁止继续" >&2
+  exit 1
+}
 docker exec -e FINGERPRINT_REAL_DB=1 arl_web python3 /tmp/fpdiff.py | tee /tmp/fpdiff.out
-echo "gate1_exit=$?"
+gate1_exit=$?
+set +o pipefail
+echo "gate1_exit=$gate1_exit"
+if [ "$gate1_exit" -ne 0 ]; then
+  echo "gate1 执行失败，禁止继续" >&2
+  exit "$gate1_exit"
+fi
 ```
 
 判读（看输出末尾结论行 + `仅 legacy 有` 段落）：
@@ -75,15 +85,27 @@ docker compose -f ARL/docker/docker-compose.yml config -q && echo "yaml ok"
 ```
 然后重启生效：
 ```bash
-docker restart arl_web arl_worker_1 arl_worker_2 arl_scheduler   # worker/scheduler 均加载指纹，需全重启
+workers="$(docker ps --format '{{.Names}}' | awk '$1 == "arl_worker_1" || $1 == "arl_worker_2"')"
+if [ -z "$workers" ]; then
+  echo "未发现运行中的 worker，无法确认指纹配置已加载" >&2
+  exit 1
+fi
+docker restart arl_web arl_scheduler $workers   # 兼容 1/2 个 worker，所有运行中的消费者均需重启
 ```
 
 观测窗口内跑若干**含多样目标**的真实任务，比对站点识别结果：
 ```bash
-# 近 N 条任务的 finger / finger_candidates 采样，肉眼 + 频次看两件事
-docker exec arl_mongodb mongosh arl --quiet --eval '
-db.site.find({}, {site:1, finger:1, finger_candidates:1}).sort({_id:-1}).limit(50).forEach(d=>print(d.site, JSON.stringify(d.finger||[]), "|cand:", JSON.stringify(d.finger_candidates||[])))'
+# 仅填本次观测窗口创建的任务 ID；不要使用全库历史数据。
+TASK_IDS_JSON='["<task-id-1>","<task-id-2>"]'
+docker exec -e "ARL_TASK_IDS_JSON=$TASK_IDS_JSON" arl_mongodb mongosh arl --quiet --eval '
+const taskIds = JSON.parse(process.env.ARL_TASK_IDS_JSON || "[]");
+if (!taskIds.length) { throw new Error("ARL_TASK_IDS_JSON 不能为空"); }
+db.site.find({task_id: {$in: taskIds}}, {site:1, finger:1, finger_candidates:1, task_id:1})
+  .sort({_id:-1}).limit(50)
+  .forEach(d=>print(d.task_id, d.site, JSON.stringify(d.finger||[]), "|cand:", JSON.stringify(d.finger_candidates||[])))'
 ```
+采样命令只读取本次窗口的任务，避免历史数据污染结论；`<task-id-*>` 必须替换为实际任务 ID，
+且原始站点/任务标识不要直接归档到 Git。
 放行标准（三条全中才转正）：
 1. `finger` 里不再冒出"后台/登录/首页"这类通用词造成的误报；
 2. 已知该识别的资产（你补的规则、主流 CMS/中间件）正常出现在 `finger` 或 `finger_candidates`；
@@ -96,7 +118,12 @@ db.site.find({}, {site:1, finger:1, finger_candidates:1}).sort({_id:-1}).limit(5
 `unified` 出任何问题，改回 `legacy` 即恢复旧双路径，旧加载路径在第 7 阶段前**始终保留**：
 ```bash
 sed -i 's/.*SITE_FINGERPRINT_SOURCE.*/  SITE_FINGERPRINT_SOURCE: "legacy"/' ARL/docker/config-runtime.yaml
-docker restart arl_web arl_worker_1 arl_worker_2 arl_scheduler
+workers="$(docker ps --format '{{.Names}}' | awk '$1 == "arl_worker_1" || $1 == "arl_worker_2"')"
+if [ -z "$workers" ]; then
+  echo "未发现运行中的 worker，无法确认回滚配置已加载" >&2
+  exit 1
+fi
+docker restart arl_web arl_scheduler $workers
 ```
 站点 unified 与"文件缺失即降级 legacy"是内置行为：即使忘记改配置，
 只要 `site_fingerprints.json.gz` 不可读，`fetch_fingerprint` 会自动走 legacy（日志有

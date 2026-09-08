@@ -67,6 +67,11 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 计划 6 发布验收开关：默认关闭统一 API，shadow/rust 仅由受控 runbook 临时覆盖
+      - ARL_API_UNIFIED_ENABLE=${ARL_API_UNIFIED_ENABLE:-false}
+      - ARL_API_UNIFIED_FALLBACK_ENABLE=${ARL_API_UNIFIED_FALLBACK_ENABLE:-true}
+      - ARL_RUST_ACCEL_API_UNIFIED_MODE=${ARL_RUST_ACCEL_API_UNIFIED_MODE:-shadow}
+      - ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES=${ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES:-unified_normalize,unified_method}
       # 凭据单源注入（计划 1 治理）：app/config.py 用这些 env 拼装 Mongo/AMQP 连接串，
       # config-runtime.yaml 不再存放明文凭据；轮换只改 .env + 按 runbook 同步服务端。
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
@@ -124,6 +129,11 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 计划 6 发布验收开关：默认关闭统一 API，shadow/rust 仅由受控 runbook 临时覆盖
+      - ARL_API_UNIFIED_ENABLE=${ARL_API_UNIFIED_ENABLE:-false}
+      - ARL_API_UNIFIED_FALLBACK_ENABLE=${ARL_API_UNIFIED_FALLBACK_ENABLE:-true}
+      - ARL_RUST_ACCEL_API_UNIFIED_MODE=${ARL_RUST_ACCEL_API_UNIFIED_MODE:-shadow}
+      - ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES=${ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES:-unified_normalize,unified_method}
       # 凭据单源注入：与 web 一致（见 web 段注释）
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
@@ -173,6 +183,11 @@ services:
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
       - ARL_PORT_SCAN_SKIP_CDN_IP_DEFAULT=1
+      # 计划 6 发布验收开关：默认关闭统一 API，shadow/rust 仅由受控 runbook 临时覆盖
+      - ARL_API_UNIFIED_ENABLE=${ARL_API_UNIFIED_ENABLE:-false}
+      - ARL_API_UNIFIED_FALLBACK_ENABLE=${ARL_API_UNIFIED_FALLBACK_ENABLE:-true}
+      - ARL_RUST_ACCEL_API_UNIFIED_MODE=${ARL_RUST_ACCEL_API_UNIFIED_MODE:-shadow}
+      - ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES=${ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES:-unified_normalize,unified_method}
       # 凭据单源注入：与 web 一致（见 web 段注释）
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
@@ -212,6 +227,11 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      # scheduler 必须与 web/worker 使用同一组统一 API 开关，避免配置漂移
+      - ARL_API_UNIFIED_ENABLE=${ARL_API_UNIFIED_ENABLE:-false}
+      - ARL_API_UNIFIED_FALLBACK_ENABLE=${ARL_API_UNIFIED_FALLBACK_ENABLE:-true}
+      - ARL_RUST_ACCEL_API_UNIFIED_MODE=${ARL_RUST_ACCEL_API_UNIFIED_MODE:-shadow}
+      - ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES=${ARL_RUST_ACCEL_API_UNIFIED_RUST_STAGES:-unified_normalize,unified_method}
       # 凭据单源注入：与 web 一致（见 web 段注释）
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME:?set MONGO credentials in .env (see .env.example)}
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD:?set MONGO credentials in .env (see .env.example)}
