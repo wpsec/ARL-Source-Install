@@ -1846,7 +1846,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                       </div>
                     </div>
                   </div>
-                  <div className={`badge gap-1 text-[11px] ${
+                  <div className={`badge badge-soft gap-1 text-[11px] ${
                     configured
                       ? 'badge-success'
                       : 'badge-ghost border border-base-300'
@@ -2377,7 +2377,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 cellClass: 'text-left whitespace-nowrap',
                 render: (item: any) => (
                   <span
-                    className={`badge text-xs ${
+                    className={`badge badge-soft text-xs ${
                       item.status === 'ok'
                         ? 'badge-success'
                         : item.status === 'skipped'

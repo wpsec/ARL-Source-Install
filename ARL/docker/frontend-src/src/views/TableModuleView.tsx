@@ -1606,8 +1606,8 @@ export function TableModuleView({
   }, []);
   const getAiDenoiseCellClass = useCallback((resultLevel: AiDenoiseResultItem['result_level'], clickable: boolean): string => {
     const base = clickable
-      ? 'badge min-w-[92px] px-2.5 py-1 text-xs font-black transition hover:opacity-85'
-      : 'badge min-w-[92px] px-2.5 py-1 text-xs font-black';
+      ? 'badge badge-soft min-w-[92px] px-2.5 py-1 text-xs font-black transition hover:opacity-85'
+      : 'badge badge-soft min-w-[92px] px-2.5 py-1 text-xs font-black';
     if (resultLevel === 'danger') return `${base} badge-error`;
     if (resultLevel === 'suspicious') return `${base} badge-warning`;
     if (resultLevel === 'disabled') return `${base} badge-ghost border border-base-300`;
@@ -3651,9 +3651,9 @@ export function TableModuleView({
                           const methodText = String(row?.method || '').trim().toUpperCase();
                           const tagClass =
                             methodText === 'POST'
-                                ? 'badge badge-warning text-xs font-bold'
+                                ? 'badge badge-soft badge-warning text-xs font-bold'
                                 : methodText === 'GET'
-                                ? 'badge badge-success text-xs font-bold'
+                                ? 'badge badge-soft badge-success text-xs font-bold'
                                 : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-content-muted text-xs font-bold';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
@@ -3665,11 +3665,11 @@ export function TableModuleView({
                         if (module.id === 'wih_endpoint' && column === 'verification_status') {
                           const status = String(row?.verification_status || '').trim().toLowerCase();
                           const statusClass = status === 'auth_anomaly_candidate'
-                            ? 'badge badge-warning gap-1'
+                            ? 'badge badge-soft badge-warning gap-1'
                             : status === 'verified_read'
-                              ? 'badge badge-success gap-1'
+                              ? 'badge badge-soft badge-success gap-1'
                               : status === 'failed' || status === 'degraded'
-                                ? 'badge badge-error gap-1'
+                                ? 'badge badge-soft badge-error gap-1'
                                 : 'badge badge-ghost border border-base-300';
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
@@ -3682,7 +3682,7 @@ export function TableModuleView({
                           const required = Boolean(row?.manual_review_required || row?.auth_anomaly_candidate);
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                              <span className={required ? 'badge badge-warning' : 'badge badge-ghost border border-base-300'}>
+                              <span className={required ? 'badge badge-soft badge-warning' : 'badge badge-ghost border border-base-300'}>
                                 {required ? '需要复核' : '无需复核'}
                               </span>
                             </td>
@@ -4953,11 +4953,11 @@ export function TableModuleView({
                   <span className="badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold">
                     AI填充：{aiFillStatusText}
                   </span>
-                  <span className={detailRow?.auth_anomaly_candidate ? 'badge badge-warning px-2.5 py-3 text-xs font-semibold' : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold'}>
+                  <span className={detailRow?.auth_anomaly_candidate ? 'badge badge-soft badge-warning px-2.5 py-3 text-xs font-semibold' : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-xs font-semibold'}>
                     验证：{formatWihVerificationStatus(detailRow)}
                   </span>
                   {detailRow?.manual_review_required || detailRow?.auth_anomaly_candidate ? (
-                    <span className="badge badge-warning px-2.5 py-3 text-xs font-semibold">需要人工复核</span>
+                    <span className="badge badge-soft badge-warning px-2.5 py-3 text-xs font-semibold">需要人工复核</span>
                   ) : null}
                 </div>
 

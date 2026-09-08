@@ -398,7 +398,7 @@ export function DashboardView({
                 <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
                   <card.icon className="w-6 h-6" />
                 </div>
-                <div className={`badge gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
+                <div className={`badge badge-soft gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
                   {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {card.change}
                 </div>
