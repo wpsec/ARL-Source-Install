@@ -152,7 +152,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <div className="min-w-[3.5rem] text-center" aria-label="进程数量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <Activity className="h-3 w-3" />
-            <span className="whitespace-nowrap text-[10px] font-semibold leading-3">进程数量</span>
+            <span className="whitespace-nowrap text-[10px] font-semibold leading-3" title="web、worker_1、worker_2、scheduler 应用容器进程总数">进程数量</span>
           </div>
           <p className="whitespace-nowrap text-[11px] font-bold leading-3 tabular-nums">{normalizeValue(resource.process_count)}</p>
         </div>

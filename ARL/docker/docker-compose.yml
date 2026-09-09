@@ -3,6 +3,7 @@ volumes:
     external: true
   redis_data:
   rabbitmq_data:
+  arl_process_monitor:
 
 services:
   nginx:
@@ -46,6 +47,8 @@ services:
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 共享 worker 扫描日志，供仪表盘“实时扫描日志”读取
       - ./logs:/code/logs:ro
+      # 汇总 web、worker、scheduler 的真实进程数，不挂载 Docker socket
+      - arl_process_monitor:/run/arl-process-monitor
       # 自定义域名字典（包含 uploaded 子目录），持久化到宿主机
       - ./dicts/domain:/code/app/dicts/custom/domain
       # 自定义敏感目录字典，供 FILE_LEAK_DICT 指向使用
@@ -63,6 +66,9 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      - ARL_PROCESS_MONITOR_INSTANCE=web
+      - ARL_PROCESS_MONITOR_DIR=/run/arl-process-monitor
+      - ARL_PROCESS_MONITOR_INSTANCES=web,worker_1,worker_2,scheduler
       # 端口扫描默认采用 SYN，all 模式按单 IP 隔离并发，避免旧 runtime 配置覆盖新策略
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
@@ -101,6 +107,7 @@ services:
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       # 将 worker 日志落到宿主机，供 web 仪表盘读取
       - ./logs:/code/logs
+      - arl_process_monitor:/run/arl-process-monitor
       - ./dicts/domain:/code/app/dicts/custom/domain
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak
       - ../../tools:/code/tools:ro
@@ -125,6 +132,9 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      - ARL_PROCESS_MONITOR_INSTANCE=worker_1
+      - ARL_PROCESS_MONITOR_DIR=/run/arl-process-monitor
+      - ARL_PROCESS_MONITOR_INSTANCES=web,worker_1,worker_2,scheduler
       # 端口扫描默认采用 SYN，all 模式按单 IP 隔离并发，避免旧 runtime 配置覆盖新策略
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
@@ -158,6 +168,7 @@ services:
       - ./exports:/code/app/exports
       - ./poc:/opt/ARL-NPoC/xing/plugins/upload_poc
       - ./logs:/code/logs
+      - arl_process_monitor:/run/arl-process-monitor
       - ./dicts/domain:/code/app/dicts/custom/domain
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak
       - ../../tools:/code/tools:ro
@@ -179,6 +190,9 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      - ARL_PROCESS_MONITOR_INSTANCE=worker_2
+      - ARL_PROCESS_MONITOR_DIR=/run/arl-process-monitor
+      - ARL_PROCESS_MONITOR_INSTANCES=web,worker_1,worker_2,scheduler
       # 保持两个 worker 的端口扫描策略一致
       - ARL_PORT_SCAN_SYN_ENABLE=1
       - ARL_PORT_SCAN_SYN_FALLBACK_ENABLE=1
@@ -211,11 +225,12 @@ services:
       # scheduler 也需要读取字典路径（配置加载阶段会校验文件存在）
       - ./dicts/domain:/code/app/dicts/custom/domain
       - ./dicts/file_leak:/code/app/dicts/custom/file_leak
+      - arl_process_monitor:/run/arl-process-monitor
     entrypoint:
       [
         "sh",
         "-c",
-        "wait-for-it.sh -t 0 mongodb:27017; wait-for-it.sh -t 0 rabbitmq:5672; wait-for-it.sh -t 0 redis:6379; PYTHONPATH=/code python3 -m app.tools.sync_runtime_config --quiet || { echo '[ERROR] scheduler runtime config sync failed'; exit 1; }; PYTHONPATH=/code python3 -m app.tools.check_runtime_config --runtime /code/app/config.yaml --quiet || { echo '[ERROR] scheduler runtime config security check failed'; exit 1; }; python3 -m app.scheduler",
+        "start_scheduler.sh",
       ]
     environment:
       - LANG=en_US.UTF-8
@@ -227,6 +242,9 @@ services:
       - ARL_DOMAIN_DICT_UPLOAD_DIR=/code/app/dicts/custom/domain/uploaded
       - ARL_FILE_LEAK_DICT_CUSTOM_DIR=/code/app/dicts/custom/file_leak
       - ARL_FILE_LEAK_DICT_UPLOAD_DIR=/code/app/dicts/custom/file_leak/uploaded
+      - ARL_PROCESS_MONITOR_INSTANCE=scheduler
+      - ARL_PROCESS_MONITOR_DIR=/run/arl-process-monitor
+      - ARL_PROCESS_MONITOR_INSTANCES=web,worker_1,worker_2,scheduler
       # scheduler 必须与 web/worker 使用同一组统一 API 开关，避免配置漂移
       - ARL_API_UNIFIED_ENABLE=${ARL_API_UNIFIED_ENABLE:-false}
       - ARL_API_UNIFIED_FALLBACK_ENABLE=${ARL_API_UNIFIED_FALLBACK_ENABLE:-true}

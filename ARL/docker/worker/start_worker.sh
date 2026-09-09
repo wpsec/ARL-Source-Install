@@ -166,6 +166,18 @@ terminate_children() {
   done
 }
 
+start_process_monitor() {
+  local monitor_dir="${ARL_PROCESS_MONITOR_DIR:-/run/arl-process-monitor}"
+  local monitor_instance="${ARL_PROCESS_MONITOR_INSTANCE:-unknown}"
+  local monitor_log="/code/logs/arl_process_monitor_${monitor_instance}.log"
+
+  mkdir -p "${monitor_dir}"
+  PYTHONPATH=/code python3 -m app.tools.system_monitor_process_reporter \
+    >>"${monitor_log}" 2>&1 &
+  PROCESS_MONITOR_PID="$!"
+  echo "started process monitor instance=${monitor_instance} pid=${PROCESS_MONITOR_PID}"
+}
+
 spawn_worker() {
   local worker_name="$1"
   local queue_name="$2"
@@ -311,6 +323,8 @@ LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
 log_wih_binary_runtime
 
+start_process_monitor
+
 if should_run_startup_recovery; then
   recover_interrupted_tasks
 else
@@ -333,11 +347,11 @@ assert_worker_stable "arlheavy" "${HEAVY_PID}"
 assert_worker_stable "arlweb" "${WEB_PID}"
 assert_worker_stable "arltask" "${TASK_PID}"
 if ! wait_for_worker_consumers; then
-  terminate_children "${GITHUB_PID}" "${HEAVY_PID}" "${WEB_PID}" "${TASK_PID}"
+  terminate_children "${PROCESS_MONITOR_PID}" "${GITHUB_PID}" "${HEAVY_PID}" "${WEB_PID}" "${TASK_PID}"
   exit 1
 fi
 
-trap 'terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
+trap 'terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
 
 HEALTH_CHECK_TICKS=0
 HEALTH_FAILURES=0
@@ -383,7 +397,7 @@ while true; do
       continue
     fi
 
-    terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
+    terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
     exit "${EXIT_CODE}"
   done
 
@@ -397,7 +411,7 @@ while true; do
       echo "[WARN] celery consumer health check failed consecutive=${HEALTH_FAILURES}/3"
       if [ "${HEALTH_FAILURES}" -ge 3 ]; then
         echo "[ERROR] celery consumer health stayed unhealthy, stopping container for broker re-registration"
-        terminate_children "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
+        terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
         exit 1
       fi
     fi

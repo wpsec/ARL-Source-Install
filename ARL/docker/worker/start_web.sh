@@ -81,6 +81,12 @@ wait-for-it.sh -t 0 mongodb:27017
 wait-for-it.sh -t 0 rabbitmq:5672
 wait-for-it.sh -t 0 redis:6379
 
+mkdir -p "${ARL_PROCESS_MONITOR_DIR:-/run/arl-process-monitor}"
+MONITOR_LOG="/tmp/arl_process_monitor_${ARL_PROCESS_MONITOR_INSTANCE:-web}.log"
+PYTHONPATH=/code python3 -m app.tools.system_monitor_process_reporter \
+  >>"${MONITOR_LOG}" 2>&1 &
+echo "started process monitor instance=${ARL_PROCESS_MONITOR_INSTANCE:-web} pid=$!"
+
 # 导入期副作用收口：任务 tag / Mongo 索引 / NPoC 同步在 gunicorn 前显式执行。
 echo "Running runtime bootstrap (task tags / indexes / npoc sync)..."
 if ! PYTHONPATH=/code python3 -m app.tools.arl_bootstrap; then

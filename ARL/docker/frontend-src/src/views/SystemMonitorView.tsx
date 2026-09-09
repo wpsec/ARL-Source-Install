@@ -301,7 +301,7 @@ export function SystemMonitorView({ token }: { token: string }) {
           <div className="stat-value text-2xl">{normalizeValue(resource?.network_total_recv)}</div>
         </div>
         <div className="stat px-5 py-4">
-          <div className="stat-title text-content-muted">进程数量 / 启动时间</div>
+          <div className="stat-title text-content-muted" title="web、worker_1、worker_2、scheduler 应用容器进程总数">进程数量 / 启动时间</div>
           <div className="stat-value text-lg">{normalizeValue(resource?.process_count)} / {normalizeValue(resource?.boot_time)}</div>
         </div>
       </div>

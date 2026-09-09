@@ -697,6 +697,15 @@ def _collect_system_monitor_snapshot():
     """
     采集系统监控实时快照，并维护历史趋势缓存。
     """
+    # 延迟导入避免控制台路由加载阶段触发重型 service 包初始化。
+    from app.services.system_monitor_processes import (
+        aggregate_process_counts,
+        collect_process_count,
+        get_expected_instances,
+        get_monitor_instance,
+        write_process_snapshot,
+    )
+
     device_info = utils.device_info()
     cpu_info = device_info.get("cpu", {})
     memory_info = device_info.get("memory") or device_info.get("virtual_memory") or {}
@@ -755,11 +764,17 @@ def _collect_system_monitor_snapshot():
     except Exception as e:
         logger.debug("parse boot time failed: %s", e)
 
-    process_count = 0
-    try:
-        process_count = len(psutil.pids())
-    except Exception as e:
-        logger.debug("count process failed: %s", e)
+    # web 请求本身作为 web 容器心跳，worker/scheduler 由独立 reporter 上报。
+    # 共享心跳比挂载 Docker socket 更小权限，也能覆盖扫描工具子进程。
+    write_process_snapshot(
+        process_count=collect_process_count(),
+        instance=get_monitor_instance(),
+        updated_at=now_ts,
+    )
+    process_count, process_count_by_container = aggregate_process_counts()
+    if not process_count_by_container:
+        # 共享卷不可用时保留旧接口的单容器降级结果，避免监控接口整体失效。
+        process_count = collect_process_count()
 
     resource = {
         "cpu_percent": round(cpu_percent, 2),
@@ -776,6 +791,10 @@ def _collect_system_monitor_snapshot():
         "network_rate_out_kbps": round(history_24h[-1]["net_out"], 2),
         "network_rate_total_kbps": round(history_24h[-1]["net"], 2),
         "process_count": process_count,
+        "process_count_scope": "arl_app_containers",
+        "process_count_expected_containers": len(get_expected_instances()),
+        "process_count_online_containers": len(process_count_by_container),
+        "process_count_by_container": process_count_by_container,
         "boot_time": boot_time,
     }
     return resource, history_24h
