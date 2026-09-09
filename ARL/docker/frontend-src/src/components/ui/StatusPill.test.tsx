@@ -8,6 +8,7 @@ describe('StatusPill', () => {
     render(<StatusPill text="done_degraded" type="info" />);
     const pill = screen.getByText('done_degraded');
     expect(pill).toBeTruthy();
+    expect(pill.className).not.toContain('truncate');
     expect(pill.closest('[title="done_degraded"]')).toBeTruthy();
   });
 });

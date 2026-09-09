@@ -85,7 +85,7 @@ function MetricRow({
     <div className={`flex h-full min-w-0 basis-0 flex-1 items-center gap-1.5 overflow-hidden px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
-        <span className="block truncate whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted" title={label}>{label}</span>
+        <span className="block whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted" title={label}>{label}</span>
         <span className="block min-w-0 truncate text-[11px] font-bold leading-3 tabular-nums" style={{ color }} title={value}>{value}</span>
         <div className="mt-0.5">
           <Sparkline data={data} dataKey={dataKey} color={color} />

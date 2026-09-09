@@ -54,6 +54,7 @@ describe('SystemMonitorMiniWidget', () => {
     expect(screen.getByText('累计接收')).toBeTruthy();
     expect(screen.getByText('进程数量')).toBeTruthy();
     expect(screen.getByText('CPU').className).toContain('whitespace-nowrap');
+    expect(screen.getByText('CPU').className).not.toContain('truncate');
     expect(screen.getByText('24.5%').className).toContain('truncate');
     expect(screen.getByRole('group', { name: 'CPU、内存与网速' }).className).toContain('rounded-box');
     expect(screen.getByRole('group', { name: 'CPU、内存与网速' }).className).toContain('w-[360px]');
