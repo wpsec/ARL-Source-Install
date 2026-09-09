@@ -40,6 +40,7 @@ const ApiConsoleView = lazy(() => import('./views/ApiConsoleView').then((m) => (
 const ConfigConsoleView = lazy(() => import('./views/ConfigConsoleView').then((m) => ({ default: m.ConfigConsoleView })));
 const ConfigAiManagementPanel = lazy(() => import('./views/AiConsoleView').then((m) => ({ default: m.ConfigAiManagementPanel })));
 const DingtalkIntegrationView = lazy(() => import('./views/DingtalkIntegrationView').then((m) => ({ default: m.DingtalkIntegrationView })));
+const IcpQueryView = lazy(() => import('./views/IcpQueryView').then((m) => ({ default: m.IcpQueryView })));
 const TableModuleView = lazy(() => import('./views/TableModuleView').then((m) => ({ default: m.TableModuleView })));
 const ActionDialog = lazy(() => import('./views/ActionDialog').then((m) => ({ default: m.ActionDialog })));
 
@@ -98,6 +99,7 @@ export function MainShell() {
     dashboard: 'dashboard',
     tasks: 'task',
     assets: 'site',
+    icp_query: 'icp_query',
     asset_monitor: 'scheduler',
     groups: 'asset_scope',
     monitoring: 'system_monitor',
@@ -404,12 +406,14 @@ export function MainShell() {
         {activeModule.id === 'config_console' ? <ConfigConsoleView token={token} /> : null}
         {activeModule.id === 'ai_console' ? <ConfigAiManagementPanel token={token} /> : null}
         {activeModule.id === 'dingtalk_api' ? <DingtalkIntegrationView token={token} /> : null}
+        {activeModule.id === 'icp_query' ? <IcpQueryView token={token} /> : null}
         {activeModule.id !== 'dashboard' &&
         activeModule.id !== 'system_monitor' &&
         activeModule.id !== 'api_console' &&
         activeModule.id !== 'config_console' &&
         activeModule.id !== 'ai_console' &&
-        activeModule.id !== 'dingtalk_api' ? (
+        activeModule.id !== 'dingtalk_api' &&
+        activeModule.id !== 'icp_query' ? (
           <TableModuleView
             module={activeModule}
             token={token}

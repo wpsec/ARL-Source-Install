@@ -1,0 +1,10 @@
+{
+  "code": 200,
+  "success": true,
+  "params": {
+    "appName": "示例应用",
+    "licenseNo": "京ICP备00000001号",
+    "serviceType": 6,
+    "recordStatus": "正常"
+  }
+}

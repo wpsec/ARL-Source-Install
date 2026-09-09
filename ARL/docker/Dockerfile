@@ -8,7 +8,7 @@ COPY ARL/docker/frontend-src/package*.json ./
 RUN set -eux; \
     export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; \
     if command -v apt-get >/dev/null 2>&1; then \
-      for SOURCE_LIST in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+      for SOURCE_LIST in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
         if [ -f "${SOURCE_LIST}" ]; then \
           sed -i \
             -e 's|deb.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' \
@@ -422,7 +422,8 @@ RUN set -eux; \
     rm -f /tmp/nuclei_*.zip; \
     chmod +x /usr/local/bin/ncrack /usr/bin/wih /usr/bin/*.sh /usr/bin/nuclei; \
     cp app/config.yaml.example app/config.yaml; \
-    python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright"; \
+    python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright, openpyxl"; \
+    python3 -c "import app.routes.icp_query, app.services.icp_query"; \
     python3 -c "from Cryptodome.Cipher import AES"; \
     python3 -c "from requests_ntlm import HttpNtlmAuth"; \
     ncrack -V >/dev/null; \

@@ -1,0 +1,17 @@
+{
+  "code": 200,
+  "success": true,
+  "params": {
+    "total": 1,
+    "list": [
+      {
+        "unitName": "示例主体",
+        "domainName": "example.test",
+        "serviceLicence": "京ICP备00000000号",
+        "provinceName": "北京",
+        "updateRecordTime": "2026-09-09",
+        "dataId": "fixture-web-data-id"
+      }
+    ]
+  }
+}

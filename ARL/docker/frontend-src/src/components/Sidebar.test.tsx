@@ -65,4 +65,13 @@ describe('Sidebar 整行菜单布局', () => {
     expect(screen.getByRole('button', { name: '任务管理' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: '仪表盘' }).getAttribute('aria-current')).toBeNull();
   });
+
+  it('ICP 查询位于资产搜索与资产监控之间', () => {
+    renderSidebar();
+
+    const labels = screen.getAllByRole('button').map((button) => button.getAttribute('aria-label') || '');
+    expect(labels.indexOf('资产搜索')).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf('ICP 查询')).toBe(labels.indexOf('资产搜索') + 1);
+    expect(labels.indexOf('资产监控')).toBe(labels.indexOf('ICP 查询') + 1);
+  });
 });

@@ -50,7 +50,7 @@ def env_bool(name, default=False):
     从环境变量读取布尔值
     """
     value = os.environ.get(name)
-    if value is None:
+    if value is None or not str(value).strip():
         return default
     return str(value).strip().lower() in ["1", "true", "yes", "on"]
 
@@ -414,6 +414,14 @@ def refresh_runtime_config_best_effort(force=False):
             "PORT_SCAN_BATCH_CONCURRENCY",
             "PORT_SCAN_BATCH_TIMEOUT_SEC",
             "API_ENDPOINT_CLAIM_LEASE_SEC",
+            "ICP_QUERY_TIMEOUT_SEC",
+            "ICP_QUERY_BATCH_CONCURRENCY",
+            "ICP_QUERY_PAGE_SIZE",
+            "ICP_QUERY_MAX_ITEMS",
+            "ICP_QUERY_MAX_PAGES",
+            "ICP_QUERY_KEYWORD_MAX_LENGTH",
+            "ICP_QUERY_HISTORY_RETENTION_DAYS",
+            "ICP_QUERY_LOG_RETENTION_DAYS",
         ]
         for key_name in positive_keys:
             value = arl_conf.get(key_name)
@@ -554,6 +562,14 @@ def refresh_runtime_config_best_effort(force=False):
             Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT = _safe_runtime_bool(
                 arl_conf.get("PORT_SCAN_SKIP_CDN_IP_DEFAULT"), Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
             )
+        if arl_conf.get("ICP_QUERY_RETRY") is not None:
+            Config.ICP_QUERY_RETRY = safe_int(
+                arl_conf.get("ICP_QUERY_RETRY"), Config.ICP_QUERY_RETRY, min_value=0
+            )
+        if arl_conf.get("ICP_QUERY_ENABLE") is not None:
+            Config.ICP_QUERY_ENABLE = _safe_runtime_bool(
+                arl_conf.get("ICP_QUERY_ENABLE"), Config.ICP_QUERY_ENABLE
+            )
         if arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE") is not None:
             Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = _safe_runtime_bool(
                 arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE"),
@@ -625,6 +641,14 @@ def refresh_runtime_config_best_effort(force=False):
             Config.RUST_ACCEL_API_UNIFIED_RUST_STAGES)
         Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
             "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
+        )
+        Config.ICP_QUERY_ENABLE = env_bool(
+            "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
+        )
+        Config.ICP_QUERY_RETRY = safe_int(
+            env_int("ARL_ICP_QUERY_RETRY", Config.ICP_QUERY_RETRY),
+            Config.ICP_QUERY_RETRY,
+            min_value=0,
         )
         for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
             setattr(
@@ -1189,6 +1213,18 @@ class Config(object):
     # ==================== 代理配置 ====================
     # HTTP代理地址（用于需要代理的网络请求）
     PROXY_URL = ""
+
+    # ICP 查询集成配置：复用现有 Web/Worker 镜像和 arlweb 队列。
+    ICP_QUERY_ENABLE = True
+    ICP_QUERY_TIMEOUT_SEC = 30
+    ICP_QUERY_RETRY = 2
+    ICP_QUERY_BATCH_CONCURRENCY = 2
+    ICP_QUERY_PAGE_SIZE = 26
+    ICP_QUERY_MAX_ITEMS = 200
+    ICP_QUERY_MAX_PAGES = 100
+    ICP_QUERY_KEYWORD_MAX_LENGTH = 255
+    ICP_QUERY_HISTORY_RETENTION_DAYS = 30
+    ICP_QUERY_LOG_RETENTION_DAYS = 7
 
     # ==================== provider 网络治理 ====================
     # provider 请求连接/读取超时上限；插件传入更大的 timeout 时按这里收敛。
@@ -2094,11 +2130,25 @@ try:
         "TASK_FINALIZER_PENDING_MAX",
         "LEDGER_DEGRADED_THRESHOLD",
         "API_ENDPOINT_CLAIM_LEASE_SEC",
+        "ICP_QUERY_TIMEOUT_SEC",
+        "ICP_QUERY_BATCH_CONCURRENCY",
+        "ICP_QUERY_PAGE_SIZE",
+        "ICP_QUERY_MAX_ITEMS",
+        "ICP_QUERY_MAX_PAGES",
+        "ICP_QUERY_KEYWORD_MAX_LENGTH",
+        "ICP_QUERY_HISTORY_RETENTION_DAYS",
+        "ICP_QUERY_LOG_RETENTION_DAYS",
     ]
     for _key in _ARL_POSITIVE_INT_KEYS:
         _val = y["ARL"].get(_key)
         if _val is not None:
             setattr(Config, _key, safe_positive_int(_val, getattr(Config, _key)))
+    if y["ARL"].get("ICP_QUERY_RETRY") is not None:
+        Config.ICP_QUERY_RETRY = safe_int(
+            y["ARL"].get("ICP_QUERY_RETRY"),
+            Config.ICP_QUERY_RETRY,
+            min_value=0,
+        )
     for _key in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
         if y["ARL"].get(_key) is not None:
             setattr(
@@ -2140,6 +2190,10 @@ try:
     if y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE") is not None:
         Config.TASK_HEAVY_QUEUE_ENABLE = safe_bool(
             y["ARL"].get("TASK_HEAVY_QUEUE_ENABLE"), Config.TASK_HEAVY_QUEUE_ENABLE
+        )
+    if y["ARL"].get("ICP_QUERY_ENABLE") is not None:
+        Config.ICP_QUERY_ENABLE = safe_bool(
+            y["ARL"].get("ICP_QUERY_ENABLE"), Config.ICP_QUERY_ENABLE
         )
 
     # --- 代理配置 ---
@@ -2687,6 +2741,33 @@ try:
     )
     Config.TASK_HEAVY_QUEUE_ENABLE = env_bool(
         "ARL_TASK_HEAVY_QUEUE_ENABLE", Config.TASK_HEAVY_QUEUE_ENABLE
+    )
+    Config.ICP_QUERY_ENABLE = env_bool(
+        "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
+    )
+    for _key in (
+        "ICP_QUERY_TIMEOUT_SEC",
+        "ICP_QUERY_BATCH_CONCURRENCY",
+        "ICP_QUERY_PAGE_SIZE",
+        "ICP_QUERY_MAX_ITEMS",
+        "ICP_QUERY_MAX_PAGES",
+        "ICP_QUERY_KEYWORD_MAX_LENGTH",
+        "ICP_QUERY_HISTORY_RETENTION_DAYS",
+        "ICP_QUERY_LOG_RETENTION_DAYS",
+    ):
+        current_value = getattr(Config, _key)
+        setattr(
+            Config,
+            _key,
+            safe_positive_int(
+                env_int("ARL_{}".format(_key), current_value),
+                current_value,
+            ),
+        )
+    Config.ICP_QUERY_RETRY = safe_int(
+        env_int("ARL_ICP_QUERY_RETRY", Config.ICP_QUERY_RETRY),
+        Config.ICP_QUERY_RETRY,
+        min_value=0,
     )
     Config.PROXY_URL = env_str("ARL_PROXY_URL", Config.PROXY_URL).strip()
     Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = env_bool(

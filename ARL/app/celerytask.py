@@ -14,6 +14,7 @@ Celery 异步任务调度模块
 import signal
 import time
 import traceback
+from datetime import timedelta
 from bson import ObjectId
 from app.config import Config, refresh_runtime_config_best_effort
 from celery import Celery, platforms
@@ -105,6 +106,7 @@ platforms.C_FORCE_ROOT = True
 
 _WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
+_ICP_RECOVERY_CLAIM_SEC = 300
 
 _AI_DENOISE_STAGE_MODULE_MAP = {
     # 基础阶段：证书收集完成后即可先跑证书去噪。
@@ -1163,6 +1165,188 @@ def arl_task_web(options):
         options: 任务选项字典
     """
     run_task(options)
+
+
+@celery.task(bind=True, queue='arlweb', name='arl.icp_query_task')
+def run_icp_query_task(self, task_id):
+    """执行 ICP 查询任务，复用现有 Web 重任务 Worker。"""
+    # ICP 任务不经过 run_task()，因此必须在这里同步运行配置，否则 Worker
+    # 进程启动后修改的超时、重试和并发配置不会对新任务生效。
+    refresh_runtime_config_best_effort()
+    from app.services.icp_query import execute_task, mark_task_started
+
+    mark_task_started(task_id, getattr(self.request, "id", ""))
+    return execute_task(str(task_id or '').strip())
+
+
+def _guess_icp_dispatch_ts(item):
+    """推断 ICP 任务最近一次派发时间，兼容没有 dispatch_ts 的早期任务。"""
+    try:
+        dispatch_ts = int(item.get("dispatch_ts") or 0)
+    except (TypeError, ValueError):
+        dispatch_ts = 0
+    if dispatch_ts > 0:
+        return dispatch_ts
+
+    created_at = item.get("created_at")
+    try:
+        return int(created_at.timestamp())
+    except (AttributeError, TypeError, ValueError, OSError):
+        return 0
+
+
+def recover_orphan_icp_tasks_on_worker_start(
+    live_task_id_set=None,
+    inspect_trusted=False,
+    grace_sec=_WAITING_ORPHAN_GRACE_SEC,
+    claim_sec=_ICP_RECOVERY_CLAIM_SEC,
+):
+    """恢复 Worker 重启后丢失的 ICP 消息，并保留已完成的批量子项。"""
+    result = {"requeued": 0, "failed": 0, "skipped": 0}
+    if not inspect_trusted:
+        logger.warning("skip orphan ICP recovery because live inspection is untrusted")
+        return result
+
+    queue_count_map, queue_ok = _get_broker_queue_message_counts(("arlweb",))
+    live_ids = {
+        str(item or "").strip()
+        for item in list(live_task_id_set or [])
+        if str(item or "").strip()
+    }
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - max(int(grace_sec or 0), 10)
+    claim_at = utils.curr_date_obj()
+    claim_cutoff = claim_at - timedelta(seconds=max(int(claim_sec or 0), 60))
+    try:
+        items = list(utils.conn_db("icp_query_task").find(
+            {
+                "status": {"$in": ["queued", "running"]},
+                "task_kind": {"$in": ["single", "batch"]},
+            },
+            {
+                "_id": 0,
+                "task_id": 1,
+                "task_kind": 1,
+                "status": 1,
+                "celery_id": 1,
+                "created_at": 1,
+                "dispatch_ts": 1,
+            },
+        ))
+    except Exception as exc:
+        logger.warning("query orphan ICP tasks failed error:%s", safe_error_text(exc))
+        return result
+
+    collection = utils.conn_db("icp_query_task")
+    for item in items:
+        task_id = str(item.get("task_id") or "").strip()
+        if not task_id:
+            result["skipped"] += 1
+            continue
+        dispatch_ts = _guess_icp_dispatch_ts(item)
+        if dispatch_ts <= 0 or dispatch_ts > cutoff_ts:
+            result["skipped"] += 1
+            continue
+
+        celery_id = str(item.get("celery_id") or "").strip()
+        if celery_id and celery_id in live_ids:
+            result["skipped"] += 1
+            continue
+        if item.get("status") == "queued":
+            if not queue_ok or int(queue_count_map.get("arlweb", 0) or 0) > 0:
+                result["skipped"] += 1
+                continue
+
+        claim = collection.update_one(
+            {
+                "task_id": task_id,
+                "status": {"$in": ["queued", "running"]},
+                "$or": [
+                    {"recovery_claimed_at": {"$exists": False}},
+                    {"recovery_claimed_at": None},
+                    {"recovery_claimed_at": {"$lt": claim_cutoff}},
+                ],
+            },
+            {"$set": {"recovery_claimed_at": claim_at}},
+        )
+        if int(getattr(claim, "modified_count", 0) or 0) <= 0:
+            result["skipped"] += 1
+            continue
+
+        recovery_message = "Worker 重启后恢复 ICP 查询任务"
+        reset = collection.update_one(
+            {"task_id": task_id, "recovery_claimed_at": claim_at},
+            {
+                "$set": {
+                    "status": "queued",
+                    "celery_id": "",
+                    "started_at": None,
+                    "finished_at": None,
+                    "recovery_at": utils.curr_date(),
+                    "recovery_reason": recovery_message,
+                    "items.$[item].status": "queued",
+                    "items.$[item].error_category": "",
+                    "items.$[item].error_message": "",
+                }
+            },
+            array_filters=[{"item.status": {"$in": ["queued", "running"]}}],
+        )
+        if int(getattr(reset, "modified_count", 0) or 0) <= 0:
+            result["skipped"] += 1
+            continue
+
+        try:
+            async_result = run_icp_query_task.apply_async(args=[task_id], queue="arlweb")
+            new_celery_id = str(getattr(async_result, "id", "") or "")
+            collection.update_one(
+                {"task_id": task_id, "recovery_claimed_at": claim_at},
+                {
+                    "$set": {
+                        "celery_id": new_celery_id,
+                        "dispatch_queue": "arlweb",
+                        "dispatch_time": utils.curr_date(),
+                        "dispatch_ts": int(time.time()),
+                    },
+                    "$unset": {"recovery_claimed_at": ""},
+                },
+            )
+            result["requeued"] += 1
+            logger.warning("requeue orphan ICP task task_id:%s new_celery_id:%s", task_id, new_celery_id)
+        except Exception as exc:
+            error_text = safe_error_text(exc)
+            collection.update_one(
+                {"task_id": task_id, "recovery_claimed_at": claim_at},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "finished_at": utils.curr_date(),
+                        "error_summary": "ICP 任务恢复投递失败: {}".format(error_text),
+                        "items.$[item].status": "failed",
+                        "items.$[item].error_category": "dispatch_error",
+                        "items.$[item].error_message": error_text,
+                    },
+                    "$unset": {"recovery_claimed_at": ""},
+                },
+                array_filters=[{"item.status": {"$in": ["queued", "running"]}}],
+            )
+            try:
+                from app.services.icp_query import _recount_task
+
+                _recount_task(task_id)
+            except Exception as recount_exc:
+                logger.warning(
+                    "recount failed after ICP recovery dispatch failure task_id:%s error:%s",
+                    task_id,
+                    safe_error_text(recount_exc),
+                )
+            result["failed"] += 1
+            logger.warning("requeue orphan ICP task failed task_id:%s error:%s", task_id, error_text)
+
+    if result["requeued"] or result["failed"]:
+        logger.warning("recover orphan ICP tasks result:%s", result)
+    else:
+        logger.info("recover orphan ICP tasks no stale task found")
+    return result
 
 
 def _mark_task_started_best_effort(action, data):

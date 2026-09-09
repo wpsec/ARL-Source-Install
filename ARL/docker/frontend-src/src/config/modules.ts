@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Database,
   FileCode,
+  FileSearch,
   FlaskConical,
   GitBranch,
   Globe,
@@ -112,6 +113,13 @@ export const modules: ModuleConfig[] = [
     description: '实时查看主机资源、CPU、内存、磁盘与网络趋势',
     group: '核心功能',
     icon: Monitor,
+  },
+  {
+    id: 'icp_query',
+    label: 'ICP 查询',
+    description: 'ICP备案、App、小程序、快应用及违规信息查询',
+    group: '核心功能',
+    icon: FileSearch,
   },
   {
     id: 'task',

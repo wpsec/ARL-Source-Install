@@ -556,3 +556,4 @@ from .wih_endpoint import ns as wih_endpoint_ns              # WIH 接口提取
 from .waf_host import ns as waf_host_ns                      # WAF 识别结果
 from .assetWih import ns as asset_wih_ns                     # 资产 WIH
 from .api_console import ns as api_console_ns                # 配置中心
+from .icp_query import ns as icp_query_ns                    # ICP 查询

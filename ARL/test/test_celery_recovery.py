@@ -277,6 +277,7 @@ def _load_celerytask_module():
     utils_module = types.ModuleType("app.utils")
     utils_module.get_logger = _build_logger
     utils_module.curr_date = lambda: "2026-04-10 12:00:00"
+    utils_module.curr_date_obj = lambda: datetime.datetime(2026, 4, 10, 12, 0, 0)
     utils_module.conn_db = lambda *args, **kwargs: None
     utils_module.safe_error_text = lambda error, max_length=1200: str(error or "")[:max_length]
 
@@ -409,6 +410,115 @@ class TestCeleryRecovery(unittest.TestCase):
     def test_celery_sets_explicit_broker_heartbeat_defaults(self):
         self.assertEqual(int(celery.conf.broker_heartbeat), 120)
         self.assertEqual(float(celery.conf.broker_heartbeat_checkrate), 2.0)
+
+    def test_icp_task_refreshes_runtime_config_before_execution(self):
+        services_module = types.ModuleType("app.services")
+        icp_module = types.ModuleType("app.services.icp_query")
+        icp_module.execute_task = MagicMock(return_value={"status": "succeeded"})
+        icp_module.mark_task_started = MagicMock()
+
+        with patch.dict(
+            sys.modules,
+            {
+                "app.services": services_module,
+                "app.services.icp_query": icp_module,
+            },
+        ), patch.object(celerytask_module, "refresh_runtime_config_best_effort") as refresh_config:
+            result = celerytask_module.run_icp_query_task.run("icp-task-1")
+
+        refresh_config.assert_called_once_with()
+        icp_module.mark_task_started.assert_called_once()
+        icp_module.execute_task.assert_called_once_with("icp-task-1")
+        self.assertEqual({"status": "succeeded"}, result)
+
+    def test_recover_orphan_icp_task_requeues_stale_task(self):
+        collection = MagicMock()
+        collection.find.return_value = [{
+            "task_id": "icp-stale",
+            "task_kind": "batch",
+            "status": "running",
+            "celery_id": "lost-celery-id",
+            "dispatch_ts": 1000,
+        }]
+        collection.update_one.side_effect = [
+            SimpleNamespace(modified_count=1),
+            SimpleNamespace(modified_count=1),
+            SimpleNamespace(modified_count=1),
+        ]
+        claim_at = datetime.datetime(2026, 4, 10, 12, 0, 0)
+
+        with patch.object(celerytask_module, "_get_broker_queue_message_counts", return_value=({"arlweb": 0}, True)), \
+                patch.object(celerytask_module, "safe_error_text", return_value=""), \
+                patch.object(celerytask_module.utils, "conn_db", return_value=collection), \
+                patch.object(celerytask_module.utils, "curr_date_obj", return_value=claim_at), \
+                patch.object(celerytask_module.utils, "curr_date", return_value="2026-04-10 12:00:00"), \
+                patch.object(celerytask_module.time, "time", return_value=2000), \
+                patch.object(
+                    celerytask_module.run_icp_query_task,
+                    "apply_async",
+                    return_value=SimpleNamespace(id="new-celery-id"),
+                ) as apply_async:
+            result = celerytask_module.recover_orphan_icp_tasks_on_worker_start(
+                live_task_id_set=set(),
+                inspect_trusted=True,
+                grace_sec=10,
+                claim_sec=60,
+            )
+
+        self.assertEqual({"requeued": 1, "failed": 0, "skipped": 0}, result)
+        apply_async.assert_called_once_with(args=["icp-stale"], queue="arlweb")
+        self.assertEqual(3, collection.update_one.call_count)
+        reset_query, reset_update = collection.update_one.call_args_list[1][0]
+        self.assertEqual("icp-stale", reset_query["task_id"])
+        self.assertEqual("queued", reset_update["$set"]["status"])
+        self.assertEqual(
+            [{"item.status": {"$in": ["queued", "running"]}}],
+            collection.update_one.call_args_list[1].kwargs["array_filters"],
+        )
+        metadata_update = collection.update_one.call_args_list[2][0][1]
+        self.assertEqual("new-celery-id", metadata_update["$set"]["celery_id"])
+        self.assertIn("$unset", metadata_update)
+
+    def test_recover_orphan_icp_task_marks_dispatch_failure(self):
+        collection = MagicMock()
+        collection.find.return_value = [{
+            "task_id": "icp-stale",
+            "task_kind": "single",
+            "status": "running",
+            "celery_id": "lost-celery-id",
+            "dispatch_ts": 1000,
+        }]
+        collection.update_one.side_effect = [
+            SimpleNamespace(modified_count=1),
+            SimpleNamespace(modified_count=1),
+            SimpleNamespace(modified_count=1),
+        ]
+        claim_at = datetime.datetime(2026, 4, 10, 12, 0, 0)
+
+        with patch.object(celerytask_module, "_get_broker_queue_message_counts", return_value=({"arlweb": 0}, True)), \
+                patch.object(celerytask_module, "safe_error_text", return_value="broker unavailable"), \
+                patch.object(celerytask_module.utils, "conn_db", return_value=collection), \
+                patch.object(celerytask_module.utils, "curr_date_obj", return_value=claim_at), \
+                patch.object(celerytask_module.utils, "curr_date", return_value="2026-04-10 12:00:00"), \
+                patch.object(celerytask_module.time, "time", return_value=2000), \
+                patch.object(
+                    celerytask_module.run_icp_query_task,
+                    "apply_async",
+                    side_effect=RuntimeError("broker unavailable"),
+                ):
+            result = celerytask_module.recover_orphan_icp_tasks_on_worker_start(
+                live_task_id_set=set(),
+                inspect_trusted=True,
+                grace_sec=10,
+                claim_sec=60,
+            )
+
+        self.assertEqual({"requeued": 0, "failed": 1, "skipped": 0}, result)
+        failure_query, failure_update = collection.update_one.call_args_list[2][0]
+        self.assertEqual("icp-stale", failure_query["task_id"])
+        self.assertEqual("failed", failure_update["$set"]["status"])
+        self.assertEqual("dispatch_error", failure_update["$set"]["items.$[item].error_category"])
+        self.assertIn("$unset", failure_update)
 
     @patch.object(celerytask_module.celery.control, "inspect")
     def test_worker_queue_health_requires_expected_worker_consumer(self, mock_inspect):

@@ -107,6 +107,7 @@ api.add_namespace(routes.wih_endpoint_ns)      # WIH 接口提取
 api.add_namespace(routes.waf_host_ns)          # WAF 识别结果
 api.add_namespace(routes.asset_wih_ns)         # 资产 WIH
 api.add_namespace(routes.api_console_ns)       # 配置中心
+api.add_namespace(routes.icp_query_ns)         # ICP 查询
 
 # 导入期不再执行 arl_update：生产由 start_web.sh 在 gunicorn 前显式调用
 # app.tools.arl_bootstrap，避免任何仅导入本模块的进程带上 Mongo 写副作用。

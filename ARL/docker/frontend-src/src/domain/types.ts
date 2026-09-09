@@ -1,7 +1,7 @@
 import React from 'react';
 import { AI_DENOISE_MODULE_IDS } from '../config/modules';
 
-export type HttpMethod = 'GET' | 'POST';
+export type HttpMethod = 'GET' | 'POST' | 'DELETE';
 
 export type JsonValue = Record<string, any>;
 

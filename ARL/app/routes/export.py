@@ -24,6 +24,7 @@ from flask import make_response, request, send_file
 from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
+from io import BytesIO
 import re
 import json
 import os
@@ -32,7 +33,6 @@ from datetime import datetime, timedelta
 from collections import Counter
 from html import escape
 import ipaddress
-from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color, PatternFill, Alignment, Border, Side
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.utils import get_column_letter
@@ -46,6 +46,13 @@ from app.services.config_file_store import ConfigFileStore
 from urllib.parse import quote, urlparse
 
 ns = Namespace('export', description="任务报告导出接口")
+
+
+def save_virtual_workbook(workbook):
+    """将工作簿写入内存，兼容 openpyxl 3.1 移除的旧辅助函数。"""
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
 
 logger = get_logger()
 EXPORT_CONFIG_FILE_STORE = ConfigFileStore(logger=logger)

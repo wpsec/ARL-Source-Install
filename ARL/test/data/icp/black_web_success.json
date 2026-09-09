@@ -1,0 +1,11 @@
+{
+  "code": 200,
+  "success": true,
+  "params": [
+    {
+      "domainName": "blocked.example.test",
+      "status": "违规",
+      "reason": "示例数据"
+    }
+  ]
+}

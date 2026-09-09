@@ -1,0 +1,14 @@
+{
+  "code": 200,
+  "success": true,
+  "params": {
+    "total": 1,
+    "list": [
+      {
+        "appName": "示例应用",
+        "serviceLicence": "京ICP备00000001号",
+        "dataId": "fixture-app-data-id"
+      }
+    ]
+  }
+}
