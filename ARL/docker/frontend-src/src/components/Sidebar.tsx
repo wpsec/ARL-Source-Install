@@ -105,7 +105,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   key={item.id}
                   className={cn(
                     "arl-sidebar-nav-row flex w-full min-w-0 rounded-box",
-                    activeView === item.id ? undefined : "hover:bg-base-300/60",
+                    activeView === item.id ? "arl-sidebar-nav-row-active" : "hover:bg-base-300/60",
                   )}
                 >
                   <button
@@ -113,7 +113,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     className={cn(
                       "arl-sidebar-nav-item group flex min-h-10 !w-full !min-w-0 !max-w-none !flex-[1_1_100%] !basis-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
                       activeView === item.id
-                        ? "arl-sidebar-nav-item-active font-semibold !text-primary"
+                        ? "!bg-transparent font-semibold !text-primary"
                         : "!bg-transparent text-content-muted hover:bg-transparent hover:text-base-content",
                     )}
                     title={item.label}

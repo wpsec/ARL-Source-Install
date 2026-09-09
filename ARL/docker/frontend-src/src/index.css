@@ -629,13 +629,18 @@
     min-height: 0;
   }
 
-  /* 选中背景归属于整行，按钮和文字区共同铺满，避免出现嵌套色块。 */
+  /* 选中背景归属于整行，按钮只负责承载图标和文字，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
     display: flex;
     flex: 1 1 100%;
     min-width: 0;
     width: 100%;
     max-width: none;
+    border: 1px solid transparent;
+    transition:
+      background-color 0.18s ease,
+      border-color 0.18s ease,
+      box-shadow 0.18s ease;
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
@@ -647,17 +652,13 @@
     align-self: stretch;
   }
 
-  .arl-sidebar .arl-sidebar-nav-item:not(.arl-sidebar-nav-item-active) {
-    background-color: transparent;
-  }
-
   .arl-sidebar .arl-sidebar-nav-item > span {
     min-width: 0;
     width: 100%;
     flex: 1 1 0%;
   }
 
-  .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
+  .arl-sidebar .arl-sidebar-nav-row-active {
     background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
     border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;
     box-shadow: inset 3px 0 0 var(--color-primary);
