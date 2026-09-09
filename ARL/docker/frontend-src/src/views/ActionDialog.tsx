@@ -756,7 +756,7 @@ export function ActionDialog({
                               className="checkbox checkbox-primary checkbox-sm"
                               onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, fieldKey, event.target.checked))}
                             />
-                            <span className="font-medium truncate">{humanizeField(fieldKey)}</span>
+                            <span className="min-w-0 whitespace-normal break-words font-medium leading-relaxed">{humanizeField(fieldKey)}</span>
                           </label>
                         ))}
                       </div>
@@ -1379,7 +1379,7 @@ export function ActionDialog({
                         onChange={(event) => updatePolicyValue(item.key, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
                       />
-                      <span className="truncate">{item.label}</span>
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.label}</span>
                     </label>
                   ))}
                 </div>
@@ -1418,7 +1418,7 @@ export function ActionDialog({
                         onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
                       />
-                      <span className="truncate">{item.vul_name || item.plugin_name}</span>
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.vul_name || item.plugin_name}</span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredPolicyPocOptions.length === 0 ? (
@@ -1460,7 +1460,7 @@ export function ActionDialog({
                         onChange={(event) => togglePolicyPluginSelection('brute_config', item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
                       />
-                      <span className="truncate">{item.vul_name || item.plugin_name}</span>
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.vul_name || item.plugin_name}</span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredPolicyBruteOptions.length === 0 ? (
