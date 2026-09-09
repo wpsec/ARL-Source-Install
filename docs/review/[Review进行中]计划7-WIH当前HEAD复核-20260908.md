@@ -73,7 +73,7 @@
 - ARM64/amd64 发布 smoke、完整 production runtime smoke；
 - 计划 6 默认开关切换与计划 5 指纹生产切换。
 
-上述内容分别由 `docs/plan/[开发完成]06-附录E-计划6发布验收runbook-双架构与40-64目标.md`、`docs/plan/[开发完成]07-计划7-WIH智能API发现与受控验证可行性分析.md` 和暂停中的计划 5 runbook 管理。
+上述内容分别由 `docs/history/[已归档]06-附录E-计划6发布验收runbook-双架构与40-64目标.md`、`docs/history/[已归档]07-计划7-WIH智能API发现与受控验证可行性分析.md` 和暂停中的计划 5 runbook 管理。
 
 ## 6. Review 后结论
 

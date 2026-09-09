@@ -119,7 +119,7 @@
 
 ### P1-11 [重要/指标缺口] GraphQL 专用 metrics 没有实现
 
-- 位置：计划文档 `docs/plan/[开发完成]06-计划6-统一API解析与Endpoint Registry重构.md:578-608`；当前统一 Parser/Queue 仅能看到通用 `api_document_*`、`api_endpoint_*` 指标路径。
+- 位置：计划文档 `docs/history/[已归档]06-计划6-统一API解析与Endpoint Registry重构.md:578-608`；当前统一 Parser/Queue 仅能看到通用 `api_document_*`、`api_endpoint_*` 指标路径。
 - 现象：没有发现 `graphql_request_total`、`graphql_schema_success_total` 和按 GraphQL operation/type 的实际记录点；GraphQL 请求是否来自 JS、浏览器、文档以及 Schema 是否成功无法从 stage metrics 复算。
 - 影响：无法证明 G5 请求识别、Schema 预算和跨来源合并的真实运行效果，也无法区分“没有 GraphQL”与“GraphQL 被解析器/队列丢弃”。
 - 最小修复：在统一 adapter/Registry 入口按事件来源、operation type、Schema status 记录有界计数；指标不能带 query 正文、变量值或 token。
@@ -140,7 +140,7 @@
 
 ### P2-14 [一般/文档一致性] 实施状态与测试计数存在冲突
 
-- 位置：`docs/plan/[开发完成]06-计划6-统一API解析与Endpoint Registry重构.md:3,731-763`；`docs/completed/[已完成]06-附录A-API契约冻结清单.md:201-216,273-276`；`ARL/test/test_api_unified_parser.py:1-10,308-310`。
+- 位置：`docs/history/[已归档]06-计划6-统一API解析与Endpoint Registry重构.md:3,731-763`；`docs/completed/[已完成]06-附录A-API契约冻结清单.md:201-216,273-276`；`ARL/test/test_api_unified_parser.py:1-10,308-310`。
 - 现象：计划文档一处称第 1–6 批已实施/完成，文末又称第 4 批及后续未完成；第 6 批记录声称九文件 139 项全绿，而本轮可复现的明确命令为 4 个 API 测试模块、96 项通过。新测试文件顶部和旧 skipped test 仍描述 GraphQL 尚未接管。
 - 影响：实施状态、验收数量和测试意图无法由文档复现，后续修复可能基于错误基线判断完成度。
 - 最小修复：修复完成后只保留一套可执行命令和实际计数；区分“直接 Parser 测试通过”“队列/跨来源集成通过”“标准容器全量通过”，不要用未提供命令的总数宣称完成。
@@ -274,7 +274,7 @@
 
 ### 第 8 批后独立复审与用户裁定（2026-09-06；上文 Accept 复判被部分推翻，保留原文不重写）
 
-第 8 批提交后的独立复跑复审给出 **Request changes**：范围边界与异常恢复问题测试绿不能覆盖。确认 2 项 P0（浏览器 GraphQL 绕过范围校验；页面/JS 回流失效可触发外域文档 fetch）、2 项 P1（浏览器 REST 请求形态未入幂等签名；Endpoint queued 无恢复）与 1 项原列 P1（parent_target 脱敏）。执行版文档明确：**旧 Review 保留为历史证据，不静默改写**；上述修复不在本文件展开，统一由 `docs/plan/[开发完成]紧急修复-统一发现系统数据与状态边界收口.md`（T0-T6）承载与验收。
+第 8 批提交后的独立复跑复审给出 **Request changes**：范围边界与异常恢复问题测试绿不能覆盖。确认 2 项 P0（浏览器 GraphQL 绕过范围校验；页面/JS 回流失效可触发外域文档 fetch）、2 项 P1（浏览器 REST 请求形态未入幂等签名；Endpoint queued 无恢复）与 1 项原列 P1（parent_target 脱敏）。执行版文档明确：**旧 Review 保留为历史证据，不静默改写**；上述修复不在本文件展开，统一由 `docs/history/[已归档]紧急修复-统一发现系统数据与状态边界收口.md`（T0-T6）承载与验收。
 
 用户裁定（2026-09-06）：`parent_target` 脱敏为复审方向性错误——把"公开资产采集"与"凭据保护"混为一谈，**该 P1 撤销**。确立三层数据契约（公开观测面原样保存 / 规范资产面非破坏性规范化 + 独立去重键 / 私有请求上下文独立处理，附录A §4.16 冻结）：资产层不得改写公开 URL 观测值（含 query 参数值）；凭据保护不由篡改资产 URL 实现。据此，本文档 §4（P1-10 轮 1 整改的 URL 清洗语义）亦被同节改判指针标注撤销，历史条目不重写。
 
