@@ -420,6 +420,7 @@ ICP 查询
 - 配置读取已将空字符串环境变量视为“未设置”，因此 Compose 的可选透传不会把 runtime YAML 的布尔开关误判为 `false`。
 - `/api/icp/meta` 返回明确的 `enabled` 状态；总开关关闭时前端进入只读关闭态，查询相关接口仍返回受控拒绝。
 - compose 服务展开：保留原有 mongodb、rabbitmq、redis、web、nginx、scheduler、worker_1、worker_2，无独立 ICP 服务或 16181 端口。
+- 2026-09-09 测试服务器首次真实单次查询：任务创建、arlweb 投递、Worker 执行、失败状态回写和前端展示均正常；工信部上游返回风控拦截，当前未通过真实数据验收。该结果说明需要在测试环境更换可用出口或配置可访问官方接口的代理后重试，不能据此将 10.7 标记为完成。
 - 生产 Dockerfile 静态校验：`docker buildx build --check --file ARL/docker/Dockerfile .` 通过且无 warning。
 - arm64 本地生产镜像构建：`docker buildx build --platform linux/arm64 --tag arl-icp-dev:arm64 --load --file ARL/docker/Dockerfile .` 通过；镜像架构为 `linux/arm64`，Dockerfile 内置的 Python、Playwright、Nuclei、Ncrack、WIH、Rust 加速模块和前端产物检查均通过。
 - arm64 容器级导入冒烟：`numpy==1.26.4`、`Pillow==10.4.0`、`openpyxl==3.1.5` 以及 `app.routes.icp_query`、`app.services.icp_query` 均成功导入。
