@@ -632,6 +632,7 @@
   /* 选中背景归属于整行，按钮和文字区共同铺满，避免出现嵌套色块。 */
   .arl-sidebar .arl-sidebar-nav-row {
     display: flex;
+    flex: 1 1 100%;
     min-width: 0;
     width: 100%;
     max-width: none;
@@ -644,7 +645,7 @@
 
   .arl-sidebar .arl-sidebar-nav-item {
     display: flex;
-    flex: 1 1 auto !important;
+    flex: 1 1 100% !important;
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
