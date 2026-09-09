@@ -638,11 +638,6 @@
     max-width: none;
   }
 
-  .arl-sidebar .arl-sidebar-nav-row-active {
-    background-color: transparent;
-    border-color: transparent;
-  }
-
   .arl-sidebar .arl-sidebar-nav-item {
     display: flex;
     flex: 1 1 100% !important;
@@ -662,7 +657,6 @@
     flex: 1 1 0%;
   }
 
-  .arl-sidebar .arl-sidebar-nav-row-active > .arl-sidebar-nav-item,
   .arl-sidebar .arl-sidebar-nav-item[aria-current='page'] {
     background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
     border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;

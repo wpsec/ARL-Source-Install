@@ -105,7 +105,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   key={item.id}
                   className={cn(
                     "arl-sidebar-nav-row flex w-full min-w-0 rounded-box",
-                    activeView === item.id ? "arl-sidebar-nav-row-active" : "hover:bg-base-300/60",
+                    activeView === item.id ? undefined : "hover:bg-base-300/60",
                   )}
                 >
                   <button
