@@ -25,7 +25,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   const themes: { id: ThemeType; label: string; color: string }[] = [
     { id: 'nord', label: '北欧极光', color: 'var(--theme-swatch-nord)' },
     { id: 'midnight', label: '午夜科技', color: 'var(--theme-swatch-midnight)' },
-    { id: 'slate', label: '专业灰蓝', color: 'var(--theme-swatch-slate)' },
+    { id: 'slate', label: '灯塔石墨', color: 'var(--theme-swatch-slate)' },
     { id: 'titanium', label: '钛金黑', color: 'var(--theme-swatch-titanium)' },
     { id: 'sandstone', label: '砂岩白', color: 'var(--theme-swatch-sandstone)' },
   ];

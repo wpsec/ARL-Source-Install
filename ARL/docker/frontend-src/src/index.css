@@ -237,7 +237,7 @@
   --brand-line-height: 1.5;
   --brand-control-line-height: 1.25;
   --theme-swatch-midnight: #64c7ff;
-  --theme-swatch-slate: #71d0ff;
+  --theme-swatch-slate: #f0b45d;
   --theme-swatch-nord: #7de2d0;
   --theme-swatch-titanium: #f3b96a;
   --theme-swatch-sandstone: #9b4f1c;
@@ -278,30 +278,34 @@
 }
 
 [data-theme='slate'] {
-  --brand-bg: #142331;
-  --brand-bg-rgb: 20, 35, 49;
-  --brand-card: #1c2e3e;
-  --brand-card-rgb: 28, 46, 62;
-  --brand-border: #354b5c;
-  --brand-accent: #71d0ff;
-  --brand-accent-rgb: 113, 208, 255;
-  --brand-accent-strong: #2e9fca;
-  --brand-secondary: #91e6c7;
-  --brand-secondary-rgb: 145, 230, 199;
-  --brand-warning: #f4c978;
-  --brand-warning-rgb: 244, 201, 120;
-  --brand-danger: #ff8c91;
-  --brand-danger-rgb: 255, 140, 145;
-  --brand-text: #edf8ff;
-  --brand-text-muted: #b9cfdd;
-  --brand-accent-contrast: #0a1720;
-  --brand-card-surface-alpha: 0.8;
-  --brand-card-elevated-alpha: 0.88;
-  --brand-shell-alpha: 0.84;
-  --brand-atmosphere-accent-alpha: 0.09;
-  --brand-atmosphere-secondary-alpha: 0.06;
-  --brand-atmosphere-warning-alpha: 0.04;
-  --brand-atmosphere-sheen-alpha: 0.022;
+  --brand-bg: #1b1d1f;
+  --brand-bg-rgb: 27, 29, 31;
+  --brand-card: #25282a;
+  --brand-card-rgb: 37, 40, 42;
+  --brand-border: #3a3e41;
+  --brand-accent: #f0b45d;
+  --brand-accent-rgb: 240, 180, 93;
+  --brand-accent-strong: #bd8741;
+  --brand-secondary: #91b5d3;
+  --brand-secondary-rgb: 145, 181, 211;
+  --brand-warning: #e9b85c;
+  --brand-warning-rgb: 233, 184, 92;
+  --brand-danger: #f18491;
+  --brand-danger-rgb: 241, 132, 145;
+  --brand-text: #f1f2f3;
+  --brand-text-muted: #b2b7bc;
+  --brand-accent-contrast: #21170d;
+  --brand-success: #38cda3;
+  --brand-success-content: #092d24;
+  --brand-warning-content: #2b2112;
+  --brand-error-content: #32171c;
+  --brand-card-surface-alpha: 0.94;
+  --brand-card-elevated-alpha: 0.98;
+  --brand-shell-alpha: 0.92;
+  --brand-atmosphere-accent-alpha: 0.045;
+  --brand-atmosphere-secondary-alpha: 0.035;
+  --brand-atmosphere-warning-alpha: 0.025;
+  --brand-atmosphere-sheen-alpha: 0.012;
 }
 
 [data-theme='nord'] {
