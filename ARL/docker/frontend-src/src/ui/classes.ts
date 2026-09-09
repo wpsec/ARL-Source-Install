@@ -43,7 +43,7 @@ export const CONSOLE_CHECKBOX_CARD_CLASS = CHECKBOX_CARD_CLASS;
 
 // 统一控制台的信息层级，避免各页面用不同的自定义边框表达相同状态。
 export const CONSOLE_PANEL_CLASS =
-  'card card-border border border-base-300/85 bg-base-200/90 shadow-sm backdrop-blur-sm';
+  'card card-border border border-primary/20 bg-base-200/90 shadow-sm backdrop-blur-sm';
 
 export const CONSOLE_ALERT_ERROR_CLASS = 'alert alert-error alert-soft text-sm whitespace-pre-wrap break-words';
 
