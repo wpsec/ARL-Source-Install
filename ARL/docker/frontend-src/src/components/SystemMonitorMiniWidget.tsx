@@ -82,11 +82,11 @@ function MetricRow({
   withDivider?: boolean;
 }) {
   return (
-    <div className={`flex h-full min-w-0 flex-1 items-center gap-1.5 px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
+    <div className={`flex h-full min-w-0 basis-0 flex-1 items-center gap-1.5 overflow-hidden px-2 xl:px-2.5 ${withDivider ? 'border-r border-base-300' : ''}`}>
       <Icon className="h-3.5 w-3.5 shrink-0" style={{ color }} />
       <div className="min-w-0 flex-1">
-        <span className="block whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted">{label}</span>
-        <span className="block min-w-0 truncate text-[11px] font-bold leading-3 tabular-nums" style={{ color }}>{value}</span>
+        <span className="block truncate whitespace-nowrap text-[10px] font-semibold leading-3 text-content-muted" title={label}>{label}</span>
+        <span className="block min-w-0 truncate text-[11px] font-bold leading-3 tabular-nums" style={{ color }} title={value}>{value}</span>
         <div className="mt-0.5">
           <Sparkline data={data} dataKey={dataKey} color={color} />
         </div>
@@ -125,7 +125,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
   return (
     <section className="hidden max-w-full shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
       <div
-        className="flex h-12 w-[300px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
+        className="flex h-12 w-[360px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
         role="group"
         aria-label="CPU、内存与网速"
       >
