@@ -272,6 +272,19 @@ GITHUB:
 #代理配置项，如"http://127.0.0.1:8080", 端口扫描不会走代理
 PROXY:
   HTTP_URL: ""
+  # 以下出口仅用于 ICP 查询，不影响其它资产采集请求。
+  ICP:
+    TUNNEL:
+      URL: ""
+    EXTRA_API:
+      URL: ""
+      REFRESH_SEC: 180
+      POOL_SIZE: 20
+      CHECK: true
+      CHECK_TIMEOUT_SEC: 5
+      CHECK_CONCURRENCY: 4
+    IPV6_ENABLE: false
+    IPV6_REFRESH_SEC: 60
 
 ARL:
   AUTH: true
@@ -511,6 +524,8 @@ ARL:
   TASK_HEAVY_QUEUE_ENABLE: true
   # ICP 查询总开关；查询请求复用现有 arlweb 队列，不启动独立服务
   ICP_QUERY_ENABLE: true
+  # 仅控制 ICP 查询 Session 的 TLS 校验；不会修改全局 SSL 设置
+  ICP_QUERY_TLS_VERIFY: true
   ICP_QUERY_TIMEOUT_SEC: 30
   ICP_QUERY_RETRY: 2
   ICP_QUERY_BATCH_CONCURRENCY: 2

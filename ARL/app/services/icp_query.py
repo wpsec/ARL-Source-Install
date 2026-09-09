@@ -8,9 +8,13 @@ import base64
 import binascii
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import ipaddress
 import io
 import json
+import random
 import re
+import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -19,6 +23,7 @@ from urllib.parse import urlparse
 import requests
 from bson import ObjectId
 from flask import make_response
+from requests.adapters import HTTPAdapter
 
 from app import utils
 from app.config import Config
@@ -117,6 +122,25 @@ def _config_int(name, default, minimum=1, maximum=None):
     return _safe_int(getattr(Config, name, default), default, minimum, maximum)
 
 
+def _config_bool(name, default):
+    value = getattr(Config, name, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _config_float(name, default, minimum=0.1, maximum=None):
+    try:
+        value = float(getattr(Config, name, default))
+    except (TypeError, ValueError):
+        return default
+    if value < minimum:
+        return default
+    if maximum is not None and value > maximum:
+        return maximum
+    return value
+
+
 def _redact_text(value, max_length=600):
     text = utils.safe_error_text(value, max_length=max_length)
     return SENSITIVE_ASSIGNMENT_RE.sub(
@@ -162,15 +186,283 @@ def _validate_url(url):
     return parsed.scheme == "https" and parsed.hostname in ICP_ALLOWED_HOSTS
 
 
-def _proxy_url():
-    value = str(getattr(Config, "PROXY_URL", "") or "").strip()
+def _normalize_proxy_url(value, log_label="proxy"):
+    value = str(value or "").strip()
     if not value:
         return None
-    parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        logger.warning("ICP query ignored invalid ARL proxy configuration")
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        port = None
+        parsed = None
+    if (
+        parsed is None
+        or parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or (port is not None and not 1 <= port <= 65535)
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        logger.warning("ICP query ignored invalid %s proxy configuration", log_label)
         return None
     return value
+
+
+def _proxy_url():
+    return _normalize_proxy_url(getattr(Config, "PROXY_URL", ""), "ARL")
+
+
+def _icp_tunnel_url():
+    return _normalize_proxy_url(
+        getattr(Config, "ICP_QUERY_TUNNEL_URL", ""), "ICP tunnel"
+    )
+
+
+def _proxy_api_url():
+    value = str(getattr(Config, "ICP_QUERY_EXTRA_API_URL", "") or "").strip()
+    if not value:
+        return None
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        logger.warning("ICP query ignored invalid extra proxy API configuration")
+        return None
+    return value
+
+
+def _normalize_proxy_candidate(value):
+    candidate = str(value or "").strip()
+    if not candidate or candidate.startswith("#"):
+        return None
+    if "://" not in candidate:
+        candidate = "http://{}".format(candidate)
+    try:
+        parsed = urlparse(candidate)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or port is None
+        or not 1 <= port <= 65535
+        or parsed.path not in {"", "/"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return candidate
+
+
+def _discover_global_ipv6_addresses(output):
+    addresses = []
+    seen = set()
+    for line in str(output or "").splitlines():
+        if "scope global" not in line:
+            continue
+        match = re.search(r"\binet6\s+([^/\s]+)/\d+", line, re.I)
+        if not match:
+            continue
+        value = match.group(1)
+        try:
+            address = ipaddress.IPv6Address(value)
+        except ValueError:
+            continue
+        if (
+            address.is_unspecified
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_private
+            or address.is_multicast
+        ):
+            continue
+        normalized = address.compressed
+        if normalized not in seen:
+            seen.add(normalized)
+            addresses.append(normalized)
+    return addresses
+
+
+class IcpIpv6Pool(object):
+    """按请求轮换本机 scope global IPv6；失败时保留直连回退。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._addresses = []
+        self._cursor = 0
+        self._loaded_at = 0.0
+
+    def _refresh(self, refresh_sec):
+        try:
+            completed = subprocess.run(
+                ["ip", "-6", "addr", "show"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            addresses = _discover_global_ipv6_addresses(completed.stdout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning("ICP IPv6 address discovery failed: %s", _redact_text(exc))
+            addresses = []
+        if addresses:
+            self._addresses = addresses
+            self._cursor %= len(addresses)
+        self._loaded_at = time.monotonic()
+
+    def next_address(self, enabled, refresh_sec):
+        if not enabled:
+            return None
+        with self._lock:
+            now = time.monotonic()
+            if not self._addresses or now - self._loaded_at >= refresh_sec:
+                self._refresh(refresh_sec)
+            if not self._addresses:
+                return None
+            address = self._addresses[self._cursor % len(self._addresses)]
+            self._cursor += 1
+            return address
+
+
+class IcpSourceAddressAdapter(HTTPAdapter):
+    """仅供 ICP Session 使用的源地址绑定适配器。"""
+
+    def __init__(self, source_address, **kwargs):
+        self.source_address = str(source_address or "").strip()
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs["source_address"] = (self.source_address, 0)
+        super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
+
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        proxy_kwargs["source_address"] = (self.source_address, 0)
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+class IcpProxyPool(object):
+    """维护用户配置的 ICP 代理 API 结果，不抓取或生成第三方代理。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._api_url = None
+        self._verify = None
+        self._loaded_at = 0.0
+        self._proxies = []
+
+    @staticmethod
+    def _fetch_candidates(api_url, timeout, verify):
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            response = session.get(
+                api_url,
+                headers={"User-Agent": ICP_USER_AGENT, "Accept": "text/plain, */*"},
+                timeout=(min(3.0, timeout), timeout),
+                verify=verify,
+                allow_redirects=False,
+            )
+            if response.status_code < 200 or response.status_code >= 300:
+                logger.warning("ICP extra proxy API returned HTTP %s", response.status_code)
+                return []
+            candidates = []
+            seen = set()
+            for line in (response.text or "")[:1024 * 1024].splitlines():
+                proxy = _normalize_proxy_candidate(line)
+                if proxy and proxy not in seen:
+                    seen.add(proxy)
+                    candidates.append(proxy)
+            return candidates
+        except requests.exceptions.RequestException as exc:
+            logger.warning("ICP extra proxy API request failed: %s", _network_error_kind(exc))
+            return []
+        finally:
+            try:
+                session.close()
+            except Exception as exc:
+                logger.debug("ICP proxy API session close failed: %s", _redact_text(exc))
+
+    @staticmethod
+    def _check_proxy(proxy, timeout, verify):
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            response = session.get(
+                ICP_HOME_URL,
+                headers={"User-Agent": ICP_USER_AGENT},
+                proxies={"http": proxy, "https": proxy},
+                timeout=(min(3.0, timeout), timeout),
+                verify=verify,
+                allow_redirects=False,
+            )
+            body = (response.text or "")[:4096]
+            if "当前访问疑似黑客攻击" in body or "当前访问已被创宇盾拦截" in body:
+                return None
+            if 200 <= response.status_code < 300:
+                return proxy
+        except requests.exceptions.RequestException:
+            return None
+        finally:
+            try:
+                session.close()
+            except Exception as exc:
+                logger.debug("ICP proxy check session close failed: %s", _redact_text(exc))
+        return None
+
+    def _reload(self, api_url, verify, refresh_sec, pool_size, check_enabled, timeout, concurrency):
+        candidates = self._fetch_candidates(api_url, timeout, verify)
+        candidates = candidates[: max(pool_size * 2, pool_size)]
+        if check_enabled and candidates:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                checked = executor.map(
+                    lambda proxy: self._check_proxy(proxy, timeout, verify), candidates
+                )
+                candidates = [proxy for proxy in checked if proxy]
+        self._api_url = api_url
+        self._verify = verify
+        self._loaded_at = time.monotonic()
+        self._proxies = candidates[:pool_size]
+        if self._proxies:
+            logger.info("ICP extra proxy pool refreshed count=%s", len(self._proxies))
+        else:
+            logger.warning("ICP extra proxy pool is empty")
+
+    def choose(self, api_url, verify, refresh_sec, pool_size, check_enabled, timeout, concurrency):
+        if not api_url:
+            with self._lock:
+                self._api_url = None
+                self._proxies = []
+            return None
+        with self._lock:
+            now = time.monotonic()
+            if (
+                api_url != self._api_url
+                or verify != self._verify
+                or self._loaded_at == 0
+                or now - self._loaded_at >= refresh_sec
+            ):
+                self._reload(
+                    api_url,
+                    verify,
+                    refresh_sec,
+                    pool_size,
+                    check_enabled,
+                    timeout,
+                    concurrency,
+                )
+            if not self._proxies:
+                return None
+            return random.choice(self._proxies)
+
+
+_ICP_IPV6_POOL = IcpIpv6Pool()
+_ICP_PROXY_POOL = IcpProxyPool()
 
 
 def _request_config():
@@ -179,7 +471,43 @@ def _request_config():
         "retry": _config_int("ICP_QUERY_RETRY", 2, minimum=0, maximum=5),
         "page_size": _config_int("ICP_QUERY_PAGE_SIZE", 26, minimum=1, maximum=26),
         "max_pages": _config_int("ICP_QUERY_MAX_PAGES", 100, minimum=1, maximum=500),
+        # SSL 与出口设置只在 ICP Session 内生效，不改变其它扫描模块。
+        "tls_verify": _config_bool("ICP_QUERY_TLS_VERIFY", True),
+        "ipv6_enable": _config_bool("ICP_QUERY_IPV6_ENABLE", False),
+        "ipv6_refresh_sec": _config_int(
+            "ICP_QUERY_IPV6_REFRESH_SEC", 60, minimum=5, maximum=3600
+        ),
+        "extra_api_refresh_sec": _config_int(
+            "ICP_QUERY_EXTRA_API_REFRESH_SEC", 180, minimum=5, maximum=86400
+        ),
+        "extra_api_pool_size": _config_int(
+            "ICP_QUERY_EXTRA_API_POOL_SIZE", 20, minimum=1, maximum=200
+        ),
+        "extra_api_check": _config_bool("ICP_QUERY_EXTRA_API_CHECK", True),
+        "extra_api_check_timeout_sec": _config_float(
+            "ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC", 5.0, minimum=1.0, maximum=30.0
+        ),
+        "extra_api_check_concurrency": _config_int(
+            "ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY", 4, minimum=1, maximum=32
+        ),
     }
+
+
+def _select_icp_proxy(config):
+    """按 ICP 专用优先级选择出口：代理池、固定隧道、既有 ARL 代理。"""
+    tunnel = _icp_tunnel_url() or _proxy_url()
+    api_url = _proxy_api_url()
+    if not api_url:
+        return tunnel
+    return _ICP_PROXY_POOL.choose(
+        api_url,
+        config["tls_verify"],
+        config["extra_api_refresh_sec"],
+        config["extra_api_pool_size"],
+        config["extra_api_check"],
+        config["extra_api_check_timeout_sec"],
+        config["extra_api_check_concurrency"],
+    ) or tunnel
 
 
 class IcpQueryEngine(object):
@@ -192,7 +520,7 @@ class IcpQueryEngine(object):
 
     def _session(self):
         session = self.session_factory()
-        # 只有显式配置的 ARL 代理才允许改变出口，避免网络切换后误用容器环境中的旧代理。
+        self.proxy = _select_icp_proxy(self.config)
         session.trust_env = False
         session.headers.update({
             "User-Agent": ICP_USER_AGENT,
@@ -202,6 +530,13 @@ class IcpQueryEngine(object):
             "Cache-Control": "no-cache",
             "Cookie": "__jsluid_s={}".format(uuid.uuid4().hex),
         })
+        ipv6_address = _ICP_IPV6_POOL.next_address(
+            self.config["ipv6_enable"], self.config["ipv6_refresh_sec"]
+        )
+        if ipv6_address and callable(getattr(session, "mount", None)):
+            adapter = IcpSourceAddressAdapter(ipv6_address)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
         return session
 
     def _request(
@@ -228,7 +563,7 @@ class IcpQueryEngine(object):
                 headers=headers or {},
                 proxies=proxies,
                 timeout=(min(10, self.config["timeout"]), self.config["timeout"]),
-                verify=True,
+                verify=self.config["tls_verify"],
                 allow_redirects=False,
             )
         except requests.exceptions.Timeout as exc:

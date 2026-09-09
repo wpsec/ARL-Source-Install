@@ -30,6 +30,10 @@ class FakeSession(object):
         self.responses = list(responses)
         self.headers = {}
         self.calls = []
+        self.mounts = []
+
+    def mount(self, prefix, adapter):
+        self.mounts.append((prefix, adapter))
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
@@ -174,6 +178,95 @@ class TestIcpQueryEngine(unittest.TestCase):
         self.assertTrue(session.calls[0][2]["verify"])
         self.assertIs(session.trust_env, False)
         self.assertRegex(session.headers["Cookie"], r"^__jsluid_s=[0-9a-f]{32}$")
+
+    def test_ipv6_discovery_filters_to_public_scope_global_addresses(self):
+        output = """
+2: eth0    inet6 240e:1234::10/64 scope global dynamic
+    inet6 fe80::1/64 scope link
+    inet6 fd00::1/64 scope global
+    inet6 240e:1234::10/64 scope global dynamic
+"""
+
+        self.assertEqual(
+            ["240e:1234::10"], MODULE._discover_global_ipv6_addresses(output)
+        )
+
+    def test_ipv6_pool_rotates_addresses_after_local_discovery(self):
+        completed = SimpleNamespace(
+            stdout=(
+                "inet6 240e:1234::10/64 scope global\n"
+                "inet6 240e:1234::11/64 scope global\n"
+            )
+        )
+        pool = MODULE.IcpIpv6Pool()
+        with patch.object(MODULE.subprocess, "run", return_value=completed) as run:
+            self.assertEqual("240e:1234::10", pool.next_address(True, 60))
+            self.assertEqual("240e:1234::11", pool.next_address(True, 60))
+
+        run.assert_called_once_with(
+            ["ip", "-6", "addr", "show"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+
+    def test_proxy_candidate_requires_explicit_host_and_port(self):
+        self.assertEqual(
+            "http://proxy.example:8080",
+            MODULE._normalize_proxy_candidate("proxy.example:8080"),
+        )
+        self.assertEqual(
+            "http://[2001:db8::20]:8080",
+            MODULE._normalize_proxy_candidate("http://[2001:db8::20]:8080"),
+        )
+        self.assertIsNone(MODULE._normalize_proxy_candidate("proxy.example"))
+        self.assertIsNone(MODULE._normalize_proxy_candidate("http://proxy.example:0"))
+        self.assertIsNone(MODULE._normalize_proxy_candidate("http://proxy.example:8080/path"))
+
+    def test_proxy_pool_fetches_checks_and_reuses_random_candidates(self):
+        pool = MODULE.IcpProxyPool()
+        candidates = ["http://proxy.example:8080", "http://proxy.example:8081"]
+        with patch.object(pool, "_fetch_candidates", return_value=candidates) as fetch, \
+                patch.object(pool, "_check_proxy", side_effect=lambda proxy, _timeout, _verify: proxy) as check, \
+                patch.object(MODULE.random, "choice", side_effect=lambda values: values[0]) as choice:
+            selected = pool.choose(
+                "https://proxy-api.example/list",
+                True,
+                refresh_sec=180,
+                pool_size=2,
+                check_enabled=True,
+                timeout=5,
+                concurrency=2,
+            )
+            selected_again = pool.choose(
+                "https://proxy-api.example/list",
+                True,
+                refresh_sec=180,
+                pool_size=2,
+                check_enabled=True,
+                timeout=5,
+                concurrency=2,
+            )
+
+        self.assertEqual("http://proxy.example:8080", selected)
+        self.assertEqual(selected, selected_again)
+        fetch.assert_called_once_with("https://proxy-api.example/list", 5, True)
+        self.assertEqual(2, check.call_count)
+        self.assertEqual(2, choice.call_count)
+
+    def test_icp_session_binds_only_its_own_ipv6_source(self):
+        session = FakeSession([])
+        with patch.object(MODULE, "_select_icp_proxy", return_value=None), \
+                patch.object(MODULE._ICP_IPV6_POOL, "next_address", return_value="2001:db8::10"):
+            engine = MODULE.IcpQueryEngine(session_factory=lambda: session)
+            engine.config["ipv6_enable"] = True
+            engine._session()
+
+        self.assertEqual(["http://", "https://"], [item[0] for item in session.mounts])
+        self.assertTrue(all(
+            item[1].source_address == "2001:db8::10" for item in session.mounts
+        ))
 
     def test_query_page_normalizes_query_type_case(self):
         engine, _session = self._engine([
@@ -377,6 +470,13 @@ class TestIcpQueryEngine(unittest.TestCase):
         request_options = session.calls[0][2]
         self.assertIs(request_options["verify"], True)
         self.assertIs(request_options["allow_redirects"], False)
+
+    def test_tls_verification_can_be_disabled_for_icp_session_only(self):
+        with patch.object(MODULE.Config, "ICP_QUERY_TLS_VERIFY", False):
+            engine, session = self._engine([FakeResponse({"code": 200, "success": True})])
+            engine._request(session, "GET", MODULE.ICP_HOME_URL)
+
+        self.assertIs(session.calls[0][2]["verify"], False)
 
     def test_keyword_validation_rejects_control_characters(self):
         with self.assertRaises(MODULE.IcpQueryError) as context:

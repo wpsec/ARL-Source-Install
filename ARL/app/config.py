@@ -141,6 +141,76 @@ def safe_bool(value, default=False):
     return str(value).strip().lower() in ["1", "true", "yes", "on"]
 
 
+def _config_mapping_value(mapping, *names):
+    if not isinstance(mapping, dict):
+        return None
+    for name in names:
+        if name in mapping and mapping.get(name) is not None:
+            return mapping.get(name)
+    return None
+
+
+def _apply_icp_proxy_config(proxy_conf):
+    """读取 ICP 专用出口配置，避免把代理策略扩散到其它扫描链路。"""
+    if not isinstance(proxy_conf, dict):
+        return
+
+    icp_conf = _config_mapping_value(proxy_conf, "ICP", "icp") or {}
+    tunnel_conf = _config_mapping_value(icp_conf, "TUNNEL", "tunnel") or {}
+    if not tunnel_conf:
+        tunnel_conf = _config_mapping_value(proxy_conf, "TUNNEL", "tunnel") or {}
+    extra_conf = _config_mapping_value(icp_conf, "EXTRA_API", "extra_api") or {}
+    if not extra_conf:
+        extra_conf = _config_mapping_value(proxy_conf, "EXTRA_API", "extra_api") or {}
+
+    tunnel_url = _config_mapping_value(proxy_conf, "ICP_TUNNEL_URL", "icp_tunnel_url")
+    if tunnel_url is None:
+        tunnel_url = _config_mapping_value(tunnel_conf, "URL", "url")
+    if tunnel_url is not None:
+        Config.ICP_QUERY_TUNNEL_URL = str(tunnel_url or "").strip()
+
+    extra_api_url = _config_mapping_value(proxy_conf, "ICP_EXTRA_API_URL", "icp_extra_api_url")
+    if extra_api_url is None:
+        extra_api_url = _config_mapping_value(extra_conf, "URL", "url")
+    if extra_api_url is not None:
+        Config.ICP_QUERY_EXTRA_API_URL = str(extra_api_url or "").strip()
+
+    settings = (
+        ("IPV6_ENABLE", "ipv6_enable", "ICP_QUERY_IPV6_ENABLE", safe_bool),
+        ("IPV6_REFRESH_SEC", "ipv6_refresh_sec", "ICP_QUERY_IPV6_REFRESH_SEC", safe_positive_int),
+        ("EXTRA_API_REFRESH_SEC", "extra_api_refresh_sec", "ICP_QUERY_EXTRA_API_REFRESH_SEC", safe_positive_int),
+        ("EXTRA_API_POOL_SIZE", "pool_size", "ICP_QUERY_EXTRA_API_POOL_SIZE", safe_positive_int),
+        ("EXTRA_API_CHECK", "check", "ICP_QUERY_EXTRA_API_CHECK", safe_bool),
+        (
+            "EXTRA_API_CHECK_TIMEOUT_SEC",
+            "check_timeout_sec",
+            "ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC",
+            safe_nonnegative_float,
+        ),
+        (
+            "EXTRA_API_CHECK_CONCURRENCY",
+            "check_concurrency",
+            "ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY",
+            safe_positive_int,
+        ),
+    )
+    for upper_name, lower_name, config_name, converter in settings:
+        value = _config_mapping_value(proxy_conf, config_name, config_name.lower())
+        if value is None:
+            value = _config_mapping_value(icp_conf, upper_name, lower_name)
+        if value is None and upper_name.startswith("EXTRA_API_"):
+            value = _config_mapping_value(extra_conf, upper_name[10:], lower_name)
+        if value is None:
+            continue
+        current = getattr(Config, config_name)
+        if converter is safe_bool:
+            setattr(Config, config_name, safe_bool(value, current))
+        elif converter is safe_nonnegative_float:
+            setattr(Config, config_name, safe_nonnegative_float(value, current))
+        else:
+            setattr(Config, config_name, safe_positive_int(value, current))
+
+
 def normalize_dict_path_compat(path_value):
     """
     兼容历史字典路径：
@@ -284,8 +354,10 @@ def refresh_runtime_config_best_effort(force=False):
                 Config.FOFA_KEY = str(fofa_conf.get("KEY") or "")
 
         proxy_conf = loaded.get("PROXY", {})
-        if isinstance(proxy_conf, dict) and proxy_conf.get("HTTP_URL") is not None:
-            Config.PROXY_URL = str(proxy_conf.get("HTTP_URL") or "").strip()
+        if isinstance(proxy_conf, dict):
+            if proxy_conf.get("HTTP_URL") is not None:
+                Config.PROXY_URL = str(proxy_conf.get("HTTP_URL") or "").strip()
+            _apply_icp_proxy_config(proxy_conf)
 
         github_conf = loaded.get("GITHUB", {})
         if isinstance(github_conf, dict) and github_conf.get("TOKEN") is not None:
@@ -570,6 +642,10 @@ def refresh_runtime_config_best_effort(force=False):
             Config.ICP_QUERY_ENABLE = _safe_runtime_bool(
                 arl_conf.get("ICP_QUERY_ENABLE"), Config.ICP_QUERY_ENABLE
             )
+        if arl_conf.get("ICP_QUERY_TLS_VERIFY") is not None:
+            Config.ICP_QUERY_TLS_VERIFY = _safe_runtime_bool(
+                arl_conf.get("ICP_QUERY_TLS_VERIFY"), Config.ICP_QUERY_TLS_VERIFY
+            )
         if arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE") is not None:
             Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = _safe_runtime_bool(
                 arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE"),
@@ -645,10 +721,54 @@ def refresh_runtime_config_best_effort(force=False):
         Config.ICP_QUERY_ENABLE = env_bool(
             "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
         )
+        Config.ICP_QUERY_TLS_VERIFY = env_bool(
+            "ARL_ICP_QUERY_TLS_VERIFY", Config.ICP_QUERY_TLS_VERIFY
+        )
         Config.ICP_QUERY_RETRY = safe_int(
             env_int("ARL_ICP_QUERY_RETRY", Config.ICP_QUERY_RETRY),
             Config.ICP_QUERY_RETRY,
             min_value=0,
+        )
+        Config.ICP_QUERY_IPV6_ENABLE = env_bool(
+            "ARL_ICP_QUERY_IPV6_ENABLE", Config.ICP_QUERY_IPV6_ENABLE
+        )
+        Config.ICP_QUERY_IPV6_REFRESH_SEC = safe_positive_int(
+            env_int("ARL_ICP_QUERY_IPV6_REFRESH_SEC", Config.ICP_QUERY_IPV6_REFRESH_SEC),
+            Config.ICP_QUERY_IPV6_REFRESH_SEC,
+        )
+        Config.ICP_QUERY_TUNNEL_URL = env_str(
+            "ARL_ICP_QUERY_TUNNEL_URL", Config.ICP_QUERY_TUNNEL_URL
+        ).strip()
+        Config.ICP_QUERY_EXTRA_API_URL = env_str(
+            "ARL_ICP_QUERY_EXTRA_API_URL", Config.ICP_QUERY_EXTRA_API_URL
+        ).strip()
+        Config.ICP_QUERY_EXTRA_API_REFRESH_SEC = safe_positive_int(
+            env_int(
+                "ARL_ICP_QUERY_EXTRA_API_REFRESH_SEC",
+                Config.ICP_QUERY_EXTRA_API_REFRESH_SEC,
+            ),
+            Config.ICP_QUERY_EXTRA_API_REFRESH_SEC,
+        )
+        Config.ICP_QUERY_EXTRA_API_POOL_SIZE = safe_positive_int(
+            env_int("ARL_ICP_QUERY_EXTRA_API_POOL_SIZE", Config.ICP_QUERY_EXTRA_API_POOL_SIZE),
+            Config.ICP_QUERY_EXTRA_API_POOL_SIZE,
+        )
+        Config.ICP_QUERY_EXTRA_API_CHECK = env_bool(
+            "ARL_ICP_QUERY_EXTRA_API_CHECK", Config.ICP_QUERY_EXTRA_API_CHECK
+        )
+        Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC = safe_nonnegative_float(
+            env_float(
+                "ARL_ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC",
+                Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC,
+            ),
+            Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC,
+        )
+        Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY = safe_positive_int(
+            env_int(
+                "ARL_ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY",
+                Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY,
+            ),
+            Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY,
         )
         for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
             setattr(
@@ -1216,6 +1336,7 @@ class Config(object):
 
     # ICP 查询集成配置：复用现有 Web/Worker 镜像和 arlweb 队列。
     ICP_QUERY_ENABLE = True
+    ICP_QUERY_TLS_VERIFY = True
     ICP_QUERY_TIMEOUT_SEC = 30
     ICP_QUERY_RETRY = 2
     ICP_QUERY_BATCH_CONCURRENCY = 2
@@ -1225,6 +1346,15 @@ class Config(object):
     ICP_QUERY_KEYWORD_MAX_LENGTH = 255
     ICP_QUERY_HISTORY_RETENTION_DAYS = 30
     ICP_QUERY_LOG_RETENTION_DAYS = 7
+    ICP_QUERY_IPV6_ENABLE = False
+    ICP_QUERY_IPV6_REFRESH_SEC = 60
+    ICP_QUERY_TUNNEL_URL = ""
+    ICP_QUERY_EXTRA_API_URL = ""
+    ICP_QUERY_EXTRA_API_REFRESH_SEC = 180
+    ICP_QUERY_EXTRA_API_POOL_SIZE = 20
+    ICP_QUERY_EXTRA_API_CHECK = True
+    ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC = 5.0
+    ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY = 4
 
     # ==================== provider 网络治理 ====================
     # provider 请求连接/读取超时上限；插件传入更大的 timeout 时按这里收敛。
@@ -2195,11 +2325,16 @@ try:
         Config.ICP_QUERY_ENABLE = safe_bool(
             y["ARL"].get("ICP_QUERY_ENABLE"), Config.ICP_QUERY_ENABLE
         )
+    if y["ARL"].get("ICP_QUERY_TLS_VERIFY") is not None:
+        Config.ICP_QUERY_TLS_VERIFY = safe_bool(
+            y["ARL"].get("ICP_QUERY_TLS_VERIFY"), Config.ICP_QUERY_TLS_VERIFY
+        )
 
     # --- 代理配置 ---
-    if y.get("PROXY"):
-        if y["PROXY"].get("HTTP_URL"):
-            Config.PROXY_URL = y["PROXY"]["HTTP_URL"]
+    if isinstance(y.get("PROXY"), dict):
+        if y["PROXY"].get("HTTP_URL") is not None:
+            Config.PROXY_URL = str(y["PROXY"].get("HTTP_URL") or "").strip()
+        _apply_icp_proxy_config(y["PROXY"])
 
     Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = bool(
         y["ARL"].get(
@@ -2745,6 +2880,9 @@ try:
     Config.ICP_QUERY_ENABLE = env_bool(
         "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
     )
+    Config.ICP_QUERY_TLS_VERIFY = env_bool(
+        "ARL_ICP_QUERY_TLS_VERIFY", Config.ICP_QUERY_TLS_VERIFY
+    )
     for _key in (
         "ICP_QUERY_TIMEOUT_SEC",
         "ICP_QUERY_BATCH_CONCURRENCY",
@@ -2768,6 +2906,47 @@ try:
         env_int("ARL_ICP_QUERY_RETRY", Config.ICP_QUERY_RETRY),
         Config.ICP_QUERY_RETRY,
         min_value=0,
+    )
+    Config.ICP_QUERY_IPV6_ENABLE = env_bool(
+        "ARL_ICP_QUERY_IPV6_ENABLE", Config.ICP_QUERY_IPV6_ENABLE
+    )
+    Config.ICP_QUERY_IPV6_REFRESH_SEC = safe_positive_int(
+        env_int("ARL_ICP_QUERY_IPV6_REFRESH_SEC", Config.ICP_QUERY_IPV6_REFRESH_SEC),
+        Config.ICP_QUERY_IPV6_REFRESH_SEC,
+    )
+    Config.ICP_QUERY_TUNNEL_URL = env_str(
+        "ARL_ICP_QUERY_TUNNEL_URL", Config.ICP_QUERY_TUNNEL_URL
+    ).strip()
+    Config.ICP_QUERY_EXTRA_API_URL = env_str(
+        "ARL_ICP_QUERY_EXTRA_API_URL", Config.ICP_QUERY_EXTRA_API_URL
+    ).strip()
+    Config.ICP_QUERY_EXTRA_API_REFRESH_SEC = safe_positive_int(
+        env_int(
+            "ARL_ICP_QUERY_EXTRA_API_REFRESH_SEC",
+            Config.ICP_QUERY_EXTRA_API_REFRESH_SEC,
+        ),
+        Config.ICP_QUERY_EXTRA_API_REFRESH_SEC,
+    )
+    Config.ICP_QUERY_EXTRA_API_POOL_SIZE = safe_positive_int(
+        env_int("ARL_ICP_QUERY_EXTRA_API_POOL_SIZE", Config.ICP_QUERY_EXTRA_API_POOL_SIZE),
+        Config.ICP_QUERY_EXTRA_API_POOL_SIZE,
+    )
+    Config.ICP_QUERY_EXTRA_API_CHECK = env_bool(
+        "ARL_ICP_QUERY_EXTRA_API_CHECK", Config.ICP_QUERY_EXTRA_API_CHECK
+    )
+    Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC = safe_nonnegative_float(
+        env_float(
+            "ARL_ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC",
+            Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC,
+        ),
+        Config.ICP_QUERY_EXTRA_API_CHECK_TIMEOUT_SEC,
+    )
+    Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY = safe_positive_int(
+        env_int(
+            "ARL_ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY",
+            Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY,
+        ),
+        Config.ICP_QUERY_EXTRA_API_CHECK_CONCURRENCY,
     )
     Config.PROXY_URL = env_str("ARL_PROXY_URL", Config.PROXY_URL).strip()
     Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = env_bool(

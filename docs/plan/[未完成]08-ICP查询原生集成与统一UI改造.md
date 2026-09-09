@@ -264,6 +264,7 @@ expires_at
 
 ~~~text
 ARL_ICP_QUERY_ENABLE=true
+ARL_ICP_QUERY_TLS_VERIFY=true
 ARL_ICP_QUERY_TIMEOUT_SEC=30
 ARL_ICP_QUERY_RETRY=2
 ARL_ICP_QUERY_BATCH_CONCURRENCY=2
@@ -275,9 +276,30 @@ ARL_ICP_QUERY_HISTORY_RETENTION_DAYS=30
 ARL_ICP_QUERY_LOG_RETENTION_DAYS=7
 ~~~
 
-网络和代理优先复用 ARL 现有配置，不允许客户端自定义任意代理地址。请求目标必须限制在 ICP 官方接口白名单内，不能将该模块变成任意 URL 代理。
+ICP 请求支持独立出口策略，配置位于现有 `PROXY.ICP` 节点，只有 ICP Worker 会读取：
+
+~~~yaml
+PROXY:
+  ICP:
+    TUNNEL:
+      URL: ""
+    EXTRA_API:
+      URL: ""
+      REFRESH_SEC: 180
+      POOL_SIZE: 20
+      CHECK: true
+      CHECK_TIMEOUT_SEC: 5
+      CHECK_CONCURRENCY: 4
+    IPV6_ENABLE: false
+    IPV6_REFRESH_SEC: 60
+~~~
+
+其中 `TUNNEL.URL` 是固定隧道地址；`EXTRA_API.URL` 由部署方提供代理列表接口，Worker 拉取换行分隔的 `host:port`、检测可用性后随机选择；未配置或池为空时回退到固定隧道，再回退到既有 `PROXY.HTTP_URL`。IPv6 开启后仅从本机 `ip -6 addr show` 输出中提取 `scope global` 地址，并按请求轮换；没有可用地址时保持普通连接回退。客户端不能提交或覆盖这些代理配置。
+
+网络和代理配置不允许客户端自定义任意代理地址。请求目标必须限制在 ICP 官方接口白名单内，代理列表仅来自部署方配置的外部接口，不能将该模块变成任意 URL 代理。
 
 上游实现存在全局关闭 SSL 校验的行为，[上游核心代码](https://raw.githubusercontent.com/HG-ha/ICP_Query/main/src/python/ymicp.py)中相关逻辑不得直接引入 ARL。ARL 默认必须保持证书校验，不能通过全局 monkey patch 修改进程级 SSL 行为。
+当前实现将 TLS 校验开关限制在 ICP Session：`ARL_ICP_QUERY_TLS_VERIFY=false` 只影响 ICP 请求，适用于用户明确接受风险的受控测试网络，不影响 ARL 其它扫描请求。
 
 验证码、网络连接、IPv6 和官方接口临时失败必须采用有限超时和有限重试，并将错误分类为：
 
@@ -415,6 +437,8 @@ ICP 查询
 - Python ICP 模块 AST 校验：通过。
 - 结果表支持行级详情展开，日志页支持级别和日期范围筛选。
 - ICP 配置同时支持启动加载、环境变量和运行时热刷新，重试次数允许配置为 0。
+- ICP 出口层已接入固定隧道、部署方代理 API 拉取/存活检测/随机选择，以及本机 `scope global` IPv6 按请求轮换；上述连接适配器、代理池和 TLS 开关均只存在于 ICP 查询模块，不修改 ARL 全局 SSL 或其它扫描模块网络行为。
+- ICP 代理列表只读取部署方提供的外部接口，候选地址经过格式校验和官方站点可用性检测；日志不输出代理 URL、认证信息或代理列表内容。
 - Docker 生产配置模板已补齐 ICP 默认项，`sync_runtime_config` 会将其增量同步到挂载的 `config-runtime.yaml`；新增模板一致性回归测试。
 - Compose 已向 web、两个 worker 和 scheduler 透传 ICP 环境变量；未设置的变量保持为空并沿用 runtime YAML，避免默认值覆盖运行时开关。
 - 配置读取已将空字符串环境变量视为“未设置”，因此 Compose 的可选透传不会把 runtime YAML 的布尔开关误判为 `false`。

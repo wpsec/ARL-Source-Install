@@ -127,7 +127,7 @@ RUN set -eux; \
     dnf clean all; \
     dnf install -y \
       fontconfig gcc gcc-c++ make git zlib-devel bzip2-devel openssl-devel sqlite-devel \
-      readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap \
+      readline-devel libffi-devel xz-devel nginx unzip wget findutils nmap iproute \
       alsa-lib atk at-spi2-atk cairo cups-libs gtk3 libdrm mesa-libgbm \
       libX11 libXcomposite libXcursor libXdamage libXext libXi libXrandr \
       libXScrnSaver libXtst nss nspr pango xorg-x11-fonts-Type1 xorg-x11-fonts-misc; \
