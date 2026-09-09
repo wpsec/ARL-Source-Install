@@ -172,6 +172,7 @@ class TestIcpQueryEngine(unittest.TestCase):
             for call in session.calls
         ))
         self.assertTrue(session.calls[0][2]["verify"])
+        self.assertIs(session.trust_env, False)
         self.assertRegex(session.headers["Cookie"], r"^__jsluid_s=[0-9a-f]{32}$")
 
     def test_query_page_normalizes_query_type_case(self):
@@ -404,6 +405,25 @@ class TestIcpQueryEngine(unittest.TestCase):
 
         self.assertEqual("timeout", context.exception.category)
         self.assertTrue(context.exception.retryable)
+
+    def test_transport_errors_are_classified_without_exposing_exception_details(self):
+        cases = (
+            (MODULE.requests.exceptions.ProxyError("synthetic proxy failure"), "代理连接失败"),
+            (MODULE.requests.exceptions.SSLError("certificate verify failed"), "TLS 证书校验失败"),
+            (MODULE.requests.exceptions.ConnectionError("name resolution failed"), "无法连接官方接口"),
+        )
+        for exception, expected in cases:
+            with self.subTest(expected=expected):
+                session = FakeSession([exception])
+                engine = MODULE.IcpQueryEngine(session_factory=lambda: session)
+                prepared_session = engine._session()
+
+                with self.assertRaises(MODULE.IcpQueryError) as context:
+                    engine._request(prepared_session, "GET", MODULE.ICP_HOME_URL)
+
+                self.assertEqual("network_error", context.exception.category)
+                self.assertIn(expected, str(context.exception))
+                self.assertNotIn("synthetic", str(context.exception))
 
     def test_rate_limit_is_classified_as_retryable(self):
         engine, session = self._engine([FakeResponse({}, status_code=429)])

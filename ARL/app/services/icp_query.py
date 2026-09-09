@@ -127,6 +127,16 @@ def _redact_text(value, max_length=600):
     )
 
 
+def _network_error_kind(error):
+    if isinstance(error, requests.exceptions.ProxyError):
+        return "代理连接失败"
+    if isinstance(error, requests.exceptions.SSLError):
+        return "TLS 证书校验失败"
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return "无法连接官方接口"
+    return "请求传输失败"
+
+
 def _safe_json_value(value, depth=0):
     if depth > 4:
         return "[TRUNCATED]"
@@ -182,6 +192,8 @@ class IcpQueryEngine(object):
 
     def _session(self):
         session = self.session_factory()
+        # 只有显式配置的 ARL 代理才允许改变出口，避免网络切换后误用容器环境中的旧代理。
+        session.trust_env = False
         session.headers.update({
             "User-Agent": ICP_USER_AGENT,
             "Accept": "application/json, text/plain, */*",
@@ -192,7 +204,17 @@ class IcpQueryEngine(object):
         })
         return session
 
-    def _request(self, session, method, url, *, json_body=None, form_body=None, headers=None):
+    def _request(
+        self,
+        session,
+        method,
+        url,
+        *,
+        json_body=None,
+        form_body=None,
+        headers=None,
+        operation="接口请求",
+    ):
         if not _validate_url(url):
             raise IcpQueryError("ICP 请求目标不在允许范围内", category="policy_error")
 
@@ -210,9 +232,24 @@ class IcpQueryEngine(object):
                 allow_redirects=False,
             )
         except requests.exceptions.Timeout as exc:
-            raise IcpQueryError("ICP 接口请求超时", category="timeout", retryable=True) from exc
+            logger.warning("ICP upstream timeout operation=%s", operation)
+            raise IcpQueryError(
+                "ICP 接口请求超时（{}）".format(operation),
+                category="timeout",
+                retryable=True,
+            ) from exc
         except requests.exceptions.RequestException as exc:
-            raise IcpQueryError("ICP 接口网络请求失败", category="network_error", retryable=True) from exc
+            error_kind = _network_error_kind(exc)
+            logger.warning(
+                "ICP upstream request failed operation=%s kind=%s",
+                operation,
+                error_kind,
+            )
+            raise IcpQueryError(
+                "ICP 接口网络请求失败（{}）".format(error_kind),
+                category="network_error",
+                retryable=True,
+            ) from exc
 
         text = response.text or ""
         if "当前访问疑似黑客攻击" in text or "当前访问已被创宇盾拦截" in text:
@@ -253,6 +290,7 @@ class IcpQueryEngine(object):
             ICP_AUTH_URL,
             form_body={"authKey": auth_key, "timeStamp": timestamp},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
+            operation="获取访问凭证",
         )
         params = payload.get("params") if isinstance(payload, dict) else None
         token = params.get("bussiness") if isinstance(params, dict) else None
@@ -349,6 +387,7 @@ class IcpQueryEngine(object):
             ICP_CAPTCHA_IMAGE_URL,
             json_body={"clientUid": self._client_uid()},
             headers={**self._base_headers(), "token": token},
+            operation="获取验证码",
         )
         params = payload.get("params") if isinstance(payload, dict) else None
         if not isinstance(params, dict):
@@ -361,6 +400,7 @@ class IcpQueryEngine(object):
             ICP_CAPTCHA_CHECK_URL,
             json_body={"key": captcha_uuid, "value": str(offset)},
             headers={**self._base_headers(), "token": token},
+            operation="校验验证码",
         )
         if not check_payload.get("success"):
             raise IcpQueryError("验证码识别失败", category="captcha_error", retryable=True)
@@ -394,7 +434,14 @@ class IcpQueryEngine(object):
                 "serviceType": type_info["service_type"],
             }
             endpoint = ICP_QUERY_URL
-        raw = self._request(session, "POST", endpoint, json_body=body, headers=headers)
+        raw = self._request(
+            session,
+            "POST",
+            endpoint,
+            json_body=body,
+            headers=headers,
+            operation="提交查询",
+        )
         return raw, token, captcha_uuid, sign
 
     def _query_detail(self, session, item, query_type, token, captcha_uuid, sign):
@@ -414,6 +461,7 @@ class IcpQueryEngine(object):
                     "uuid": captcha_uuid,
                     "sign": sign,
                 },
+                operation="获取详情",
             )
             detail = result.get("params") if isinstance(result, dict) else None
             return detail if isinstance(detail, dict) else item
