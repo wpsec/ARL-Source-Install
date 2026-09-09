@@ -493,7 +493,8 @@
 
   /* 所有弹窗直接子级的头/底栏都要保留尺寸；长内容只允许滚动区收缩。 */
   .arl-modal-box > .border-b,
-  .arl-modal-box > .border-t {
+  .arl-modal-box > .border-t,
+  .arl-modal-box > .arl-modal-footer {
     flex-shrink: 0;
     flex-wrap: wrap;
     row-gap: 0.75rem;
@@ -503,6 +504,15 @@
   .arl-modal-box > .border-t {
     position: relative;
     z-index: 1;
+    box-shadow: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
+  }
+
+  /* 动作弹窗的提交区是明确的布局边界，不能被表单滚动区压缩或遮挡。 */
+  .arl-modal-box > .arl-modal-footer {
+    flex: 0 0 auto;
+    min-width: 0;
+    position: relative;
+    z-index: 2;
     box-shadow: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
   }
 
@@ -524,12 +534,14 @@
   /* 弹窗底栏是共享结构；窄屏让操作按钮各占一行，避免文字或点击区域被挤出视口。 */
   @media (max-width: 640px) {
     .arl-modal-box > .border-b,
-    .arl-modal-box > .border-t {
+    .arl-modal-box > .border-t,
+    .arl-modal-box > .arl-modal-footer {
       padding-left: 1rem;
       padding-right: 1rem;
     }
 
-    .arl-modal-box > .border-t > .btn {
+    .arl-modal-box > .border-t > .btn,
+    .arl-modal-box > .arl-modal-footer > .btn {
       flex: 1 1 100%;
       width: 100%;
     }

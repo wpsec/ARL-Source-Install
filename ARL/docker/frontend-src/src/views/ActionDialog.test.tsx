@@ -107,6 +107,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     const content = screen.getByTestId('action-dialog-content');
     expect(content.className).toContain('min-w-0');
     expect(content.className).toContain('min-h-0');
+    expect(footer.className).toContain('arl-modal-footer');
     expect(footer.className).toContain('shrink-0');
     expect(footer.className).toContain('min-w-0');
     expect(footer.className).toContain('border-t');

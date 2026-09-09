@@ -1563,7 +1563,7 @@ export function ActionDialog({
 
         <div
           data-testid="action-dialog-footer"
-          className="shrink-0 min-w-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
+          className="arl-modal-footer shrink-0 min-w-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
         >
             <button
               onClick={onClose}
