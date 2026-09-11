@@ -77,6 +77,18 @@ class TestIPStageServices(unittest.TestCase):
         self.assertEqual(["save_service_info", "brute_config"], task.calls)
         self.assertEqual([{"http://example.com:8080"}], web_site_fetch.calls)
 
+    def test_disabled_poc_entries_do_not_start_risk_stage(self):
+        task = _Task({
+            "port_scan": True,
+            "poc_config": [{"plugin_name": "demo", "enable": False}],
+        })
+        web_site_fetch = _WebSiteFetch()
+
+        IPPostProcessStageService(task, web_site_fetch).run()
+
+        self.assertNotIn("poc_run", task.executor.names)
+        self.assertEqual([], web_site_fetch.calls)
+
 
 if __name__ == "__main__":
     unittest.main()

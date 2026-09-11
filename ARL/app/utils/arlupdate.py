@@ -31,6 +31,7 @@ def create_index():
         "fileleak": "task_id",
         "ip": "task_id",
         "npoc_service": "task_id",
+        "asset_pivot_evidence": ["task_id", "pivot_key"],
         "site": ["task_id", "status", "title", "hostname", "site", "http_server"],
         "service": "task_id",
         "url": "task_id",
@@ -100,6 +101,7 @@ def create_index():
         "wih": [("task_id", 1), ("fnv_hash", 1)],
         "wih_endpoint": [("task_id", 1), ("fnv_hash", 1)],
         "url": [("task_id", 1), ("source", 1), ("url", 1)],
+        "asset_pivot_evidence": [("task_id", 1), ("pivot_key", 1)],
     }
     for table, index_keys in unique_indexes.items():
         try:
@@ -140,11 +142,12 @@ lock = threading.Lock()
 def npoc_info_update():
     from app.services.npoc import NPoC
     with lock:
-        if conn_db('poc').count_documents({}) > 0:
-            return
-
-        n = NPoC()
-        n.sync_to_db()
+        try:
+            n = NPoC()
+            n.sync_to_db()
+            n.delete_db()
+        except Exception as exc:
+            logger.exception("NPoC startup sync failed:{}".format(exc))
 
 
 # 判断是否是-m flask routes 模式运行

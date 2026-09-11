@@ -10,6 +10,7 @@ from app.services.commonTask import WebSiteFetch
 from app.services.ip_stage_services import IPNetworkStageService, IPPostProcessStageService
 from app.services.task_finalizer import TaskFinalizer
 from app.services.task_lifecycle_service import TaskLifecycleService
+from app.services.task_pipeline import TaskPipeline
 from app.helpers.message_notify import push_task_finish_notify
 import time
 
@@ -45,6 +46,23 @@ class DomainTaskOrchestrator(object):
             )
 
         task.start_ip_fetch()
+        max_rounds = max(
+            int(getattr(Config, "ASSET_DISCOVERY_MAX_ROUNDS", 1) or 1),
+            1,
+        )
+        for round_index in range(max(max_rounds - 1, 0)):
+            if not bool(getattr(Config, "ASSET_DISCOVERY_ENABLE", True)):
+                break
+            pivot_runner = getattr(task, "asset_pivot_round", None)
+            if not callable(pivot_runner):
+                break
+            pivot_result = TaskPipeline(task).run_stage(
+                "asset_pivot_round",
+                pivot_runner,
+                detail="round={}".format(round_index + 2),
+            )
+            if not isinstance(pivot_result, dict) or not pivot_result.get("new_domains"):
+                break
         task.start_site_fetch()
         task.start_find_vhost()
         task.start_poc_run()
@@ -76,6 +94,13 @@ class IPTaskOrchestrator(object):
         base_update = task.base_update_task
         base_update.update_task_field("start_time", utils.curr_date())
         IPNetworkStageService(task).run()
+        pivot_runner = getattr(task, "asset_pivot", None)
+        if callable(pivot_runner):
+            TaskPipeline(task).run_stage(
+                "asset_pivot",
+                pivot_runner,
+                enabled=bool(getattr(Config, "ASSET_DISCOVERY_ENABLE", True)),
+            )
 
         web_site_fetch = WebSiteFetch(
             task_id=task.task_id,

@@ -2,7 +2,7 @@
 // React Query 后的行为证据——水合、payload 默认补齐、缓存复用、失败呈现。
 // 提交/文件上传等 mutation 通道不在本批改动范围，仅做存在性冒烟。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installFetchMock } from '../test/fetchMock';
 import { ActionDialog } from './ActionDialog';
@@ -45,13 +45,13 @@ const FOFA_TEST_ACTION = {
   path: '/task_fofa/test',
 } as any;
 
-function renderDialog(client: QueryClient) {
+function renderDialog(client: QueryClient, initialPayload: any = {}) {
   return render(
     <QueryClientProvider client={client}>
       <ActionDialog
         token="tk-action"
         action={CREATE_TASK_ACTION}
-        initialPayload={{}}
+        initialPayload={initialPayload}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => {})}
       />
@@ -173,5 +173,35 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     renderDialog(newClient());
     await vi.waitFor(() => expect(screen.getAllByText(/HTTP 500/).length).toBeGreaterThan(0));
     expect(screen.queryByText(/big2w/)).toBeNull();
+  });
+
+  it('新建任务加载并选择 NPoC 插件', async () => {
+    installFetchMock({
+      routes: {
+        '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD],
+        '/poc/': [200, {
+          code: 200,
+          items: [
+            { plugin_name: 'poc.test', plugin_type: 'poc', vul_name: '测试漏洞' },
+            { plugin_name: 'brute.test', plugin_type: 'brute', vul_name: '测试爆破' },
+          ],
+        }],
+      },
+    });
+    renderDialog(newClient(), {
+      name: '资产任务',
+      target: 'example.com',
+      domain_dict: '/code/app/dicts/domain/domain_2w.txt',
+      file_leak_dict: '/code/app/dicts/file_leak/file_top_2000.txt',
+      npoc_service_detection: false,
+      poc_config: [],
+    });
+
+    await screen.findByText('测试漏洞');
+    const pluginCheckbox = screen.getByRole('checkbox', { name: '测试漏洞' }) as HTMLInputElement;
+    expect(pluginCheckbox.checked).toBe(false);
+    fireEvent.click(pluginCheckbox);
+    expect(pluginCheckbox.checked).toBe(true);
+    expect(screen.getByRole('button', { name: '全选' })).toBeTruthy();
   });
 });

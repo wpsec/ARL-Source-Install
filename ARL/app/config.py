@@ -1395,6 +1395,14 @@ class Config(object):
     CERT_PIVOT_QUERY_REQUIRE_SCOPE = True
     # 证书反查前是否跳过已识别为CDN/WAF的证书来源IP
     CERT_PIVOT_QUERY_SKIP_CDN = True
+    # 统一资产发现闭环开关和预算
+    ASSET_DISCOVERY_ENABLE = True
+    ASSET_DISCOVERY_MAX_ROUNDS = 3
+    ASSET_DISCOVERY_MAX_DOMAIN_ROOTS = 20
+    ASSET_DISCOVERY_MAX_DOMAINS = 200
+    ASSET_DISCOVERY_REQUIRE_IP_MATCH = True
+    ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE = True
+    ASSET_DISCOVERY_STAGE_TIMEOUT_SEC = 1800
     # 单个 IP:Port 在证书扫描阶段最多尝试的 SNI 域名数量（0=仅扫默认证书）
     CERT_MULTI_SNI_MAX_PER_ENDPOINT = 3
     # SSL 证书抓取分批大小（按展开后的 endpoint+SNI 目标数）
@@ -2017,6 +2025,40 @@ try:
 
     if y["ARL"].get("CERT_PIVOT_QUERY_SKIP_CDN") is not None:
         Config.CERT_PIVOT_QUERY_SKIP_CDN = bool(y["ARL"]["CERT_PIVOT_QUERY_SKIP_CDN"])
+    if y["ARL"].get("ASSET_DISCOVERY_ENABLE") is not None:
+        Config.ASSET_DISCOVERY_ENABLE = bool(y["ARL"]["ASSET_DISCOVERY_ENABLE"])
+    if y["ARL"].get("ASSET_DISCOVERY_MAX_ROUNDS") is not None:
+        Config.ASSET_DISCOVERY_MAX_ROUNDS = safe_positive_int(
+            y["ARL"]["ASSET_DISCOVERY_MAX_ROUNDS"],
+            Config.ASSET_DISCOVERY_MAX_ROUNDS,
+            min_value=1,
+        )
+    if y["ARL"].get("ASSET_DISCOVERY_MAX_DOMAIN_ROOTS") is not None:
+        Config.ASSET_DISCOVERY_MAX_DOMAIN_ROOTS = safe_positive_int(
+            y["ARL"]["ASSET_DISCOVERY_MAX_DOMAIN_ROOTS"],
+            Config.ASSET_DISCOVERY_MAX_DOMAIN_ROOTS,
+            min_value=1,
+        )
+    if y["ARL"].get("ASSET_DISCOVERY_MAX_DOMAINS") is not None:
+        Config.ASSET_DISCOVERY_MAX_DOMAINS = safe_positive_int(
+            y["ARL"]["ASSET_DISCOVERY_MAX_DOMAINS"],
+            Config.ASSET_DISCOVERY_MAX_DOMAINS,
+            min_value=1,
+        )
+    if y["ARL"].get("ASSET_DISCOVERY_REQUIRE_IP_MATCH") is not None:
+        Config.ASSET_DISCOVERY_REQUIRE_IP_MATCH = bool(
+            y["ARL"]["ASSET_DISCOVERY_REQUIRE_IP_MATCH"]
+        )
+    if y["ARL"].get("ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE") is not None:
+        Config.ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE = bool(
+            y["ARL"]["ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE"]
+        )
+    if y["ARL"].get("ASSET_DISCOVERY_STAGE_TIMEOUT_SEC") is not None:
+        Config.ASSET_DISCOVERY_STAGE_TIMEOUT_SEC = safe_positive_int(
+            y["ARL"]["ASSET_DISCOVERY_STAGE_TIMEOUT_SEC"],
+            Config.ASSET_DISCOVERY_STAGE_TIMEOUT_SEC,
+            min_value=1,
+        )
 
     if y["ARL"].get("CERT_MULTI_SNI_MAX_PER_ENDPOINT") is not None:
         Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT = safe_positive_int(
@@ -2762,6 +2804,31 @@ try:
         "ARL_CERT_PIVOT_QUERY_REQUIRE_SCOPE", Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
     )
     Config.CERT_PIVOT_QUERY_SKIP_CDN = env_bool("ARL_CERT_PIVOT_QUERY_SKIP_CDN", Config.CERT_PIVOT_QUERY_SKIP_CDN)
+    Config.ASSET_DISCOVERY_ENABLE = env_bool(
+        "ARL_ASSET_DISCOVERY_ENABLE", Config.ASSET_DISCOVERY_ENABLE
+    )
+    Config.ASSET_DISCOVERY_MAX_ROUNDS = env_int(
+        "ARL_ASSET_DISCOVERY_MAX_ROUNDS", Config.ASSET_DISCOVERY_MAX_ROUNDS
+    )
+    Config.ASSET_DISCOVERY_MAX_DOMAIN_ROOTS = env_int(
+        "ARL_ASSET_DISCOVERY_MAX_DOMAIN_ROOTS",
+        Config.ASSET_DISCOVERY_MAX_DOMAIN_ROOTS,
+    )
+    Config.ASSET_DISCOVERY_MAX_DOMAINS = env_int(
+        "ARL_ASSET_DISCOVERY_MAX_DOMAINS", Config.ASSET_DISCOVERY_MAX_DOMAINS
+    )
+    Config.ASSET_DISCOVERY_REQUIRE_IP_MATCH = env_bool(
+        "ARL_ASSET_DISCOVERY_REQUIRE_IP_MATCH",
+        Config.ASSET_DISCOVERY_REQUIRE_IP_MATCH,
+    )
+    Config.ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE = env_bool(
+        "ARL_ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE",
+        Config.ASSET_DISCOVERY_DOMAIN_BRUTE_ENABLE,
+    )
+    Config.ASSET_DISCOVERY_STAGE_TIMEOUT_SEC = env_int(
+        "ARL_ASSET_DISCOVERY_STAGE_TIMEOUT_SEC",
+        Config.ASSET_DISCOVERY_STAGE_TIMEOUT_SEC,
+    )
     Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT = safe_positive_int(
         env_int("ARL_CERT_MULTI_SNI_MAX_PER_ENDPOINT", Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT),
         Config.CERT_MULTI_SNI_MAX_PER_ENDPOINT,

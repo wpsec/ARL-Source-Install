@@ -200,6 +200,7 @@ export const modules: ModuleConfig[] = [
           port_scan_type: 'test',
           port_custom: '80,443',
           service_detection: true,
+          npoc_service_detection: false,
           service_brute: true,
           os_detection: true,
           site_identify: true,
@@ -219,6 +220,7 @@ export const modules: ModuleConfig[] = [
           smart_skip_waf: true,
           ai_denoise: false,
           dingding_notify: false,
+          poc_config: [],
         },
       },
       {

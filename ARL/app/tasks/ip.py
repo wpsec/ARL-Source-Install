@@ -48,6 +48,7 @@ from app.services.ip_cert_service_stage_services import (
     IPServiceSummaryStageService,
     fetch_cert_map,
 )
+from app.services.asset_pivot_stage_services import UnifiedAssetDiscoveryStageService
 
 
 logger = utils.get_logger()
@@ -169,6 +170,9 @@ class IPTask(CommonTask):
     def ssl_cert(self):
         """获取SSL证书信息（兼容入口，实现见 IPCertStageService）。"""
         return IPCertStageService(self).run()
+
+    def asset_pivot(self):
+        return UnifiedAssetDiscoveryStageService(self).run()
 
     def save_service_info(self):
         """保存服务识别信息（兼容入口，实现见 IPServiceSummaryStageService）。"""

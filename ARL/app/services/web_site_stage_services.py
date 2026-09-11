@@ -278,6 +278,10 @@ class WebSiteResultPersistStageService(object):
                 continue
             plugins.append(info["plugin_name"])
 
+        if not plugins:
+            logger.info("skip risk cruising because no enabled poc plugin")
+            return []
+
         poc_targets = task.poc_sites
         if npoc_service_target_set is not None:
             poc_targets = task.poc_sites | npoc_service_target_set

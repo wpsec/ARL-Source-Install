@@ -47,6 +47,35 @@ def apply_arch_compat_options(options):
     return options_cp, []
 
 
+def normalize_task_poc_config(config):
+    """只允许数据库中存在且属于 POC 类型的插件进入任务。"""
+    if config in (None, ""):
+        return []
+    if not isinstance(config, list):
+        raise Exception("poc_config 必须是列表")
+
+    result = []
+    seen = set()
+    for item in config:
+        if not isinstance(item, dict):
+            raise Exception("poc_config 项必须是对象")
+        plugin_name = str(item.get("plugin_name") or "").strip()
+        if not plugin_name or plugin_name in seen:
+            continue
+        plugin_info = utils.conn_db("poc").find_one(
+            {"plugin_name": plugin_name, "plugin_type": "poc"}
+        )
+        if not plugin_info:
+            raise Exception("没有找到 {} POC 插件".format(plugin_name))
+        seen.add(plugin_name)
+        result.append({
+            "plugin_name": plugin_name,
+            "vul_name": plugin_info.get("vul_name", ""),
+            "enable": bool(item.get("enable")),
+        })
+    return result
+
+
 def _refresh_dispatch_queue_cache(timeout_sec=1.5):
     """
     通过 Celery inspect 查询当前活跃消费者队列，并做短时缓存。
@@ -224,6 +253,9 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
 
     options_cp = options.copy()
     arch_compat_notices = []
+    options_cp["poc_config"] = normalize_task_poc_config(
+        options_cp.get("poc_config", [])
+    )
 
     if task_type in [TaskType.IP, TaskType.DOMAIN]:
         options_cp, arch_compat_notices = apply_arch_compat_options(options_cp)
@@ -233,7 +265,6 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
         disable_options = {
             "domain_brute": False,
             "alt_dns": False,
-            "dns_query_plugin": False,
             "arl_search": False
         }
         options_cp.update(disable_options)

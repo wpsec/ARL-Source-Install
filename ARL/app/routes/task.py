@@ -146,6 +146,17 @@ add_task_fields = ns.model('AddTask', {
     "alt_dns": fields.Boolean(example=False, description="DNS字典智能生成"),
     "ssl_cert": fields.Boolean(example=False, description="SSL证书收集"),
     "dns_query_plugin": fields.Boolean(example=False, default=False, description="DNS查询插件"),
+    "npoc_service_detection": fields.Boolean(
+        example=False, default=False, description="NPoC服务识别"
+    ),
+    "poc_config": fields.List(
+        fields.Nested(ns.model('taskPocConfig', {
+            "plugin_name": fields.String(required=True, description="POC插件名称"),
+            "enable": fields.Boolean(required=True, description="是否启用"),
+        })),
+        example=[],
+        description="选中的NPoC漏洞验证插件",
+    ),
     "skip_scan_cdn_ip": fields.Boolean(example=True, default=True, description="跳过CDN IP"),
     "nuclei_scan": fields.Boolean(description="Nuclei漏洞扫描", example=False, default=False),
     "afrog_scan": fields.Boolean(description="afrog漏洞扫描", example=False, default=False),

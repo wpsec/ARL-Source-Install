@@ -867,6 +867,9 @@ class DomainTask(CommonTask):
     def cert_query_plugin_enhance(self):
         return DomainNetworkStageService(self).run_cert_query_plugin_enhance()
 
+    def asset_pivot_round(self):
+        return DomainNetworkStageService(self).run_asset_pivot_round()
+
     def domain_fetch(self):
         return DomainDiscoveryStageService(self).run()
 

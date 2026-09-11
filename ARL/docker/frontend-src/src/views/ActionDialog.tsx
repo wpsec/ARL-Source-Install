@@ -107,7 +107,7 @@ export function ActionDialog({
       },
       {
         title: '网络探测',
-        keys: ['port_scan', 'service_detection', 'os_detection', 'ssl_cert', 'skip_scan_cdn_ip'],
+        keys: ['port_scan', 'service_detection', 'npoc_service_detection', 'os_detection', 'ssl_cert', 'skip_scan_cdn_ip'],
       },
       {
         title: 'Web与风险',
@@ -176,6 +176,7 @@ export function ActionDialog({
   const [policySearchKeyword, setPolicySearchKeyword] = useState('');
   const [policyPocKeyword, setPolicyPocKeyword] = useState('');
   const [policyBruteKeyword, setPolicyBruteKeyword] = useState('');
+  const [taskPocKeyword, setTaskPocKeyword] = useState('');
   const [fofaTesting, setFofaTesting] = useState(false);
   const [fofaResultSize, setFofaResultSize] = useState<number | null>(null);
   const measureProviderOptions = [
@@ -301,14 +302,14 @@ export function ActionDialog({
           .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
       };
     },
-    enabled: isPolicyAction,
+    enabled: isPolicyAction || isTaskCreate,
     staleTime: 30_000,
     retry: 0,
   });
   const policyPocOptions = policyPluginsQuery.data?.poc ?? [];
   const policyBruteOptions = policyPluginsQuery.data?.brute ?? [];
-  const policyPluginLoading = isPolicyAction && policyPluginsQuery.isFetching;
-  const policyPluginError = isPolicyAction && policyPluginsQuery.isError
+  const policyPluginLoading = (isPolicyAction || isTaskCreate) && policyPluginsQuery.isFetching;
+  const policyPluginError = (isPolicyAction || isTaskCreate) && policyPluginsQuery.isError
     ? (policyPluginsQuery.error as Error)?.message || '加载 PoC 列表失败'
     : '';
 
@@ -326,6 +327,7 @@ export function ActionDialog({
 
   const selectedPolicyPocNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('poc_config')));
   const selectedPolicyBruteNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('brute_config')));
+  const selectedTaskPocNames = extractPluginNames(getPayloadValue(formPayload, 'poc_config'));
   const policyOptionDefs = [
     { key: 'domain_config.alt_dns', label: 'DNS字典智能生成' },
     { key: 'domain_config.dns_query_plugin', label: '测绘引擎查询' },
@@ -373,10 +375,17 @@ export function ActionDialog({
     if (!keyword) return true;
     return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
   });
+  const filteredTaskPocOptions = policyPocOptions.filter((item) => {
+    const keyword = taskPocKeyword.trim().toLowerCase();
+    if (!keyword) return true;
+    return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
+  });
   const policyPocAllSelected =
     policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedPolicyPocNames.includes(item.plugin_name));
   const policyBruteAllSelected =
     policyBruteOptions.length > 0 && policyBruteOptions.every((item) => selectedPolicyBruteNames.includes(item.plugin_name));
+  const taskPocAllSelected =
+    policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedTaskPocNames.includes(item.plugin_name));
   const taskDomainDictSelectOptions = useMemo(() => {
     const next = [...taskDomainDictOptions];
     const exists = next.some((item) => item.path === taskDomainDict);
@@ -453,6 +462,21 @@ export function ActionDialog({
     setPolicyPluginConfig(field, Array.from(nextSet));
   };
 
+  const setTaskPocConfig = (pluginNames: string[]) => {
+    setFormPayload((prev) => updatePayloadValue(
+      prev,
+      'poc_config',
+      pluginNames.map((pluginName) => ({ plugin_name: pluginName, enable: true })),
+    ));
+  };
+
+  const toggleTaskPocSelection = (pluginName: string, enabled: boolean) => {
+    const nextSet = new Set(selectedTaskPocNames);
+    if (enabled) nextSet.add(pluginName);
+    else nextSet.delete(pluginName);
+    setTaskPocConfig(Array.from(nextSet));
+  };
+
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
     setFormPayload(nextPayload);
@@ -460,6 +484,7 @@ export function ActionDialog({
     setPolicySearchKeyword('');
     setPolicyPocKeyword('');
     setPolicyBruteKeyword('');
+    setTaskPocKeyword('');
     setFofaTesting(false);
     setFofaResultSize(null);
   }, [initialPayload]);
@@ -763,6 +788,48 @@ export function ActionDialog({
                     </div>
                   ))}
                 </div>
+              </div>
+              <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-content-muted">NPoC 漏洞验证</label>
+                    <p className="text-[11px] text-content-muted mt-1">仅执行这里勾选的 POC；服务识别开关与漏洞验证相互独立。</p>
+                  </div>
+                  <button
+                    type="button"
+                    className={CONSOLE_TEXT_BUTTON_CLASS + ' text-xs font-bold text-accent hover:underline'}
+                    onClick={() => setTaskPocConfig(taskPocAllSelected ? [] : policyPocOptions.map((item) => item.plugin_name))}
+                    disabled={!editable || policyPocOptions.length === 0}
+                  >
+                    {taskPocAllSelected ? '清空' : '全选'}
+                  </button>
+                </div>
+                <input
+                  value={taskPocKeyword}
+                  onChange={(event) => setTaskPocKeyword(event.target.value)}
+                  className={CONSOLE_INPUT_CLASS}
+                  placeholder="请输入关键字筛选 PoC"
+                />
+                <div className="max-h-52 overflow-y-auto custom-scrollbar grid grid-cols-1 md:grid-cols-2 gap-2 pr-1">
+                  {filteredTaskPocOptions.map((item) => (
+                    <label key={item.plugin_name} className={CONSOLE_CHECKBOX_CARD_CLASS}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTaskPocNames.includes(item.plugin_name)}
+                        disabled={!editable}
+                        onChange={(event) => toggleTaskPocSelection(item.plugin_name, event.target.checked)}
+                        className="checkbox checkbox-primary checkbox-sm"
+                      />
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.vul_name || item.plugin_name}</span>
+                    </label>
+                  ))}
+                  {!policyPluginLoading && filteredTaskPocOptions.length === 0 ? (
+                    <p className="text-xs text-content-muted">暂无可用的 PoC 项</p>
+                  ) : null}
+                </div>
+                {policyPluginError ? (
+                  <p role="alert" className={CONSOLE_ALERT_ERROR_CLASS + ' text-xs py-2'}>{policyPluginError}</p>
+                ) : null}
               </div>
             </div>
           ) : isFofaAction ? (

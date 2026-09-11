@@ -151,6 +151,8 @@ class CommonTask(object):
             "search_engines": "SEARCH_PROVIDER_STAGE_TIMEOUT_SEC",
             "port_scan": "PORT_SCAN_STAGE_TIMEOUT_SEC",
             "dns_query_plugin": "DNS_QUERY_PLUGIN_STAGE_TIMEOUT_SEC",
+            "asset_pivot": "ASSET_DISCOVERY_STAGE_TIMEOUT_SEC",
+            "asset_pivot_round": "ASSET_DISCOVERY_STAGE_TIMEOUT_SEC",
             "nuclei_scan": "NUCLEI_STAGE_TIMEOUT_SEC",
             "nuclei_scan_retry": "NUCLEI_STAGE_TIMEOUT_SEC",
             "afrog_scan": "AFROG_STAGE_TIMEOUT_SEC",

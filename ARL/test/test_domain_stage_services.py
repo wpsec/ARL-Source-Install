@@ -104,8 +104,107 @@ class _Task(object):
     def find_vhost_vuln(self):
         self.calls.append("find_vhost_vuln")
 
+    def get_scope_domain_list(self):
+        return [self.base_domain]
+
+
+class _Writer(object):
+    def __init__(self):
+        self.documents = []
+
+    def upsert_one(self, collection, key, document):
+        self.documents.append((collection, key, document))
+
 
 class TestDomainStageServices(unittest.TestCase):
+    def test_certificate_identity_is_processed_when_provider_returns_empty(self):
+        task = _Task({"ssl_cert": True, "dns_query_plugin": False})
+        task._result_writer = _Writer()
+        task.ip_info_list = [types.SimpleNamespace(
+            ip="203.0.113.10",
+            cdn_name="",
+        )]
+        task.cert_map = {
+            "203.0.113.10:443": {
+                "serial_number": "CERT-EMPTY-PROVIDER",
+                "subject": {"common_name": "api.example.com"},
+                "extensions": {"subjectAltName": "DNS:api.example.com"},
+                "_scan_meta": {"endpoint": "203.0.113.10:443"},
+            }
+        }
+        task.build_domain_info = lambda domains: ["api.example.com"]
+
+        with patch.object(
+            _domain_stage_services,
+            "run_query_plugin_by_cert",
+            return_value=[],
+        ) as cert_provider, patch.object(
+            _domain_stage_services,
+            "should_skip_cdn_waf",
+            return_value=False,
+        ), patch.object(
+            _domain_stage_services,
+            "validate_domain_binding",
+            return_value={
+                "domain": "api.example.com",
+                "status": "accepted",
+                "reason": "dns_match_pivot_ip",
+                "resolved_ips": ["203.0.113.10"],
+                "matched_ips": ["203.0.113.10"],
+            },
+        ):
+            count = DomainNetworkStageService(task).run_cert_query_plugin_enhance()
+
+        self.assertEqual(1, count)
+        self.assertIn("api.example.com", task.domain_info_list)
+        self.assertEqual(0, task._last_cert_query_metrics["provider_failed"])
+        cert_provider.assert_not_called()
+        self.assertTrue(
+            any(
+                item[0] == "asset_pivot_evidence"
+                and item[2]["source"] == "certificate_cn_san"
+                for item in task._result_writer.documents
+            )
+        )
+
+    def test_ip_provider_failure_is_recorded_without_aborting_domain_task(self):
+        task = _Task({"dns_query_plugin": True})
+        service = DomainNetworkStageService(task)
+
+        with patch.object(
+            service,
+            "get_ip_pivot_candidates",
+            return_value=["203.0.113.10"],
+        ), patch.object(
+            _domain_stage_services,
+            "run_query_plugin_by_ip",
+            side_effect=TimeoutError("provider timeout"),
+        ):
+            result = service.run_ip_query_plugin_enhance()
+
+        self.assertEqual(0, result)
+        self.assertEqual("partial", task._last_ip_query_metrics["status"])
+        self.assertEqual("provider_failed", task._last_ip_query_metrics["end_reason"])
+
+    def test_certificate_provider_failure_keeps_direct_stage_available(self):
+        task = _Task({"ssl_cert": True, "dns_query_plugin": True})
+        service = DomainNetworkStageService(task)
+
+        with patch.object(
+            service,
+            "get_cert_pivot_candidates",
+            return_value=[{"cert_key": "sn:CERT", "endpoint": "203.0.113.10:443"}],
+        ), patch.object(
+            _domain_stage_services,
+            "run_query_plugin_by_cert",
+            side_effect=TimeoutError("provider timeout"),
+        ):
+            result = service.run_cert_query_plugin_enhance()
+
+        self.assertEqual(0, result)
+        self.assertEqual("partial", task._last_cert_query_metrics["status"])
+        self.assertEqual(1, task._last_cert_query_metrics["provider_failed"])
+
     def test_discovery_service_owns_discovery_stage_order(self):
         task = _Task({"domain_brute": True, "dns_query_plugin": True, "arl_search": True, "alt_dns": True})
 
@@ -492,7 +591,7 @@ class TestDomainStageServices(unittest.TestCase):
         ), patch.object(Config, "CERT_PIVOT_QUERY_ENABLE", False):
             DomainNetworkStageService(task).run()
 
-        self.assertEqual(["port_scan", "ssl_cert"], task.executor.names)
+        self.assertEqual(["port_scan", "ssl_cert", "cert_query_plugin"], task.executor.names)
         self.assertEqual(["gen_ipv4_map", "port_scan", "ssl_cert", "save_ip_info"], task.calls)
 
     def test_network_service_builds_ipv4_map_and_tracks_domains(self):

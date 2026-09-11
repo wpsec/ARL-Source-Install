@@ -21,6 +21,16 @@ from app.services.dns_query import (
 from app.services.searchEngines import search_engines
 from app.services.task_pipeline import TaskPipeline
 from app.services.task_result_write_service import TaskResultWriteService
+from app.services.asset_pivot_stage_services import (
+    certificate_identity,
+    domain_log_summary,
+    endpoint_ip,
+    extract_certificate_domains,
+    is_public_suffix,
+    should_skip_cdn_waf,
+    validate_domain_binding,
+    write_pivot_evidence,
+)
 from app.services.service_detection import resolve_service_result
 from app.services.wildcardDomain import (
     domain_info_hits_wildcard_profile,
@@ -1435,6 +1445,7 @@ class DomainNetworkStageService(object):
 
     def get_ip_pivot_candidates(self):
         task = self.task
+        seen_ips = getattr(task, "_asset_pivot_seen_ips", set())
         ip_map = {}
         skip_non_a = 0
         skip_non_public = 0
@@ -1462,12 +1473,17 @@ class DomainNetworkStageService(object):
                     skip_cdn += 1
                     continue
 
+                if ip in seen_ips:
+                    continue
+
                 ip_map.setdefault(ip, set()).add(domain_info.domain)
 
         all_ips = sorted(ip_map.keys())
         max_ips = max(int(Config.IP_PIVOT_QUERY_MAX_IPS or 0), 0)
-        if max_ips > 0 and len(all_ips) > max_ips:
-            all_ips = all_ips[:max_ips]
+        if max_ips > 0:
+            remaining = max(max_ips - len(seen_ips), 0)
+            if len(all_ips) > remaining:
+                all_ips = all_ips[:remaining]
 
         logger.info(
             "ip pivot candidate total:{} selected:{} skip_non_a:{} skip_non_public:{} skip_black:{} skip_cdn:{}".format(
@@ -1475,6 +1491,27 @@ class DomainNetworkStageService(object):
             )
         )
         return all_ips
+
+    def _limit_asset_domain_map(self, sources_map):
+        """跨多轮共享新增域名预算，达到上限后保留候选而不再主动扩展。"""
+        task = self.task
+        seen = getattr(task, "_asset_pivot_domains", set())
+        max_domains = max(
+            int(getattr(Config, "ASSET_DISCOVERY_MAX_DOMAINS", 200) or 200),
+            0,
+        )
+        limited = {}
+        for source in sorted(sources_map):
+            for domain in sorted(sources_map[source]):
+                if domain in seen:
+                    continue
+                if max_domains > 0 and len(seen) >= max_domains:
+                    task._asset_pivot_budget_exhausted = True
+                    continue
+                limited.setdefault(source, {})[domain] = sources_map[source][domain]
+                seen.add(domain)
+        task._asset_pivot_domains = seen
+        return limited
 
     def run_ip_query_plugin_enhance(self):
         task = self.task
@@ -1490,35 +1527,96 @@ class DomainNetworkStageService(object):
         if not candidate_ips:
             logger.info("skip ip_query_plugin_enhance because no candidate ip")
             return 0
+        if not hasattr(task, "_asset_pivot_seen_ips"):
+            task._asset_pivot_seen_ips = set()
+        task._asset_pivot_seen_ips.update(candidate_ips)
 
         target_domain = task.base_domain if Config.IP_PIVOT_QUERY_REQUIRE_SCOPE else ""
         max_domains = int(Config.IP_PIVOT_QUERY_MAX_DOMAINS or 0)
         logger.info(
-            "start run ip_query_plugin_enhance base_domain:{} ip:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
-                task.base_domain,
+            "start run ip_query_plugin_enhance base_domain_hash:{} ip:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
+                domain_log_summary(task.base_domain),
                 len(candidate_ips),
                 bool(Config.IP_PIVOT_QUERY_REQUIRE_SCOPE),
                 max_domains,
             )
         )
 
-        results = run_query_plugin_by_ip(
-            ip_list=candidate_ips,
-            target_domain=target_domain,
-            max_domains=max_domains,
-        )
+        try:
+            results = run_query_plugin_by_ip(
+                ip_list=candidate_ips,
+                target_domain=target_domain,
+                max_domains=max_domains,
+            )
+        except Exception as exc:
+            task._last_ip_query_metrics = {
+                "status": "partial",
+                "provider_failed": 1,
+                "end_reason": "provider_failed",
+            }
+            logger.error(
+                "ip pivot provider failed base_domain_hash:{} error:{}".format(
+                    domain_log_summary(task.base_domain), safe_error_text(exc)
+                )
+            )
+            return 0
         task._last_ip_query_metrics = dict(getattr(results, "metrics", {}) or {})
         if not results:
-            logger.info("end run ip_query_plugin_enhance {} result 0".format(task.base_domain))
+            logger.info(
+                "end run ip_query_plugin_enhance base_domain_hash:{} result:0".format(
+                    domain_log_summary(task.base_domain)
+                )
+            )
             return 0
 
         sources_map = {}
+        accepted_result_count = 0
+        evidence_count = 0
+        seen_relations = set()
         for result in results:
-            sources_map.setdefault(result["source"], set()).add(result["domain"])
+            if not isinstance(result, dict):
+                continue
+            pivot_ip = str(result.get("pivot_ip") or "").strip()
+            source = str(result.get("source") or "provider").strip() or "provider"
+            relation_key = (
+                source,
+                utils.normalize_domain(result.get("domain")),
+                pivot_ip,
+            )
+            if relation_key in seen_relations:
+                continue
+            seen_relations.add(relation_key)
+            decision = validate_domain_binding(
+                result.get("domain"),
+                pivot_ips=[pivot_ip],
+                scopes=task.get_scope_domain_list()
+                if Config.IP_PIVOT_QUERY_REQUIRE_SCOPE
+                else [],
+                require_ip_match=bool(
+                    getattr(Config, "ASSET_DISCOVERY_REQUIRE_IP_MATCH", True)
+                ),
+            )
+            write_pivot_evidence(
+                task,
+                candidate_type="domain",
+                value=result.get("domain"),
+                source="{}_ip_pivot".format(source),
+                decision=decision,
+                pivot_ip=pivot_ip,
+                cdn_waf=should_skip_cdn_waf(pivot_ip, task),
+            )
+            if decision.get("status") != "accepted":
+                evidence_count += 1
+                continue
+            accepted_result_count += 1
+            sources_map.setdefault(source, {}).setdefault(
+                decision["domain"], set()
+            ).update(decision.get("matched_ips") or [pivot_ip])
 
+        sources_map = self._limit_asset_domain_map(sources_map)
         count = 0
-        for source, source_domains in sources_map.items():
-            source_domains = list(source_domains)
+        for source, domain_ip_map in sources_map.items():
+            source_domains = list(domain_ip_map.keys())
             if not source_domains:
                 continue
 
@@ -1536,8 +1634,12 @@ class DomainNetworkStageService(object):
             task.domain_info_list.extend(domain_info_list)
 
         logger.info(
-            "end run ip_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
-                task.base_domain, len(results), count
+            "end run ip_query_plugin_enhance base_domain_hash:{}, source_result:{}, accepted_result:{}, evidence_only:{}, real_result:{}".format(
+                domain_log_summary(task.base_domain),
+                len(results),
+                accepted_result_count,
+                evidence_count,
+                count,
             )
         )
         return count
@@ -1615,8 +1717,14 @@ class DomainNetworkStageService(object):
 
     @staticmethod
     def normalize_cert_domain(value):
+        if str(value or "").strip().startswith("*."):
+            return ""
         domain = utils.normalize_domain(value)
-        if not domain or not utils.is_valid_domain(domain):
+        if (
+            not domain
+            or not utils.is_valid_domain(domain)
+            or is_public_suffix(domain)
+        ):
             return ""
         return domain
 
@@ -1701,6 +1809,7 @@ class DomainNetworkStageService(object):
         skip_no_key = 0
         skip_dup = 0
         seen_cert_key = set()
+        seen_cert_key.update(getattr(task, "_asset_pivot_seen_certs", set()))
         candidates = []
         for observe_id in sorted(cert_map.keys()):
             cert_obj = cert_map.get(observe_id)
@@ -1744,8 +1853,14 @@ class DomainNetworkStageService(object):
             })
 
         max_certs = max(int(Config.CERT_PIVOT_QUERY_MAX_CERTS or 0), 0)
-        if max_certs > 0 and len(candidates) > max_certs:
-            candidates = candidates[:max_certs]
+        if not hasattr(task, "_asset_pivot_seen_certs"):
+            task._asset_pivot_seen_certs = set()
+        if max_certs > 0:
+            remaining = max(max_certs - len(task._asset_pivot_seen_certs), 0)
+            candidates = candidates[:remaining]
+        task._asset_pivot_seen_certs.update(
+            item["cert_key"] for item in candidates
+        )
 
         logger.info(
             "cert pivot candidate total:{} selected:{} skip_cdn:{} skip_scope:{} skip_no_key:{} skip_dup:{}".format(
@@ -1761,52 +1876,197 @@ class DomainNetworkStageService(object):
 
     def run_cert_query_plugin_enhance(self):
         task = self.task
-        if not Config.CERT_PIVOT_QUERY_ENABLE:
-            return 0
         if not task.options.get("ssl_cert"):
             logger.info("skip cert_query_plugin_enhance because ssl_cert=false")
-            return 0
-        if not task.options.get("dns_query_plugin"):
-            logger.info("skip cert_query_plugin_enhance because dns_query_plugin=false")
             return 0
         if "{fuzz}" in task.base_domain:
             return 0
 
-        cert_candidates = self.get_cert_pivot_candidates()
-        if not cert_candidates:
-            logger.info("skip cert_query_plugin_enhance because no candidate cert")
-            return 0
+        cert_candidates = []
+        if Config.CERT_PIVOT_QUERY_ENABLE and task.options.get("dns_query_plugin"):
+            cert_candidates = self.get_cert_pivot_candidates()
+        elif not task.options.get("dns_query_plugin"):
+            logger.info(
+                "skip cert provider query because dns_query_plugin=false; "
+                "keep direct certificate identity processing"
+            )
+        else:
+            logger.info(
+                "skip cert provider query because CERT_PIVOT_QUERY_ENABLE=false"
+            )
 
         target_domain = task.base_domain if Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE else ""
         max_domains = int(Config.CERT_PIVOT_QUERY_MAX_DOMAINS or 0)
         logger.info(
-            "start run cert_query_plugin_enhance base_domain:{} cert:{} source_mode:auto-enabled require_scope:{} max_domains:{}".format(
-                task.base_domain,
+            "start run cert_query_plugin_enhance base_domain_hash:{} cert:{} "
+            "provider_enabled:{} require_scope:{} max_domains:{}".format(
+                domain_log_summary(task.base_domain),
                 len(cert_candidates),
+                bool(cert_candidates),
                 bool(Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE),
                 max_domains,
             )
         )
-        results = run_query_plugin_by_cert(
-            cert_list=cert_candidates,
-            target_domain=target_domain,
-            max_domains=max_domains,
-        )
-        if not results:
-            logger.info("end run cert_query_plugin_enhance {} result 0".format(task.base_domain))
-            return 0
-
+        provider_failed = 0
+        if cert_candidates:
+            try:
+                results = run_query_plugin_by_cert(
+                    cert_list=cert_candidates,
+                    target_domain=target_domain,
+                    max_domains=max_domains,
+                )
+            except Exception as exc:
+                provider_failed = 1
+                results = []
+                logger.error(
+                    "cert pivot provider failed base_domain_hash:{} error:{}".format(
+                        domain_log_summary(task.base_domain), safe_error_text(exc)
+                    )
+                )
+        else:
+            results = []
+        task._last_cert_query_metrics = {
+            "status": "partial" if provider_failed else "success",
+            "provider_failed": provider_failed,
+            "end_reason": "provider_failed" if provider_failed else "completed",
+        }
         sources_map = {}
+        accepted_result_count = 0
+        evidence_count = 0
+        task._asset_pivot_seen_cert_domains = getattr(
+            task, "_asset_pivot_seen_cert_domains", set()
+        )
+        for observe_id, cert_obj in (
+            getattr(task, "cert_map", {}) or {}
+        ).items():
+            cert_key = certificate_identity(cert_obj) or "observe:{}".format(observe_id)
+            scan_meta = cert_obj.get("_scan_meta", {}) if isinstance(cert_obj, dict) else {}
+            endpoint = str(scan_meta.get("endpoint") or observe_id).strip()
+            pivot_ip = endpoint_ip(endpoint)
+            for cert_domain in extract_certificate_domains(cert_obj):
+                identity_key = "{}|{}".format(cert_key, cert_domain)
+                if not cert_key or identity_key in task._asset_pivot_seen_cert_domains:
+                    continue
+                task._asset_pivot_seen_cert_domains.add(identity_key)
+                if should_skip_cdn_waf(pivot_ip, task):
+                    decision = {
+                        "domain": cert_domain,
+                        "status": "evidence_only",
+                        "reason": "cdn_waf_source",
+                        "resolved_ips": [],
+                        "matched_ips": [],
+                    }
+                else:
+                    decision = validate_domain_binding(
+                        cert_domain,
+                        pivot_ips=[pivot_ip],
+                        scopes=task.get_scope_domain_list()
+                        if Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
+                        else [],
+                        require_ip_match=bool(
+                            getattr(
+                                Config,
+                                "ASSET_DISCOVERY_REQUIRE_IP_MATCH",
+                                True,
+                            )
+                        ),
+                    )
+                write_pivot_evidence(
+                    task,
+                    candidate_type="domain",
+                    value=cert_domain,
+                    source="certificate_cn_san",
+                    decision=decision,
+                    pivot_ip=pivot_ip,
+                    pivot_endpoint=endpoint,
+                    pivot_cert_key=cert_key,
+                    cdn_waf=should_skip_cdn_waf(pivot_ip, task),
+                )
+                if decision.get("status") == "accepted":
+                    accepted_result_count += 1
+                    sources_map.setdefault("certificate_cn_san", {}).setdefault(
+                        cert_domain, set()
+                    ).update(decision.get("matched_ips") or [pivot_ip])
+                else:
+                    evidence_count += 1
+        endpoint_map = {
+            str(item["cert_key"]): fetchCert.split_host_port(
+                item.get("endpoint", "")
+            )[0]
+            for item in cert_candidates
+        }
+        seen_relations = set()
         for result in results:
-            sources_map.setdefault(result["source"], set()).add(result["domain"])
+            if not isinstance(result, dict):
+                continue
+            cert_key = str(result.get("pivot_cert") or "")
+            pivot_ip = endpoint_map.get(cert_key, "")
+            source = str(result.get("source") or "provider").strip() or "provider"
+            relation_key = (
+                source,
+                cert_key,
+                utils.normalize_domain(result.get("domain")),
+                pivot_ip,
+            )
+            if relation_key in seen_relations:
+                continue
+            seen_relations.add(relation_key)
+            decision = validate_domain_binding(
+                result.get("domain"),
+                pivot_ips=[pivot_ip],
+                scopes=task.get_scope_domain_list()
+                if Config.CERT_PIVOT_QUERY_REQUIRE_SCOPE
+                else [],
+                require_ip_match=bool(
+                    getattr(Config, "ASSET_DISCOVERY_REQUIRE_IP_MATCH", True)
+                ),
+            )
+            write_pivot_evidence(
+                task,
+                candidate_type="domain",
+                value=result.get("domain"),
+                source="{}_cert_pivot".format(source),
+                decision=decision,
+                pivot_ip=pivot_ip,
+                pivot_endpoint=str(
+                    next(
+                        (
+                            item.get("endpoint", "")
+                            for item in cert_candidates
+                            if str(item.get("cert_key")) == cert_key
+                        ),
+                        "",
+                    )
+                ),
+                pivot_cert_key=cert_key,
+                cdn_waf=should_skip_cdn_waf(pivot_ip, task),
+            )
+            if decision.get("status") != "accepted":
+                evidence_count += 1
+                continue
+            accepted_result_count += 1
+            sources_map.setdefault(source, {}).setdefault(
+                decision["domain"], set()
+            ).update(decision.get("matched_ips") or [pivot_ip])
 
+        task._last_cert_query_metrics.update({
+            "candidate_count": len(cert_candidates),
+            "provider_result_count": len(results or []),
+            "accepted_result_count": accepted_result_count,
+            "evidence_only": evidence_count,
+        })
+        sources_map = self._limit_asset_domain_map(sources_map)
         count = 0
-        for source, source_domains in sources_map.items():
-            source_domains = list(source_domains)
+        for source, domain_ip_map in sources_map.items():
+            source_domains = list(domain_ip_map.keys())
             if not source_domains:
                 continue
 
-            source_name = "{}_cert_pivot".format(source)
+            source_name = (
+                source
+                if source == "certificate_cn_san"
+                else "{}_cert_pivot".format(source)
+            )
             task.add_domain_source_names(source_domains, source_name)
             logger.info("start build domain info, source:{}".format(source_name))
             domain_info_list = task.build_domain_info(source_domains)
@@ -1820,11 +2080,46 @@ class DomainNetworkStageService(object):
             task.domain_info_list.extend(domain_info_list)
 
         logger.info(
-            "end run cert_query_plugin_enhance {}, source_result:{}, real_result:{}".format(
-                task.base_domain, len(results), count
+            "end run cert_query_plugin_enhance base_domain_hash:{}, source_result:{}, accepted_result:{}, evidence_only:{}, real_result:{}".format(
+                domain_log_summary(task.base_domain),
+                len(results),
+                accepted_result_count,
+                evidence_count,
+                count,
             )
         )
         return count
+
+    def run_asset_pivot_round(self):
+        """执行一次额外闭环，供编排器在预算内重复调用。"""
+        task = self.task
+        before_domains = len(task.domain_info_list)
+        ip_count = self.run_ip_query_plugin_enhance()
+        self.run_gen_ipv4_map()
+        scan_count = 0
+        if task.options.get("port_scan"):
+            scan_count = self.run_incremental_port_scan_for_new_ips()
+        cert_count = self.run_cert_query_plugin_enhance()
+        if cert_count > 0:
+            self.run_gen_ipv4_map()
+            if task.options.get("port_scan"):
+                scan_count += self.run_incremental_port_scan_for_new_ips()
+            self.run_sync_ip_domain_from_ipv4_map()
+        budget_exhausted = bool(
+            getattr(task, "_asset_pivot_budget_exhausted", False)
+        )
+        result = {
+            "new_domains": max(len(task.domain_info_list) - before_domains, 0),
+            "ip_domains": ip_count,
+            "cert_domains": cert_count,
+            "new_ip_info": scan_count,
+            "budget_exhausted": budget_exhausted,
+            "status": "partial" if budget_exhausted else "success",
+            "end_reason": "budget_exhausted" if budget_exhausted else "completed",
+        }
+        result["output_count"] = result["new_domains"]
+        result["metrics"] = dict(result)
+        return result
 
     def run(self):
         task = self.task
@@ -1843,7 +2138,7 @@ class DomainNetworkStageService(object):
             },
         ])
 
-        if Config.CERT_PIVOT_QUERY_ENABLE and task.options.get("ssl_cert"):
+        if task.options.get("ssl_cert"):
             def run_cert_query_plugin():
                 cert_new_domain_count = self.run_cert_query_plugin_enhance()
                 if cert_new_domain_count > 0:
@@ -1851,7 +2146,12 @@ class DomainNetworkStageService(object):
                     if task.options.get("port_scan"):
                         self.run_incremental_port_scan_for_new_ips()
                     self.run_sync_ip_domain_from_ipv4_map()
-                return cert_new_domain_count
+                return {
+                    "output_count": cert_new_domain_count,
+                    "metrics": dict(
+                        getattr(task, "_last_cert_query_metrics", {}) or {}
+                    ),
+                }
 
             pipeline.run_stage("cert_query_plugin", run_cert_query_plugin)
 
@@ -2038,7 +2338,16 @@ class DomainPostProcessStageService(object):
             # 服务结果由网络阶段持有；后置阶段只负责触发收尾，避免迁移后调用失效入口。
             DomainNetworkStageService(task).run_save_service_info()
 
-        if task.options.get("poc_config"):
+        poc_config = task.options.get("poc_config")
+        poc_enabled = (
+            any(
+                isinstance(item, dict) and bool(item.get("enable"))
+                for item in poc_config
+            )
+            if isinstance(poc_config, list)
+            else bool(poc_config)
+        )
+        if poc_enabled:
             TaskPipeline(task).run_stage(
                 "poc_run",
                 lambda: task.web_site_fetch.risk_cruising(task.npoc_service_target_set),

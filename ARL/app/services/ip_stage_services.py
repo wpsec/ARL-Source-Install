@@ -57,7 +57,16 @@ class IPPostProcessStageService(object):
         ):
             task.save_service_info()
 
-        if task.options.get("poc_config"):
+        poc_config = task.options.get("poc_config")
+        poc_enabled = (
+            any(
+                isinstance(item, dict) and bool(item.get("enable"))
+                for item in poc_config
+            )
+            if isinstance(poc_config, list)
+            else bool(poc_config)
+        )
+        if poc_enabled:
             stage.run(
                 "poc_run",
                 lambda: self.web_site_fetch.risk_cruising(task.npoc_service_target_set),

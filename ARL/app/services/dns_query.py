@@ -28,6 +28,9 @@ class QueryPluginResult(list):
 
 def _build_query_metrics(provider_stats, input_count, output_count, unique_count):
     stats = list(provider_stats or [])
+    source_result_count = sum(
+        int(item.get("source_result_count") or 0) for item in stats
+    )
     http_metrics = {}
     for item in stats:
         _merge_provider_http_metrics(http_metrics, item.get("http_metrics") or {})
@@ -46,6 +49,8 @@ def _build_query_metrics(provider_stats, input_count, output_count, unique_count
         ),
         "failed_count": failed_count,
         "degraded_count": degraded_count,
+        "source_result_count": source_result_count,
+        "unique_result_count": max(int(unique_count or 0), 0),
         "dedup_count": max(int(sum(int(item.get("source_result_count") or 0) for item in stats) - int(unique_count or 0)), 0),
         "request_count": int(http_metrics.get("request_count") or 0),
         "timeout_count": int(http_metrics.get("timeout_count") or 0),
