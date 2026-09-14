@@ -1,31 +1,26 @@
 # ARL 全系统综合 Review
 
-报告状态：已完成
+报告状态：复评完成；保留整改待处理项
 
-整改状态：整改复核完成；保留未验证项和部署协作项
+整改状态：整改复核完成；新增 SEC-11 文档治理冲突，保留未验证项和部署协作项
 
 评审日期：2026-09-15
 
-评审基线：当前工作树 `newUI`，包含全部已修改、未提交和新增文件；基线 HEAD 为 `6cef61c3135d64a6a2d55ebdfc8a1b56e072b600`（`feat(core): 完成统一资产发现闭环与IP证书关联`）。
+评审基线：当前工作树 `newUI`；整改提交 HEAD 为 `be87dfcbb31953491ed7c2915b966de787b9fa62`（`fix(core): 收敛全系统Review整改与资产规则链路`）。当前仅有 `ARL/docker/config-docker.yaml` 未提交变更，未读取或复制其中的配置值。
 
 ## 1. 结论摘要
 
 初始评审没有发现需要立即判定为 P0 的阻断项，但发现多项 P1 重要问题，且后端全量 pytest 无法完成测试收集。后续整改已覆盖大部分可在当前工作树完成的代码问题；当前最终状态以第 10 节整改复核和第 11 节放行条件为准。
 
-**开发侧局部能力可以继续进入 Review/测试阶段，但不建议将当前工作树判定为生产放行版本。**
+**整改代码和离线门禁可以进入人工 Review/测试阶段，但当前工作树仍不应判定为生产放行版本。**
 
-主要原因：
+初始评审发现的问题已在第 10 节逐项复核。当前仍影响放行的事项：
 
-- 截图读取接口没有应用层认证和任务归属校验；
-- `GET /poc/delete/` 承载不可逆删除操作；
-- WIH endpoint probe 对原始 URL 做范围检查后允许自动跟随重定向，重定向目标没有再次做范围校验；
-- task scope 会按任务名称扩展到同名任务，任务名称不是可靠的隔离边界；
-- 风险巡航 PoC 子线程异常不会回传到主线程，主流程异常路径也没有写入 `ERROR` 终态；
-- 配置模板中仍存在应由运行时注入的默认凭据类信息；
-- 跨 Celery 消息的 `DiscoveryContext` 不能共享，深度阶段仍是单消息内的同步长链路；
-- 表格批量选择只保留当前页，跨页会清空已选项；
-- 后端全量测试在收集阶段出现 10 个错误，不能用定向测试结果替代；
-- 真实目标、生产 runtime、双架构、40/64 目标、视觉视口和依赖漏洞库审计均没有在本机形成完整证据。
+- SEC-05 的运行时配置轮换、历史清理和 secret scan 需要部署维护者确认；
+- 后端全量 pytest 仍在收集阶段有 10 个错误，不能用定向测试替代；
+- Docker runtime、真实授权目标、多用户隔离、双架构、40/64 性能、浏览器视口和依赖漏洞库仍没有本机完整证据；
+- ARCH-03、PERF-02 属于需要后续架构/性能环境验证的剩余项；
+- 资产采集完整性与凭证原文的受控处理仍需与参考准则保持一致，不能把凭证原文扩散到日志、错误、Git 或第三方链路。
 
 已确认的正向结果：前端 Vitest 137 项全部通过，TypeScript 检查和生产构建通过；4,420 条 YAML POC manifest 校验无 quarantine、无未引用源文件；40 个 legacy POC 校验通过；计划 5/6/7 离线回归和主题对比度门禁通过；外部命令静态扫描未发现 `shell=True` 或 `os.system`。
 
@@ -63,11 +58,12 @@
 | 项目 | 结果 |
 |---|---|
 | 分支 | `newUI` |
-| HEAD | `6cef61c3135d64a6a2d55ebdfc8a1b56e072b600` |
-| 已修改/删除的 tracked 路径 | 68 |
-| 未跟踪文件 | 4,471 |
-| `git status --short` 条目 | 76 |
-| tracked diff | 29,521 行新增，1,658 行删除 |
+| HEAD | `be87dfcbb31953491ed7c2915b966de787b9fa62` |
+| 已提交变更 | 4,594 个文件；包含整改代码、测试、规则产物和文档 |
+| 当前未提交 tracked 路径 | 1：`ARL/docker/config-docker.yaml` |
+| 当前未跟踪文件 | 0 |
+| `git status --short` 条目 | 1 |
+| 当前未提交 diff | 7 行新增，4 行删除；未读取配置值 |
 | ARL-NPoC YAML 文件 | 4,461 个源/产物路径，主 manifest 4,420 条规则 |
 | 前端依赖形态 | React 19、TypeScript 5.8、Vite 6、Vitest 5、TanStack Query 5、Tailwind 4、daisyUI 5 |
 | 后端主要依赖 | Flask 2.0.3、Celery 5.1.2、PyMongo 相关组件、Requests 2.26.0、PyYAML 6.0.2 |
@@ -82,7 +78,7 @@
 | CodeGraph | `codegraph sync` | 通过；同步 4,547 个 changed files，新增 4,472、修改 35、删除 40 | 当前索引可用于本轮结构查询 |
 | Python AST | 对 `ARL/app`、`ARL-NPoC/xing` 的 329 个 Python 文件执行 `ast.parse` | 通过，`parsed=329 failed=0` | 语法层无失败 |
 | 后端全量 pytest | `cd ARL && PYTHONPATH=../ARL-NPoC python3 -m pytest -q` | 失败：收集阶段 10 个错误 | 不能判定后端全量通过，见 TEST-01 |
-| 后端定向回归 | POC、ICP、YAML、legacy、NPoC 配置测试 | 64 passed，1 skipped | 仅证明选定链路 |
+| 后端定向回归 | Review round4~8、渐进式阶段、账本和 fileLeak 测试 | 47 passed，5 warnings | 仅证明选定链路 |
 | 指纹/计划回归 | `python3 scripts/plan567-code-check.py --plan all` | 通过 | 计划 5/6/7 离线门禁通过，不等同生产放行 |
 | 主题对比度 | `python3 scripts/check-theme-contrast.py` | 6 套主题、全部检查 PASS | token 对比度基础门禁通过 |
 | YAML manifest | `python3 ARL-NPoC/tools/validate_yaml_manifest.py --output-root ARL-NPoC/xing/pocs` | 4,420 entries；4,419 ready；1 duplicate；0 quarantine；0 未引用 | duplicate 有 alias 记录，没有静默丢弃；需保留验收口径 |
@@ -451,6 +447,21 @@
 | 验收 | `chmod 0444`、只读 bind mount 和正常可写目录三组 fixture。 |
 | 对应计划/历史 | 代码质量和 Docker 权限 Review。 |
 
+### 5.6 文档治理与安全边界
+
+#### SEC-11：敏感资产参考准则与当前安全实现存在边界冲突
+
+| 项目 | 内容 |
+|---|---|
+| 级别/标签 | P1 / important |
+| 状态 | 新增；待治理决策 |
+| 证据 | `docs/reference/[长期参考]敏感资产采集与受控呈现准则.md:13,31-37,61-63,86-114` 要求登录用户无条件查看和导出敏感原文，并允许凭证进入日志、错误、队列、Git 和第三方链路；当前实现的 `safe_error_text`、受控证据边界和 Review 报告规则禁止这些扩散路径。 |
+| 触发条件 | 按当前参考准则新增敏感资产原文列表、导出、日志或报告功能。 |
+| 影响 | 会绕过现有认证之外的对象边界和安全处理，导致凭证在日志、缓存、构建产物、代码仓库或第三方系统中扩散；资产采集完整性与凭证访问控制的责任边界不再可审计。 |
+| 建议 | 保留敏感信息作为一等资产，不静默丢弃；将原文放入受控存储，按任务/项目/租户授权查看，原文查看和交付留审计，不进入日志、错误、普通导出、Git 或第三方链路。参考准则需与该边界保持一致。 |
+| 验收 | 文档、接口、前端、日志、队列、缓存、导出和报告规则一致；未授权用户不能读取原文，授权查看可追溯，安全扫描不能发现原文扩散。 |
+| 对应计划/历史 | `docs/reference/[长期参考]敏感资产采集与受控呈现准则.md`；本 Review 安全章节。 |
+
 ## 6. 已验证安全项与正向实现
 
 以下项目有当前代码或本地测试证据，但不代表整个安全边界已放行：
@@ -460,7 +471,7 @@
 - YAML POC 支持 HTTP/TCP、变量、表达式和结果证据；`YamlPocPlugin` 返回 `poc_engine`、`poc_id`、`poc_source`、severity、tags、request_index、match_summary 和限长 evidence。
 - YAML manifest 中所有源文件都被主 manifest 引用，quarantine 为 0；重复内容通过 alias 追溯，没有静默丢弃。
 - `npoc_poc_scan` 缺失时可根据旧 `poc_config` 推导；新建任务 UI 默认关闭，打开后只执行具体勾选项；Nuclei/Afrog 开关保持独立。
-- 截图上传接口有应用层认证、task_id/file_name 清洗、文件大小和图片 magic 校验；该正向结论不覆盖未认证的读取接口 SEC-01。
+- 截图上传和读取接口均有应用层认证、task_id/file_name 清洗、文件大小、图片 magic、任务归属和真实路径校验；round7 已覆盖读取越权和符号链接 fixture。
 - API Parser/WIH 历史整改已加入越界候选证据化、GraphQL 预算、敏感变量处理、失败计数、fallback 开关和 endpoint degraded reason 的离线回归。
 - TaskFinalizer 的 nested host ownership 标记已经收敛站点层重复收尾；计划 6 离线测试仍通过，历史 ARCH-终态 owner 项可标记为已修复（运行态仍需部署验证）。
 - 统一账本 fail-open 已有计数和阈值降级测试；不能因此把 Mongo 故障下的重复请求风险视为消失，ARCH-02 仍需 IPC 对账。
@@ -472,11 +483,11 @@
 
 | 历史来源/问题族 | 当前状态 | 当前证据与结论 |
 |---|---|---|
-| 系统框架架构 Review A1：跨消息上下文 | 仍存在 | ARCH-01；新 deep 任务重新实例化 DomainTask，需持久化摘要或明确接受重复请求。 |
+| 系统框架架构 Review A1：跨消息上下文 | 已修复（代码）/运行态未验证 | ARCH-01；已有持久化摘要和响应缓存，Mongo 多 worker、故障恢复和重复请求量仍需部署验证。 |
 | 系统框架架构 Review A2：fileLeak 子进程 | 证据不足 | ARCH-02；watchdog/IPC 已有，但无本机端到端子进程请求计数对账。 |
-| 系统框架架构 Review A3：God Object | 仍存在 | ARCH-03；CommonTask/DomainTask 仍是主要兼容和副作用中心。 |
+| 系统框架架构 Review A3：God Object | 部分修复 | ARCH-03；阶段服务已拆出，但 CommonTask/DomainTask 仍是主要兼容和副作用中心。 |
 | 系统框架架构 Review A5：ledger fail-open | 已修复（离线） | `plan567-code-check` 与账本/Finalizer 定向测试通过；真实 Mongo 故障和重复请求量未验证。 |
-| 系统框架架构 Review A6：deep 阶段拆分 | 仍存在 | ARCH-04；目前是一个 deep Celery 消息内的同步阶段链。 |
+| 系统框架架构 Review A6：deep 阶段拆分 | 已修复（代码）/运行态未验证 | ARCH-04；阶段已按 discovery、search、IP、site、vhost、POC、WIH、finalize 投递，并使用 claim/CAS。 |
 | 系统框架架构 Review A7：终态 owner 多头 | 已修复（代码/离线） | nested host-owned 标志和相关测试存在；部署 worker 的中断/恢复仍未运行。 |
 | 系统框架架构 Review A8：全链路请求计数 | 证据不足 | 部分 stage 有 metrics，但跨 Celery、fileLeak 子进程和实际请求的统一对账未完成。 |
 | 计划 6 第 4-6 批 P0-01~P0-05 | 已修复（离线） | 历史整改已落地；当前计划 6 离线检查通过。真实双架构和 production runtime 仍未验证。 |
@@ -486,7 +497,8 @@
 | 计划 7 WIH/UI | 已修复（离线）/视觉未验证 | 既有字段合并、focus、侧边栏、主题和微前端测试通过；本轮未完成四视口浏览器验收。 |
 | 计划 9 统一资产发现/IP 证书 | 已修复（离线）/真实环境未验证 | 本地代码和定向回归通过；真实 DNS、CDN/WAF、FOFA/Hunter、双架构和最终 task 结果未验证。 |
 | 全量开发复核 2026-09-08 | 状态保持 | 仍只能归档为开发完成方案，不能解释为生产放行；本轮新增后端全量收集失败进一步阻止放行。 |
-| NPoC YAML 统一导入计划 | 已完成导入门禁/执行运行态未验证 | 4,420 manifest entries、4,419 ready、1 alias duplicate、0 quarantine；mock/真实任务矩阵和部署 worker 尚未全部执行。 |
+| NPoC YAML 统一导入计划 | 已完成导入门禁/执行运行态未验证 | 4,420 manifest entries、4,419 ready、1 alias duplicate、0 quarantine；后台同步 job 已增加，mock/真实任务矩阵和部署 worker 尚未全部执行。 |
+| 敏感资产采集参考准则 | 待治理决策 | 当前准则把敏感资产完整采集要求扩展为无条件原文公开，并允许进入日志、Git 和第三方链路；与 SEC-11 记录的代码安全边界冲突。 |
 
 已复核的历史报告包括：系统框架与架构、计划 6 第 4-6 批 API、计划 6 第 9-11 批、计划 7 WIH、计划 5 指纹、计划 9、全量开发复核、计划 1-5 前置复核、计划 4 UI、终态修复和统一 drain 相关报告。报告中未复制历史文档里的任何生产凭证或敏感目标。
 
@@ -514,6 +526,7 @@
 | 优先级 | 问题 | 依赖关系 | 建议负责人角色 | 首要动作 | 验收方式 |
 |---|---|---|---|---|---|
 | P1 | SEC-05 配置凭据 | 需要凭据轮换/部署协作 | 安全 + 运维 | 轮换旧值，清理模板和 Git 历史策略 | secret scan、旧值失效、Compose 空凭据拒绝启动 |
+| P1 | SEC-11 敏感资产准则冲突 | 需要治理口径确认 | 安全 + 产品 + 后端 | 保留完整采集，禁止无条件扩散凭证原文；统一文档、接口、日志、导出和报告边界 | 文档与实现一致；授权查看可审计；日志、Git、第三方链路无原文 |
 | P1 | SEC-01 截图读取 | 无外部依赖 | 后端/API | 统一 auth、task ownership、文件记录校验 | 未登录/跨任务/符号链接测试 |
 | P1 | SEC-02 POC 删除 GET | 需兼容前端调用 | 后端/API + 前端 | 改 POST/DELETE，权限、确认、审计 | GET 405、授权和幂等测试 |
 | P1 | SEC-04 redirect scope | 依赖统一 DNS/scope policy | 安全 + 网络扫描 | 每一跳做 host/IP/端口/scope 校验 | redirect SSRF mock 矩阵 |
@@ -562,6 +575,7 @@
 | SEC-08 | 已修复（代码）/集成未验证 | 导出 job、任务列表、状态和下载增加 owner 条件；双用户交叉下载和历史 job 迁移仍需集成环境验证。 |
 | SEC-09 | 已修复（主要 API 出口） | `safe_error_text` 已接入路由、任务错误、外部工具和关键服务边界，并限制路径、查询凭证和错误长度；仍需全量日志/错误输出扫描。 |
 | SEC-10 | 已修复（代码）/供应链未验证 | 外部 PoC 更新要求 40 位 pinned commit 并校验 checkout HEAD；签名、内容安全扫描和真实管理员更新流程仍未执行。 |
+| SEC-11 | 待治理决策 | 当前参考准则要求的无条件原文公开与代码安全边界冲突；完整采集可以执行，但日志、Git、第三方和无权限公开原文不能执行。 |
 | PERF-01 | 已修复主要阻塞/性能未验证 | POC 同步已改为 POST 后台 job，使用 queued/running/done/error 状态、幂等 claim、分块 `bulk_write`、ordered=false 和 alias 一并写入；版本原子切换和大规模性能验收仍未完成。 |
 | PERF-02 | 已缓解/性能未验证 | 通用 API 已限制过深 offset，避免无界 skip；cursor pagination、生产索引 explain 和大数据 p95 仍需性能环境验证。 |
 | STAB-01 | 已修复（代码/回归） | NPoC 结果文件在异常和正常路径统一 `finally` 清理，并采用受限临时文件权限；round6 回归通过。 |
@@ -601,6 +615,6 @@
 - 四视口视觉、键盘、触摸和浏览器兼容通过；
 - 依赖漏洞审计通过。
 
-生产放行至少需要满足：SEC-01、SEC-02、SEC-03、SEC-04、SEC-05、FUNC-01、FUNC-02、UI-01 完成整改并有回归证据；后端测试收集归零；Compose/runtime、依赖审计、真实授权目标、双架构和视口验收结果单独归档。任何未运行项目必须继续标记为未验证，不得使用“定向测试通过”替代。
+生产放行至少需要满足：SEC-01、SEC-02、SEC-03、SEC-04、SEC-05、SEC-11、FUNC-01、FUNC-02、UI-01 完成整改并有回归证据；后端测试收集归零；Compose/runtime、依赖审计、真实授权目标、双架构和视口验收结果单独归档。任何未运行项目必须继续标记为未验证，不得使用“定向测试通过”替代。
 
 本报告已完成整改复核，但不能把未运行的部署、依赖、浏览器、真实目标和多用户环境测试标记为通过。Review 阶段和整改阶段的代码、测试、规则及文档变更应按功能边界单独 review；本地提交不包含远程 push。
