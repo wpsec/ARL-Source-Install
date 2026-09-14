@@ -6,7 +6,7 @@
 
 评审日期：2026-09-15
 
-评审基线：当前工作树 `newUI`；整改提交 HEAD 为 `be87dfcbb31953491ed7c2915b966de787b9fa62`（`fix(core): 收敛全系统Review整改与资产规则链路`）。当前仅有 `ARL/docker/config-docker.yaml` 未提交变更，未读取或复制其中的配置值。
+评审基线：当前工作树 `newUI`；整改基线为 `be87dfcbb31953491ed7c2915b966de787b9fa62`（`fix(core): 收敛全系统Review整改与资产规则链路`），复评报告更新提交为 `077f8f280346a5442f0657d5b68690db4f0ac1fc`。当前仅有 `ARL/docker/config-docker.yaml` 未提交变更，未读取或复制其中的配置值。
 
 ## 1. 结论摘要
 
@@ -58,7 +58,8 @@
 | 项目 | 结果 |
 |---|---|
 | 分支 | `newUI` |
-| HEAD | `be87dfcbb31953491ed7c2915b966de787b9fa62` |
+| 整改基线 | `be87dfcbb31953491ed7c2915b966de787b9fa62` |
+| 复评报告提交 | `077f8f280346a5442f0657d5b68690db4f0ac1fc` |
 | 已提交变更 | 4,594 个文件；包含整改代码、测试、规则产物和文档 |
 | 当前未提交 tracked 路径 | 1：`ARL/docker/config-docker.yaml` |
 | 当前未跟踪文件 | 0 |
