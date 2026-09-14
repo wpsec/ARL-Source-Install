@@ -1,0 +1,15 @@
+id: poc-yaml-stable-diffusion-identify
+info:
+  name: 发现 Stable Diffusion
+  severity: info
+  tags:
+  - identify
+  finger: stable diffusion
+requests:
+- method: GET
+  path: /info
+  expression: "status_code == 200 &&\n      contains(body, \"\\\"named_endpoints\\\
+    \":\") && contains(body, \"\\\"unnamed_endpoints\\\":\")\n      && !contains(body,\
+    \ \"<p>\")\n"
+variables: {}
+transport: http

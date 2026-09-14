@@ -1,0 +1,19 @@
+id: Actuator_noauth
+info:
+  name: Actuator API 未授权访问
+  finger: Actuator
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths:
+  - /env
+  - /actuator/env
+  - /manage/env
+  - /management/env
+  - /api/env
+  - /api/actuator/env
+  expression: contains(body, "java.runtime.version")

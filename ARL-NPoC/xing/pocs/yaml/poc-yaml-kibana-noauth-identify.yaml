@@ -1,0 +1,18 @@
+id: poc-yaml-kibana-noauth-identify
+info:
+  name: 发现 Kibana 未授权访问
+  severity: high
+  tags:
+  - identify
+  finger: Kibana
+variables:
+  path: '/app/kibana
+
+    /kibana/app/kibana'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 && title == "Kibana"
+
+    '
+transport: http

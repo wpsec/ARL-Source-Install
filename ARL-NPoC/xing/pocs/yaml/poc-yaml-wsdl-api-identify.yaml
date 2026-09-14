@@ -1,0 +1,18 @@
+id: poc-yaml-wsdl-api-identify
+info:
+  name: 发现 WSDL Services
+  severity: info
+  tags:
+  - identify
+  finger: webservice
+variables:
+  r_path: '/
+
+    /api/'
+requests:
+- method: GET
+  path: '{{.r_path}}?wsdl'
+  expression: 'contains(body, "wsdl:definitions") && !contains(body, "</title>")
+
+    '
+transport: http

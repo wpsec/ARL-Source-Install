@@ -1,0 +1,15 @@
+id: poc-yaml-sap-netweaver-icm-info-leak
+info:
+  name: SAP NetWeaver ICM 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: netweaver
+  fofa: icon_hash=-266008933
+requests:
+- method: GET
+  path: /sap/public/info
+  expression: status_code == 200 && contains(body,"RFC_SYSTEM_INFO.Response") && matches(body,"<RFCDEST>.*</RFCDEST>")
+    && contains(content_type,"text/xml")
+variables: {}
+transport: http

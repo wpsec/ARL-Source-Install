@@ -1,0 +1,17 @@
+id: poc-yaml-adiscon-loganalyzer-unauth-access
+info:
+  name: Adiscon LogAnalyzer 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Adiscon
+  osprey-id: vb_2022_0032
+requests:
+- method: GET
+  path: /
+  expression: 'contains(body, "Adiscon LogAnalyzer") && contains(body, "<b>Search
+    (filter):</b>")
+
+    '
+variables: {}
+transport: http

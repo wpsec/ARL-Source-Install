@@ -1,0 +1,15 @@
+id: poc-yaml-clickhouse-rest-api-identify
+info:
+  name: 发现 Clickhouse REST API
+  severity: info
+  tags:
+  - identify
+  finger: Clickhouse
+requests:
+- method: GET
+  path: /ping
+  expression: 'contains(headers, "X-ClickHouse-Summary") && contains(body, "OK")
+
+    '
+variables: {}
+transport: http

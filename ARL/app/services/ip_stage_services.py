@@ -5,6 +5,7 @@
 """
 
 from app.services.single_scan_stage_services import IPSingleStageService
+from app.helpers.task import npoc_poc_scan_enabled
 
 
 class IPNetworkStageService(object):
@@ -58,14 +59,7 @@ class IPPostProcessStageService(object):
             task.save_service_info()
 
         poc_config = task.options.get("poc_config")
-        poc_enabled = (
-            any(
-                isinstance(item, dict) and bool(item.get("enable"))
-                for item in poc_config
-            )
-            if isinstance(poc_config, list)
-            else bool(poc_config)
-        )
+        poc_enabled = npoc_poc_scan_enabled(task.options)
         if poc_enabled:
             stage.run(
                 "poc_run",

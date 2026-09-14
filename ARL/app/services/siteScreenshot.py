@@ -133,7 +133,7 @@ class SiteScreenshot(BaseThread):
                         data=data,
                         files=files,
                         timeout=(5, self.sync_timeout),
-                        verify=False,
+                        verify=bool(getattr(Config, "SCAN_TLS_VERIFY", True)),
                         allow_redirects=False
                     )
 

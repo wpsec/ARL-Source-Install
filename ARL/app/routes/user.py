@@ -13,7 +13,7 @@
 """
 from flask import request
 from flask_restx import fields, Namespace
-from app.utils import get_logger
+from app.utils import get_logger, auth
 from app import utils
 from . import  ARLResource
 from app import modules
@@ -113,7 +113,8 @@ change_pass_fields = ns.model('ChangePassARL', {
 @ns.route('/change_pass')
 class ChangePassARL(ARLResource):
     """修改密码接口"""
-    
+
+    @auth
     @ns.expect(change_pass_fields)
     def post(self):
         """
@@ -200,6 +201,5 @@ def build_data(data):
         ret["code"] = 401
 
     return ret
-
 
 

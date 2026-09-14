@@ -1,0 +1,24 @@
+id: poc-yaml-hadoop-yarn-unauth
+info:
+  name: Hadoop Yarn 未授权访问漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: Hadoop Yarn
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /ws/v1/cluster/info
+  headers:
+    Content-Type: application/json
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "resourceManagerVersionBuiltOn") && contains(body, "hadoopVersion")
+  output: []

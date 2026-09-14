@@ -1,0 +1,15 @@
+id: poc-yaml-ruoyi-druid-unauthorized-access
+info:
+  name: 若依druid 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: ruoyi
+  fofa: icon_hash="706913071"
+requests:
+- method: GET
+  path: /prod-api/druid/index.html
+  expression: "status_code == 200 && \ncontains(body,\"Druid Stat Index\") &&\ncontains(body,\"\
+    View JSON API\")\n"
+variables: {}
+transport: http

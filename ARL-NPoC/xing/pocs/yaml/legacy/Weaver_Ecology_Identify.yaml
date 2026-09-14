@@ -1,0 +1,16 @@
+id: Weaver_Ecology_Identify
+info:
+  name: 发现泛微 Ecology
+  finger: Ecology
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /help/sys/help.html
+  - /js
+  expression: contains(body, "$(this).attr(\"src\",\"image/btn_help_click") or contains(header,
+    "ecology_JSessionid")

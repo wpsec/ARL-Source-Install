@@ -1,0 +1,20 @@
+id: poc-yaml-pageadmin-cms-identify
+info:
+  name: 发现 PageAdmin CMS
+  severity: info
+  tags:
+  - identify
+  finger: PageAdmin
+variables:
+  path: '/e/js/comm.js
+
+    /js/comm.js
+
+    /'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\n(contains(title, \"Powered by PageAdmin CMS\"\
+    )) ||(\n  contains(body, \"aspx/get_info.aspx\") &&\n  contains(body, \"function\
+    \ open_calendar\")\n)\n"
+transport: http

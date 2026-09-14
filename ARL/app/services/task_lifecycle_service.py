@@ -8,6 +8,7 @@ from bson import ObjectId
 
 from app import services
 from app import utils
+from app.services.task_result_write_service import TaskResultWriteService
 
 
 logger = utils.get_logger()
@@ -18,6 +19,7 @@ class TaskLifecycleService(object):
 
     def __init__(self, task):
         self.task = task
+        self.writer = getattr(task, "_result_writer", None) or TaskResultWriteService(self.task_id)
 
     @property
     def task_id(self):
@@ -30,7 +32,7 @@ class TaskLifecycleService(object):
         # 收尾时强制刷新，避免运行中缓存覆盖本轮已落库结果。
         stat = utils.arl.task_statistic(task_id, force_refresh=True)
         logger.info("insert task stat task_id:{} stat:{}".format(task_id, stat))
-        utils.conn_db("task").update_one(query, {"$set": {"statistic": stat}})
+        self.writer.update_one("task", query, {"$set": {"statistic": stat}})
 
     def insert_finger_stat(self):
         task_id = self.task_id
@@ -38,11 +40,11 @@ class TaskLifecycleService(object):
         logger.info("insert finger stat {}".format(len(finger_stat_map)))
 
         # 统计是任务级派生数据：先清后建，重复 finalize / worker 恢复不产生重复行。
-        utils.conn_db("stat_finger").delete_many({"task_id": task_id})
+        self.writer.delete_many("stat_finger", {"task_id": task_id})
         for data in finger_stat_map.values():
             item = data.copy()
             item["task_id"] = task_id
-            utils.conn_db("stat_finger").insert_one(item)
+            self.writer.insert_one("stat_finger", item)
 
     def insert_cip_stat(self):
         task_id = self.task_id
@@ -50,7 +52,7 @@ class TaskLifecycleService(object):
         logger.info("insert cip stat {}".format(len(cip_map)))
 
         # 写入集合是 cip（历史命名）；幂等重建必须打在同一个集合上。
-        utils.conn_db("cip").delete_many({"task_id": task_id})
+        self.writer.delete_many("cip", {"task_id": task_id})
         for cidr_ip, value in cip_map.items():
             ip_list = list(value["ip_set"])
             domain_list = list(value["domain_set"])
@@ -62,7 +64,7 @@ class TaskLifecycleService(object):
                 "domain_list": domain_list,
                 "task_id": task_id,
             }
-            utils.conn_db("cip").insert_one(item)
+            self.writer.insert_one("cip", item)
 
     def sync_asset(self):
         task = self.task

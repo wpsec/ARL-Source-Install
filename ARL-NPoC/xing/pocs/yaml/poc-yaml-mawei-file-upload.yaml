@@ -1,0 +1,28 @@
+id: poc-yaml-mawei-file-upload
+info:
+  name: 麦维安全生产数字化管理平台 文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 麦维安全生产数字化管理平台
+requests:
+- method: GET
+  path: /Login
+  expression: 'status_code == 200 &&
+
+    contains(body, "安全生产数字化管理平台")
+
+    '
+- method: GET
+  path: /Content/Plugins/uploader/FileChoose.html
+  expression: 'status_code == 200 &&
+
+    contains(body, "<title>选择文件</title>") &&
+
+    contains(headers, "Content-Type: text/html") &&
+
+    contains(body, "提交")
+
+    '
+variables: {}
+transport: http

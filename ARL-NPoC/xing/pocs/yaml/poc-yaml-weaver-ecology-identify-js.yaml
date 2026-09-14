@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-ecology-identify-js
+info:
+  name: 发现泛微 Ecology (ecology_JSessionid)
+  severity: info
+  tags:
+  - identify
+  finger: Ecology
+requests:
+- method: GET
+  path: /js
+  expression: 'contains(headers, "ecology_JSessionid")
+
+    '
+variables: {}
+transport: http

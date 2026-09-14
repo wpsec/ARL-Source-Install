@@ -1,0 +1,25 @@
+id: poc-yaml-jumpserver-identify
+info:
+  name: 发现 Jumpserver
+  severity: info
+  tags:
+  - identify
+  finger: Jumpserver
+variables:
+  path: '/
+
+    /Jumpserver/
+
+    /Jump/
+
+    /jump/
+
+    /jumpserver/'
+requests:
+- method: GET
+  path: '{{.path}}static/css/jumpserver.css'
+  expression: 'contains(content_type, "css") && contains(body, ".form-group.required
+    .control-label:after {")
+
+    '
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-fortigate-sslvpn-backdoor
+info:
+  name: Fortigate SSL VPN Magic Backdoor Modify Password
+  severity: medium
+  tags:
+  - 后门
+  finger: Fortigate
+  osprey-id: vb_2019_0049
+requests:
+- method: GET
+  path: /sslvpn/js/login.js
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "&magic=4tinet2095866&")
+
+    '
+variables: {}
+transport: http

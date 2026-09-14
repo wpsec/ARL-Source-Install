@@ -1,0 +1,46 @@
+id: poc-yaml-admin-identify
+info:
+  name: 发现管理后台
+  severity: low
+  tags:
+  - identify
+  finger: 管理后台
+firstRequest:
+  method: GET
+  path: /
+  expression: '!contains(title, "后台") && !contains(title, "管理") && !contains(title,
+    "超管") && !contains(title, "Management")
+
+    '
+variables:
+  path: '/adm/dist/index.html
+
+    /admin/dist/index.html
+
+    /admin/
+
+    /dist/index.html
+
+    /web/index.html
+
+    /management/
+
+    /mgmt/
+
+    /dashboard/
+
+    /console/
+
+    /manage/
+
+    /admin/login.html'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    (contains(title, "后台") || contains(title, "管理") || contains(title, "超管") || contains(title,
+    "Management"))
+
+    '
+transport: http

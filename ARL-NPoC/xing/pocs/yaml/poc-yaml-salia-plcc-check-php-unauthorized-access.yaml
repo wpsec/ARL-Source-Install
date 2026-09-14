@@ -1,0 +1,15 @@
+id: poc-yaml-salia-plcc-check-php-unauthorized-access
+info:
+  name: Salia PLCC check.php 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: salia_plcc
+  fofa: body="Salia PLCC"
+requests:
+- method: GET
+  path: /check.php
+  expression: status_code == 200 && contains(body,"Network check") && contains(body,"get
+    local IP") && contains(body,"DNS") && contains(title,"Values")
+variables: {}
+transport: http

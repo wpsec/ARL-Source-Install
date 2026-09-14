@@ -1,0 +1,15 @@
+id: poc-yaml-kkfileview-identify
+info:
+  name: 发现 kkFileView
+  severity: info
+  tags:
+  - identify
+  finger: kkFileView
+requests:
+- method: GET
+  path: /js/lazyload.js
+  expression: 'contains(body, "// var mustRun = 500") && contains(body, "isInSight(el)")
+
+    '
+variables: {}
+transport: http

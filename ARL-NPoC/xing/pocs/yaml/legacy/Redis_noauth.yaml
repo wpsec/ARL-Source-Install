@@ -1,0 +1,15 @@
+id: Redis_noauth
+info:
+  name: Redis 未授权访问
+  finger: Redis
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: tcp
+tcpRequests:
+- expression:
+  - conn.WriteStr("info\r\n")
+  - conn.ReadStr()
+  - starts_with(res, "$") && contains(res, "redis_version:")
+scheme: redis

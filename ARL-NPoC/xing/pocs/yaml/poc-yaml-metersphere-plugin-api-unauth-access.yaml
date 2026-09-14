@@ -1,0 +1,20 @@
+id: poc-yaml-metersphere-plugin-api-unauth-access
+info:
+  name: MeterSphere插件API未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: MeterSphere
+  osprey-id: vb_2022_0002
+requests:
+- method: GET
+  path: /login
+  expression: contains(body, "MeterSphere")
+- method: GET
+  path: /plugin/list
+  expression: 'contains(body, "{\"success\":true,\"message\":null,\"data\"")
+
+    '
+variables: {}
+transport: http

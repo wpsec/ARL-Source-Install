@@ -215,6 +215,9 @@ class CeleryAction:
     """异步报告导出任务"""
     EXPORT_REPORT_TASK = "export_report_task"
 
+    """异步同步 PoC 元数据任务"""
+    POC_SYNC_TASK = "poc_sync_task"
+
 
 error_map = {
     'CeleryIdNotFound': {

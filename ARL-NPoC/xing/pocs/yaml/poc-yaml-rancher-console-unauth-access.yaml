@@ -1,0 +1,21 @@
+id: poc-yaml-rancher-console-unauth-access
+info:
+  name: Rancher Console 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Rancher
+  osprey-id: vb_2021_0004
+variables:
+  v_path: '/v2-beta/schemas
+
+    /v1/schemas'
+requests:
+- method: GET
+  path: '{{.v_path}}'
+  headers:
+    Accept: application/json
+  expression: 'status_code != 401 && contains(body, "{\"type\":\"collection\",\"resourceType\":\"schema\",\"links")
+
+    '
+transport: http

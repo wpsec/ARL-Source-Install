@@ -1,0 +1,15 @@
+id: Any800_Identify
+info:
+  name: 发现 Any800全渠道智能客服云平台
+  finger: Any800
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /any800/echatManager.do
+  - /ump/umpLogin/login
+  expression: matches(body, "new Date\(nowtime_time\+offset\+offset_b\)|>Any800v")

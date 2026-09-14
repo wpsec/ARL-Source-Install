@@ -1,0 +1,18 @@
+id: poc-yaml-jupyter-notebook-unauth-access
+info:
+  name: Jupyter Notebook 未授权访问漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: Jupyter
+  osprey-id: vb_2019_0077
+requests:
+- method: GET
+  path: /tree?#notebooks
+  expression: 'status_code == 200 && contains(body, "<a href=\"#notebooks\" data-toggle=\"tab\">Files</a></li>")
+    && contains(body, "Jupyter")
+
+    '
+variables: {}
+transport: http

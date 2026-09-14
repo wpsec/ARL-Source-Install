@@ -1,0 +1,28 @@
+id: poc-yaml-jumpserver-rce
+info:
+  name: JumpServer 任意代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: JumpServer
+  osprey-id: vb_2021_0005
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"JumpServer")
+- method: GET
+  path: /ws/ops/tasks/log/
+  headers:
+    Upgrade: websocket
+    Sec-WebSocket-Version: 13
+    Sec-WebSocket-Key: 5D+MzL4FS9zUdHxjfmp14Q==
+  expression: status_code == 101
+- method: GET
+  path: /ws/ops/tasks/log1222/
+  headers:
+    Upgrade: websocket
+    Sec-WebSocket-Version: 13
+    Sec-WebSocket-Key: 5D+MzL4FS9zUdHxjfmp14Q==
+  expression: status_code != 101
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-finereport-identify
+info:
+  name: 发现帆软 FineReport
+  severity: info
+  tags:
+  - identify
+  finger: FineReport
+variables:
+  path: '/webroot/
+
+    /WebReport/
+
+    /seeyonreport/
+
+    /'
+requests:
+- method: GET
+  path: '{{.path}}ReportServer?op=resource&resource=/com/fr/web/jquery.js'
+  expression: 'contains(body, "jQuery=") && !contains(body, "<title>")
+
+    '
+transport: http

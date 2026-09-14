@@ -8,6 +8,7 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -104,12 +105,12 @@ def _build_request_kwargs(item: Dict, method: str, headers: Dict) -> Dict:
 
     kwargs = {
         "headers": headers,
-        "verify": False,
+        "verify": bool(getattr(Config, "SCAN_TLS_VERIFY", True)),
         "timeout": (
             3.1,
             max(3.1, float(getattr(Config, "WIH_ENDPOINT_PROBE_TIMEOUT_SEC", 8) or 8)),
         ),
-        "allow_redirects": True,
+        "allow_redirects": False,
     }
 
     if Config.PROXY_URL:
@@ -140,6 +141,65 @@ def _build_request_kwargs(item: Dict, method: str, headers: Dict) -> Dict:
         kwargs["data"] = body
 
     return kwargs
+
+
+def _safe_redirect_target(current_url: str, response) -> str:
+    location = str((getattr(response, "headers", {}) or {}).get("Location") or "").strip()
+    if not location:
+        return ""
+    target = urljoin(current_url, location)
+    parsed = urlparse(target)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    if parsed.username or parsed.password:
+        return ""
+    return target
+
+
+def _request_with_safe_redirects(url: str, method: str, request_kwargs: Dict,
+                                 waf_guard=None, dns_policy_cache=None,
+                                 url_in_scope=None):
+    current_url = url
+    visited = set()
+    max_redirects = max(0, int(getattr(Config, "WIH_ENDPOINT_PROBE_MAX_REDIRECTS", 3) or 3))
+
+    for redirect_index in range(max_redirects + 1):
+        if url_in_scope is not None and not url_in_scope(current_url):
+            return None, current_url, "redirect_out_of_scope"
+
+        allow_scan, policy_detail = utils.check_dns_policy_for_url(
+            current_url, cache_map=dns_policy_cache)
+        if not allow_scan:
+            return None, current_url, "redirect_dns_policy"
+
+        if waf_guard:
+            should_skip, detail = waf_guard.should_skip(
+                current_url, module="wih_endpoint_probe")
+            if should_skip:
+                return None, current_url, "redirect_waf_policy"
+
+        kwargs = dict(request_kwargs)
+        kwargs["allow_redirects"] = False
+        response = requests.request(method, current_url, **kwargs)
+        if waf_guard:
+            waf_guard.observe_response(
+                current_url, response, module="wih_endpoint_probe")
+
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        if status_code not in {301, 302, 303, 307, 308}:
+            return response, current_url, ""
+
+        next_url = _safe_redirect_target(current_url, response)
+        if not next_url:
+            return response, current_url, "redirect_invalid"
+        if redirect_index >= max_redirects:
+            return response, current_url, "redirect_limit"
+        if next_url in visited or next_url == current_url:
+            return response, current_url, "redirect_loop"
+        visited.add(current_url)
+        current_url = next_url
+
+    return response, current_url, "redirect_limit"
 
 
 def _response_size(response) -> int:
@@ -303,7 +363,8 @@ def _apply_cached_record(item: Dict, record, method: str) -> Dict:
         "复用任务内缓存响应的 {} 结果".format(method), method)
 
 
-def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_context=None) -> Dict:
+def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None,
+               discovery_context=None, url_in_scope=None) -> Dict:
     item = dict(item or {})
     method = str(item.get("method") or "GET").strip().upper() or "GET"
     url = str(item.get("url") or "").strip()
@@ -322,6 +383,9 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
 
     if not url.lower().startswith(("http://", "https://")):
         return _mark_probe_state(item, "skipped", "非 HTTP(S) 接口未主动验证", method)
+
+    if url_in_scope is not None and not url_in_scope(url):
+        return _mark_probe_state(item, "skipped", "目标不在当前任务范围内", method)
 
     allow_scan, policy_detail = utils.check_dns_policy_for_url(url, cache_map=dns_policy_cache)
     if not allow_scan:
@@ -398,9 +462,22 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
                 time.sleep(delay)
 
         request_kwargs = _build_request_kwargs(item, method, headers)
-        response = requests.request(method, url, **request_kwargs)
-        if waf_guard:
-            waf_guard.observe_response(url, response, module="wih_endpoint_probe")
+        response, resolved_url, redirect_reason = _request_with_safe_redirects(
+            url,
+            method,
+            request_kwargs,
+            waf_guard=waf_guard,
+            dns_policy_cache=dns_policy_cache,
+            url_in_scope=url_in_scope,
+        )
+        if response is None:
+            reason_map = {
+                "redirect_out_of_scope": "重定向目标不在当前任务范围内",
+                "redirect_dns_policy": "重定向目标被 DNS 策略拦截",
+                "redirect_waf_policy": "重定向目标被 WAF 流量策略拦截",
+            }
+            return _mark_probe_state(
+                item, "skipped", reason_map.get(redirect_reason, "重定向目标未执行"), method)
 
         status_code = int(getattr(response, "status_code", 0) or 0)
         if discovery_context is not None:
@@ -419,10 +496,15 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
         item["status_code"] = status_code if status_code > 0 else None
         item["response_status"] = item["status_code"]
         item["response_size"] = _response_size(response)
+        if resolved_url and resolved_url != url:
+            item["resolved_url"] = resolved_url
         item["verification_response_packet"] = _build_response_packet(response)
         if not str(item.get("response_packet") or "").strip():
             item["response_packet"] = item["verification_response_packet"]
-        return _mark_probe_state(item, "probed", "已按 {} 方法轻量验证".format(method), method)
+        note = "已按 {} 方法轻量验证".format(method)
+        if redirect_reason:
+            note = "{}（{}）".format(note, redirect_reason)
+        return _mark_probe_state(item, "probed", note, method)
     except Exception as exc:
         shadow_probe_failed(discovery_context)
         logger.debug("wih endpoint probe failed url:{} method:{} err:{}".format(url, method, exc))
@@ -436,7 +518,8 @@ def _probe_one(item: Dict, waf_guard=None, dns_policy_cache=None, discovery_cont
                 url, method=method, request_profile=profile)
 
 
-def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_context=None) -> List[Dict]:
+def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_context=None,
+                         url_in_scope=None) -> List[Dict]:
     """
     对 WIH 接口记录补充验证状态与可获取的响应状态。
     """
@@ -459,6 +542,7 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_contex
                     waf_guard=waf_guard,
                     dns_policy_cache=dns_policy_cache,
                     discovery_context=discovery_context,
+                    url_in_scope=url_in_scope,
                 )
                 continue
 
@@ -472,7 +556,9 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_contex
                 continue
 
             active_count += 1
-            futures[executor.submit(_probe_one, item, waf_guard, dns_policy_cache, discovery_context)] = index
+            futures[executor.submit(
+                _probe_one, item, waf_guard, dns_policy_cache, discovery_context, url_in_scope
+            )] = index
 
         for future in as_completed(futures):
             index = futures[future]
@@ -490,7 +576,8 @@ def enrich_wih_endpoints(endpoints: List[Dict], waf_guard=None, discovery_contex
     return [item for item in results if isinstance(item, dict)]
 
 
-def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None, discovery_context=None) -> List[Dict]:
+def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None, discovery_context=None,
+                           url_in_scope=None) -> List[Dict]:
     """
     运行 WIH 接口轻量探测，并返回补全后的接口记录。
     """
@@ -501,7 +588,11 @@ def run_wih_endpoint_probe(endpoints: List[Dict], waf_guard=None, discovery_cont
 
     logger.info("wih endpoint probe start endpoints:{}".format(len(endpoint_list)))
     results = enrich_wih_endpoints(
-        endpoint_list, waf_guard=waf_guard, discovery_context=discovery_context)
+        endpoint_list,
+        waf_guard=waf_guard,
+        discovery_context=discovery_context,
+        url_in_scope=url_in_scope,
+    )
     observed_count = sum(1 for item in results if _has_response(item))
     logger.info(
         "wih endpoint probe finish endpoints:{} observed:{}".format(

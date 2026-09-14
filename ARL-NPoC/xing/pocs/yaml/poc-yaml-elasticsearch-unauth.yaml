@@ -1,0 +1,31 @@
+id: poc-yaml-elasticsearch-unauth
+info:
+  name: Elasticsearch 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Elasticsearch
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "application/json") && contains(body, "You Know, for Search")
+  output: []
+- method: GET
+  path: /_cat
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "/_cat/master")
+  output: []

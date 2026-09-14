@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-ebridge-identify
+info:
+  name: 发现泛微 ebridge
+  severity: info
+  tags:
+  - identify
+  finger: ebridge
+requests:
+- method: GET
+  path: /login
+  expression: 'contains(headers, "EBRIDGE_JSESSIONID")
+
+    '
+variables: {}
+transport: http

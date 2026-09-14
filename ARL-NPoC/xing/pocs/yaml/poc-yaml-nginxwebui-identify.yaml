@@ -1,0 +1,19 @@
+id: poc-yaml-nginxwebui-identify
+info:
+  name: 发现 Nginx WebUI
+  severity: info
+  tags:
+  - identify
+  finger: Nginx WebUI
+variables:
+  path: '/AdminPage/login
+
+    /adminPage/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(title, "nginxWebUI") || contains(body, "confStr.jserror2 =
+    \"nginx.conf")
+
+    '
+transport: http

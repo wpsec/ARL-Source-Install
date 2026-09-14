@@ -1,0 +1,17 @@
+id: poc-yaml-prometheus-admin-api-flags-enable
+info:
+  name: Prometheus Admin API Flags Enable 漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: Prometheus
+  osprey-id: vb_2022_0058
+requests:
+- method: GET
+  path: /api/v1/status/flags
+  expression: 'contains(body, "web.enable-admin-api\":\"true\"") && contains(body,
+    "web.enable-lifecycle\":\"true\"")
+
+    '
+variables: {}
+transport: http

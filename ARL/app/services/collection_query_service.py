@@ -109,6 +109,17 @@ def build_db_query(args, ignored_fields=None):
         if args[key] is None:
             continue
 
+        if key in {"q", "keyword"}:
+            text = str(args[key]).strip()
+            if text:
+                query_args["$or"] = [
+                    {field: {"$regex": re.escape(text), "$options": "i"}}
+                    for field in (
+                        "plugin_name", "vul_name", "app_name", "finger", "tags", "description"
+                    )
+                ]
+            continue
+
         if key == "classification":
             query_args[key] = normalize_query_classification(args[key])
             continue
@@ -214,10 +225,23 @@ def build_collection_data(args, collection, item_builder, query_serializer):
     refresh_cache = parse_refresh_flag(working_args.pop("_refresh", None))
     raw_args = working_args.copy()
 
+    is_export = bool(working_args.get("_export", False))
     default_field = get_default_field(working_args)
     page = default_field.get("page", 1)
     size = default_field.get("size", 10)
     orderby_list = default_field.get("order", [("_id", -1)])
+    offset = size * (page - 1)
+    max_offset = max(0, int(getattr(Config, "API_MAX_PAGE_OFFSET", 50000) or 0))
+    if not is_export and offset > max_offset:
+        return {
+            "page": page,
+            "size": size,
+            "total": 0,
+            "items": [],
+            "query": {},
+            "code": 400,
+            "message": "分页过深，请缩小筛选范围或使用导出任务",
+        }
 
     def _loader():
         query = build_db_query(working_args)

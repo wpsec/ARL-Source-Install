@@ -1,0 +1,22 @@
+id: poc-yaml-airflow-unauth
+info:
+  name: Airflow 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Airflow
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /admin/
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<title>Airflow - DAGs</title>")
+    && contains(body, "<h2>DAGs</h2>")
+  output: []

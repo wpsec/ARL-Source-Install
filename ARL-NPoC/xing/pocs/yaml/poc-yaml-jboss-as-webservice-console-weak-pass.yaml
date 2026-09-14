@@ -1,0 +1,40 @@
+id: poc-yaml-jboss-as-webservice-console-weak-pass
+info:
+  name: JBoss AS WebService Console 弱口令
+  severity: high
+  tags:
+  - 弱口令
+  finger: JBoss
+variables:
+  v_auth: 'base64("admin:admin")
+
+    base64("admin:jboss")
+
+    base64("jboss:admin")
+
+    base64("admin:123456")
+
+    base64("admin:password1!")
+
+    base64("admin:ezoffice")
+
+    base64("admin:Admin123")
+
+    base64("admin:Admin12345")
+
+    base64("admin:vulhub")'
+firstRequest:
+  method: GET
+  path: /jbossws/
+  expression: 'status_code == 401
+
+    '
+requests:
+- method: GET
+  path: /jbossws/
+  headers:
+    Authorization: Basic {{.v_auth}}
+  expression: 'status_code == 200 && contains(body,"Administration")
+
+    '
+transport: http

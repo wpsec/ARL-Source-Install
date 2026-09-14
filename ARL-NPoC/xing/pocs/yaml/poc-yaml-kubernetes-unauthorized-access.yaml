@@ -1,0 +1,26 @@
+id: poc-yaml-kubernetes-unauthorized-access
+info:
+  name: Kubernetes 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Kubernetes
+  osprey-id: vb_2018_0027
+requests:
+- method: GET
+  path: /version
+  expression: 'status_code == 200 && contains(body, "\"gitVersion\": \"") && contains(body,
+    "\"gitCommit\": \"") && contains(body, "\"gitTreeState\": \"") && contains(body,
+    "\"buildDate\": \"") && contains(body, "\"compiler\": \"") && contains(body, "\"platform\":
+    \"")
+
+    '
+- method: GET
+  path: /logs
+  data: null
+  expression: 'contains(body, "btmp") && contains(body, "wtmp") && contains(body,
+    "dmesg") && contains(body, "containers") && contains(body, "lastlog")
+
+    '
+variables: {}
+transport: http

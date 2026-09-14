@@ -1,0 +1,15 @@
+id: Memcached_noauth
+info:
+  name: Memcached 未授权访问
+  finger: Memcached
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: tcp
+tcpRequests:
+- expression:
+  - conn.WriteStr("stats\r\n")
+  - conn.ReadStr()
+  - contains(res, "STAT version")
+scheme: memcached

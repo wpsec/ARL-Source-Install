@@ -1,0 +1,17 @@
+id: poc-yaml-spider-flow-remote-code-execution
+info:
+  name: Spider Flow 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Spider Flow
+  osprey-id: vb_2021_0097
+requests:
+- method: GET
+  path: /function/save
+  expression: 'status_code == 200 && contains(body, "function null(){null}") && contains(body,
+    "org.springframework")
+
+    '
+variables: {}
+transport: http

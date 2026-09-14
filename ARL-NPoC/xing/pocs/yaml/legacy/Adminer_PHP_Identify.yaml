@@ -1,0 +1,18 @@
+id: Adminer_PHP_Identify
+info:
+  name: 发现 Adminer.php
+  finger: Adminer.php
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /admin/adminer.php
+  - /adminer.php
+  - /adminer/adminer.php
+  expression: contains(body, ">Login - Adminer<")
+  headers:
+    Accept-Language: en

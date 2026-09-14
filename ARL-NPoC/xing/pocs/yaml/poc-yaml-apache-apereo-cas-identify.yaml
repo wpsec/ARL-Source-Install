@@ -1,0 +1,20 @@
+id: poc-yaml-apache-apereo-cas-identify
+info:
+  name: 发现 Apache Apereo Cas
+  severity: info
+  tags:
+  - identify
+  finger: Apereo
+variables:
+  path: '/cas/login
+
+    /login
+
+    /sso/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "Apereo") && contains(body, "cas")
+
+    '
+transport: http

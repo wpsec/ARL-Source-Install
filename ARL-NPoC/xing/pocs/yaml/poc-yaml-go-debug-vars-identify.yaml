@@ -1,0 +1,16 @@
+id: poc-yaml-go-debug-vars-identify
+info:
+  name: 发现 go /debug/vars
+  severity: info
+  tags:
+  - identify
+  finger: golang
+requests:
+- method: GET
+  path: /debug/vars
+  expression: 'contains(body, "\"cmdline\"") && contains(body, "\"system\"") && contains(body,
+    "\"memstats\"")
+
+    '
+variables: {}
+transport: http

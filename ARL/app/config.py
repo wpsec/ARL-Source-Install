@@ -622,6 +622,11 @@ def refresh_runtime_config_best_effort(force=False):
             Config.PROGRESSIVE_SCAN_ENABLE = _safe_runtime_bool(
                 arl_conf.get("PROGRESSIVE_SCAN_ENABLE"), Config.PROGRESSIVE_SCAN_ENABLE
             )
+        if arl_conf.get("DOMAIN_DEEP_STAGE_SPLIT_ENABLE") is not None:
+            Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = _safe_runtime_bool(
+                arl_conf.get("DOMAIN_DEEP_STAGE_SPLIT_ENABLE"),
+                Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
+            )
         if arl_conf.get("PORT_SCAN_SYN_ENABLE") is not None:
             Config.PORT_SCAN_SYN_ENABLE = _safe_runtime_bool(
                 arl_conf.get("PORT_SCAN_SYN_ENABLE"), Config.PORT_SCAN_SYN_ENABLE
@@ -645,6 +650,10 @@ def refresh_runtime_config_best_effort(force=False):
         if arl_conf.get("ICP_QUERY_TLS_VERIFY") is not None:
             Config.ICP_QUERY_TLS_VERIFY = _safe_runtime_bool(
                 arl_conf.get("ICP_QUERY_TLS_VERIFY"), Config.ICP_QUERY_TLS_VERIFY
+            )
+        if arl_conf.get("SCAN_TLS_VERIFY") is not None:
+            Config.SCAN_TLS_VERIFY = _safe_runtime_bool(
+                arl_conf.get("SCAN_TLS_VERIFY"), Config.SCAN_TLS_VERIFY
             )
         if arl_conf.get("SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE") is not None:
             Config.SEARCH_PROVIDER_PROXY_FALLBACK_ENABLE = _safe_runtime_bool(
@@ -718,11 +727,18 @@ def refresh_runtime_config_best_effort(force=False):
         Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
             "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
         )
+        Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = env_bool(
+            "ARL_DOMAIN_DEEP_STAGE_SPLIT_ENABLE",
+            Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
+        )
         Config.ICP_QUERY_ENABLE = env_bool(
             "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
         )
         Config.ICP_QUERY_TLS_VERIFY = env_bool(
             "ARL_ICP_QUERY_TLS_VERIFY", Config.ICP_QUERY_TLS_VERIFY
+        )
+        Config.SCAN_TLS_VERIFY = env_bool(
+            "ARL_SCAN_TLS_VERIFY", Config.SCAN_TLS_VERIFY
         )
         Config.ICP_QUERY_RETRY = safe_int(
             env_int("ARL_ICP_QUERY_RETRY", Config.ICP_QUERY_RETRY),
@@ -906,6 +922,9 @@ class Config(object):
     AFROG_SEVERITY = ""
     # 更新 nuclei/afrog PoC 仓库时使用的代理（仅影响 git clone/pull）
     POC_UPDATE_PROXY = ""
+    # 外部规则仓库必须显式固定到完整 commit，避免更新过程引入未审计内容。
+    NUCLEI_TEMPLATE_COMMIT = ""
+    AFROG_POC_COMMIT = ""
     # afrog 扫描并发（-c）
     AFROG_CONCURRENCY = 30
     # afrog 每秒请求上限（-rl）
@@ -1160,6 +1179,8 @@ class Config(object):
     API_KEY = ""
     # API 分页查询最大 size（导出接口不受此限制）
     API_PAGE_SIZE_MAX = 10000
+    # 非导出列表允许的最大 offset；深分页应改用更窄筛选或导出任务。
+    API_MAX_PAGE_OFFSET = 50000
     # 无查询条件时是否使用 estimated_document_count 作为总数统计
     API_USE_ESTIMATED_COUNT = False
     # 列表接口 Redis 缓存时长（秒），0 表示禁用列表缓存
@@ -1293,6 +1314,8 @@ class Config(object):
     TASK_HEAVY_QUEUE_ENABLE = True
     # 一次性域名任务先完成发现并落库，再通过深度队列继续端口和 Web 阶段。
     PROGRESSIVE_SCAN_ENABLE = True
+    # 深度扫描按可恢复阶段投递，单阶段异常或重启不会拖住整条长链。
+    DOMAIN_DEEP_STAGE_SPLIT_ENABLE = True
     # 域名爆破并发数（普通域名字典爆破）
     DOMAIN_BRUTE_CONCURRENT = 360
     # 组合生成的域名爆破并发数（altdns变异域名爆破）
@@ -1337,6 +1360,8 @@ class Config(object):
     # ICP 查询集成配置：复用现有 Web/Worker 镜像和 arlweb 队列。
     ICP_QUERY_ENABLE = True
     ICP_QUERY_TLS_VERIFY = True
+    # 扫描目标默认校验证书；仅在受控测试环境通过显式配置关闭。
+    SCAN_TLS_VERIFY = True
     ICP_QUERY_TIMEOUT_SEC = 30
     ICP_QUERY_RETRY = 2
     ICP_QUERY_BATCH_CONCURRENCY = 2
@@ -1947,6 +1972,10 @@ try:
             y["ARL"]["RUST_ACCEL_API_UNIFIED_RUST_STAGES"] or "")
     if y["ARL"].get("PROGRESSIVE_SCAN_ENABLE") is not None:
         Config.PROGRESSIVE_SCAN_ENABLE = bool(y["ARL"]["PROGRESSIVE_SCAN_ENABLE"])
+    if y["ARL"].get("DOMAIN_DEEP_STAGE_SPLIT_ENABLE") is not None:
+        Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = bool(
+            y["ARL"]["DOMAIN_DEEP_STAGE_SPLIT_ENABLE"]
+        )
 
     if y["ARL"].get("URLFINDER_URL_PROBE_ENABLE") is not None:
         Config.URLFINDER_URL_PROBE_ENABLE = bool(y["ARL"]["URLFINDER_URL_PROBE_ENABLE"])
@@ -2371,6 +2400,10 @@ try:
         Config.ICP_QUERY_TLS_VERIFY = safe_bool(
             y["ARL"].get("ICP_QUERY_TLS_VERIFY"), Config.ICP_QUERY_TLS_VERIFY
         )
+    if y["ARL"].get("SCAN_TLS_VERIFY") is not None:
+        Config.SCAN_TLS_VERIFY = safe_bool(
+            y["ARL"].get("SCAN_TLS_VERIFY"), Config.SCAN_TLS_VERIFY
+        )
 
     # --- 代理配置 ---
     if isinstance(y.get("PROXY"), dict):
@@ -2481,6 +2514,8 @@ try:
     Config.SCREENSHOT_SYNC_MAX_SIZE = env_int("ARL_SCREENSHOT_SYNC_MAX_SIZE", Config.SCREENSHOT_SYNC_MAX_SIZE)
     Config.NUCLEI_BIN = env_str("ARL_NUCLEI_BIN", Config.NUCLEI_BIN)
     Config.NUCLEI_TEMPLATE_DIR = env_str("ARL_NUCLEI_TEMPLATE_DIR", Config.NUCLEI_TEMPLATE_DIR)
+    Config.NUCLEI_TEMPLATE_COMMIT = env_str(
+        "ARL_NUCLEI_TEMPLATE_COMMIT", Config.NUCLEI_TEMPLATE_COMMIT).strip().lower()
     Config.NUCLEI_EXEC_TIMEOUT_SEC = safe_positive_int(
         env_int("ARL_NUCLEI_EXEC_TIMEOUT_SEC", Config.NUCLEI_EXEC_TIMEOUT_SEC),
         Config.NUCLEI_EXEC_TIMEOUT_SEC
@@ -2519,6 +2554,8 @@ try:
     Config.NUCLEI_DEFAULT_TAGS = env_str("ARL_NUCLEI_DEFAULT_TAGS", Config.NUCLEI_DEFAULT_TAGS)
     Config.AFROG_BIN = env_str("ARL_AFROG_BIN", Config.AFROG_BIN).strip()
     Config.AFROG_POCS_DIR = env_str("ARL_AFROG_POCS_DIR", Config.AFROG_POCS_DIR).strip()
+    Config.AFROG_POC_COMMIT = env_str(
+        "ARL_AFROG_POC_COMMIT", Config.AFROG_POC_COMMIT).strip().lower()
     Config.AFROG_SEARCH_KEYWORDS = env_str("ARL_AFROG_SEARCH_KEYWORDS", Config.AFROG_SEARCH_KEYWORDS).strip()
     Config.AFROG_SEVERITY = env_str("ARL_AFROG_SEVERITY", Config.AFROG_SEVERITY).strip().lower()
     Config.POC_UPDATE_PROXY = env_str("ARL_POC_UPDATE_PROXY", Config.POC_UPDATE_PROXY).strip()
@@ -2747,6 +2784,10 @@ try:
     Config.PROGRESSIVE_SCAN_ENABLE = env_bool(
         "ARL_PROGRESSIVE_SCAN_ENABLE", Config.PROGRESSIVE_SCAN_ENABLE
     )
+    Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = env_bool(
+        "ARL_DOMAIN_DEEP_STAGE_SPLIT_ENABLE",
+        Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
+    )
     for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
         setattr(
             Config,
@@ -2950,6 +2991,9 @@ try:
     Config.ICP_QUERY_TLS_VERIFY = env_bool(
         "ARL_ICP_QUERY_TLS_VERIFY", Config.ICP_QUERY_TLS_VERIFY
     )
+    Config.SCAN_TLS_VERIFY = env_bool(
+        "ARL_SCAN_TLS_VERIFY", Config.SCAN_TLS_VERIFY
+    )
     for _key in (
         "ICP_QUERY_TIMEOUT_SEC",
         "ICP_QUERY_BATCH_CONCURRENCY",
@@ -3071,6 +3115,11 @@ try:
     Config.API_PAGE_SIZE_MAX = safe_positive_int(
         env_int("ARL_API_PAGE_SIZE_MAX", Config.API_PAGE_SIZE_MAX),
         Config.API_PAGE_SIZE_MAX
+    )
+    Config.API_MAX_PAGE_OFFSET = safe_positive_int(
+        env_int("ARL_API_MAX_PAGE_OFFSET", Config.API_MAX_PAGE_OFFSET),
+        Config.API_MAX_PAGE_OFFSET,
+        min_value=0,
     )
     Config.API_USE_ESTIMATED_COUNT = env_bool(
         "ARL_API_USE_ESTIMATED_COUNT", Config.API_USE_ESTIMATED_COUNT

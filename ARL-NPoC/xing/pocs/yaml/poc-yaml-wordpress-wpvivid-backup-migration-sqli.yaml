@@ -1,0 +1,17 @@
+id: poc-yaml-wordpress-wpvivid-backup-migration-sqli
+info:
+  name: WordPress WPvivid Backup&Migration插件SQL注入漏洞(CVE-2024-1981)(版本检测)
+  severity: critical
+  tags:
+  - CVE-2024-1981
+  - 两高一弱
+  finger: WPvivid Backup&Migration
+  fofa: wp-content/plugins/wpvivid-backuprestore/
+requests:
+- method: GET
+  path: /wp-content/plugins/wpvivid-backuprestore/readme.txt
+  expression: status_code == 200 && contains(body,"Stable tag") && matches(body,"Stable
+    tag\x3a (?P<version>[0-9]+)") && compare_versions(regex_find(body,"Stable tag\x3a
+    ([0-9.]+)"), "<=0.9.68")
+variables: {}
+transport: http

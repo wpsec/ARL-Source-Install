@@ -1,0 +1,19 @@
+id: poc-yaml-tcp-jdwp-unauthorized-access
+info:
+  name: JDWP 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: jdwp
+scheme: jdwp
+port: 5005
+tcpRequests:
+- expression:
+  - conn.WriteStr("JDWP-Handshake")
+  - conn.ReadStr()
+  - res == "JDWP-Handshake"
+  - conn.WriteStr("\x00\x00\x00\x0b\x00\x00\x00\x02\x00\x01\x01")
+  - conn.ReadStr()
+  - contains(res, "\x00\x00\x02") && contains(res, "version")
+variables: {}
+transport: tcp

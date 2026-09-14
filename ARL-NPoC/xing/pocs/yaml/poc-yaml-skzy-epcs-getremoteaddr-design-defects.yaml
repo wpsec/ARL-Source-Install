@@ -1,0 +1,22 @@
+id: poc-yaml-skzy-epcs-getremoteaddr-design-defects
+info:
+  name: 时空智友企业流程化管控系统 getRemoteAddr 设计缺陷漏洞
+  severity: medium
+  tags:
+  - 配置不当
+  finger: 时空智友企业流程化管控系统
+  fofa: body="企业流程化管控系统"
+variables:
+  ip: str("255.255.255.255")
+requests:
+- method: GET
+  path: /formservice?service=utility.getClientIP
+  expression: status_code == 200 && contains(body,"<root>") && !contains(body,ip)
+    && contains(content_type,"text/xml")
+- method: GET
+  path: /formservice?service=utility.getClientIP
+  headers:
+    X-Forwarded-For: '{{.ip}}'
+  expression: status_code == 200 && contains(body,ip) && contains(body,"<root>") &&
+    contains(content_type,"text/xml")
+transport: http

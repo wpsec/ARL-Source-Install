@@ -113,7 +113,7 @@ def http_req(url, method='get', **kwargs):
         kwargs.pop("disable_normal")
         return req_disable_normal(url, method, **kwargs)
 
-    kwargs.setdefault('verify', False)
+    kwargs.setdefault('verify', Conf.TLS_VERIFY)
     kwargs.setdefault('timeout', (Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT))
     kwargs.setdefault('allow_redirects', False)
 
@@ -137,7 +137,11 @@ def http_req(url, method='get', **kwargs):
     if Conf.PROXY_URL:
         kwargs["proxies"] = proxies
 
-    conn = getattr(requests, method)(url, **kwargs)
+    request_method = getattr(requests, method, None)
+    if request_method is None:
+        conn = requests.request(method.upper(), url, **kwargs)
+    else:
+        conn = request_method(url, **kwargs)
 
     return conn
 
@@ -196,7 +200,7 @@ def req_disable_normal(url, method='get', **kwargs):
         prep = my_prep
 
     with requests.Session() as session:
-        return session.send(prep, verify=False, proxies=proxies, allow_redirects=False,
+        return session.send(prep, verify=kwargs.get("verify", Conf.TLS_VERIFY), proxies=proxies, allow_redirects=False,
                             timeout=(Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT))
 
 

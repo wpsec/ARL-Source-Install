@@ -1,0 +1,18 @@
+id: poc-yaml-jenkins-identify
+info:
+  name: 发现 Jenkins
+  severity: info
+  tags:
+  - identify
+  finger: Jenkins
+variables:
+  path: '/
+
+    /jenkins/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(headers, "X-Jenkins-Session")
+
+    '
+transport: http

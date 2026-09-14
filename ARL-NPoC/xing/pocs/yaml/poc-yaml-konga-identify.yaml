@@ -1,0 +1,15 @@
+id: poc-yaml-konga-identify
+info:
+  name: 发现 Konga
+  severity: info
+  tags:
+  - identify
+  finger: konga
+requests:
+- method: GET
+  path: /
+  expression: 'title == "Konga" && status_code == 200
+
+    '
+variables: {}
+transport: http

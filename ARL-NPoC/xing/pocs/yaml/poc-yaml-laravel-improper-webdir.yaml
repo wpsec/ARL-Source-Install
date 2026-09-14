@@ -1,0 +1,24 @@
+id: poc-yaml-laravel-improper-webdir
+info:
+  name: Laravel Improper Webdir
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Laravel Improper Webdir
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /storage/logs/laravel.log
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && (contains(headers, "content-type") && contains(headers,
+    "plain") || contains(headers, "content-type") && contains(headers, "octet-stream"))
+    && (contains(body, "vendor\\laravel\\framework") || contains(body, "vendor/laravel/framework"))
+    && (contains(body, "stacktrace") || contains(body, "Stack trace"))
+  output: []

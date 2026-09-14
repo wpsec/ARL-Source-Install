@@ -1,0 +1,14 @@
+id: poc-yaml-druid-noauth-identify
+info:
+  name: Alibaba Druid 未授权访问漏洞
+  severity: high
+  tags:
+  - identify
+  finger: Druid
+requests:
+- method: GET
+  path: /druid/index.html
+  expression: contains(body, "Druid Stat Index") && contains(body, "DruidVersion")
+    && contains(body, "DruidDrivers")
+variables: {}
+transport: http

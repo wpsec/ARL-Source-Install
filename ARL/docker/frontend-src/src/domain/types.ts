@@ -79,6 +79,7 @@ export type ApiRequestOptions = {
   query?: JsonValue;
   body?: JsonValue | FormData;
   download?: boolean;
+  signal?: AbortSignal;
 };
 
 export type TaskReportExportFormat = 'excel' | 'html' | 'ai_markdown';

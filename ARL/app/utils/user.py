@@ -27,7 +27,8 @@ def user_login(username = None, password = None):
 
 
 def user_login_header():
-    token = request.headers.get("Token") or request.args.get("token")
+    # Token 只能通过请求头传递，避免出现在浏览器历史、代理日志和 Referer 中。
+    token = request.headers.get("Token")
 
     if not Config.AUTH:
         return True
@@ -54,6 +55,34 @@ def user_login_header():
         return item
 
     return False
+
+
+def current_principal():
+    """返回当前请求主体；未认证或关闭认证时返回 None。"""
+    principal = user_login_header()
+    return principal if isinstance(principal, dict) else None
+
+
+def request_owner_username():
+    """取得当前请求对应的资源归属标识，不接受客户端提交的归属字段。"""
+    principal = current_principal()
+    if not principal:
+        return ""
+    return str(principal.get("username") or "").strip()
+
+
+def can_access_owned_resource(owner_username, principal=None):
+    """API 主体可管理全局资源，普通登录主体只能访问自己的资源。"""
+    if not Config.AUTH:
+        return True
+    principal = principal if isinstance(principal, dict) else current_principal()
+    if not principal:
+        return False
+    if principal.get("type") == "api":
+        return True
+    owner = str(owner_username or "").strip()
+    username = str(principal.get("username") or "").strip()
+    return bool(owner and username and owner == username)
 
 
 

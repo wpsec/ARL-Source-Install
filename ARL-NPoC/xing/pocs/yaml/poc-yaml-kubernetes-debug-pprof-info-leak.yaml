@@ -1,0 +1,18 @@
+id: poc-yaml-kubernetes-debug-pprof-info-leak
+info:
+  name: Kubernetes PPROF内存泄漏漏洞(CVE-2019-11248)
+  severity: medium
+  tags:
+  - 两高一弱
+  - 信息泄露
+  - CVE-2019-11248
+  finger: kubernetes
+  fofa: body="/debug/pprof"
+requests:
+- method: GET
+  path: /debug/pprof/goroutine?debug=1
+  expression: "status_code == 200 && \ncontains(body,\"oroutine profile: total\")\
+    \ &&\n!contains(body,\"<\") &&\ncontains(body,\"#\t0x\") &&\nmatches(body,`.go:\\\
+    d+`) &&\nmatches(body,`/\\w+.go:`)\n"
+variables: {}
+transport: http

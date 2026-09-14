@@ -1,0 +1,15 @@
+id: vcenter_identify
+info:
+  name: 发现VMware vCenter
+  finger: vCenter
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: POST
+  paths: /sdk
+  expression: status_code == 200 && matches(body, "<fullName>[^<]+</fullName>")
+  data: <env:Envelope xmlns:env="http://schemas.xmlsoap.org/soap/envelope/"><env:Body><RetrieveServiceContent
+    xmlns="urn:vim25"><_this type="ServiceInstance">ServiceInstance</_this></RetrieveServiceContent></env:Body></env:Envelope>

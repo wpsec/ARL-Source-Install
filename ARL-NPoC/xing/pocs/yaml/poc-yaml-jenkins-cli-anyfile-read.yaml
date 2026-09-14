@@ -1,0 +1,16 @@
+id: poc-yaml-jenkins-cli-anyfile-read
+info:
+  name: Jenkins CLI 任意文件读取漏洞(CVE-2024-23897)(版本检测)
+  severity: critical
+  tags:
+  - CVE-2024-23897
+  - 两高一弱
+  finger: jenkins
+  shodan: product:"Jenkins"
+requests:
+- method: GET
+  path: /login?from=%2F
+  expression: status_code == 200 && matches(headers,"X-Jenkins\x3a (?P<version>[0-9.]+)")
+    && compare_versions(regex_find(headers,"X-Jenkins\x3a ([0-9.]+)"), "<=2.426.2")
+variables: {}
+transport: http

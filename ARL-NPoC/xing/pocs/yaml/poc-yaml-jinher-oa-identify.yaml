@@ -1,0 +1,18 @@
+id: poc-yaml-jinher-oa-identify
+info:
+  name: 发现 JC6 金和协同管理平台
+  severity: info
+  tags:
+  - identify
+  finger: Jinher
+variables:
+  path: '/jc6/platform/sys/login!intro.action
+
+    /platform/sys/login!intro.action'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&  contains(body, \"signIn.html\") &&\n(  contains(body,\
+    \ \"JC6金和协同管理平台\") ||\n  contains(body, \"/login!changePassWord.action?account=\"\
+    )\n)\n"
+transport: http

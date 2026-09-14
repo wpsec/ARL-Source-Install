@@ -1,0 +1,18 @@
+id: poc-yaml-swagger-resources-identify
+info:
+  name: 发现 swagger-resources
+  severity: info
+  tags:
+  - identify
+  finger: swagger
+variables:
+  path: '/swagger-resources
+
+    /api/swagger-resources'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "contains(body, \"[\") && !contains(body, \"<\") &&\n(\n  contains(body,\
+    \ \"swaggerVersion\") ||\n  (contains(body, \"\\\"name\\\"\") && contains(body,\
+    \ \"\\\"url\\\"\") && contains(body, \"\\\"location\\\"\"))\n)\n"
+transport: http

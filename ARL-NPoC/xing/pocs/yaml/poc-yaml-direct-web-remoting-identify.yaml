@@ -1,0 +1,15 @@
+id: poc-yaml-direct-web-remoting-identify
+info:
+  name: 发现 Direct Web Remoting (dwr)
+  severity: info
+  tags:
+  - identify
+  finger: Direct Web Remoting
+requests:
+- method: GET
+  path: /dwr/index.html
+  expression: 'title == "DWR Test Index" && contains(body, "/dwr")
+
+    '
+variables: {}
+transport: http

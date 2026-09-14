@@ -1,0 +1,15 @@
+id: poc-yaml-tianqing-terminal-sql-injection
+info:
+  name: 天清终端安全管理系统 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天清终端安全管理系统
+  osprey-id: vb_2021_0019
+requests:
+- method: GET
+  path: /api/dp/rptsvcsyncpoint?ccid=1
+  expression: status_code == 200 && contains(body, "\"reason\":\"success\"") && contains(body,
+    "antiadwa")
+variables: {}
+transport: http

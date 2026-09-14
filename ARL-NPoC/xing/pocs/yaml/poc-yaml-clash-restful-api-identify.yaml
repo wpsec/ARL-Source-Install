@@ -1,0 +1,17 @@
+id: poc-yaml-clash-restful-api-identify
+info:
+  name: 发现 Clash Restful API 未授权访问
+  severity: high
+  tags:
+  - identify
+  finger: Clash
+requests:
+- method: GET
+  path: /configs
+  expression: 'status_code == 200 && contains(body, "port\"")  && contains(body, "\"allow-lan\"")
+
+    && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

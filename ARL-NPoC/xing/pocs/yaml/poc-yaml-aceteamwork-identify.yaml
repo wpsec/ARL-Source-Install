@@ -1,0 +1,21 @@
+id: poc-yaml-aceteamwork-identify
+info:
+  name: 发现 AceTeamwork 工时管理系统
+  severity: info
+  tags:
+  - identify
+  finger: AceTeamwork
+requests:
+- method: GET
+  path: /css/common.css
+  expression: 'status_code == 200 &&
+
+    contains(content_type, "css") &&
+
+    contains(body, "html,body,div") &&
+
+    contains(body, ".fullsize-container.fullsize-container-no-header")
+
+    '
+variables: {}
+transport: http

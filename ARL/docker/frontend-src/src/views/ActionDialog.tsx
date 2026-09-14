@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Play, X } from 'lucide-react';
 import { normalizeListData, requestApi } from '../api/client';
@@ -25,6 +25,15 @@ import {
   CONSOLE_TEXTAREA_MONO_CLASS,
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
+
+function useDebouncedValue(value: string, delayMs = 250): string {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedValue(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+  return debouncedValue;
+}
 
 export function ActionDialog({
   token,
@@ -177,6 +186,13 @@ export function ActionDialog({
   const [policyPocKeyword, setPolicyPocKeyword] = useState('');
   const [policyBruteKeyword, setPolicyBruteKeyword] = useState('');
   const [taskPocKeyword, setTaskPocKeyword] = useState('');
+  const debouncedPolicyPocKeyword = useDebouncedValue(policyPocKeyword);
+  const debouncedTaskPocKeyword = useDebouncedValue(taskPocKeyword);
+  const [pocPage, setPocPage] = useState(1);
+  const pocBulkFetchAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    pocBulkFetchAbortRef.current?.abort();
+  }, []);
   const [fofaTesting, setFofaTesting] = useState(false);
   const [fofaResultSize, setFofaResultSize] = useState<number | null>(null);
   const measureProviderOptions = [
@@ -279,11 +295,20 @@ export function ActionDialog({
     : '';
 
   const policyPluginsQuery = useQuery({
-    queryKey: ['action-policy-poc-plugins', token],
-    queryFn: async () => {
+    queryKey: ['action-policy-poc-plugins', token, isTaskCreate ? debouncedTaskPocKeyword : debouncedPolicyPocKeyword, pocPage],
+    queryFn: async ({ signal }) => {
+      const keyword = isTaskCreate ? debouncedTaskPocKeyword : debouncedPolicyPocKeyword;
       const response = await requestApi(token, '/poc/', {
         method: 'GET',
-        query: { page: 1, size: 5000 },
+        signal,
+        query: {
+          page: pocPage,
+          size: 100,
+          q: keyword.trim(),
+          status: 'ready',
+          plugin_type: 'poc',
+          order: 'plugin_name',
+        },
       });
       const items = normalizeListData(response).items || [];
       const normalized = items
@@ -291,27 +316,69 @@ export function ActionDialog({
           plugin_name: String(item?.plugin_name || '').trim(),
           vul_name: String(item?.vul_name || '').trim(),
           plugin_type: String(item?.plugin_type || '').trim().toLowerCase(),
+          severity: String(item?.severity || 'info').trim().toLowerCase(),
+          tags: Array.isArray(item?.tags) ? item.tags.map((tag: any) => String(tag)) : [],
+          finger: String(item?.finger || item?.app_name || '').trim(),
+          engine: String(item?.engine || 'python').trim(),
         }))
         .filter((item: any) => item.plugin_name);
       return {
         poc: normalized
           .filter((item: any) => item.plugin_type === 'poc')
-          .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
+          .map((item: any) => ({
+            plugin_name: item.plugin_name,
+            vul_name: item.vul_name,
+            severity: item.severity,
+            tags: item.tags,
+            finger: item.finger,
+            engine: item.engine,
+          })),
         brute: normalized
           .filter((item: any) => item.plugin_type === 'brute')
           .map((item: any) => ({ plugin_name: item.plugin_name, vul_name: item.vul_name })),
+        total: Number(normalizeListData(response).total || 0),
       };
     },
     enabled: isPolicyAction || isTaskCreate,
     staleTime: 30_000,
     retry: 0,
   });
+  const policyBrutePluginsQuery = useQuery({
+    queryKey: ['action-policy-brute-plugins', token, policyBruteKeyword],
+    queryFn: async ({ signal }) => {
+      const response = await requestApi(token, '/poc/', {
+        method: 'GET',
+        signal,
+        query: {
+          page: 1,
+          size: 100,
+          q: policyBruteKeyword.trim(),
+          status: 'ready',
+          plugin_type: 'brute',
+          order: 'plugin_name',
+        },
+      });
+      return (normalizeListData(response).items || [])
+        .map((item: any) => ({
+          plugin_name: String(item?.plugin_name || '').trim(),
+          vul_name: String(item?.vul_name || '').trim(),
+        }))
+        .filter((item: any) => item.plugin_name);
+    },
+    enabled: isPolicyAction,
+    staleTime: 30_000,
+    retry: 0,
+  });
   const policyPocOptions = policyPluginsQuery.data?.poc ?? [];
-  const policyBruteOptions = policyPluginsQuery.data?.brute ?? [];
-  const policyPluginLoading = (isPolicyAction || isTaskCreate) && policyPluginsQuery.isFetching;
-  const policyPluginError = (isPolicyAction || isTaskCreate) && policyPluginsQuery.isError
-    ? (policyPluginsQuery.error as Error)?.message || '加载 PoC 列表失败'
+  const policyBruteOptions = policyBrutePluginsQuery.data ?? [];
+  const policyPluginLoading = (isPolicyAction || isTaskCreate) && (policyPluginsQuery.isFetching || policyBrutePluginsQuery.isFetching);
+  const policyPluginError = (isPolicyAction || isTaskCreate) && (policyPluginsQuery.isError || policyBrutePluginsQuery.isError)
+    ? ((policyPluginsQuery.error || policyBrutePluginsQuery.error) as Error)?.message || '加载 PoC 列表失败'
     : '';
+
+  const pocTotal = Number(policyPluginsQuery.data?.total || 0);
+  const pocPageSize = 100;
+  const pocPageCount = Math.max(1, Math.ceil(pocTotal / pocPageSize));
 
   const getPolicyPath = (suffix: string) => `${policyRootPath}.${suffix}`;
   const updatePolicyValue = (suffix: string, value: any) => {
@@ -328,6 +395,7 @@ export function ActionDialog({
   const selectedPolicyPocNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('poc_config')));
   const selectedPolicyBruteNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('brute_config')));
   const selectedTaskPocNames = extractPluginNames(getPayloadValue(formPayload, 'poc_config'));
+  const policyNpocEnabled = Boolean(getPayloadValue(formPayload, getPolicyPath('npoc_poc_scan')));
   const policyOptionDefs = [
     { key: 'domain_config.alt_dns', label: 'DNS字典智能生成' },
     { key: 'domain_config.dns_query_plugin', label: '测绘引擎查询' },
@@ -368,7 +436,8 @@ export function ActionDialog({
   const filteredPolicyPocOptions = policyPocOptions.filter((item) => {
     const keyword = policyPocKeyword.trim().toLowerCase();
     if (!keyword) return true;
-    return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
+    return [item.plugin_name, item.vul_name, item.finger, item.severity, ...(item.tags || [])]
+      .some((value) => String(value || '').toLowerCase().includes(keyword));
   });
   const filteredPolicyBruteOptions = policyBruteOptions.filter((item) => {
     const keyword = policyBruteKeyword.trim().toLowerCase();
@@ -378,14 +447,15 @@ export function ActionDialog({
   const filteredTaskPocOptions = policyPocOptions.filter((item) => {
     const keyword = taskPocKeyword.trim().toLowerCase();
     if (!keyword) return true;
-    return item.plugin_name.toLowerCase().includes(keyword) || item.vul_name.toLowerCase().includes(keyword);
+    return [item.plugin_name, item.vul_name, item.finger, item.severity, ...(item.tags || [])]
+      .some((value) => String(value || '').toLowerCase().includes(keyword));
   });
   const policyPocAllSelected =
-    policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedPolicyPocNames.includes(item.plugin_name));
+    pocTotal > 0 && selectedPolicyPocNames.length >= pocTotal;
   const policyBruteAllSelected =
     policyBruteOptions.length > 0 && policyBruteOptions.every((item) => selectedPolicyBruteNames.includes(item.plugin_name));
   const taskPocAllSelected =
-    policyPocOptions.length > 0 && policyPocOptions.every((item) => selectedTaskPocNames.includes(item.plugin_name));
+    pocTotal > 0 && selectedTaskPocNames.length >= pocTotal;
   const taskDomainDictSelectOptions = useMemo(() => {
     const next = [...taskDomainDictOptions];
     const exists = next.some((item) => item.path === taskDomainDict);
@@ -470,6 +540,77 @@ export function ActionDialog({
     ));
   };
 
+  const fetchAllPocNames = async (keyword: string, signal?: AbortSignal) => {
+    const pageSize = 100;
+    const names = new Set<string>();
+    let page = 1;
+    let total = 0;
+    do {
+      const response = await requestApi(token, '/poc/', {
+        method: 'GET',
+        signal,
+        query: {
+          page,
+          size: pageSize,
+          q: keyword.trim(),
+          status: 'ready',
+          plugin_type: 'poc',
+          order: 'plugin_name',
+        },
+      });
+      const data = normalizeListData(response);
+      const items = data.items || [];
+      items
+        .map((item: any) => String(item?.plugin_name || '').trim())
+        .filter((item: string) => item)
+        .forEach((item: string) => names.add(item));
+      total = Number(data.total || items.length);
+      if (items.length === 0) break;
+      page += 1;
+    } while (names.size < total);
+    return Array.from(names);
+  };
+
+  const toggleAllTaskPocs = async () => {
+    pocBulkFetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    pocBulkFetchAbortRef.current = controller;
+    try {
+      if (taskPocAllSelected) {
+        setTaskPocConfig([]);
+        return;
+      }
+      setTaskPocConfig(await fetchAllPocNames(taskPocKeyword, controller.signal));
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') return;
+      setError((error as Error)?.message || '加载全部 PoC 失败');
+    } finally {
+      if (pocBulkFetchAbortRef.current === controller) {
+        pocBulkFetchAbortRef.current = null;
+      }
+    }
+  };
+
+  const toggleAllPolicyPocs = async () => {
+    pocBulkFetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    pocBulkFetchAbortRef.current = controller;
+    try {
+      if (policyPocAllSelected) {
+        setPolicyPluginConfig('poc_config', []);
+        return;
+      }
+      setPolicyPluginConfig('poc_config', await fetchAllPocNames(policyPocKeyword, controller.signal));
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') return;
+      setError((error as Error)?.message || '加载全部 PoC 失败');
+    } finally {
+      if (pocBulkFetchAbortRef.current === controller) {
+        pocBulkFetchAbortRef.current = null;
+      }
+    }
+  };
+
   const toggleTaskPocSelection = (pluginName: string, enabled: boolean) => {
     const nextSet = new Set(selectedTaskPocNames);
     if (enabled) nextSet.add(pluginName);
@@ -485,6 +626,7 @@ export function ActionDialog({
     setPolicyPocKeyword('');
     setPolicyBruteKeyword('');
     setTaskPocKeyword('');
+    setPocPage(1);
     setFofaTesting(false);
     setFofaResultSize(null);
   }, [initialPayload]);
@@ -793,20 +935,31 @@ export function ActionDialog({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <label className="text-xs font-bold text-content-muted">NPoC 漏洞验证</label>
-                    <p className="text-[11px] text-content-muted mt-1">仅执行这里勾选的 POC；服务识别开关与漏洞验证相互独立。</p>
+                    <p className="text-[11px] text-content-muted mt-1">默认关闭；打开后仅执行已勾选的 POC，服务识别开关与漏洞验证相互独立。</p>
                   </div>
+                  <label className="flex items-center gap-2 text-xs font-bold whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formPayload?.npoc_poc_scan)}
+                      disabled={!editable}
+                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'npoc_poc_scan', event.target.checked))}
+                      className="toggle toggle-primary toggle-sm"
+                    />
+                    启用
+                  </label>
                   <button
                     type="button"
                     className={CONSOLE_TEXT_BUTTON_CLASS + ' text-xs font-bold text-accent hover:underline'}
-                    onClick={() => setTaskPocConfig(taskPocAllSelected ? [] : policyPocOptions.map((item) => item.plugin_name))}
-                    disabled={!editable || policyPocOptions.length === 0}
+                    onClick={() => { void toggleAllTaskPocs(); }}
+                    disabled={!editable || !Boolean(formPayload?.npoc_poc_scan) || policyPocOptions.length === 0}
                   >
-                    {taskPocAllSelected ? '清空' : '全选'}
+                    {taskPocAllSelected ? '清空' : '筛选结果全选'}
                   </button>
                 </div>
                 <input
                   value={taskPocKeyword}
-                  onChange={(event) => setTaskPocKeyword(event.target.value)}
+                  onChange={(event) => { setTaskPocKeyword(event.target.value); setPocPage(1); }}
+                  disabled={!editable || !Boolean(formPayload?.npoc_poc_scan)}
                   className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入关键字筛选 PoC"
                 />
@@ -816,17 +969,30 @@ export function ActionDialog({
                       <input
                         type="checkbox"
                         checked={selectedTaskPocNames.includes(item.plugin_name)}
-                        disabled={!editable}
+                        disabled={!editable || !Boolean(formPayload?.npoc_poc_scan)}
                         onChange={(event) => toggleTaskPocSelection(item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
                       />
-                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.vul_name || item.plugin_name}</span>
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">
+                        {item.vul_name || item.plugin_name}
+                        <small className="block text-[10px] text-content-muted">{item.severity || 'info'} · {item.engine || 'python'}{item.tags?.length ? ` · ${item.tags.slice(0, 2).join(', ')}` : ''}</small>
+                      </span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredTaskPocOptions.length === 0 ? (
                     <p className="text-xs text-content-muted">暂无可用的 PoC 项</p>
                   ) : null}
                 </div>
+                <div className="flex items-center justify-between gap-2 text-xs text-content-muted">
+                  <span>第 {pocPage} / {pocPageCount} 页，共 {pocTotal} 个可执行 POC</span>
+                  <div className="flex gap-2">
+                    <button type="button" className={CONSOLE_TEXT_BUTTON_CLASS} disabled={pocPage <= 1} onClick={() => setPocPage((page) => Math.max(1, page - 1))}>上一页</button>
+                    <button type="button" className={CONSOLE_TEXT_BUTTON_CLASS} disabled={pocPage >= pocPageCount} onClick={() => setPocPage((page) => Math.min(pocPageCount, page + 1))}>下一页</button>
+                  </div>
+                </div>
+                {Boolean(formPayload?.npoc_poc_scan) && selectedTaskPocNames.length === 0 ? (
+                  <p className="text-xs text-warning">已启用 NPoC，但尚未选择 POC；提交后不会默认执行全部规则。</p>
+                ) : null}
                 {policyPluginError ? (
                   <p role="alert" className={CONSOLE_ALERT_ERROR_CLASS + ' text-xs py-2'}>{policyPluginError}</p>
                 ) : null}
@@ -1454,24 +1620,32 @@ export function ActionDialog({
 
               <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <h5 className="text-sm font-black">PoC 配置</h5>
+                  <div>
+                    <h5 className="text-sm font-black">PoC 配置</h5>
+                    <p className="text-[11px] text-content-muted mt-1">默认关闭；启用后才会执行已选择的漏洞 POC。</p>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs font-bold whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={policyNpocEnabled}
+                      disabled={!editable}
+                      onChange={(event) => updatePolicyValue('npoc_poc_scan', event.target.checked)}
+                      className="toggle toggle-primary toggle-sm"
+                    />
+                    启用
+                  </label>
                   <button
                     type="button"
                     className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
-                    onClick={() =>
-                      setPolicyPluginConfig(
-                        'poc_config',
-                        policyPocAllSelected ? [] : policyPocOptions.map((item) => item.plugin_name)
-                      )
-                    }
-                    disabled={!editable || policyPocOptions.length === 0}
+                    onClick={() => { void toggleAllPolicyPocs(); }}
+                    disabled={!editable || !policyNpocEnabled || policyPocOptions.length === 0}
                   >
-                    {policyPocAllSelected ? '取消全选' : '全选'}
+                    {policyPocAllSelected ? '清空' : '筛选结果全选'}
                   </button>
                 </div>
                 <input
                   value={policyPocKeyword}
-                  onChange={(event) => setPolicyPocKeyword(event.target.value)}
+                  onChange={(event) => { setPolicyPocKeyword(event.target.value); setPocPage(1); }}
                   className={CONSOLE_INPUT_CLASS}
                   placeholder="请输入关键字筛选 PoC"
                 />
@@ -1481,17 +1655,30 @@ export function ActionDialog({
                       <input
                         type="checkbox"
                         checked={selectedPolicyPocNames.includes(item.plugin_name)}
-                        disabled={!editable}
+                        disabled={!editable || !policyNpocEnabled}
                         onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
                       />
-                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">{item.vul_name || item.plugin_name}</span>
+                      <span className="min-w-0 whitespace-normal break-words leading-relaxed">
+                        {item.vul_name || item.plugin_name}
+                        <small className="block text-[10px] text-content-muted">{item.severity || 'info'} · {item.engine || 'python'}{item.finger ? ` · ${item.finger}` : ''}{item.tags?.length ? ` · ${item.tags.slice(0, 2).join(', ')}` : ''}</small>
+                      </span>
                     </label>
                   ))}
                   {!policyPluginLoading && filteredPolicyPocOptions.length === 0 ? (
                     <p className="text-xs text-content-muted">暂无匹配的 PoC 项</p>
                   ) : null}
                 </div>
+                <div className="flex items-center justify-between gap-2 text-xs text-content-muted">
+                  <span>第 {pocPage} / {pocPageCount} 页，共 {pocTotal} 个可执行 POC</span>
+                  <div className="flex gap-2">
+                    <button type="button" className={CONSOLE_TEXT_BUTTON_CLASS} disabled={pocPage <= 1} onClick={() => setPocPage((page) => Math.max(1, page - 1))}>上一页</button>
+                    <button type="button" className={CONSOLE_TEXT_BUTTON_CLASS} disabled={pocPage >= pocPageCount} onClick={() => setPocPage((page) => Math.min(pocPageCount, page + 1))}>下一页</button>
+                  </div>
+                </div>
+                {policyNpocEnabled && selectedPolicyPocNames.length === 0 ? (
+                  <p className="text-xs text-warning">已启用 NPoC，但尚未选择 POC；策略不会默认执行全部规则。</p>
+                ) : null}
               </div>
 
               <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">

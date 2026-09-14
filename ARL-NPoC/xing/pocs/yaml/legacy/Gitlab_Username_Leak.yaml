@@ -1,0 +1,16 @@
+id: Gitlab_Username_Leak
+info:
+  name: Gitlab 用户名泄漏
+  finger: Gitlab
+  severity: info
+  tags:
+  - legacy
+  - poc
+transport: http
+requests:
+- method: GET
+  path: /explore/projects
+  expression: contains(body, "GitLab") && contains(body, "authenticity_token")
+- method: GET
+  path: /api/v4/users/1
+  expression: matches(body, '"(message|username)"\s*:')

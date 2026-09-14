@@ -269,8 +269,12 @@ class WebSiteResultPersistStageService(object):
 
     def risk_cruising(self, npoc_service_target_set: set):
         from app.services import run_risk_cruising
+        from app.helpers.task import npoc_poc_scan_enabled
 
         task = self.task
+        if not npoc_poc_scan_enabled(task.options):
+            logger.info("skip risk cruising because npoc_poc_scan is disabled")
+            return []
         poc_config = task.options.get("poc_config", [])
         plugins = []
         for info in poc_config:
@@ -289,6 +293,12 @@ class WebSiteResultPersistStageService(object):
         result = run_risk_cruising(plugins=plugins, targets=poc_targets)
         for item in result:
             if not task._scan_result_in_task_scope(item, target_keys=("target", "url")):
+                continue
+            if item.get("result_status") == "partial":
+                error_item = dict(item)
+                error_item["task_id"] = task.task_id
+                error_item["save_date"] = utils.curr_date()
+                task._result_writer.insert_one("poc_scan_error", error_item)
                 continue
             result_item = task._result_item_service.build_risk_document(item)
             if result_item:

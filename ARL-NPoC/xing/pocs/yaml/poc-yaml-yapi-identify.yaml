@@ -1,0 +1,15 @@
+id: poc-yaml-yapi-identify
+info:
+  name: 发现 Yapi
+  severity: info
+  tags:
+  - identify
+  finger: Yapi
+requests:
+- method: GET
+  path: /login
+  expression: 'contains(title, "YApi-高效")
+
+    '
+variables: {}
+transport: http

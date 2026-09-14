@@ -1,0 +1,15 @@
+id: poc-yaml-chanjet-crm-create-site-sqli
+info:
+  name: 畅捷通 CRM create_site.php SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通CRM
+requests:
+- method: GET
+  path: /WebSer~1/create_site.php?site_id=1
+  expression: 'contains(body, "register fail,please again")
+
+    '
+variables: {}
+transport: http

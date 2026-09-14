@@ -1,0 +1,47 @@
+id: poc-yaml-swagger-ui-identify
+info:
+  name: 发现 Swagger UI
+  severity: medium
+  tags:
+  - identify
+  finger: Swagger-ui
+variables:
+  path: '/api/swagger-ui.html
+
+    /swagger-ui.html
+
+    /backend/swagger-ui.html
+
+    /swagger/index.html
+
+    /api/swagger/index.html
+
+    /swagger-ui/index.html
+
+    /api/swagger-ui/index.html
+
+    /docs
+
+    /api/docs
+
+    /api/doc
+
+    /api-docs/index.html
+
+    /api.html
+
+    /sw/swagger-ui.html
+
+    /template/swagger-ui.html
+
+    /spring-security-rest/api/swagger-ui.html
+
+    /spring-security-oauth-resource/swagger-ui.html'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 && (\n  contains(title, \"Swagger UI\") ||\n  contains(body,\
+    \ \"swagger-ui-bundle.js\") ||\n  contains(body, \"webjars/springfox-swagger-ui\"\
+    ) ||\n  (\n      contains(body, \"Swagger UI\") && contains(body,\n      \"swagger-ui.min.js\"\
+    )\n  )\n)\n"
+transport: http

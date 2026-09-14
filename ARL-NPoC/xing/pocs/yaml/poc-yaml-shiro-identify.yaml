@@ -1,0 +1,20 @@
+id: poc-yaml-shiro-identify
+info:
+  name: 发现 Apache Shiro
+  severity: info
+  tags:
+  - identify
+  finger: Shiro
+variables:
+  path: '/
+
+    /api/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  headers:
+    Cookie: rememberMe=abc
+  expression: 'contains(headers, "rememberMe=deleteMe")
+
+    '
+transport: http

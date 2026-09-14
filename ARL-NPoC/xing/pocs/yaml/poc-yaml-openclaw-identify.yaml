@@ -1,0 +1,14 @@
+id: poc-yaml-openclaw-identify
+info:
+  name: 发现 OpenClaw
+  severity: low
+  tags:
+  - 应用识别
+  finger: openclaw
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && ( contains(title,"Moltbot Control") || contains(title,
+    "OpenClaw Control"))
+variables: {}
+transport: http

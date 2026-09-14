@@ -201,6 +201,7 @@ export const modules: ModuleConfig[] = [
           port_custom: '80,443',
           service_detection: true,
           npoc_service_detection: false,
+          npoc_poc_scan: false,
           service_brute: true,
           os_detection: true,
           site_identify: true,
@@ -639,6 +640,7 @@ export const modules: ModuleConfig[] = [
             file_leak_dict: '',
             file_leak: false,
             npoc_service_detection: false,
+            npoc_poc_scan: false,
             poc_config: [],
             brute_config: [],
             scope_config: {
@@ -1592,13 +1594,13 @@ export const modules: ModuleConfig[] = [
       {
         id: 'poc_sync',
         label: '同步PoC',
-        method: 'GET',
+        method: 'POST',
         path: '/poc/sync/',
       },
       {
         id: 'poc_clear',
         label: '清空PoC库',
-        method: 'GET',
+        method: 'POST',
         path: '/poc/delete/',
       },
     ],

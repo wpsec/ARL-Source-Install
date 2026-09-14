@@ -1,0 +1,15 @@
+id: Shiro_Identify
+info:
+  name: 发现 Apache Shiro
+  finger: Shiro
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths: /
+  expression: contains(header, "rememberMe=deleteMe")
+  headers:
+    Cookie: rememberMe=1

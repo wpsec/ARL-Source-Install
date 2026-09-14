@@ -57,6 +57,11 @@ from app.utils.log_safety import safe_error_text
 from app.services.domainSiteUpdate import domain_site_update
 from app.repositories import DomainRepository
 from app.services.task_orchestrator import DomainTaskOrchestrator
+from app.services.task_pipeline import TaskPipeline
+from app.services.task_finalizer import TaskFinalizer
+from app.helpers.message_notify import push_task_finish_notify
+from app.services.discovery_context import DiscoveryContext, DiscoveryLedger
+from app.services.discovery_ledger_store import MongoLedgerBackend, MongoResponseBackend
 from app.services.waf_guard import WAFSmartSkipGuard
 from app.services.domain_stage_services import (
     AltDNS,
@@ -396,6 +401,22 @@ class DomainTask(CommonTask):
         self.base_domain = _normalize_domain_target(base_domain)
         self.task_id = task_id
         self.options = options
+        try:
+            candidate_max_entries = max(
+                100,
+                int(getattr(Config, "DISCOVERY_CANDIDATE_MAX", 20000) or 20000),
+            )
+        except (TypeError, ValueError):
+            candidate_max_entries = 20000
+        self.discovery_context = DiscoveryContext(
+            task_id=self.task_id,
+            allowed_hosts=[self.base_domain] if self.base_domain else [],
+            response_max_body_bytes=getattr(Config, "PAGE_INTEL_MAX_PAGE_BYTES", 384 * 1024),
+            candidate_max_entries=candidate_max_entries,
+            # 跨 Celery 消息的阶段幂等状态必须落到共享后端，不能依赖进程内对象。
+            ledger=DiscoveryLedger(MongoLedgerBackend(self.task_id)),
+            response_backend=MongoResponseBackend(self.task_id),
+        )
 
         self.domain_info_list = []  # 在 start_site_fetch 运行后会清空，用来释放内存
         self.ip_info_list = []
@@ -876,6 +897,9 @@ class DomainTask(CommonTask):
     def start_ip_fetch(self):
         return DomainNetworkStageService(self).run()
 
+    def load_saved_ip_info(self):
+        return DomainNetworkStageService(self).run_load_saved_ip_info()
+
     def start_site_fetch(self):
         return DomainSiteStageService(self).run()
 
@@ -912,6 +936,50 @@ class DomainTask(CommonTask):
                 detail="domains={}".format(len(domains)),
             )
 
+    def _prepare_deep_site_context(self):
+        """为跨消息的后置阶段恢复站点目标和共享发现上下文。"""
+        DomainSiteStageService(self).run_load_saved_sites()
+        self.web_site_fetch = WebSiteFetch(
+            task_id=self.task_id,
+            sites=list(self.site_list),
+            options=self.options,
+            scope_domain=[self.base_domain],
+            discovery_context=self.discovery_context,
+        )
+        self.web_site_fetch.available_sites = list(self.site_list)
+        self.web_site_fetch.terminal_finalize_host_owned = True
+        return self.web_site_fetch
+
+    def _restore_wih_domains(self):
+        """恢复已落库的 WIH 域名，避免跨 worker 丢失后置资产更新。"""
+        if self.wih_domain_set:
+            return len(self.wih_domain_set)
+        try:
+            records = utils.conn_db("wih").find(
+                {"task_id": self.task_id},
+                {"record_type": 1, "recordType": 1, "content": 1},
+            )
+        except Exception as exc:
+            logger.warning(
+                "restore wih domains failed task_id:{} error_type:{}".format(
+                    self.task_id, type(exc).__name__
+                )
+            )
+            return 0
+        for item in records:
+            if not isinstance(item, dict):
+                continue
+            record_type = str(
+                item.get("record_type") or item.get("recordType") or ""
+            ).strip().lower()
+            domain = utils.normalize_domain(item.get("content"))
+            if record_type != "domain" or not domain:
+                continue
+            if domain == self.base_domain or domain.endswith("." + self.base_domain):
+                if not utils.check_domain_black(domain):
+                    self.wih_domain_set.add(domain)
+        return len(self.wih_domain_set)
+
     def _load_saved_domain_info(self):
         return DomainDiscoveryStageService(self).run_load_saved_domain_info()
 
@@ -928,6 +996,84 @@ class DomainTask(CommonTask):
     def run_deep(self):
         """执行可恢复的深度阶段；可由新的 Celery 消息独立运行。"""
         return DomainTaskOrchestrator(self).run_deep()
+
+    def run_deep_stage(self, stage):
+        """执行一个可独立重试的深度 stage，输入状态全部来自任务库。"""
+        stage_name = str(stage or "").strip().lower()
+        if stage_name == "domain_fetch":
+            self._load_saved_domain_info()
+            return self.domain_fetch()
+        if stage_name == "search_engines":
+            self._load_saved_domain_info()
+            return self.search_engines()
+        if stage_name == "ip_query":
+            self._load_saved_domain_info()
+            self.gen_ipv4_map()
+            if Config.IP_PIVOT_QUERY_ENABLE:
+                self.update_task_field("status", "ip_query_plugin")
+                started_at = time.time()
+                self.ip_query_plugin_enhance()
+                self.update_services(
+                    "ip_query_plugin",
+                    time.time() - started_at,
+                    metrics=self._last_ip_query_metrics,
+                )
+            return None
+        if stage_name == "ip_fetch":
+            self._load_saved_domain_info()
+            self.gen_ipv4_map()
+            return self.start_ip_fetch()
+        if stage_name == "pivot":
+            self._load_saved_domain_info()
+            self.load_saved_ip_info()
+            max_rounds = max(
+                int(getattr(Config, "ASSET_DISCOVERY_MAX_ROUNDS", 1) or 1),
+                1,
+            )
+            for round_index in range(max(max_rounds - 1, 0)):
+                if not bool(getattr(Config, "ASSET_DISCOVERY_ENABLE", True)):
+                    break
+                pivot_runner = getattr(self, "asset_pivot_round", None)
+                if not callable(pivot_runner):
+                    break
+                pivot_result = TaskPipeline(self).run_stage(
+                    "asset_pivot_round",
+                    pivot_runner,
+                    detail="round={}".format(round_index + 2),
+                )
+                if not isinstance(pivot_result, dict) or not pivot_result.get("new_domains"):
+                    break
+            return None
+        if stage_name == "site":
+            self._load_saved_domain_info()
+            self.load_saved_ip_info()
+            self.gen_ipv4_map()
+            return self.start_site_fetch()
+        if stage_name == "vhost":
+            self._load_saved_domain_info()
+            DomainSiteStageService(self).run_load_saved_sites()
+            return self.start_find_vhost()
+        if stage_name == "poc":
+            self._load_saved_domain_info()
+            self.load_saved_ip_info()
+            self.gen_ipv4_map()
+            self._prepare_deep_site_context()
+            return self.start_poc_run()
+        if stage_name == "wih":
+            self._prepare_deep_site_context()
+            self._restore_wih_domains()
+            return self.start_wih_domain_update()
+        if stage_name == "finalize":
+            if self.web_site_fetch is None:
+                self._prepare_deep_site_context()
+            finalizer = TaskFinalizer(self)
+            finalizer.run()
+            self.common_run()
+            self.update_task_field("status", finalizer.terminal_status())
+            self.update_task_field("end_time", utils.curr_date())
+            push_task_finish_notify(self.task_id)
+            return finalizer.terminal_status()
+        raise ValueError("unsupported domain deep stage: {}".format(stage_name))
 
     def run(self):
         return DomainTaskOrchestrator(self).run()
@@ -977,6 +1123,27 @@ def domain_deep_task(base_domain, task_id, options):
             task_id=task_id,
             error=e,
             stage="domain_deep",
+            traceback_text=traceback.format_exc(),
+        )
+        return False
+
+
+def domain_deep_stage_task(base_domain, task_id, options, stage):
+    """执行渐进式域名任务的单个深度 stage。"""
+    d = DomainTask(base_domain=base_domain, task_id=task_id, options=options)
+    try:
+        d.run_deep_stage(stage)
+        return True
+    except Exception as e:
+        logger.error(
+            "domain deep stage failed task_id:{} stage:{} error:{}".format(
+                task_id, stage, safe_error_text(e)
+            )
+        )
+        utils.append_task_error(
+            task_id=task_id,
+            error=e,
+            stage="domain_deep:{}".format(str(stage or "unknown").strip()),
             traceback_text=traceback.format_exc(),
         )
         return False

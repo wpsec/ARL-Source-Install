@@ -1,0 +1,24 @@
+id: poc-yaml-phpmyadmin-identify
+info:
+  name: 发现 phpMyAdmin
+  severity: medium
+  tags:
+  - identify
+  finger: phpMyAdmin
+variables:
+  path: '/pma/index.php
+
+    /phpmyadmin/index.php
+
+    /phpMyAdmin/index.php
+
+    /PMA/index.php
+
+    /_phpmyadmin/index.php'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(title, "phpMyAdmin") && status_code == 200
+
+    '
+transport: http

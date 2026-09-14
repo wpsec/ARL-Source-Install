@@ -1,0 +1,23 @@
+id: poc-yaml-ueditor-cnvd-2017-20077-file-upload
+info:
+  name: Ueditor File Upload (CNVD-2017-20077)
+  severity: medium
+  tags:
+  - cnvd-2017-20077
+  - CNVD-2017-20077
+  finger: UEditor
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /ueditor/net/controller.ashx?action=catchimage&encode=utf-8
+  headers:
+    Accept-Encoding: deflate
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "没有指定抓取源")
+  output: []

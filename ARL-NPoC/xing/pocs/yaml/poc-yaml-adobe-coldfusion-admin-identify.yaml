@@ -1,0 +1,15 @@
+id: poc-yaml-adobe-coldfusion-admin-identify
+info:
+  name: 发现 Adobe ColdFusion 管理控制台
+  severity: info
+  tags:
+  - identify
+  finger: Adobe ColdFusion
+requests:
+- method: GET
+  path: /CFIDE/administrator/index.cfm
+  expression: 'status_code == 200 && contains(body, "CFIDE/administrator/favicon.ico")
+
+    '
+variables: {}
+transport: http

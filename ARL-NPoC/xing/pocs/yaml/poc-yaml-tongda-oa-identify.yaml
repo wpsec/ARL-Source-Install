@@ -1,0 +1,22 @@
+id: poc-yaml-tongda-oa-identify
+info:
+  name: 发现通达OA
+  severity: info
+  tags:
+  - identify
+  finger: 通达
+variables:
+  path: '/
+
+    /oa/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "RSAKey") &&
+
+    contains(body, "module/captcha/captcha_output.php")
+
+    '
+transport: http

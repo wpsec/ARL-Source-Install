@@ -1,0 +1,18 @@
+id: poc-yaml-sharp-multifunction-printers-unauthorized-access
+info:
+  name: Sharp 多功能打印机 未授权访问漏洞(CVE-2024-33605)
+  severity: high
+  tags:
+  - CVE-2024-33605
+  - 两高一弱
+  - 未授权访问
+  finger: sharp-multifunction-printers
+  shodan: 'Set-Cookie: MFPSESSIONID='
+requests:
+- method: GET
+  path: /installed_emanual_list.html
+  expression: "status_code == 200 && \ncontains(body,\"ServiceEmanualList\") &&\n\
+    contains(body,\"/installed_emanual_down.html\") &&\ncontains(headers,\"Set-Cookie:\
+    \ MFPSESSIONID=\")\n"
+variables: {}
+transport: http

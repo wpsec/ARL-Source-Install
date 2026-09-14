@@ -1,0 +1,17 @@
+id: poc-yaml-dotnet-http-remoting-exposed
+info:
+  name: .NET HTTP Remoting 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: .NET
+  osprey-id: vb_2020_0073
+requests:
+- method: GET
+  path: /
+  expression: 'contains(body, "DispatchChannelSink") && contains(body, "ArgumentNullException")
+    && contains(headers, "Server: MS .NET Remoting")
+
+    '
+variables: {}
+transport: http

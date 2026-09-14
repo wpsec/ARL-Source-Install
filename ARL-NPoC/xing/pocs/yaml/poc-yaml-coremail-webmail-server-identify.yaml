@@ -1,0 +1,21 @@
+id: poc-yaml-coremail-webmail-server-identify
+info:
+  name: 发现 Coremail Webmail Server
+  severity: info
+  tags:
+  - identify
+  finger: Coremail
+variables:
+  v_path: '/coremail/
+
+    /'
+requests:
+- method: GET
+  path: '{{.v_path}}s/json?func=verify'
+  expression: 'contains(body, "\"S_OK\"") && status_code == 200 &&
+
+    contains(body, "coremail") && contains(body, "\"version\"") && !contains(body,
+    "</")
+
+    '
+transport: http

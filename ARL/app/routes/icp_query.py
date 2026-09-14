@@ -39,7 +39,7 @@ def _api_error_guard(operation, fallback):
             try:
                 return func(*args, **kwargs)
             except icp_query.IcpQueryError as exc:
-                return _failure(str(exc), 400)
+                return _failure(utils.safe_error_text(exc), 400)
             except Exception as exc:
                 icp_query.logger.error(
                     "%s failed: %s", operation, icp_query._redact_text(exc)
@@ -119,7 +119,7 @@ class IcpQueryCreate(Resource):
             task = icp_query.get_task(task["task_id"])
             return _success(icp_query._task_status_payload(task))
         except (ValueError, icp_query.IcpQueryError) as exc:
-            return _failure(str(exc), 400)
+            return _failure(utils.safe_error_text(exc), 400)
         except Exception as exc:
             icp_query.logger.error("create ICP query task failed: %s", icp_query._redact_text(exc))
             return _failure("ICP 查询服务暂时不可用", 500)
@@ -211,7 +211,7 @@ class IcpBatchCreate(Resource):
             icp_query.dispatch_task(task["task_id"])
             return _success(icp_query._task_status_payload(icp_query.get_task(task["task_id"])))
         except (ValueError, icp_query.IcpQueryError) as exc:
-            return _failure(str(exc), 400)
+            return _failure(utils.safe_error_text(exc), 400)
         except Exception as exc:
             icp_query.logger.error("create ICP batch task failed: %s", icp_query._redact_text(exc))
             return _failure("ICP 查询服务暂时不可用", 500)
@@ -254,7 +254,7 @@ class IcpBatchDetail(Resource):
             icp_query.delete_task(task_id)
             return _success({"task_id": task_id})
         except icp_query.IcpQueryError as exc:
-            return _failure(str(exc), 409)
+            return _failure(utils.safe_error_text(exc), 409)
         except Exception as exc:
             icp_query.logger.error("delete ICP batch task failed: %s", icp_query._redact_text(exc))
             return _failure("ICP 任务删除失败，请稍后重试", 500)
@@ -300,7 +300,7 @@ class IcpHistoryList(Resource):
                 request.args.get("created_to", ""),
             ))
         except icp_query.IcpQueryError as exc:
-            return _failure(str(exc), 400)
+            return _failure(utils.safe_error_text(exc), 400)
 
 
 @ns.route("/history/<string:history_id>")
@@ -362,7 +362,7 @@ class IcpLogs(Resource):
                 request.args.get("created_to", ""),
             ))
         except icp_query.IcpQueryError as exc:
-            return _failure(str(exc), 400)
+            return _failure(utils.safe_error_text(exc), 400)
 
 
 @ns.route("/logs/clear")
@@ -395,7 +395,7 @@ class IcpExport(Resource):
                 request.args.get("created_to", ""),
             )
         except icp_query.IcpQueryError as exc:
-            return _failure(str(exc), 400)
+            return _failure(utils.safe_error_text(exc), 400)
         except Exception as exc:
             icp_query.logger.error("export ICP history failed: %s", icp_query._redact_text(exc))
             return _failure("ICP 历史导出失败，请稍后重试", 500)

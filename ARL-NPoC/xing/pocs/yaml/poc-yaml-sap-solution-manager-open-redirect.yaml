@@ -1,0 +1,15 @@
+id: poc-yaml-sap-solution-manager-open-redirect
+info:
+  name: SAP Solution Manager 开放式重定向漏洞
+  severity: medium
+  tags:
+  - url重定向
+  finger: solution_manager
+  fofa: header="Sap-Server\x3a true"
+requests:
+- method: GET
+  path: /sap/public/bc/icf/logoff?redirecturl=https://www.baidu.com
+  expression: (status_code == 302 || status_code == 301 || status_code == 307) &&
+    contains(headers,"Sap-Server\x3a true") && contains(headers,"Location\x3a https://www.baidu.com")
+variables: {}
+transport: http

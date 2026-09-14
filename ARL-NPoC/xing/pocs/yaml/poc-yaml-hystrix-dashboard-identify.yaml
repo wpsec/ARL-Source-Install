@@ -1,0 +1,20 @@
+id: poc-yaml-hystrix-dashboard-identify
+info:
+  name: 发现 Hystrix Dashboard
+  severity: info
+  tags:
+  - identify
+  finger: Hystrix
+variables:
+  path: '/hystrix
+
+    /
+
+    /api/hystrix'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, ">Hystrix Dashboard<")
+
+    '
+transport: http

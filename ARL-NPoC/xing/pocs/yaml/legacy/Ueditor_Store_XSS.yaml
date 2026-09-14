@@ -1,0 +1,20 @@
+id: Ueditor_Store_XSS
+info:
+  name: Ueditor 存储 XSS 漏洞
+  finger: Ueditor
+  severity: info
+  tags:
+  - legacy
+  - poc
+transport: http
+requests:
+- method: GET
+  paths:
+  - /ueditor/php/controller.php
+  - /Public/ueditor/php/controller.php
+  - /js/ueditor/php/controller.php
+  - /statics/ueditor/php/controller.php
+  - /module/ueditor/php/controller.php
+  - /ueditor/jsp/controller.jsp
+  expression: '!contains(body, "<") && (contains(body, "\\u8bf7\\u6c42\\u5730\\u5740\\u51fa\\u9519")
+    or contains(body, "upload method not exists"))'

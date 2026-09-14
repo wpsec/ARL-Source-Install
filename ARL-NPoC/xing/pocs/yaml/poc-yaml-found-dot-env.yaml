@@ -1,0 +1,40 @@
+id: poc-yaml-found-dot-env
+info:
+  name: .env 文件泄漏漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: ''
+variables:
+  path: '/.env
+
+    /.env.example
+
+    /.env.production
+
+    /.env.prod
+
+    /docker/.env
+
+    /docker/.env.example
+
+    /docker/.env.production
+
+    /docker/.env.prod
+
+    /api/.env
+
+    /api/.env.example
+
+    /api/.env.production
+
+    /api/.env.prod'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 && !contains(body, \"<a\") && !contains(body, \"\
+    <script\") && !contains(body, \"{\\\"\") &&\n!contains(content_type, \"json\"\
+    ) && !contains(content_type, \"html\") &&\n(\n  matches(body, \"(?i)(APP_KEY|SECRET|PASSWORD|USERNAME|API_KEY|TOKEN|AUTH_KEY|DB_NAME)\"\
+    ) ||\n  (matches(body, \"(QCLOUD|SECRET|LTAI|AKID|BUCKET)\") && !contains(body,\
+    \ \"<\"))\n)\n"
+transport: http

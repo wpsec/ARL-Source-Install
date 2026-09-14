@@ -1,0 +1,29 @@
+id: poc-yaml-jolokia-identify
+info:
+  name: 发现 Jolokia 组件
+  severity: info
+  tags:
+  - identify
+  finger: Jolokia
+variables:
+  path: '/api/jolokia/list
+
+    /jolokia/list
+
+    /jolokia/list;.js
+
+    /api/jolokia/list;.js'
+requests:
+- method: GET
+  path: '{{.path}}'
+  headers:
+    Authorization: Basic YWRtaW46YWRtaW4=
+    Origin: '{{.base_url}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "{\"request\":{\"type\":\"list\"}") &&
+
+    contains(body, "jolokia")
+
+    '
+transport: http

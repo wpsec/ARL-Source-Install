@@ -1,0 +1,24 @@
+id: poc-yaml-graphql-identify
+info:
+  name: 发现 Graphql 接口
+  severity: info
+  tags:
+  - identify
+  finger: Graphql
+variables:
+  path: '/graphql
+
+    /api/graphql
+
+    /v2/graphql
+
+    /v1/graphql
+
+    /api/v1/graphql'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "query missing") && !contains(body, "<")
+
+    '
+transport: http

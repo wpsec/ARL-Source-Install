@@ -1,0 +1,16 @@
+id: poc-yaml-h5s-video-platform-api-info-leak
+info:
+  name: H5S视频平台 /doc/api.html 接口文档信息未授权访问
+  severity: medium
+  tags:
+  - 访问控制错误
+  finger: H5S视频平台
+  fofa: title="H5S视频平台|WEB"
+requests:
+- method: GET
+  path: /doc/api.html
+  expression: "status_code == 200 && \ncontains(body,\"API文档\") &&\ncontains(body,\"\
+    所有接口\") &&\ncontains(body,\"接口列表\") &&\ncontains(body,\"eolinker，一个简易开放的接口管理\"\
+    )\n"
+variables: {}
+transport: http

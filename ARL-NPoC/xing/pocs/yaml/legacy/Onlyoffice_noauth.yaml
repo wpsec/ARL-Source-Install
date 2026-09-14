@@ -1,0 +1,13 @@
+id: Onlyoffice_noauth
+info:
+  name: Onlyoffice 未授权漏洞
+  finger: Onlyoffice
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /ConvertService.ashx
+  expression: contains(body, "<Error>-7</Error>") && contains(body, "<?xml")

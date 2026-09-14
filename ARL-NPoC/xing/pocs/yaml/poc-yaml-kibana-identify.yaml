@@ -1,0 +1,24 @@
+id: poc-yaml-kibana-identify
+info:
+  name: 发现 Kibana
+  severity: info
+  tags:
+  - identify
+  finger: Kibana
+variables:
+  path: '/login
+
+    /elastic/login
+
+    /kibana/login
+
+    /kibana/login/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    (contains(title, "kibana") || contains(title, "elastic"))
+
+    '
+transport: http

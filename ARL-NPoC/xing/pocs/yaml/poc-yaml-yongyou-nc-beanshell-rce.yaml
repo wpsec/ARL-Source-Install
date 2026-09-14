@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-nc-beanshell-rce
+info:
+  name: YongYou NC BeanShell 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: YongYou
+  osprey-id: vb_2021_0040
+requests:
+- method: GET
+  path: /servlet/~ic/bsh.servlet.BshServlet
+  headers: {}
+  expression: contains(body, "BeanShell Test Servlet") && contains(body, "bsh.servlet.captureOutErr")
+variables: {}
+transport: http

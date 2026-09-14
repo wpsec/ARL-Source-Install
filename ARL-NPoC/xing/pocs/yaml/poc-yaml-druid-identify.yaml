@@ -1,0 +1,24 @@
+id: poc-yaml-druid-identify
+info:
+  name: 发现 Alibaba Druid
+  severity: info
+  tags:
+  - identify
+  - 应用识别
+  finger: druid
+variables:
+  path: '/
+
+    /dev-api/
+
+    /prod-api/
+
+    /api/'
+requests:
+- method: GET
+  path: '{{.path}}druid/login.html'
+  expression: 'contains(body, ".keypress(druid.login.unamecr)") && contains(body,
+    "keypress(druid.login.upasscr)")
+
+    '
+transport: http

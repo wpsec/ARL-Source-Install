@@ -1,0 +1,24 @@
+id: poc-yaml-any800-identify
+info:
+  name: 发现 Any800
+  severity: info
+  tags:
+  - identify
+  finger: Any800
+variables:
+  path: '/any800/echatManager.do
+
+    /ump/umpLogin/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    (contains(body, "Any800全渠道智能客服")
+
+    || contains(body, "new Date(nowtime_time+offset+offset_b);")
+
+    || contains(body, ">Any800v"))
+
+    '
+transport: http

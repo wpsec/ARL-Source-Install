@@ -1,0 +1,15 @@
+id: poc-yaml-apache-druid-identify
+info:
+  name: 发现 Apache Druid
+  severity: high
+  tags:
+  - identify
+  finger: Apache Druid
+requests:
+- method: GET
+  path: /unified-console.html
+  expression: 'title == "Apache Druid"
+
+    '
+variables: {}
+transport: http

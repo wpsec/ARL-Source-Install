@@ -1,0 +1,23 @@
+id: poc-yaml-springboot-admin-unauth
+info:
+  name: SpringBoot-Admin 未授权漏洞
+  severity: high
+  tags:
+  - 输入验证错误
+  finger: java,spring_boot
+requests:
+- method: GET
+  path: /applications
+  expression: 'status_code == 200 && contains(headers, "json") &&
+
+    contains(body, "\"name\":") &&
+
+    contains(body, "\"buildVersion\":") &&
+
+    contains(body, "\"instances\":") &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

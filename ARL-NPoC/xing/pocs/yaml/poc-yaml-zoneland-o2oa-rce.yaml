@@ -1,0 +1,20 @@
+id: poc-yaml-zoneland-o2oa-rce
+info:
+  name: CVE-2022-22916 O2OA RCE远程命令执行 (版本检测)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2022-22916
+  finger: o2oa
+  fofa: title == "O2OA"
+requests:
+- method: GET
+  path: /x_desktop/res/config/config.json
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: "status_code == 200 &&\ncontains(headers,\"application/json\") && \n\
+    contains(body,\"\\\"version\\\": \\\"6.4.7\\\"\") &&\ncontains(body,`\"center\"\
+    `)\n"
+variables: {}
+transport: http

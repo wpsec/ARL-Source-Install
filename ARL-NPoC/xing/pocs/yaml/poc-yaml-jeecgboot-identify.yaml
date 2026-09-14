@@ -1,0 +1,33 @@
+id: poc-yaml-jeecgboot-identify
+info:
+  name: 发现 JeecgBoot API
+  severity: info
+  tags:
+  - identify
+  finger: JeecgBoot
+variables:
+  path: '/jeecg-boot/
+
+    /jeecgboot/
+
+    /
+
+    /api/'
+requests:
+- method: POST
+  path: '{{.path}}sys/login'
+  headers:
+    Content-Type: application/json
+  data: '{}'
+  expression: "status_code == 200 && (\n  (contains(body, \"\\\"验证码无效\\\"\") && !contains(body,\
+    \ \"验证码错误\"))\n || (contains(body, \"\\\"message\\\":\\\"用户名或密码错误！\\\"\") && contains(body,\
+    \ \"\\\"success\\\":false\"))\n) && !contains(body, \"<\")\n"
+- method: POST
+  path: '{{.path}}sys/login'
+  headers:
+    Content-Type: application/json
+  data: '{"captcha":"abcd"}'
+  expression: "status_code == 200 &&\n(\n  (contains(body, \"验证码错误\") && !contains(body,\
+    \ \"\\\"验证码无效\\\"\"))\n|| (contains(body, \"\\\"message\\\":\\\"用户名或密码错误！\\\"\"\
+    ) && contains(body, \"\\\"success\\\":false\"))\n)&& !contains(body, \"<\")\n"
+transport: http

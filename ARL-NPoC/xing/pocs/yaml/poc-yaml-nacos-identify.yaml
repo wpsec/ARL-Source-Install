@@ -1,0 +1,18 @@
+id: poc-yaml-nacos-identify
+info:
+  name: 发现 Nacos
+  severity: info
+  tags:
+  - identify
+  finger: Nacos
+variables:
+  path: '/
+
+    /nacos/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "<title>Nacos</title>")
+
+    '
+transport: http

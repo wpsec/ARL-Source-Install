@@ -33,6 +33,7 @@ from bson import ObjectId
 from urllib.parse import urlparse
 from app.services.commonTask import CommonTask, WebSiteFetch
 from app.helpers.message_notify import push_task_finish_notify
+from app.helpers.task import npoc_poc_scan_enabled
 import traceback
 
 logger = utils.get_logger()
@@ -133,6 +134,8 @@ class RiskCruising(CommonTask):
         """
         # 提取PoC插件
         poc_config = self.options.get("poc_config", [])
+        if not npoc_poc_scan_enabled(self.options):
+            poc_config = []
         plugin_name = []
         for item in poc_config:
             if item.get("enable"):
@@ -228,24 +231,40 @@ class RiskCruising(CommonTask):
         logger.info("start run poc {}*{}".format(len(self.poc_plugin_name), len(targets)))
 
         run_total = len(self.poc_plugin_name) * len(targets)
+        if run_total <= 0:
+            return
         npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_POC_CONCURRENCY)
-        run_thread = Thread(target=npoc_instance.run_poc, args=(self.poc_plugin_name, targets))
+        npoc_instance.prepare_runner(self.poc_plugin_name, targets)
+        thread_error = []
+
+        def run_npoc():
+            try:
+                npoc_instance.run_poc(self.poc_plugin_name, targets)
+            except Exception as exc:
+                thread_error.append(exc)
+
+        run_thread = Thread(target=run_npoc)
         run_thread.start()
         
         # 等待执行完成，每5秒更新一次进度
         while run_thread.is_alive():
             time.sleep(5)
-            status = "poc {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
+            runner_cnt = int(getattr(npoc_instance.runner, "runner_cnt", 0) or 0)
+            status = "poc {}/{}".format(runner_cnt, run_total)
             logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      npoc_instance.runner.runner_cnt, run_total))
+                                                      runner_cnt, run_total))
             self.update_task_field("status", status)
+        run_thread.join()
+        if thread_error:
+            raise thread_error[0]
 
         # 保存检测结果
         result = npoc_instance.result
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+            collection = "poc_scan_error" if item.get("result_status") == "partial" else "vuln"
+            self._result_writer.insert_one(collection, item)
 
     def run_brute(self):
         """
@@ -266,25 +285,40 @@ class RiskCruising(CommonTask):
         plugin_name = self.brute_plugin_name
         logger.info("start run brute {}*{}".format(len(plugin_name), len(target)))
         run_total = len(plugin_name) * len(target)
+        if run_total <= 0:
+            return
 
         npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_BRUTE_CONCURRENCY)
-        run_thread = Thread(target=npoc_instance.run_poc, args=(plugin_name, target))
+        npoc_instance.prepare_runner(plugin_name, target)
+        thread_error = []
+
+        def run_npoc():
+            try:
+                npoc_instance.run_poc(plugin_name, target)
+            except Exception as exc:
+                thread_error.append(exc)
+
+        run_thread = Thread(target=run_npoc)
         run_thread.start()
         
         # 等待执行完成，每5秒更新一次进度
         while run_thread.is_alive():
             time.sleep(5)
-            status = "brute {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
+            runner_cnt = int(getattr(npoc_instance.runner, "runner_cnt", 0) or 0)
+            status = "brute {}/{}".format(runner_cnt, run_total)
             logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      npoc_instance.runner.runner_cnt, run_total))
+                                                      runner_cnt, run_total))
             self.update_task_field("status", status)
+        run_thread.join()
+        if thread_error:
+            raise thread_error[0]
 
         # 保存爆破结果
         result = npoc_instance.result
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+            self._result_writer.insert_one('vuln', item)
 
     def update_services(self, status, elapsed):
         """
@@ -410,6 +444,7 @@ class RiskCruising(CommonTask):
             success = True
         except Exception as e:
             logger.exception(e)
+            self.update_task_field("status", TaskStatus.ERROR)
             utils.append_task_error(
                 task_id=self.task_id,
                 error=e,

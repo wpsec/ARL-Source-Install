@@ -1,0 +1,16 @@
+id: poc-yaml-tke-installer-api-noauth-identify
+info:
+  name: TKE Installer 敏感信息泄漏漏洞
+  severity: high
+  tags:
+  - identify
+  finger: TKE Installer
+requests:
+- method: GET
+  path: /api/cluster/global
+  expression: 'contains(body, "\"apiVersion\": \"platform.tkestack.io") && contains(body,
+    "\"machines\"")
+
+    '
+variables: {}
+transport: http

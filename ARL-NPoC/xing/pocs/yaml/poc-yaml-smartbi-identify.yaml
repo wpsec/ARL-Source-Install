@@ -1,0 +1,18 @@
+id: poc-yaml-smartbi-identify
+info:
+  name: 发现 Smartbi
+  severity: info
+  tags:
+  - identify
+  finger: Smartbi
+variables:
+  path: '/smartbi/vision/index.jsp
+
+    /vision/index.jsp'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "app.showVersionInfo") &&  contains(body, "var loginTitle")
+
+    '
+transport: http

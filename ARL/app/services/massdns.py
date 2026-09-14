@@ -107,7 +107,7 @@ class MassDNS:
 
     def parse_mass_dns_output(self):
         output = []
-        with open(self.mass_dns_output_path, "r+", encoding="utf-8") as f:
+        with open(self.mass_dns_output_path, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 data = line.split(" ")

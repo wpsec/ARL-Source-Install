@@ -1,0 +1,21 @@
+id: poc-yaml-duokeduoke-plupload-upload
+info:
+  name: 多客圈子论坛系统 upload.php 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 多客圈子论坛
+  fofa: body="/static/index/js/jweixin-1.2.0.js"
+variables:
+  path: '/
+
+    /public/'
+requests:
+- method: GET
+  path: '{{.path}}static/newcj/js/dist/plupload-2.3.3/examples/upload.php'
+  expression: 'status_code == 200 &&
+
+    body==`{"jsonrpc" : "2.0", "result" : null, "id" : "id"}`
+
+    '
+transport: http

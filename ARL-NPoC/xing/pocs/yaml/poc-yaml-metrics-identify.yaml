@@ -1,0 +1,22 @@
+id: poc-yaml-metrics-identify
+info:
+  name: 发现 metrics
+  severity: info
+  tags:
+  - identify
+  finger: metrics
+variables:
+  path: '/api/metrics
+
+    /metrics'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "# HELP") &&
+
+    contains(body, "# TYPE") && !contains(body, "</")
+
+    '
+transport: http

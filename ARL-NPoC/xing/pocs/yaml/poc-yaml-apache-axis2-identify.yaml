@@ -1,0 +1,20 @@
+id: poc-yaml-apache-axis2-identify
+info:
+  name: 发现 Apache Axis2
+  severity: info
+  tags:
+  - identify
+  finger: Apache Axis2
+variables:
+  path: '/axis2/
+
+    /axis2/axis2-admin/
+
+    /axis2-admin/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "css/axis-style.css")
+
+    '
+transport: http

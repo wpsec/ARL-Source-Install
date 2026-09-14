@@ -1,0 +1,20 @@
+id: poc-yaml-redoc-api-identify
+info:
+  name: 发现 Redoc 文档接口
+  severity: medium
+  tags:
+  - identify
+  finger: redoc
+variables:
+  path: 'redoc
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: 'contains(body,"static/redoc.standalone.js") &&
+
+    contains(body,"/openapi.json")
+
+    '
+transport: http

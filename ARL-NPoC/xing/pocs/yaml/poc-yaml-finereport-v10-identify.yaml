@@ -1,0 +1,30 @@
+id: poc-yaml-finereport-v10-identify
+info:
+  name: 发现帆软 FineReport V10
+  severity: info
+  tags:
+  - identify
+  finger: FineReport
+variables:
+  path: '/webroot/decision/
+
+    /decision/
+
+    /bi/decision/
+
+    /BI/decision/
+
+    /BI/
+
+    /Bi/
+
+    /Bi/decision/
+
+    /'
+requests:
+- method: GET
+  path: '{{.path}}system/info'
+  expression: 'contains(body, "frontSeed") && contains(body, "name")
+
+    '
+transport: http

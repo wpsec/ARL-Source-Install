@@ -18,6 +18,7 @@
 """
 import os
 import re
+from bson import ObjectId
 from flask import make_response, request
 from flask_restx import Resource, Namespace
 from app import utils
@@ -64,10 +65,26 @@ def check_image_magic(file_name, file_data):
     return False
 
 
+def _safe_screenshot_path(task_id, file_name):
+    """只允许读取截图根目录内的真实文件，避免符号链接绕过路径清洗。"""
+    screenshot_root = os.path.realpath(Config.SCREENSHOT_DIR)
+    task_dir = os.path.join(screenshot_root, str(task_id or ""))
+    candidate = os.path.join(task_dir, str(file_name or ""))
+    try:
+        if os.path.commonpath([screenshot_root, os.path.realpath(candidate)]) != screenshot_root:
+            return ""
+    except ValueError:
+        return ""
+    if os.path.islink(task_dir) or os.path.islink(candidate):
+        return ""
+    return candidate
+
+
 @ns.route('/<string:task_id>/<string:file_name>')
 class ARLImage(Resource):
     """站点截图访问接口"""
 
+    @auth
     def get(self, task_id, file_name):
         """
         获取站点截图图片
@@ -88,6 +105,25 @@ class ARLImage(Resource):
         使用示例：
         - /api/image/60a1b2c3d4e5f6789/example_com.jpg
         """
+        if not TASK_ID_PATTERN.fullmatch(str(task_id or "")):
+            return {"code": 400, "message": "invalid task_id", "data": {}}, 400
+
+        principal = utils.current_principal()
+        try:
+            task_doc = utils.conn_db("task").find_one(
+                {"_id": ObjectId(task_id)},
+                {"owner_username": 1},
+            )
+        except Exception as exc:
+            logger.warning(
+                "screenshot task authorization lookup failed task_id={} error_type={}".format(
+                    task_id, type(exc).__name__))
+            return {"code": 404, "message": "screenshot not found", "data": {}}, 404
+
+        if not task_doc or not utils.can_access_owned_resource(
+                task_doc.get("owner_username"), principal=principal):
+            return {"code": 404, "message": "screenshot not found", "data": {}}, 404
+
         # 安全过滤文件名，防止路径遍历攻击
         task_id = secure_filename(task_id)
         file_name = secure_filename(file_name)
@@ -97,12 +133,10 @@ class ARLImage(Resource):
             return
         
         # 构建截图文件路径
-        imgpath = os.path.join(Config.SCREENSHOT_DIR,
-                               '{task_id}/{file_name}'.format(task_id=task_id,
-                                                              file_name=file_name))
+        imgpath = _safe_screenshot_path(task_id, file_name)
         
         # 返回截图或默认图片
-        if os.path.exists(imgpath):
+        if imgpath and os.path.isfile(imgpath):
             with open(imgpath, "rb") as f:
                 image_data = f.read()
             response = make_response(image_data)
@@ -156,6 +190,21 @@ class ARLImageInternalUpload(Resource):
                 "data": {}
             }
 
+        principal = utils.current_principal()
+        try:
+            task_doc = utils.conn_db("task").find_one(
+                {"_id": ObjectId(task_id)},
+                {"owner_username": 1},
+            )
+        except Exception as exc:
+            logger.warning(
+                "screenshot upload task lookup failed task_id={} error_type={}".format(
+                    task_id, type(exc).__name__))
+            return {"code": 404, "message": "task not found", "data": {}}, 404
+        if not task_doc or not utils.can_access_owned_resource(
+                task_doc.get("owner_username"), principal=principal):
+            return {"code": 404, "message": "task not found", "data": {}}, 404
+
         if not file_name or not allowed_file(file_name):
             return {
                 "code": 400,
@@ -185,15 +234,19 @@ class ARLImageInternalUpload(Resource):
                 "data": {}
             }
 
-        screenshot_dir = os.path.join(Config.SCREENSHOT_DIR, task_id)
-        os.makedirs(screenshot_dir, 0o777, True)
+        screenshot_root = os.path.realpath(Config.SCREENSHOT_DIR)
+        screenshot_dir = os.path.realpath(os.path.join(screenshot_root, task_id))
+        if os.path.commonpath([screenshot_root, screenshot_dir]) != screenshot_root:
+            return {"code": 400, "message": "invalid screenshot path", "data": {}}, 400
+        os.makedirs(screenshot_dir, 0o750, True)
         save_path = os.path.join(screenshot_dir, file_name)
-        with open(save_path, "wb") as f:
-            f.write(file_data)
+        if os.path.islink(save_path):
+            return {"code": 400, "message": "invalid screenshot path", "data": {}}, 400
+        open_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        no_follow = getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(save_path, open_flags | no_follow, 0o640)
+        with os.fdopen(fd, "wb") as file_obj:
+            file_obj.write(file_data)
 
         logger.info("screenshot sync save success task_id={} file={}".format(task_id, file_name))
         return utils.build_ret(ErrorMsg.Success, {"task_id": task_id, "file_name": file_name})
-
-
-
-

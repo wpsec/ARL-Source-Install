@@ -1,0 +1,24 @@
+id: poc-yaml-ruoyi-identify
+info:
+  name: 发现 Ruoyi
+  severity: info
+  tags:
+  - identify
+  finger: Ruoyi
+variables:
+  path: '/ruoyi/css/ry-ui.css
+
+    /css/ry-ui.css'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "/** 基础通用 **/") &&
+
+    contains(body, "ruoyi") &&
+
+    contains(body, "padding-top: 5px;")
+
+    '
+transport: http

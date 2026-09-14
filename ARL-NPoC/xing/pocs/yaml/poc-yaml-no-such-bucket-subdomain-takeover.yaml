@@ -1,0 +1,15 @@
+id: poc-yaml-no-such-bucket-subdomain-takeover
+info:
+  name: 存在 No Such Bucket 子域名劫持漏洞
+  severity: high
+  finger: WEB
+  tags:
+  - 配置不当
+requests:
+- method: GET
+  path: /
+  expression: "status_code == 404 && contains(content_type, \"xml\") &&\n(\n  contains(body,\
+    \ \"<Code>NoSuchBucket</Code>\")\n  || contains(body, \"<Message>The specified\
+    \ bucket does not exist</Message>\")\n)\n"
+variables: {}
+transport: http

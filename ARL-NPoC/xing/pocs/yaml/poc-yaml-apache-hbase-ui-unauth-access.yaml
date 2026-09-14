@@ -1,0 +1,26 @@
+id: poc-yaml-apache-hbase-ui-unauth-access
+info:
+  name: Apache HBase UI 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Apache HBase
+  osprey-id: vb_2019_0001
+variables:
+  r_path: '/master-status
+
+    /rs-status'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'status_code == 200
+
+    && contains(body, "Home</a></li>")
+
+    && (contains(body, "Table Details</a></li>") || contains(body, "Process Metrics</a></li>"))
+
+    && contains(body, "Metrics Dump</a></li>")
+
+    '
+transport: http

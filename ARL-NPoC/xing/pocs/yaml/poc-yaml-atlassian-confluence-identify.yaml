@@ -1,0 +1,20 @@
+id: poc-yaml-atlassian-confluence-identify
+info:
+  name: 发现 Atlassian Confluence
+  severity: info
+  tags:
+  - identify
+  finger: Confluence
+variables:
+  path: '/
+
+    /confluence/
+
+    /wiki/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(headers, "X-Confluence-Request-Time")
+
+    '
+transport: http

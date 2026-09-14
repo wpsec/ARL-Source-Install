@@ -1,0 +1,17 @@
+id: poc-yaml-tcp-redis-unauthorized-access
+info:
+  name: Redis 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: redis
+scheme: redis
+port: 6379
+tcpRequests:
+- expression:
+  - conn.WriteStr("INFO\r\n")
+  - conn.ReadStr()
+  - contains(res, "redis_version:")
+variables: {}
+transport: tcp

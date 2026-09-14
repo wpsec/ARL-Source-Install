@@ -1,0 +1,16 @@
+id: poc-yaml-seeyon-m1-server-identify
+info:
+  name: 发现致远 M1-Server
+  severity: info
+  tags:
+  - identify
+  finger: seeyon-m1-server
+requests:
+- method: GET
+  path: /
+  expression: 'contains(title, "M1-Server has been started") || contains(title, "M1-Server
+    已启动")
+
+    '
+variables: {}
+transport: http

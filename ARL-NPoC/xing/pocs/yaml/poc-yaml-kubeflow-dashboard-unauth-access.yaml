@@ -1,0 +1,18 @@
+id: poc-yaml-kubeflow-dashboard-unauth-access
+info:
+  name: Kubeflow Dashboard 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Kubeflow
+  osprey-id: vb_2020_0040
+requests:
+- method: GET
+  path: /api/workgroup/env-info
+  headers: {}
+  expression: 'contains(body, "isClusterAdmin") && contains(body, "\"platform\":{\"kubeflowVersion\"")
+    && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

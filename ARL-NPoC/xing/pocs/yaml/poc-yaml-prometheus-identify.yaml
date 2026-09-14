@@ -1,0 +1,21 @@
+id: poc-yaml-prometheus-identify
+info:
+  name: 发现 Prometheus
+  severity: info
+  tags:
+  - identify
+  finger: Prometheus
+variables:
+  path: '/
+
+    /graph
+
+    /api/v1/status/config'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\n(\n  title == \"Prometheus Pushgateway\" ||\n\
+    contains(body, \"\\\"status\\\":\\\"success\\\",\\\"data\\\":{\\\"yaml\\\"\")\
+    \ ||\n   (contains(body, \">Prometheus<\") && contains(title, \"Prometheus\"))\n\
+    )\n"
+transport: http

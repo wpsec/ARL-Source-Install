@@ -1,0 +1,19 @@
+id: Actuator_httptrace_noauth
+info:
+  name: Actuator httptrace API 未授权访问
+  finger: Actuator
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths:
+  - /actuator/httptrace
+  - /jeecg-boot/actuator/httptrace
+  - /actuator;/httptrace
+  - /api/actuator;/httptrace
+  - /api/actuator/httptrace
+  - /actuator/httptrace;.css
+  expression: contains(body, "{\"traces\"") && contains(content_type, "actuator")

@@ -1,0 +1,15 @@
+id: poc-yaml-kibana-unauthorized-access
+info:
+  name: Kibana 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Kibana
+  osprey-id: vb_2019_0066
+requests:
+- method: GET
+  path: /app/kibana
+  headers: {}
+  expression: contains(body, ".kibanaWelcomeView")
+variables: {}
+transport: http

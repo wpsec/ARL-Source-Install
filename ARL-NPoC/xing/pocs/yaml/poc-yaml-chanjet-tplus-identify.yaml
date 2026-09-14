@@ -1,0 +1,30 @@
+id: poc-yaml-chanjet-tplus-identify
+info:
+  name: 发现畅捷通 Tplus
+  severity: info
+  tags:
+  - identify
+  finger: chanjet-tplus
+variables:
+  path: '/tplus/view/login.html
+
+    /tplus/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 && (
+
+    (contains(body, "畅捷通")
+
+    && contains(body, "TPlusBrowser.exe")
+
+    && contains(body, "管理员账号")
+
+    && contains(body, "密码"))
+
+    || ( contains(title, "欢迎页") && contains(body, "若要登录产品，请点击右侧进入登录界面按钮"))
+
+    )
+
+    '
+transport: http

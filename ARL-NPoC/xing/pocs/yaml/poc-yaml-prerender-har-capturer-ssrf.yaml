@@ -1,0 +1,16 @@
+id: poc-yaml-prerender-har-capturer-ssrf
+info:
+  name: Prerender HAR Capturer 插件 SSRF 漏洞
+  severity: medium
+  tags:
+  - ssrf
+  finger: Prerender
+  osprey-id: vb_2021_0037
+requests:
+- method: GET
+  path: /?renderType=har&_escaped_fragment_=true
+  headers:
+    User-Agent: googlebot bingbot yandex baiduspider
+  expression: contains(body, "\"Prerender HAR")
+variables: {}
+transport: http

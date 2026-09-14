@@ -134,7 +134,7 @@ def _response_text_snippet(conn, limit=200):
 
 
 def _format_request_exception(exc):
-    message = str(exc)
+    message = utils.safe_error_text(exc)
     if "Name or service not known" in message or "nodename nor servname provided" in message:
         return "网络连接失败或域名无法解析：{}".format(message)
     if "Max retries exceeded" in message:

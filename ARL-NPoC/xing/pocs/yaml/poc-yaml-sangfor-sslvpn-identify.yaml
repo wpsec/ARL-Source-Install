@@ -1,0 +1,15 @@
+id: poc-yaml-sangfor-sslvpn-identify
+info:
+  name: 发现深信服 SSLVPN
+  severity: info
+  tags:
+  - identify
+  finger: sangfor-sslvpn
+requests:
+- method: GET
+  path: /com/js/common.min.js
+  expression: 'contains(body, "900150983cd24fb0d6963f7d28e17f72")
+
+    '
+variables: {}
+transport: http

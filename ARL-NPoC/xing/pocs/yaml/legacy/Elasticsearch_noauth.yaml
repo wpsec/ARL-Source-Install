@@ -1,0 +1,13 @@
+id: Elasticsearch_noauth
+info:
+  name: Elasticsearch 未授权访问
+  finger: Elasticsearch
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /_cat
+  expression: contains(body, "/_cat/master") && !contains(body, "<")

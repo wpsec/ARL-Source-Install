@@ -1,0 +1,20 @@
+id: poc-yaml-phpweb-arbitrary-file-upload
+info:
+  name: PHPWEB 任意文件上传漏洞
+  severity: high
+  finger: PHPWEB
+  tags:
+  - 文件上传
+  osprey-id: vb_2020_0004
+requests:
+- method: POST
+  path: /base/post.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: act=appcode
+  expression: 'status_code == 200 && contains(body, "k=") && contains(body, "&t=")
+    && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

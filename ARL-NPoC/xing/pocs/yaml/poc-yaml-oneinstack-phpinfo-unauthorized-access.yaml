@@ -1,0 +1,22 @@
+id: poc-yaml-oneinstack-phpinfo-unauthorized-access
+info:
+  name: OneinStack phpinfo 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: oneinstack
+  fofa: body="欢迎您使用OneinStack"
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(title,"欢迎您使用OneinStack")
+
+    '
+- method: GET
+  path: /phpinfo.php
+  expression: "status_code == 200 && \ncontains(body,\"PHP Version\") &&\ncontains(body,\"\
+    PHP API\") &&\ncontains(title,\"phpinfo()\")\n"
+variables: {}
+transport: http

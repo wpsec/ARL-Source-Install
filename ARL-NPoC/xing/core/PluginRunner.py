@@ -13,6 +13,7 @@ class PluginRunner(object):
         self.concurrency = concurrency
         self.logger = get_logger()
         self.runner_cnt = 0
+        self.errors = []
 
     def run(self):
         if len(self.plugins) > len(self.targets):
@@ -25,6 +26,7 @@ class PluginRunner(object):
                                             target=target, runner=self,
                                             concurrency=self.concurrency)
                 runner.run()
+                self.errors.extend(runner.errors)
         else:
             cnt = 0
             count = len(self.plugins)
@@ -34,6 +36,7 @@ class PluginRunner(object):
                 runner = ConcurrentByTarget(targets=self.targets,
                                             plugin=plugin, runner=self, concurrency=self.concurrency)
                 runner.run()
+                self.errors.extend(runner.errors)
 
 
 def plugin_runner(plugins, targets, concurrency=6):
@@ -108,13 +111,22 @@ def run(plg, target, copy_flag=True):
 
     new_plg = plg
     if copy_flag:
-        obj = plg.__class__()
+        try:
+            obj = plg.__class__(rule_path=getattr(plg, "_rule_path", None))
+        except TypeError:
+            obj = plg.__class__()
         name = getattr(plg, '_plugin_name', "")
         setattr(obj, '_plugin_name', name)
         new_plg = obj
 
         setattr(obj, 'password_file', getattr(plg, 'password_file'))
         setattr(obj, 'username_file', getattr(plg, 'username_file'))
+        for attr in (
+            "poc_engine", "poc_source", "status", "severity", "tags", "finger",
+            "app_name", "vul_name", "scheme", "target_scheme", "plugin_type",
+        ):
+            if hasattr(plg, attr):
+                setattr(obj, attr, getattr(plg, attr))
 
     new_plg.set_target(target)
     result = new_plg.run()

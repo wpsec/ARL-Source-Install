@@ -489,6 +489,7 @@ ARL:
   PORT_SCAN_BATCH_TIMEOUT_SEC: 600
   # 一次性域名任务先落库发现结果，再投递深度队列
   PROGRESSIVE_SCAN_ENABLE: true
+  DOMAIN_DEEP_STAGE_SPLIT_ENABLE: true
   # 两阶段精扫单主机端口分段大小（仅分段，不裁剪结果）
   PORT_SCAN_STAGE2_PORT_CHUNK_SIZE: 300
   # 端口扫描阶段超时预算基础值（秒，0=不限制）
@@ -511,6 +512,8 @@ ARL:
   ICP_QUERY_ENABLE: true
   # 仅控制 ICP 查询 Session 的 TLS 校验；不会修改全局 SSL 设置
   ICP_QUERY_TLS_VERIFY: true
+  # 扫描目标和内部截图同步默认校验证书；仅在明确的兼容场景中关闭。
+  SCAN_TLS_VERIFY: true
   ICP_QUERY_TIMEOUT_SEC: 30
   ICP_QUERY_RETRY: 2
   ICP_QUERY_BATCH_CONCURRENCY: 2

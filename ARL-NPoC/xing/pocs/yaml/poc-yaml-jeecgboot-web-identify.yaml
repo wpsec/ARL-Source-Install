@@ -1,0 +1,15 @@
+id: poc-yaml-jeecgboot-web-identify
+info:
+  name: 发现 JeecgBoot
+  severity: info
+  tags:
+  - identify
+  finger: JeecgBoot
+requests:
+- method: GET
+  path: /
+  expression: "status_code == 200 && (\n  contains(body, \"window._CONFIG['domianURL']\
+    \ + '/sys/common/view';\")\n || (\n    contains(body, \"'/sys/common/pdf/pdfPreviewIframe';\"\
+    )\n    && contains(body, \"pdfDomainURL\")\n  )\n)\n"
+variables: {}
+transport: http

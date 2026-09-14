@@ -1,0 +1,20 @@
+id: poc-yaml-django-debug-identify
+info:
+  name: 发现 Django 开发模式
+  severity: medium
+  tags:
+  - identify
+  finger: Django
+variables:
+  path: '/n0tf0ud
+
+    /api/n0tf0ud'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code != 200 &&
+
+    contains(body, "DEBUG = True") && contains(body, "Django")
+
+    '
+transport: http

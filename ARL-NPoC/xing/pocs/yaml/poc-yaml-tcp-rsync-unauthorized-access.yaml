@@ -1,0 +1,20 @@
+id: poc-yaml-tcp-rsync-unauthorized-access
+info:
+  name: Rsync 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: redis
+scheme: rsync
+port: 873
+variables:
+  v_module: random_str(8)
+tcpRequests:
+- expression:
+  - conn.ReadLine()
+  - matches(res, "@RSYNCD:")
+  - conn.WriteStr(res)
+  - conn.WriteStr(v_module + "\n")
+  - conn.ReadLine()
+  - matches(res, "Unknown module '"+v_module+"'")
+transport: tcp

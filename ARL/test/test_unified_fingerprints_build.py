@@ -279,6 +279,35 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
         self.assertIn(["kscan_local"], branch_sources)
         self.assertIn(["webapp"], branch_sources)
 
+    def test_duplicate_match_rules_are_collapsed_with_aliases(self):
+        merger = BUILD.Merger()
+        first, _ = BUILD.parse_human_rule('body="same-marker-x"')
+        second, _ = BUILD.parse_human_rule('body="same-marker-x"')
+        merger.add("PrimaryApp", first, "webapp")
+        merger.add("PrimaryApp Alias", second, "tools_finger")
+
+        rules = merger.finalize()
+
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]["name"], "PrimaryApp")
+        self.assertEqual(rules[0]["aliases"], ["PrimaryApp Alias"])
+        self.assertEqual(rules[0]["sources"], ["tools_finger", "webapp"])
+        self.assertEqual(merger.stats["duplicate_match_groups"], 1)
+        self.assertEqual(merger.stats["duplicate_match_rules"], 1)
+
+    def test_different_match_rules_are_not_collapsed(self):
+        merger = BUILD.Merger()
+        first, _ = BUILD.parse_human_rule('body="first-marker-x"')
+        second, _ = BUILD.parse_human_rule('body="second-marker-x"')
+        merger.add("FirstApp", first, "custom")
+        merger.add("SecondApp", second, "custom")
+
+        rules = merger.finalize()
+
+        self.assertEqual(len(rules), 2)
+        self.assertEqual(merger.stats["duplicate_match_groups"], 0)
+        self.assertEqual(merger.stats["duplicate_match_rules"], 0)
+
     def test_anchor_coverage(self):
         for rule in self.rules:
             self.assertTrue(rule["anchors"], f"{rule['id']} 缺 anchors")
@@ -364,7 +393,10 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             BUILD.main(main_argv(os.path.join(d, "site.json"), os.path.join(d, "service.json")) + ["--compress"])
             with gzip.open(os.path.join(d, "site.json.gz"), "rt", encoding="utf-8") as f:
-                doc = json.load(f)
+                payload = f.read()
+            doc = json.loads(payload)
+            self.assertIn('\n  "meta"', payload)
+            self.assertTrue(payload.endswith("\n"))
             self.assertEqual(doc["meta"]["rule_count"], len(doc["fingerprints"]))
             self.assertNotIn("anchors", doc["fingerprints"][0], "anchors 属派生字段，不应进存储产物")
             # 规则内容完整：match/canonical/confidence 在

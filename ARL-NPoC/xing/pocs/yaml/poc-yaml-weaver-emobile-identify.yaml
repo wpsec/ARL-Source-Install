@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-emobile-identify
+info:
+  name: 发现泛微移动平台 e-mobile
+  severity: info
+  tags:
+  - identify
+  finger: e-mobile
+requests:
+- method: GET
+  path: /error/styles/error.css
+  expression: 'contains(body, ".error-image-container{flex:0") && contains(content_type,
+    "css")
+
+    '
+variables: {}
+transport: http

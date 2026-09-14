@@ -522,7 +522,7 @@ def request_openapi(
 
             return False, result
         except Exception as e:
-            error_text = str(e)
+            error_text = utils.safe_error_text(e)
             last_result = {
                 "error": error_text,
                 "attempt": attempt,
@@ -1712,7 +1712,7 @@ def _load_workbook_sheet_items(excel_bytes, max_sheets=10, max_rows=2000, max_co
     try:
         workbook = load_workbook(filename=BytesIO(excel_bytes), read_only=True, data_only=True)
     except Exception as e:
-        return False, {"error": "load workbook failed", "detail": str(e)}
+        return False, {"error": "load workbook failed", "detail": utils.safe_error_text(e)}
 
     items = []
     truncated_sheets = len(workbook.worksheets) > max_sheets
@@ -2713,7 +2713,7 @@ def publish_task_export_to_kb(title, task_ids, overview_context=None):
         else:
             excel_bytes = export_merge_tasks(normalized_task_ids)
     except Exception as e:
-        return False, {"error": "export tasks failed", "detail": str(e)}
+        return False, {"error": "export tasks failed", "detail": utils.safe_error_text(e)}
     export_summary = {}
     try:
         export_summary = build_task_export_summary(normalized_task_ids)

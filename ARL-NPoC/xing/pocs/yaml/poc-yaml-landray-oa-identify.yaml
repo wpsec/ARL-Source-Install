@@ -1,0 +1,21 @@
+id: poc-yaml-landray-oa-identify
+info:
+  name: 发现蓝凌 OA
+  severity: info
+  tags:
+  - identify
+  finger: landray
+requests:
+- method: GET
+  path: /resource/js/common.js
+  expression: 'status_code == 200 &&
+
+    contains(content_type, "javascript") &&
+
+    contains(body, "function Com_IncludeFile(") &&
+
+    contains(body, "Com_IncludeJSFiles")
+
+    '
+variables: {}
+transport: http

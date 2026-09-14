@@ -1,0 +1,15 @@
+id: poc-yaml-qianxin-vpn-identify
+info:
+  name: 发现奇安信 VPN
+  severity: info
+  tags:
+  - identify
+  finger: QianxinVPN
+requests:
+- method: GET
+  path: /welcome.php
+  expression: 'contains(body, "请使用手机奇安信ID扫码登录") &&  contains(body, "vpn")
+
+    '
+variables: {}
+transport: http

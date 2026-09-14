@@ -1,0 +1,16 @@
+id: poc-yaml-user-enumeration-via-insecure-jira-endpoint
+info:
+  name: 通过不安全的 Jira 端点进行用户枚举
+  severity: medium
+  tags:
+  - CVE-2020-14181
+  - 两高一弱
+  finger: Jira
+requests:
+- method: GET
+  path: /secure/ViewUserHover.jspa
+  expression: 'contains(body, "user-hover-details") &&  contains(body, "content=\"JIRA\"")
+
+    '
+variables: {}
+transport: http

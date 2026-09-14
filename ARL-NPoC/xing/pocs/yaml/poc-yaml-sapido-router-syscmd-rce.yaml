@@ -1,0 +1,15 @@
+id: poc-yaml-sapido-router-syscmd-rce
+info:
+  name: Sapido-路由器 syscmd.htm 未授权命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Sapido-路由器
+  fofa: app="Sapido-路由器"
+requests:
+- method: GET
+  path: /syscmd.htm
+  expression: "status_code == 200 && \ncontains(body,\"System Command\") &&\ncontains(body,\"\
+    This page can be used to run target system command\")\n"
+variables: {}
+transport: http

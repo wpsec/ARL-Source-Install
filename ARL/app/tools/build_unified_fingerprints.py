@@ -103,6 +103,7 @@ class Merger:
             "accepted": 0, "rejected_rules": 0, "malformed_rules": 0,
             "dropped_branches": 0, "dropped_branches_stopword": 0,
             "dropped_branches_too_short": 0, "demoted": 0, "conflicts": 0,
+            "duplicate_match_groups": 0, "duplicate_match_rules": 0,
         }
         self.rejected_rule_keys = set()
         self.rejected_rule_detail = []  # 拒绝名单是审计面（对照工具归因的数据源），必须导出
@@ -143,8 +144,59 @@ class Merger:
             "sources": [],
         })
 
+    @staticmethod
+    def _branch_signature(branch):
+        return tuple(sorted(
+            (str(c["field"]), str(c["operator"]), str(c["value"]))
+            for c in branch.get("all", [])
+        ))
+
+    @classmethod
+    def _match_signature(cls, match):
+        """生成忽略来源信息的精确匹配签名，避免不同名称重复执行同一规则。"""
+        any_signature = tuple(sorted(
+            cls._branch_signature(branch)
+            for branch in match.get("any", [])
+        ))
+        excludes_signature = tuple(sorted(
+            (str(c["field"]), str(c["operator"]), str(c["value"]))
+            for c in match.get("excludes", [])
+        ))
+        return any_signature, excludes_signature
+
+    @classmethod
+    def _merge_duplicate_rule(cls, existing, duplicate):
+        """合并完全相同匹配条件的规则，保留别名与每个分支的来源证据。"""
+        branch_map = {
+            cls._branch_signature(branch): branch
+            for branch in existing["match"].get("any", [])
+        }
+        for duplicate_branch in duplicate["match"].get("any", []):
+            signature = cls._branch_signature(duplicate_branch)
+            current = branch_map.get(signature)
+            if current is None:
+                branch_map[signature] = duplicate_branch
+                continue
+            current["sources"] = sorted(set(current.get("sources", [])) | set(
+                duplicate_branch.get("sources", [])
+            ))
+        existing["match"]["any"] = [
+            branch_map[signature]
+            for signature in sorted(branch_map)
+        ]
+        existing["sources"] = sorted(set(existing.get("sources", [])) | set(
+            duplicate.get("sources", [])
+        ))
+        aliases = set(existing.get("aliases", []))
+        aliases.add(duplicate["name"])
+        aliases.update(duplicate.get("aliases", []))
+        aliases.discard(existing["name"])
+        existing["aliases"] = sorted(aliases)
+
     def finalize(self):
         rules = []
+        rules_by_match = {}
+        duplicate_match_groups = set()
         for key, entry in self.by_key.items():
             branch_map = {}
             for branch in entry["branches"]:
@@ -171,7 +223,7 @@ class Merger:
             if single_generic and confidence > DEMOTED_CONFIDENCE_CAP:
                 confidence = DEMOTED_CONFIDENCE_CAP
                 self.stats["demoted"] += 1
-            rules.append({
+            rule = {
                 "id": "site:" + key,
                 "name": entry["name"],
                 "match": match,
@@ -180,7 +232,19 @@ class Merger:
                 "sources": sorted({s for b in any_branches for s in b["sources"]}),
                 "enabled": True,
                 "anchors": collect_anchors(match),
-            })
+            }
+            match_signature = self._match_signature(match)
+            duplicate = rules_by_match.get(match_signature)
+            if duplicate is None:
+                rules_by_match[match_signature] = rule
+                rules.append(rule)
+            else:
+                if match_signature not in duplicate_match_groups:
+                    duplicate_match_groups.add(match_signature)
+                    self.stats["duplicate_match_groups"] += 1
+                self.stats["duplicate_match_rules"] += 1
+                self._merge_duplicate_rule(duplicate, rule)
+                duplicate["anchors"] = collect_anchors(duplicate["match"])
         rules.sort(key=lambda r: r["id"])
         self.stats["accepted"] = len(rules)
         return rules
@@ -345,6 +409,10 @@ def validate_site_document(doc):
         assert rule["id"] not in ids, "duplicate id " + rule["id"]
         ids.add(rule["id"])
         assert isinstance(rule["name"], str) and rule["name"], rule["id"]
+        aliases = rule.get("aliases", [])
+        assert isinstance(aliases, list), rule["id"]
+        assert len(aliases) == len(set(aliases)), rule["id"]
+        assert rule["name"] not in aliases, rule["id"]
         assert isinstance(rule["confidence"], int) and 0 <= rule["confidence"] <= 100, rule["id"]
         assert rule["anchors"], rule["id"]
         assert rule["match"]["any"], rule["id"]
@@ -373,21 +441,18 @@ def sha256_file(path):
         return hashlib.sha256(source.read()).hexdigest()
 
 
-def serialize_document(doc, pretty=False):
-    """紧凑序列化 + 剔除派生字段（anchors 由运行时 Registry 经 collect_anchors 重算）。
-
-    gzip 产物是提交/分发形态；pretty 仅本地审计用。
-    """
+def serialize_document(doc, pretty=True):
+    """序列化并剔除派生字段；默认输出可审阅的标准 JSON。"""
     slim = json.loads(json.dumps(doc, ensure_ascii=False))  # deep copy
     if slim.get("fingerprints") and str(slim["fingerprints"][0].get("id", "")).startswith("site:"):
         for rule in slim["fingerprints"]:
             rule.pop("anchors", None)
     if pretty:
-        return json.dumps(slim, ensure_ascii=False, indent=1) + "\n"
+        return json.dumps(slim, ensure_ascii=False, indent=2) + "\n"
     return json.dumps(slim, ensure_ascii=False, separators=(",", ":"))
 
 
-def atomic_write_json(path, doc, compress=False, pretty=False):
+def atomic_write_json(path, doc, compress=False, pretty=True):
     """临时文件 + fsync + last-good 备份 + os.replace；任何异常都不留半成品目标文件。"""
     payload = serialize_document(doc, pretty=pretty)
     target = path + ".gz" if compress else path
@@ -445,6 +510,8 @@ def build_site(args, merger):
             "generic_single_cond_max_len": GENERIC_SINGLE_COND_MAX_LEN,
             "demoted_confidence_cap": DEMOTED_CONFIDENCE_CAP,
             "branch_level_rejection": True,
+            "exact_match_dedup": True,
+            "dedup_preserves_aliases": True,
         },
         "stats": dict(merger.stats),
         "rejected_rules_detail": merger.rejected_rule_detail,
@@ -463,6 +530,7 @@ def render_report(site, service_rules) -> str:
     L.append(f"- 输入计数：`{json.dumps(meta['sources'], ensure_ascii=False)}`")
     L.append(f"- 分支级拒绝：{stats['dropped_branches']}（stopword {stats['dropped_branches_stopword']} / 超短 {stats['dropped_branches_too_short']}）；整条规则拒绝 {stats['rejected_rules']}；语法非法拒绝 {stats['malformed_rules']}；候选降级封顶 {stats['demoted']}")
     L.append(f"- 同名多源合并（conflicts，分支级 sources 保留）：{stats['conflicts']}")
+    L.append(f"- 完全匹配去重：{stats['duplicate_match_groups']} 组，移除 {stats['duplicate_match_rules']} 条（别名保留）")
     L.append(f"- regex 无锚点分支（no-anchor 兜底桶规模）：{no_anchor}")
     L.append(f"- 服务规则：**内置 Nmap/NPoC 基线 {len(service_rules)} 条**（覆盖仓库内置 NPoC sniffer；完整 Nmap 产品覆盖仍需真实 fixture 验收）")
     L.append("- 输入文件 sha256：")
@@ -482,7 +550,9 @@ def main(argv=None):
     parser.add_argument("--service-out", default="app/dicts/service_fingerprints.json")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--compress", action="store_true", help="产物写 <path>.gz（提交/分发形态，运行时 Registry 透明读取）")
-    parser.add_argument("--pretty", action="store_true", help="人类可读缩进（本地审计用，勿提交）")
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument("--pretty", action="store_true", help="显式使用格式化 JSON（默认）")
+    output_group.add_argument("--compact", action="store_true", help="使用紧凑 JSON 输出（仅在明确需要缩小未压缩体积时使用）")
     parser.add_argument("--stamp", action="store_true", help="写入 generated_at（破坏字节级可重复性，正式发布用）")
     parser.add_argument("--report", default=None)
     args = parser.parse_args(argv)
@@ -514,8 +584,9 @@ def main(argv=None):
         with open(site_target, "rb") as previous_site:
             site_backup = previous_site.read()
     try:
-        atomic_write_json(args.site_out, site, compress=args.compress, pretty=args.pretty)
-        atomic_write_json(args.service_out, service_doc, compress=args.compress, pretty=args.pretty)
+        pretty = not args.compact
+        atomic_write_json(args.site_out, site, compress=args.compress, pretty=pretty)
+        atomic_write_json(args.service_out, service_doc, compress=args.compress, pretty=pretty)
     except Exception:
         if site_backup is not None:
             with open(site_target, "wb") as f:

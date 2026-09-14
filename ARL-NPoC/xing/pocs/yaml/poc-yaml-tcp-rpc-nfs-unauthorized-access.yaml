@@ -1,0 +1,14 @@
+id: poc-yaml-tcp-rpc-nfs-unauthorized-access
+info:
+  name: NFS 服务未授权访问漏洞 (rpc.nfs)
+  severity: high
+  tags:
+  - 未授权访问
+  finger: rpc,nfs
+scheme: rpc
+port: 111
+tcpRequests:
+- expression:
+  - set_var("details", check_rpc_nfs_unauth(conn))
+variables: {}
+transport: tcp

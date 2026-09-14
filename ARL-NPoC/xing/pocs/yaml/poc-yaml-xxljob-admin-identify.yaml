@@ -1,0 +1,24 @@
+id: poc-yaml-xxljob-admin-identify
+info:
+  name: 发现 xxl-job-admin
+  severity: info
+  tags:
+  - identify
+  finger: xxl-job
+variables:
+  path: '/xxl-job-admin/toLogin
+
+    /toLogin
+
+    /xxl-job/toLogin
+
+    /xxl/toLogin
+
+    /xxljob/toLogin'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "<b>XXL</b>JOB")
+
+    '
+transport: http

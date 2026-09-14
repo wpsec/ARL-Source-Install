@@ -1,0 +1,21 @@
+id: poc-yaml-cacti-sql-file-read
+info:
+  name: Cacti SQL 文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Cacti
+  osprey-id: vb_2019_0007
+variables:
+  r_path: '/cacti/cacti.sql
+
+    /cacti.sql'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "MySQL dump") && contains(body,
+    "DROP TABLE IF EXISTS")
+
+    '
+transport: http

@@ -1,0 +1,18 @@
+id: Oracle_Weblogic_Console_Identify
+info:
+  name: 发现 Oracle Weblogic 控制台
+  finger: weblogic
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /#/console/css/test.css
+  - /#/../console/css/test.css
+  - /#/../../console/css/test.css
+  - /console/css/test.css;/../../../
+  expression: contains(body, "WLS Administration Console")
+  disable_normal: true

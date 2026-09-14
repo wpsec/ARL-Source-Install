@@ -1,0 +1,21 @@
+id: poc-yaml-weaver-oa-arbitrary-file-upload
+info:
+  name: 泛微OA 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: weaver
+  osprey-id: vb_2021_0043
+requests:
+- method: GET
+  path: /weaver/weaver.common.Ctrl/
+  expression: 'status_code == 403 && len(body) > 0
+
+    '
+- method: GET
+  path: /weaver/weaver.common.Ctrl/.css
+  expression: 'status_code == 200 && len(body) == 0
+
+    '
+variables: {}
+transport: http

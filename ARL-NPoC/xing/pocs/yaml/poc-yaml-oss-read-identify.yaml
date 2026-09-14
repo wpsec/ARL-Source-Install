@@ -1,0 +1,21 @@
+id: poc-yaml-oss-read-identify
+info:
+  name: 发现 OSS 公开访问漏洞
+  severity: medium
+  tags:
+  - identify
+  finger: OSS
+variables:
+  path: '/static/
+
+    /file/
+
+    /'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 &&\n(\ncontains(body, \"\\\"StorageClass\\\"\")\
+    \ && contains(body, \"\\\"Key\\\"\") && contains(body, \"\\\"LastModified\\\"\"\
+    )\n||\n(\n  (contains(body, \"<MaxKeys>1000</MaxKeys>\") || contains(body, \"\
+    <MaxKeys>100</MaxKeys>\") ) &&\n contains(body, \"StorageClass\")\n)\n\n)\n"
+transport: http

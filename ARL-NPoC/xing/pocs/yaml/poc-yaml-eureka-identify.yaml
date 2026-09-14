@@ -1,0 +1,15 @@
+id: poc-yaml-eureka-identify
+info:
+  name: 发现 Eureka 未授权
+  severity: high
+  tags:
+  - identify
+  - 未授权访问
+  finger: eureka
+requests:
+- method: GET
+  path: /eureka/apps
+  expression: "status_code == 200 &&\n      contains(body, \"<application>\") && contains(body,\
+    \ \"<ipAddr>\")\n      && !contains(body, \"<p>\")\n"
+variables: {}
+transport: http

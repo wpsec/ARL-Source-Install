@@ -1,0 +1,649 @@
+{
+  "schema_version": 1,
+  "source": "legacy-python",
+  "rule_count": 40,
+  "ready_count": 40,
+  "pending_count": 0,
+  "entries": [
+    {
+      "rule_id": "Adminer_PHP_Identify",
+      "canonical_path": "yaml/legacy/Adminer_PHP_Identify.yaml",
+      "canonical_sha256": "e4d57fb99793718bd0b48d37693cdd59f550874982370421829911d150b7a277",
+      "canonical_file_sha256": "1ac5322e5932924b30af1ab26bc6b61e9cc6bcc17e4a439cf8d5691b15401154",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Any800_Identify",
+      "canonical_path": "yaml/legacy/Any800_Identify.yaml",
+      "canonical_sha256": "f94d07e4e6a2ea3666f182dbd843a0e6936f0b341187fd8570cb6ea0227d996a",
+      "canonical_file_sha256": "df680257a3f9352ecca367c3b4aa0028868b28ddc65287127bb3b38f3c5a4210",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Apache_Apereo_CAS_Identify",
+      "canonical_path": "yaml/legacy/Apache_Apereo_CAS_Identify.yaml",
+      "canonical_sha256": "9eabcca65aa201300677d52bc6cd5aaf8fed3f2c27d525694b5c1cf081ddaba8",
+      "canonical_file_sha256": "eb245fe75a3421ae59f4b000d8522709d1f645efb0d11ead043b9d4455413d80",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Apache_Ofbiz_Identify",
+      "canonical_path": "yaml/legacy/Apache_Ofbiz_Identify.yaml",
+      "canonical_sha256": "04e072eddffc2e6cad2a4d21cb5561e33b3585f8e3f2f45bf57a0f13c28bef98",
+      "canonical_file_sha256": "0100e46a6af1a0db4017ff92e73337bbf2fd3233964b054287cf52750600f3d9",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Clickhouse_REST_API_Identify",
+      "canonical_path": "yaml/legacy/Clickhouse_REST_API_Identify.yaml",
+      "canonical_sha256": "a44bf93d33ffef5d923aa6363ae2c7281f02db77fc7db4e789c009b4c1f7c8a3",
+      "canonical_file_sha256": "a19e7a611ac86b9c085cbfdea5253e2bb0fc604e0a84213c9adb1924ce493dd0",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Finereport_Identify",
+      "canonical_path": "yaml/legacy/Finereport_Identify.yaml",
+      "canonical_sha256": "aaf391fef029a41deb4267a07247a78b1025b7b494d54adc30ac58f2d155c568",
+      "canonical_file_sha256": "2c36e1d8c62b9299bb6553c92f3dd1cea193ef12435dd5e6a4c2428b18bd8889",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "FinereportV10_Identify",
+      "canonical_path": "yaml/legacy/FinereportV10_Identify.yaml",
+      "canonical_sha256": "53ea4515cc7cdb9963698f5229203dbbcb006649bb30ad79db013cf654c899eb",
+      "canonical_file_sha256": "fb49794802038c3b516fb36ad5a50361a5425c5d9fe82b50e41d37812971d387",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Grafana_Identify",
+      "canonical_path": "yaml/legacy/Grafana_Identify.yaml",
+      "canonical_sha256": "c9aa735ee7792b23dded01023932d636078ef9de67e21225b08071b14af890b1",
+      "canonical_file_sha256": "517ce7269bf5b9082ed130ecda45c812c6e8f2e300baf648f8cf62694b594e84",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Graphql_Identify",
+      "canonical_path": "yaml/legacy/Graphql_Identify.yaml",
+      "canonical_sha256": "f7d0fb7fd9b8f28a1083b4872a4e2507f5d0d51acd080fb8e93630983a389473",
+      "canonical_file_sha256": "fabdc318af416a0ff81e52f5e288b5649522ddfdc65c81e6b1b8d6e9c193011a",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Harbor_Identify",
+      "canonical_path": "yaml/legacy/Harbor_Identify.yaml",
+      "canonical_sha256": "9639a984585aaead99ec34050d92959b81ff49a69d505ca3e00ba752a845659f",
+      "canonical_file_sha256": "3405076f5c3f38b9f94dfa09f5255fa7775c0fd8901fef8507b6c1a2358f4177",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Hystrix_Dashboard_Identify",
+      "canonical_path": "yaml/legacy/Hystrix_Dashboard_Identify.yaml",
+      "canonical_sha256": "3dc9b0d972eacb9c1e3cde8a1fdd93d4b3b389e935bc86e0dbfd4c6defbcffb6",
+      "canonical_file_sha256": "fac15af5fc10a64516c1d4f8d0e841a0a8beb846ac2cc54f34c9f541c76fb35d",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Nacos_Identify",
+      "canonical_path": "yaml/legacy/Nacos_Identify.yaml",
+      "canonical_sha256": "a5ca256c93a72eca1bcc53d80a7b9abbf92fbcd1388413f32abac8cec7505e2d",
+      "canonical_file_sha256": "dbbaef0bb7c164c749854199f7e99aa8b1ebd8e34441970e8f3364779b58d666",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Oracle_Weblogic_Console_Identify",
+      "canonical_path": "yaml/legacy/Oracle_Weblogic_Console_Identify.yaml",
+      "canonical_sha256": "048f9ac5f46ee04515928fb824ec8396350e6672b96c1453ed2d0e41aa972e4f",
+      "canonical_file_sha256": "8a7957b6f8ad63df24d8fd1b85eaa50440e585cce05e9232498f7912321286d1",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Shiro_Identify",
+      "canonical_path": "yaml/legacy/Shiro_Identify.yaml",
+      "canonical_sha256": "8f5823fe1b7247f810ebf32463f186e3a6a407482e009b83adab76093e34e0d6",
+      "canonical_file_sha256": "c6c42b29aafb55760e7aaa968587fbd29fdc3d35b17d84339ba98b10eae4943c",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Swagger_Json_Identify",
+      "canonical_path": "yaml/legacy/Swagger_Json_Identify.yaml",
+      "canonical_sha256": "62794ff423f74076dd6b0e6f626c392d907f6d4f3135522603234d71f69a881d",
+      "canonical_file_sha256": "08dd508330fd4f73999e06b0a9e96928df4d5d1cd8ff9afd653dbf8b60092f6c",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "vcenter_identify",
+      "canonical_path": "yaml/legacy/vcenter_identify.yaml",
+      "canonical_sha256": "039a040ee2ff94dd0c35288588bee49d91d48aaa94b04cef71eaa630a9129d76",
+      "canonical_file_sha256": "16ec3d00d08f9cd13af5356cdc47e181e63c82aaf06a607f13e3cbfbe8cd01d8",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Weaver_Ecology_Identify",
+      "canonical_path": "yaml/legacy/Weaver_Ecology_Identify.yaml",
+      "canonical_sha256": "dced14fa115e19445fe8f1517fee30e3a8666c305a7e9fd9040ef63d99f2f41e",
+      "canonical_file_sha256": "7898de1b5e03767f1c5b85dfcab363d91bf61a20b03f66707766772a7dcd5b2f",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "XXL_Job_Admin_Identify",
+      "canonical_path": "yaml/legacy/XXL_Job_Admin_Identify.yaml",
+      "canonical_sha256": "9625e9585e197819cacddbbfff2e5eebddc5e53e04cced5dd862a9952dfc4756",
+      "canonical_file_sha256": "74439edc1bc08a7b9ce5006f8b03097e60e09c84d2c25077444e1abd17270ed1",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Actuator_httptrace_noauth",
+      "canonical_path": "yaml/legacy/Actuator_httptrace_noauth.yaml",
+      "canonical_sha256": "ccf3e448a198807a4426a6301748327b2693c86ba279cb9cae98532754cf2c46",
+      "canonical_file_sha256": "21a119714102dee1ec94dac1def7411099f2d3672f791aeefd85bd2e9d9b2f5b",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Actuator_noauth_bypass_waf",
+      "canonical_path": "yaml/legacy/Actuator_noauth_bypass_waf.yaml",
+      "canonical_sha256": "194bc6085fabce14c6247f859dae731f9f49f44909b38955a4e46d41a99c2729",
+      "canonical_file_sha256": "40725171ce31cdb72c37210c063a42c7cd799ea30cd78b423ea00d1c30784b19",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Actuator_noauth",
+      "canonical_path": "yaml/legacy/Actuator_noauth.yaml",
+      "canonical_sha256": "83599d17b92126da5e5ac3eb21f905d1913b768d2fa4d1c83ccac6a2bcd3ef1b",
+      "canonical_file_sha256": "e7c1df26ac5ed0f439ba35a06ce08bd1811c20016d488f78508187051da4a092",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Apollo_Adminservice_noauth",
+      "canonical_path": "yaml/legacy/Apollo_Adminservice_noauth.yaml",
+      "canonical_sha256": "4239761384b13e43055edb2da898718ba4f129ab80f6ad36863dc1e88b33a070",
+      "canonical_file_sha256": "ae8bd995f7d6d97e9b80cfd988783a9aacbbfe4e83c62a2263ebdf6d1d8e18de",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "DockerRemoteAPI_noauth",
+      "canonical_path": "yaml/legacy/DockerRemoteAPI_noauth.yaml",
+      "canonical_sha256": "7ecf182f1630b837f84decb8cbf7b1282d39192221971667c2f13ce1940fefcb",
+      "canonical_file_sha256": "df9e1c8438499f4f0a05f621ae478b6268dcc725736fc35acffd7f0940cd84a3",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Druid_noauth",
+      "canonical_path": "yaml/legacy/Druid_noauth.yaml",
+      "canonical_sha256": "71458f5be3ff8600673f099f59165953cb00816808a8140b1925afbdc8dcc04c",
+      "canonical_file_sha256": "3c5d11bff43af6b80753ae70ee89855bb871d645baeb617da59426234e3fe33f",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Elasticsearch_noauth",
+      "canonical_path": "yaml/legacy/Elasticsearch_noauth.yaml",
+      "canonical_sha256": "dd983e079d3ffd675bf22cab7b73bea9ee41dd05a975bac016a4746ac9eb4272",
+      "canonical_file_sha256": "26a5cb0c9de58d2e5638dc5f4720bd31d53af5f0a58de27a37f683afaf0d1ea9",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Hadoop_YARN_RPC_noauth",
+      "canonical_path": "yaml/legacy/Hadoop_YARN_RPC_noauth.yaml",
+      "canonical_sha256": "54af70749da61fc520006e470a873fc4a7da1b96235438d90483c66696c0f865",
+      "canonical_file_sha256": "87c138a6b70d31e73cc2f68f61bf73d57fa409da85fb88324628f833f812f28c",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Headless_remote_API_noauth",
+      "canonical_path": "yaml/legacy/Headless_remote_API_noauth.yaml",
+      "canonical_sha256": "a3278a9e95cc48d874f2c636e255e51fac55c11b3bd55384f3ae4f00b3f5872e",
+      "canonical_file_sha256": "814faccc6a9078d9562cf516d34fe005f1c265f07abd2e7393c2b809074d7e50",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Kibana_noauth",
+      "canonical_path": "yaml/legacy/Kibana_noauth.yaml",
+      "canonical_sha256": "c28c5962b9b906e7d07ec023834f9f6404b50a799a2b6251dbbc1c79f29567e0",
+      "canonical_file_sha256": "6c2d3c1a7b076523ab10ef87f91de73741418123d43ddd8de9e42447ecbe9f77",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Memcached_noauth",
+      "canonical_path": "yaml/legacy/Memcached_noauth.yaml",
+      "canonical_sha256": "9ab52c972ccb45303d31f3f224d7337ed9e4784228d2dacd1939b3cd896087ce",
+      "canonical_file_sha256": "e0dfa765e57ad623dc80f47079aa3f95983eb7df453d40d4662399b7e020afa2",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Mongodb_noauth",
+      "canonical_path": "yaml/legacy/Mongodb_noauth.yaml",
+      "canonical_sha256": "09319d297efd0bdd962b43044c26ac363f526dc7ce28724aefaa9bac9b236204",
+      "canonical_file_sha256": "f83d97535ca2845a198490a49797c3c5d6adecc7440988a90be536bdafd8fe1a",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Nacos_noauth",
+      "canonical_path": "yaml/legacy/Nacos_noauth.yaml",
+      "canonical_sha256": "806bd3547520cf569d7d6a185d0b6660bbc97b01e32567f019443e9a52331f1a",
+      "canonical_file_sha256": "be97f0d962cb3085e74bfbe7b63beea1e0e0c6353c80eb11d7c6747121215754",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Onlyoffice_noauth",
+      "canonical_path": "yaml/legacy/Onlyoffice_noauth.yaml",
+      "canonical_sha256": "f4167f5b849b31b9e2e81783710f7402136d8ed93eeddd4bcc3399d7f63bb499",
+      "canonical_file_sha256": "1fd52b0e47c46ac9232957ac1996b8dfb3427d632e6787cbad62d7fda27d4554",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Redis_noauth",
+      "canonical_path": "yaml/legacy/Redis_noauth.yaml",
+      "canonical_sha256": "82500e3b50f3051fd9f7a9ef33a5f922a9b27ca41bde01c9330b6988b2e07580",
+      "canonical_file_sha256": "de92d92784cc8d637f344bb137f9e0c940e529778100ea5127bba3d7299cef09",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Solr_noauth",
+      "canonical_path": "yaml/legacy/Solr_noauth.yaml",
+      "canonical_sha256": "0668d6665df96e8e335a8df37b8bb8e20b2eac0d21f21550dc58dd12b7f3cd1c",
+      "canonical_file_sha256": "8884da19608bea4baceb9bfe915f6fd7cdc646f92f21923dd505c5c3a48bbf3c",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "ZooKeeper_noauth",
+      "canonical_path": "yaml/legacy/ZooKeeper_noauth.yaml",
+      "canonical_sha256": "876c9717683f96e2e565cd9cb0b4a091e0f6d84f70f772c7d1ae144355881670",
+      "canonical_file_sha256": "e1021be13ad477f3a6c2eac00f508eab3d0902b505e06a2be0ed6d2b057daef2",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Django_Debug_Info",
+      "canonical_path": "yaml/legacy/Django_Debug_Info.yaml",
+      "canonical_sha256": "8d1d1769e081f1786a207322a01162c927af0e41e5555a422a76dbd88189fb57",
+      "canonical_file_sha256": "11433f2197d3738f80b4948d5f26dfe1f3d071d761ddaeb5af6484521f723397",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Gitlab_Username_Leak",
+      "canonical_path": "yaml/legacy/Gitlab_Username_Leak.yaml",
+      "canonical_sha256": "14d941ba1d6ef06392ef6d88bfa0fc92bb5f8bc7e46f028d7e7436ff5cfd2950",
+      "canonical_file_sha256": "dce064e5c81678a762b7c5845df5546c507d9474e64273a3787b3ff66a03ba9c",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Ueditor_SSRF",
+      "canonical_path": "yaml/legacy/Ueditor_SSRF.yaml",
+      "canonical_sha256": "f8f2c6040bf28be4b925be4a1d429b72640c888f28faba2506452e0812b7cbea",
+      "canonical_file_sha256": "901543c156f205a4db1fdf31bb19164645f066f78e9ae298b27f87dc38599b6b",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "Ueditor_Store_XSS",
+      "canonical_path": "yaml/legacy/Ueditor_Store_XSS.yaml",
+      "canonical_sha256": "1067386d49e9bf942107770e4bf863b9219818b6cd1a4338d5f96e3215e25d8b",
+      "canonical_file_sha256": "23d671f3bed748ec5eda35832f43ea3adf0b13160490b39107b1282aad346fb4",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    },
+    {
+      "rule_id": "WEB_INF_WEB_xml_leak",
+      "canonical_path": "yaml/legacy/WEB_INF_WEB_xml_leak.yaml",
+      "canonical_sha256": "8fdbdeb6ebc947d0c305b7929fd5cd316ad588b5fcdec2a58b63e1b002df07e8",
+      "canonical_file_sha256": "66d2d884905e095e2e1a7e5efe29456215a3a65ed03b4aee14efaa15e92aeb13",
+      "engine": "yaml",
+      "source": "legacy-python",
+      "status": "verified",
+      "fallback": "removed-after-verification",
+      "reason": "正向和反向 mock fixture 与旧 Python 结果一致",
+      "equivalence": {
+        "positive": true,
+        "negative": false,
+        "reference": "python-plugin-before-removal"
+      }
+    }
+  ]
+}

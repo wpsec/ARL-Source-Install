@@ -1,0 +1,42 @@
+id: poc-yaml-baidu-ueditor-identify
+info:
+  name: 发现百度 UEditor (ueditor.config.js)
+  severity: info
+  tags:
+  - identify
+  finger: UEditor
+variables:
+  path: '/ueditor/ueditor.config.js
+
+    /Plugins/ueditor/ueditor.config.js
+
+    /Scripts/plugins/ueditor/ueditor.config.js
+
+    /static/ueditor/ueditor.config.js
+
+    /Content/ueditor/ueditor.config.js
+
+    /Scripts/ueditor/ueditor.config.js
+
+    /public/static/js/ueditor/ueditor.config.js
+
+    /static/js/ueditor/ueditor.config.js
+
+    /ue/ueditor.config.js
+
+    /Public/ueditor/ueditor.config.js
+
+    /js/ueditor/ueditor.config.js
+
+    /module/ueditor/ueditor.config.js
+
+    /static/vendor/ueditor/ueditor.config.js
+
+    /lib/ueditor/ueditor.config.js'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "UEDITOR_HOME_URL") && contains(body, "UEDITOR_CONFIG")
+
+    '
+transport: http

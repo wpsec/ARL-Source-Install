@@ -1,0 +1,14 @@
+id: Druid_noauth
+info:
+  name: Druid 未授权访问
+  finger: Druid
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /druid/webapp.json
+  expression: '!contains(body, "<") && contains(body, ''"ResultCode"'') && contains(body,
+    ''"RequestCount"'')'

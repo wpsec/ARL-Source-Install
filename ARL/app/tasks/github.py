@@ -561,7 +561,7 @@ class GithubTaskMonitor(GithubTaskTask):
             )
         except Exception as e:
             logger.warning("push github kb error {}".format(e))
-            return False, {"error": str(e)}
+            return False, {"error": utils.safe_error_text(e)}
         return False, {"error": "push github kb unknown error"}
 
     def push_dingding(self, report_url=""):

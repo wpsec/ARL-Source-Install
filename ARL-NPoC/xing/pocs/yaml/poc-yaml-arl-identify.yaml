@@ -1,0 +1,15 @@
+id: poc-yaml-arl-identify
+info:
+  name: 发现资产灯塔系统
+  severity: info
+  tags:
+  - identify
+  finger: 资产灯塔系统
+requests:
+- method: GET
+  path: /api/doc
+  expression: 'contains(title, "ARL backend API")
+
+    '
+variables: {}
+transport: http

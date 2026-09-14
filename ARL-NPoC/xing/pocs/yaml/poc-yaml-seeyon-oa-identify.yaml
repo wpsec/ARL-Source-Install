@@ -1,0 +1,19 @@
+id: poc-yaml-seeyon-oa-identify
+info:
+  name: 发现致远互联-OA
+  severity: info
+  tags:
+  - identify
+  finger: 致远互联-OA
+variables:
+  path: '/seeyon/index.jsp
+
+    /seeyon/common/all-min.css'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "status_code == 200 && (\n  contains(title, \"协同管理软件\") ||\n  contains(title,\
+    \ \"致远\") ||\n  contains(substr(body, 0, 200), \"@charset \\\"UTF-8\\\";body,html{background:none;}.radius\"\
+    ) || \n  contains(substr(body, 0, 200), \"@charset \\\"UTF-8\\\";body,html{background:0}.radius\"\
+    )\n)\n"
+transport: http

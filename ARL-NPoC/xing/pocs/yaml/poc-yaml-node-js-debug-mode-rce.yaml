@@ -1,0 +1,16 @@
+id: poc-yaml-node-js-debug-mode-rce
+info:
+  name: Node.js调试模式 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: node.js
+  fofa: body="WebSockets request was expected" 
+requests:
+- method: GET
+  path: /json
+  expression: status_code == 200 && contains(body,"\"description\"\x3a \"node.js instance\"")
+    && contains(body,"webSocketDebuggerUrl") && contains(body,"\"type\"\x3a \"node")
+    && matches(body,"\"devtoolsFrontendUrl\"\x3a \"(.*?)\",")
+variables: {}
+transport: http

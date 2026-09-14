@@ -1,0 +1,22 @@
+id: poc-yaml-ruoyi-api-identify
+info:
+  name: 发现 Ruoyi API
+  severity: info
+  tags:
+  - identify
+  finger: ruoyi
+variables:
+  path: '/
+
+    /dev-api
+
+    /prod-api
+
+    /api'
+requests:
+- method: GET
+  path: '{{.path}}/captchaImage'
+  expression: "status_code == 200 &&\ncontains(body, \"\\\"code\\\":200\") &&\n(\n\
+    \  contains(body, \"\\\"img\\\"\")  ||  contains(body, \"\\\"captchaEnabled\\\"\
+    \")\n)\n&&\n!contains(body, \"<\")\n"
+transport: http

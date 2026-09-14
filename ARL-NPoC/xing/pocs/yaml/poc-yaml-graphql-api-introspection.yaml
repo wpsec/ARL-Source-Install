@@ -1,0 +1,29 @@
+id: poc-yaml-graphql-api-introspection
+info:
+  name: GraphQL API Introspection 漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: GraphQL
+variables:
+  path: '/graphql
+
+    /graphiql
+
+    /graphql.php
+
+    /graphql/console
+
+    /api/graphql'
+requests:
+- method: POST
+  path: '{{.path}}'
+  headers:
+    Content-Type: application/json
+  data: '{"query":"query IntrospectionQuery{__schema {queryType { name }}}"}
+
+    '
+  expression: 'status_code == 200 && contains(body, "{\"data\":{\"__schema\":{\"queryType\":")
+
+    '
+transport: http

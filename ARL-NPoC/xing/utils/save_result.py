@@ -20,14 +20,35 @@ def save_result(plg, msg):
         }
         text_msg = "{} {}:{}".format(plg.target, username, password)
 
+    yaml_fields = msg if getattr(plg, "poc_engine", "") == "yaml" and isinstance(msg, dict) else {}
     item = {
         "plg_name": getattr(plg, "_plugin_name", ""),
         "plg_type": plg.plugin_type,
         "vul_name": plg.vul_name,
         "app_name": plg.app_name,
         "target": plg.target,
-        "verify_data": msg
+        "verify_data": yaml_fields.get("verify_data", msg),
     }
+    if yaml_fields:
+        for key in (
+            "result_status", "poc_engine", "poc_id", "poc_source", "severity", "tags",
+            "request_index", "match_summary", "evidence", "error_type", "error",
+        ):
+            if key in yaml_fields:
+                item[key] = yaml_fields[key]
+    else:
+        item["poc_engine"] = "python"
+        item["poc_source"] = "npoc"
+        item["result_status"] = "matched"
+        if plg.plugin_type == PluginType.POC:
+            # Python POC 没有统一的请求证据对象，保留字段形状但不复制可能含敏感信息的原始响应。
+            item["poc_id"] = getattr(plg, "_plugin_name", "")
+            item["severity"] = str(getattr(plg, "severity", "info") or "info").lower()
+            tags = getattr(plg, "tags", []) or []
+            item["tags"] = list(tags) if isinstance(tags, (list, tuple, set)) else [str(tags)]
+            item["request_index"] = -1
+            item["match_summary"] = ""
+            item["evidence"] = {}
 
     if Conf.SAVE_JSON_RESULT_FILENAME:
         data = json.dumps(item)

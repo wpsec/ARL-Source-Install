@@ -1,0 +1,53 @@
+id: poc-yaml-backup-file-3
+info:
+  name: 备份文件泄漏漏洞 (3)
+  severity: high
+  tags:
+  - 配置不当
+  finger: ''
+variables:
+  path: 'script
+
+    sql
+
+    test
+
+    tmp
+
+    upload
+
+    web
+
+    webroot
+
+    www
+
+    wwwroot'
+  ext: '.zip
+
+    .tar.gz
+
+    .bak
+
+    .tar
+
+    .rar
+
+    .7z
+
+    .gz'
+requests:
+- method: GET
+  path: /{{.path}}{{.ext}}
+  expression: "status_code == 200 && contains(headers, \"application/\") &&\n(\n \
+    \ substr(body, 0, 6) == \"\\x37\\x7A\\xBC\\xAF\\x27\\x1C\" ||\n  substr(body,\
+    \ 0, 6) == \"\\x31\\x41\\x59\\x26\\x53\\x59\" ||\n  substr(body, 0, 3) == \"\\\
+    x1f\\x8b\\x08\" ||\n  substr(body, 0, 8) == \"\\x52\\x61\\x72\\x21\\x1A\\x07\\\
+    x00\\x00\" ||\n  substr(body, 0, 8) == \"\\x52\\x61\\x72\\x21\\x1A\\x07\\x01\\\
+    x00\" ||\n  substr(body, 0, 6) == \"\\xFD\\x37\\x7A\\x58\\x5A\\x00\" ||\n  substr(body,\
+    \ 0, 4) == \"\\x50\\x4b\\x03\\x04\" ||\n  substr(body, 0, 2) == \"\\x1F\\x9D\"\
+    \ ||\n  substr(body, 0, 2) == \"\\x1F\\xA0\" ||\n  substr(body, 0, 4) == \"\\\
+    x4C\\x5A\\x49\\x50\" ||\n  (\n    contains(body, \"\\x00\\x00\\x00\\x00\\x00\\\
+    x00\\x00\\x00\")\n    && contains(content_type, \"application/\")\n    && contains(content_type,\
+    \ \"tar\")\n  )\n)\n"
+transport: http

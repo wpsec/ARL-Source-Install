@@ -1,0 +1,15 @@
+id: Nacos_Identify
+info:
+  name: 发现 Nacos
+  finger: Nacos
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /
+  - /nacos/
+  expression: contains(body, "<title>Nacos</title>")

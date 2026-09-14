@@ -1,0 +1,21 @@
+id: poc-yaml-nps-default-key
+info:
+  name: NPS 默认密钥
+  severity: high
+  tags:
+  - 硬编码凭据
+  finger: NPS
+requests:
+- method: GET
+  path: /auth/getauthkey
+  expression: 'contains(headers, "json") &&
+
+    contains(body, "crypt_auth_key") &&
+
+    contains(body, "5acabcf051cd55abca03d18294422e01") &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

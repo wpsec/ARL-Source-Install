@@ -86,7 +86,7 @@ class ARLFingerprint(ARLResource):
 
         flag, err = check_expression_with_error(human_rule)
         if not flag:
-            return utils.build_ret(ErrorMsg.RuleInvalid, {"error": str(err)})
+            return utils.build_ret(ErrorMsg.RuleInvalid, {"error": utils.safe_error_text(err)})
 
         data = {
             "name": name,
@@ -212,4 +212,4 @@ class UploadARLFinger(ARLResource):
             return utils.build_ret(ErrorMsg.Success, {'error_cnt': error_cnt,
                                                       'repeat_cnt': repeat_cnt,'success_cnt': success_cnt})
         except Exception as e:
-            return utils.build_ret(ErrorMsg.Error, {'msg': str(e)})
+            return utils.build_ret(ErrorMsg.Error, {'msg': utils.safe_error_text(e)})

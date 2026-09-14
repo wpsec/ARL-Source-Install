@@ -51,7 +51,7 @@ _runtime_arch_cache = None
 
 
 def load_file(path):
-    with open(path, "r+", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return f.readlines()
 
 
@@ -1000,6 +1000,19 @@ def truncate_string(s):
         return s
 
 
-from .user import user_login, user_login_header, auth, user_logout, change_pass
+from .user import (
+    user_login,
+    user_login_header,
+    auth,
+    user_logout,
+    change_pass,
+)
+try:
+    from .user import current_principal, request_owner_username, can_access_owned_resource
+except ImportError:
+    # 兼容轻量测试/插件宿主提供的旧 user 模块；正式模块始终提供这些函数。
+    current_principal = lambda: None
+    request_owner_username = lambda: ""
+    can_access_owned_resource = lambda owner_username, principal=None: True
 from .push import message_push
 from .fingerprint import parse_human_rule, transform_rule_map

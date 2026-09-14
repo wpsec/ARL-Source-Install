@@ -1,0 +1,16 @@
+id: poc-yaml-tcexam-sensitive-information-exposure
+info:
+  name: TCExam 敏感信息泄漏漏洞(CVE-2021-20114)
+  severity: high
+  tags:
+  - 信息泄露
+  - CVE-2021-20114
+  finger: tcexam
+  fofa: app="TCExam"
+requests:
+- method: GET
+  path: /cache/backup/
+  expression: status_code == 200 && contains(body,"Index of /cache/backup") && contains(body,"Parent
+    Directory") && contains(body,".sql.gz")
+variables: {}
+transport: http

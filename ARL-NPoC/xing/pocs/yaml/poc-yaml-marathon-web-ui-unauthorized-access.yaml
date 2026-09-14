@@ -1,0 +1,17 @@
+id: poc-yaml-marathon-web-ui-unauthorized-access
+info:
+  name: Marathon Web UI 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Marathon
+  osprey-id: vb_2019_0051
+requests:
+- method: GET
+  path: /v2/apps
+  headers: {}
+  expression: 'contains(body, "tasksStaged") && contains(headers, "X-Marathon-Leader")
+
+    '
+variables: {}
+transport: http

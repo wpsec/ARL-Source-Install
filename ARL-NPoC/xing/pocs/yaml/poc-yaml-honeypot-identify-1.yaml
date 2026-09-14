@@ -1,0 +1,15 @@
+id: poc-yaml-honeypot-identify-1
+info:
+  name: 发现蜜罐
+  severity: info
+  tags:
+  - identify
+  finger: honeypot
+requests:
+- method: GET
+  rawPath: /x.js
+  expression: 'status_code == 404 && contains(body, "async src=\"/public/common/zzextt/jquery.min.js")
+
+    '
+variables: {}
+transport: http

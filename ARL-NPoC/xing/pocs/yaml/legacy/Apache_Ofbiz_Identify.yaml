@@ -1,0 +1,13 @@
+id: Apache_Ofbiz_Identify
+info:
+  name: 发现 Apache Ofbiz
+  finger: Apache Ofbiz
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths: /webtools/control/main
+  expression: contains(header, "OFBiz.Visitor=") or contains(body, ">OFBiz")

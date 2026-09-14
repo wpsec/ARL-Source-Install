@@ -1,0 +1,17 @@
+id: poc-yaml-adobe-connect-username-exposure
+info:
+  name: Adobe Connect 用户名暴露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Adobe
+  osprey-id: vb_2022_0033
+requests:
+- method: GET
+  path: /system/help/support
+  expression: 'contains(body, "Administrators name:") && contains(body, "Support Administrators
+    email address:")
+
+    '
+variables: {}
+transport: http

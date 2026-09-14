@@ -459,7 +459,7 @@ def run_task_ai_denoise_pipeline(task_id, trigger="task_done", force=False, modu
                         "updated_at": ended_at,
                         "requested_modules": requested_modules,
                         "pending_modules": [],
-                        "message": str(exc),
+                        "message": utils.safe_error_text(exc),
                     }
                 }
             },

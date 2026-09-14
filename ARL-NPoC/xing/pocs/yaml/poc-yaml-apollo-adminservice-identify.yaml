@@ -1,0 +1,16 @@
+id: poc-yaml-apollo-adminservice-identify
+info:
+  name: 发现 Apollo AdminService 未授权
+  severity: high
+  tags:
+  - identify
+  - 未授权访问
+  finger: Apollo
+requests:
+- method: GET
+  path: /apps
+  expression: "status_code == 200 &&\n      contains(body, \"\\\"id\\\"\") && contains(body,\
+    \ \"\\\"appId\\\"\")\n      && !contains(body, \"<p\") && !contains(body, \"<h\"\
+    )\n"
+variables: {}
+transport: http

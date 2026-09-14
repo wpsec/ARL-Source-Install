@@ -1,0 +1,17 @@
+id: poc-yaml-debug-pprof-identify
+info:
+  name: pprof 调试端点暴露漏洞
+  severity: medium
+  tags:
+  - identify
+  finger: web
+requests:
+- method: GET
+  path: /debug/pprof/
+  expression: 'contains(body, "/debug/pprof/") && status_code == 200 &&
+
+    contains(body, "cmdline") && contains(body, "goroutine?debug")
+
+    '
+variables: {}
+transport: http

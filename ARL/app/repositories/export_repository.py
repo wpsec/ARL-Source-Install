@@ -106,8 +106,11 @@ class ExportRepository(object):
         )
 
     @classmethod
-    def find_job(cls, job_id):
-        return cls.find_one(cls.JOB_COLLECTION, {"_id": cls._object_id(job_id)})
+    def find_job(cls, job_id, owner_username=None):
+        query = {"_id": cls._object_id(job_id)}
+        if owner_username is not None:
+            query["owner_username"] = str(owner_username or "").strip()
+        return cls.find_one(cls.JOB_COLLECTION, query)
 
     @classmethod
     def insert_job(cls, document):

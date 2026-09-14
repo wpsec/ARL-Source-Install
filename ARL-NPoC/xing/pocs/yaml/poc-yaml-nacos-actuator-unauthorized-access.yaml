@@ -1,0 +1,18 @@
+id: poc-yaml-nacos-actuator-unauthorized-access
+info:
+  name: Nacos actuator 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: nacos
+  fofa: app="Nacos" && icon_hash="13942501"
+requests:
+- method: GET
+  path: /nacos/
+  expression: status_code == 200 && contains(title,"Nacos")
+- method: GET
+  path: /nacos/actuator/
+  expression: status_code == 200 && contains(body,"\"_links\":") && contains(body,"\"self\":")
+    && contains(body,"\"href\":") && contains(body,"\"templated\":") && contains(content_type,"application/vnd.spring-boot.actuator.v3+json")
+variables: {}
+transport: http

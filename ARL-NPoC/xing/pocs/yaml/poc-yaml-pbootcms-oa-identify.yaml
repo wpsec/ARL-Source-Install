@@ -1,0 +1,15 @@
+id: poc-yaml-pbootcms-oa-identify
+info:
+  name: 发现 PbootCMS
+  severity: info
+  tags:
+  - identify
+  finger: PbootCMS
+requests:
+- method: GET
+  path: /?search.html
+  expression: "status_code == 200 &&\n(  contains(title, \"PbootCMS\") ||\n  contains(body,\
+    \ \"<title>搜索结果\") && contains(body, \">搜索结果<\") && contains(body, \"\\\"/?\"\
+    )\n)\n"
+variables: {}
+transport: http

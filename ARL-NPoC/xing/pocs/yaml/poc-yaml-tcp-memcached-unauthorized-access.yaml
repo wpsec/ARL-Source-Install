@@ -1,0 +1,16 @@
+id: poc-yaml-tcp-memcached-unauthorized-access
+info:
+  name: Memcached 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: memcached
+scheme: memcached
+port: 11211
+tcpRequests:
+- expression:
+  - conn.WriteStr("stats\r\n")
+  - conn.ReadStr()
+  - matches(res, `STAT pid \d+`)
+variables: {}
+transport: tcp

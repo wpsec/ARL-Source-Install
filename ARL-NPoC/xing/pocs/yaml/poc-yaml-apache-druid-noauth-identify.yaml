@@ -1,0 +1,20 @@
+id: poc-yaml-apache-druid-noauth-identify
+info:
+  name: 发现 Apache Druid 未授权
+  severity: high
+  tags:
+  - identify
+  - 两高一弱
+  finger: Apache Druid
+requests:
+- method: GET
+  path: /druid/indexer/v1/tasks
+  expression: 'contains(body, "\"groupId\"") &&
+
+    contains(body, "\"id\"") &&
+
+    contains(body, "\"createdTime\"") && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

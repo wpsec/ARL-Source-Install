@@ -1,0 +1,14 @@
+id: Apollo_Adminservice_noauth
+info:
+  name: apollo-adminservice 未授权访问
+  finger: apollo-adminservice
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /apps
+  expression: '!contains(body, "<") && contains(body, ''"ownerEmail"'') && contains(body,
+    ''"ownerName"'')'

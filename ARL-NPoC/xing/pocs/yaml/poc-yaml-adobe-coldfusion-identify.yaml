@@ -1,0 +1,18 @@
+id: poc-yaml-adobe-coldfusion-identify
+info:
+  name: 发现 Adobe ColdFusion
+  severity: info
+  tags:
+  - identify
+  finger: Adobe ColdFusion
+variables:
+  r_path: '/CFIDE/
+
+    /cf_scripts/'
+requests:
+- method: GET
+  path: '{{.r_path}}/scripts/ajax/package/cfmenu.js'
+  expression: 'status_code == 200 && contains(body, "ColdFusion.Menu.menuItemMouseOver=")
+
+    '
+transport: http

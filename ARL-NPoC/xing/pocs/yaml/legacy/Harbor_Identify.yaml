@@ -1,0 +1,16 @@
+id: Harbor_Identify
+info:
+  name: 发现 Harbor API
+  finger: Harbor
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /api/systeminfo
+  - /harbor/api/systeminfo
+  expression: status_code == 200 && contains(body, '"harbor_version"') && !contains(body,
+    "<")

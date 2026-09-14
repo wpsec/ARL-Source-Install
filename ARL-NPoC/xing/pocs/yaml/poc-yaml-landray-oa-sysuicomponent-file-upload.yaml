@@ -1,0 +1,21 @@
+id: poc-yaml-landray-oa-sysuicomponent-file-upload
+info:
+  name: 蓝凌OA sysUiComponent 文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 蓝凌OA
+  fofa: app="Landray-OA系统"
+requests:
+- method: GET
+  path: /sys/ui/sys_ui_component/sysUiComponent.do?method=upload
+  expression: 'status_code == 200
+
+    && contains(body,"添加部件包")
+
+    && contains(body,"上传文件")
+
+    '
+variables: {}
+transport: http

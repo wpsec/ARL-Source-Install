@@ -1,0 +1,16 @@
+id: poc-yaml-landray-oa-v14-jg-service-jsp-anyfile-upload
+info:
+  name: 蓝凌OA V14 jg_service.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: landray
+  fofa: app="Landray-OA系统"
+requests:
+- method: POST
+  path: /sys/attachment/sys_att_main/jg_service.jsp
+  expression: status_code == 200 && contains(body,"java.lang.NumberFormatException")
+    && contains(body,"0               53              0")
+variables: {}
+transport: http

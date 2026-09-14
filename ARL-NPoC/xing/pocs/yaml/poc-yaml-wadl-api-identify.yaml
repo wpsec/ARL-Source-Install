@@ -1,0 +1,25 @@
+id: poc-yaml-wadl-api-identify
+info:
+  name: 发现 WADL Services
+  severity: info
+  tags:
+  - identify
+  finger: webservice
+variables:
+  r_path: '/
+
+    /api/
+
+    /api/v1/
+
+    /api/v2/
+
+    /rest/'
+requests:
+- method: GET
+  path: '{{.r_path}}application.wadl'
+  expression: "status_code == 200 && !contains(body, \"</title>\") && (\n  contains(body,\
+    \ \"xmlns:jersey=\\\"http://jersey.java.net/\\\"\")\n  || contains(body, \"<include\
+    \ href=\\\"application.wadl\")\n  || contains(body, \"<application xmlns=\\\"\
+    http://wadl.dev.java.net/2009/02\\\"\")\n)\n"
+transport: http

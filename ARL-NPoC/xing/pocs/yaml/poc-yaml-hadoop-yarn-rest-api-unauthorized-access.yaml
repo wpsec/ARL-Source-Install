@@ -1,0 +1,15 @@
+id: poc-yaml-hadoop-yarn-rest-api-unauthorized-access
+info:
+  name: Hadoop Yarn REST API 未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: Hadoop
+  osprey-id: vb_2018_0023
+requests:
+- method: POST
+  path: /ws/v1/cluster/apps/new-application
+  expression: contains(body, "application-id") && contains(body, "maximum-resource-capability")
+variables: {}
+transport: http

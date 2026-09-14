@@ -1,0 +1,16 @@
+id: poc-yaml-dot-git-dir-exposed
+info:
+  name: .git 目录信息泄漏漏洞
+  severity: high
+  tags:
+  - identify
+  - 配置不当
+  finger: Web
+requests:
+- method: GET
+  path: /.git/config
+  expression: "status_code == 200 &&\ncontains(body, \"[core]\") &&\n!contains(body,\
+    \ \"<a\") &&\n(\n  contains(body, \"repositoryformatversion\") || contains(body,\
+    \ \"logallrefupdates\")\n)\n"
+variables: {}
+transport: http

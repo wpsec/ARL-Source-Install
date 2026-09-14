@@ -1,0 +1,17 @@
+id: poc-yaml-etcd-rest-api-unauth-access
+info:
+  name: ETCD REST API 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: ETCD
+  osprey-id: vb_2019_0078
+requests:
+- method: GET
+  path: /v2/keys/
+  expression: 'status_code == 200 && contains(headers, "Content-Type: application/json")
+    && contains(body, "{\"action\":\"get\"") && contains(headers, "X-Etcd-Index")
+
+    '
+variables: {}
+transport: http

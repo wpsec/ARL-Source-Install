@@ -134,6 +134,7 @@ export async function requestApi(token: string, path: string, options: ApiReques
       method,
       headers,
       credentials: 'same-origin',
+      signal: options.signal,
     };
 
     if (method !== 'GET' && options.body !== undefined) {
@@ -167,6 +168,7 @@ export async function requestApi(token: string, path: string, options: ApiReques
         const probeResp = await fetch(probeUrl, {
           method: 'GET',
           credentials: 'same-origin',
+          signal: options.signal,
         });
         if (!isGatewayNotReadyStatus(probeResp.status)) {
           return true;

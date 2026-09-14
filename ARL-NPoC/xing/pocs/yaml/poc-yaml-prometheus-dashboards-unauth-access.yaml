@@ -1,0 +1,17 @@
+id: poc-yaml-prometheus-dashboards-unauth-access
+info:
+  name: Prometheus Dashboards 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Prometheus
+  osprey-id: vb_2022_0059
+requests:
+- method: GET
+  path: /service-discovery
+  expression: 'status_code == 200 && contains(body, "<title>Prometheus Time Series
+    Collection and Processing Server</title>") && contains(body, "onst GLOBAL_CONSOLES_LINK")
+
+    '
+variables: {}
+transport: http

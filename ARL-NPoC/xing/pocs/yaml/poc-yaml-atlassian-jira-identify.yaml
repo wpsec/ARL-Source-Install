@@ -1,0 +1,18 @@
+id: poc-yaml-atlassian-jira-identify
+info:
+  name: 发现 Atlassian JIRA
+  severity: info
+  tags:
+  - identify
+  finger: JIRA
+variables:
+  path: '/
+
+    /jira/'
+requests:
+- method: GET
+  path: '{{.path}}issues/'
+  expression: 'contains(headers, "atlassian.xsrf.token") &&  contains(body, "\"jira")
+
+    '
+transport: http

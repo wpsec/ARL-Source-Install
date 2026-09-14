@@ -1,0 +1,23 @@
+id: poc-yaml-kubernetes-unauth
+info:
+  name: Kubernetes 未授权访问漏洞
+  severity: medium
+  tags:
+  - 访问控制错误
+  finger: Kubernetes
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /api/v1/nodes
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: 'status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "application/json") && contains(body, "\"kubeletVersion\": \"v") && contains(body,
+    "\"containerRuntimeVersion\"")'
+  output: []

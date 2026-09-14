@@ -1,0 +1,15 @@
+id: poc-yaml-weaver-ebridge-addresume-anyfile-upload
+info:
+  name: 泛微云桥ebridge addResume 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: weaver-ebridge
+  fofa: app="泛微-云桥e-Bridge"
+requests:
+- method: GET
+  path: /wxclient/app/recruit/resume/addResume
+  expression: status_code == 200 && contains(body,"\"status\":\"success\"") && contains(body,"\"msg\":\"提交成功\"")
+    && !contains(body,"<")
+variables: {}
+transport: http

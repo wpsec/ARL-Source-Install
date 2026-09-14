@@ -12,6 +12,10 @@ class BaseThread(object):
         self.concurrency = concurrency
         self.semaphore = threading.Semaphore(concurrency)
         self._targets = targets
+        # 子线程异常不能只写日志，否则上层会把不完整结果当作成功。
+        # 由 PluginRunner 汇总后以 partial 结果回传，仍允许其它规则继续执行。
+        self.errors = []
+        self._errors_lock = threading.Lock()
         self.shuffle_targets = False
         self.logger = get_logger()
 
@@ -23,14 +27,16 @@ class BaseThread(object):
             self.work(url)
         except requests.exceptions.RequestException as e:
             self.logger.debug("error on {} {}".format(url, e))
-            pass
+            self._record_error(url, e)
 
         except etree.Error as e:
             self.logger.debug("error on {} {}".format(url, e))
+            self._record_error(url, e)
 
         except Exception as e:
             self.logger.warning("error on {}".format(url))
             self.logger.exception(e)
+            self._record_error(url, e)
 
         except BaseException as e:
             self.logger.warning("BaseException on {}".format(url))
@@ -38,6 +44,18 @@ class BaseThread(object):
             raise e
 
         self.semaphore.release()
+
+    def _record_error(self, value, error):
+        plugin = value if isinstance(value, BasePlugin) else getattr(self, "plugin", None)
+        target = getattr(self, "target", None) if isinstance(value, BasePlugin) else value
+        item = {
+            "plugin_name": str(getattr(plugin, "_plugin_name", "") or "").strip(),
+            "target": str(target or "").strip(),
+            "error_type": type(error).__name__,
+            "error": str(error or "")[:500],
+        }
+        with self._errors_lock:
+            self.errors.append(item)
 
     def _run(self):
         deque = collections.deque(maxlen=2000)
@@ -66,5 +84,4 @@ class BaseThread(object):
         for t in list(deque):
             while t.is_alive():
                 time.sleep(0.2)
-
 

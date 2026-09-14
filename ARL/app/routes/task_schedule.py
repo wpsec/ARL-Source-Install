@@ -171,7 +171,7 @@ class ARLTaskScheduleResult(ARLResource):
                 target = " ".join(targets)
 
         except Exception as e:
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         data = {
             "name": name,

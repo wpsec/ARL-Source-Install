@@ -150,7 +150,7 @@ def _flatten_nested_keys(data, prefix=""):
 def _build_policy_log_summary(name, domain_config, ip_config, site_config,
                               domain_dict="", file_leak_dict="",
                               file_leak=False, npoc_service_detection=False,
-                              scope_config=None):
+                              npoc_poc_scan=False, scope_config=None):
     """
     生成策略审计日志摘要，避免在日志中打印完整配置大对象。
     """
@@ -163,6 +163,7 @@ def _build_policy_log_summary(name, domain_config, ip_config, site_config,
         "site_enabled": _extract_enabled_bool_keys(site_config),
         "file_leak": bool(file_leak),
         "npoc_service_detection": bool(npoc_service_detection),
+        "npoc_poc_scan": bool(npoc_poc_scan),
         "port_scan_type": str(ip_config.get("port_scan_type", "") or "").strip(),
         "port_custom": str(ip_config.get("port_custom", "") or "").strip(),
         "domain_dict": str(domain_dict or "").strip(),
@@ -182,6 +183,7 @@ add_policy_fields = ns.model('addPolicy', {
         "file_leak_dict": fields.String(description="敏感文件泄漏字典路径（可选）", default=""),
         "file_leak": fields.Boolean(description="文件泄漏", default=False),
         "npoc_service_detection": fields.Boolean(description="服务识别（纯python实现）", default=False),
+        "npoc_poc_scan": fields.Boolean(description="NPoC漏洞验证总开关（默认关闭）", default=False),
         "poc_config": fields.List(fields.Nested(ns.model('pocConfig', {
             "plugin_name": fields.String(description="poc 插件名称ID", default=False),
             "enable": fields.Boolean(description="是否启用", default=True)
@@ -273,7 +275,7 @@ class AddARLPolicy(ARLResource):
         if poc_config is None:
             poc_config = []
 
-        poc_config = _update_plugin_config(poc_config)
+        poc_config = _update_plugin_config(poc_config, expected_type="poc")
         if isinstance(poc_config, str):
             return utils.build_ret(poc_config, {})
 
@@ -281,7 +283,7 @@ class AddARLPolicy(ARLResource):
         brute_config = policy.pop("brute_config", [])
         if brute_config is None:
             brute_config = []
-        brute_config = _update_plugin_config(brute_config)
+        brute_config = _update_plugin_config(brute_config, expected_type="brute")
         if isinstance(brute_config, str):
             return utils.build_ret(brute_config, {})
 
@@ -299,6 +301,7 @@ class AddARLPolicy(ARLResource):
         # 处理其他配置
         file_leak = fields.boolean(policy.pop("file_leak", False))
         npoc_service_detection = fields.boolean(policy.pop("npoc_service_detection", False))
+        npoc_poc_scan = fields.boolean(policy.pop("npoc_poc_scan", False))
         desc = args.pop("desc", "")
 
         # 获取关联资产组的配置
@@ -318,6 +321,7 @@ class AddARLPolicy(ARLResource):
                 "file_leak_dict": file_leak_dict,
                 "file_leak": file_leak,
                 "npoc_service_detection": npoc_service_detection,
+                "npoc_poc_scan": npoc_poc_scan,
                 "scope_config": scope_config
             },
             "desc": desc,
@@ -339,6 +343,7 @@ class AddARLPolicy(ARLResource):
                     file_leak_dict=file_leak_dict,
                     file_leak=file_leak,
                     npoc_service_detection=npoc_service_detection,
+                    npoc_poc_scan=npoc_poc_scan,
                     scope_config=scope_config,
                 )
             )
@@ -553,14 +558,14 @@ class EditPolicy(ARLResource):
 
         # 处理PoC插件配置
         poc_config = item["policy"].pop("poc_config", [])
-        poc_config = _update_plugin_config(poc_config)
+        poc_config = _update_plugin_config(poc_config, expected_type="poc")
         if isinstance(poc_config, str):
             return utils.build_ret(poc_config, {})
         item["policy"]["poc_config"] = poc_config
 
         # 处理暴力破解插件配置
         brute_config = item["policy"].pop("brute_config", [])
-        brute_config = _update_plugin_config(brute_config)
+        brute_config = _update_plugin_config(brute_config, expected_type="brute")
         if isinstance(brute_config, str):
             return utils.build_ret(brute_config, {})
         item["policy"]["brute_config"] = brute_config
@@ -595,6 +600,7 @@ class EditPolicy(ARLResource):
                     file_leak_dict=item["policy"].get("file_leak_dict", ""),
                     file_leak=item["policy"].get("file_leak", False),
                     npoc_service_detection=item["policy"].get("npoc_service_detection", False),
+                    npoc_poc_scan=item["policy"].get("npoc_poc_scan", False),
                     scope_config=item["policy"].get("scope_config", {}),
                 )
             )
@@ -604,7 +610,7 @@ class EditPolicy(ARLResource):
         return utils.build_ret(ErrorMsg.Success, {"data": item})
 
 
-def _update_plugin_config(config):
+def _update_plugin_config(config, expected_type=None):
     """
     更新插件配置列表
     
@@ -619,23 +625,31 @@ def _update_plugin_config(config):
     - 去重处理
     - 添加漏洞名称等附加信息
     """
+    if config in (None, ""):
+        return []
+    if not isinstance(config, list):
+        return "插件配置必须是列表"
+
     plugin_name_set = set()
     ret = []
     for item in config:
-        plugin_name = str(item.get("plugin_name", ""))
+        if not isinstance(item, dict):
+            return "插件配置项必须是对象"
+        plugin_name = str(item.get("plugin_name", "")).strip()
         enable = item.get("enable", False)
-        if plugin_name is None or enable is None:
+        if not plugin_name or enable is None:
             continue
         # 去重
         if plugin_name in plugin_name_set:
             continue
 
-        # 验证插件是否存在
-        plugin_info = plugin_name_in_arl(plugin_name)
-        # 验证插件是否存在
         plugin_info = plugin_name_in_arl(plugin_name)
         if not plugin_info:
             return "没有找到 {} 插件".format(plugin_name)
+        if expected_type and plugin_info.get("plugin_type") != expected_type:
+            return "{} 不是 {} 插件".format(plugin_name, expected_type)
+        if plugin_info.get("status", "ready") != "ready":
+            return "插件 {} 当前不可执行".format(plugin_name)
 
         # 构建插件配置项
         config_item = {

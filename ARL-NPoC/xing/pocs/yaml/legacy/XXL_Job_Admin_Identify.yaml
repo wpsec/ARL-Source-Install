@@ -1,0 +1,18 @@
+id: XXL_Job_Admin_Identify
+info:
+  name: 发现 xxl-job-admin
+  finger: xxl-job-admin
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /toLogin
+  - /xxl-job/toLogin
+  - /xxl-job-admin/toLogin
+  - /xxl/toLogin
+  - /xxljob/toLogin
+  expression: contains(body, "<b>XXL</b>JOB")

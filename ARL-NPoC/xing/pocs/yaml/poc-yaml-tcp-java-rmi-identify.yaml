@@ -1,0 +1,16 @@
+id: poc-yaml-tcp-java-rmi-identify
+info:
+  name: Java RMI服务暴露漏洞
+  severity: high
+  finger: Java-RMI
+  tags:
+  - rce
+scheme: rmi
+port: 1099
+tcpRequests:
+- expression:
+  - conn.WriteStr("JRMI\x00\x02K")
+  - conn.ReadStr()
+  - matches(res, `^N..[0-9a-f\x3a.]+\x00\x00`)
+variables: {}
+transport: tcp

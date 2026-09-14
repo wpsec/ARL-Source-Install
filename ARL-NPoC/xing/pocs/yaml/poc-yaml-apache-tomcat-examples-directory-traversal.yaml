@@ -1,0 +1,14 @@
+id: poc-yaml-apache-tomcat-examples-directory-traversal
+info:
+  name: Apache Tomcat Examples目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: Apache Tomcat
+  osprey-id: vb_2021_0077
+requests:
+- method: GET
+  path: /examples/servlets/servlet/SessionExample
+  expression: contains(body, "<title>Sessions Example</title>")
+variables: {}
+transport: http

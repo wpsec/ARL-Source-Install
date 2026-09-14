@@ -165,5 +165,5 @@ def fofa_query_result(query, page_size=9999):
 
         raise Exception(data)
     except Exception as e:
-        error_msg = str(e)
+        error_msg = safe_error_text(e)
         return error_msg

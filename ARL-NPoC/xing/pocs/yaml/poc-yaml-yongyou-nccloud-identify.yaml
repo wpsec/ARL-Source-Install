@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-nccloud-identify
+info:
+  name: 发现用友 NCCloud
+  severity: info
+  tags:
+  - identify
+  finger: yongyou-nccloud
+requests:
+- method: GET
+  path: /nccloud/resources/platform/resource/yonyou-yyy.js
+  expression: 'contains(body, "Yonyou YYY FED Team") && contains(body, "YyyConfig")
+
+    '
+variables: {}
+transport: http

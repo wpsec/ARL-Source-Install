@@ -1,0 +1,15 @@
+id: poc-yaml-zlmediakit-directory-traversal
+info:
+  name: ZLMediaKit 目录遍历漏洞(CVE-2023-31861)
+  severity: high
+  tags:
+  - CVE-2023-31861
+  - 目录遍历
+  finger: zlmediakit
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"<title>文件索引</title>") && contains(body,"<h1>文件索引:/</h1>")
+    && contains(body,"snap")
+variables: {}
+transport: http

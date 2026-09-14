@@ -1,0 +1,19 @@
+id: poc-yaml-laravel-debug-info-leak
+info:
+  name: Laravel Debug 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Laravel
+  osprey-id: vb_2020_0006
+requests:
+- method: POST
+  path: /
+  headers: {}
+  data: null
+  expression: 'status_code == 405 && contains(body, "vendor/laravel/framework/src/Illuminate/Routing/RouteCollection.php")
+    && contains(body, "Whoops! There was an error.")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: Graphql_Identify
+info:
+  name: 发现 Graphql 接口
+  finger: Graphql
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /graphql
+  - /v2/graphql
+  - /v1/graphql
+  expression: status_code == 400 && contains(body, "query missing") && !contains(body,
+    "<")
+  headers:
+    Accept: '*/*'

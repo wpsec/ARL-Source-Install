@@ -1,0 +1,16 @@
+id: poc-yaml-hpe-system-management-anonymous-access
+info:
+  name: HPE System Management 匿名访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: HPE
+  osprey-id: vb_2022_0062
+requests:
+- method: GET
+  path: /chpstrt.php?chppath=Home
+  expression: 'status_code == 200 && contains(body, "username = \"hpsmh_anonymous\";")
+
+    '
+variables: {}
+transport: http

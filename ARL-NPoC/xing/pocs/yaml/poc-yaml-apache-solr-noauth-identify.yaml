@@ -1,0 +1,19 @@
+id: poc-yaml-apache-solr-noauth-identify
+info:
+  name: 发现 Apache Solr 未授权
+  severity: high
+  tags:
+  - identify
+  finger: Apache Solr
+variables:
+  path: '/solr/admin/cores
+
+    /admin/cores'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "org.apache.lucene") && status_code == 200 && contains(body,
+    "\"maxDoc\"")
+
+    '
+transport: http

@@ -138,6 +138,7 @@ class HTTPReq():
         waf_module="file_leak",
         progress_callback=None,
         response_cache=None,
+        request_metrics=None,
     ):
         self.url = url
         self.read_timeout = read_timeout
@@ -149,6 +150,10 @@ class HTTPReq():
         self.waf_module = waf_module
         self.progress_callback = progress_callback
         self.response_cache = response_cache or {}
+        self.request_metrics = request_metrics if isinstance(request_metrics, dict) else {}
+
+    def _count(self, name, amount=1):
+        self.request_metrics[name] = int(self.request_metrics.get(name, 0) or 0) + int(amount or 0)
 
     def _cached_conn(self):
         """目录扫描只消费同 profile 已完成覆盖的响应；带 WAF 跳过标记的不消费。"""
@@ -189,6 +194,7 @@ class HTTPReq():
         self._touch_progress()
         cached_conn = self._cached_conn()
         if cached_conn is not None:
+            self._count("dedup_hit")
             self.conn = cached_conn
             self.status_code = cached_conn.status_code
             self.content = cached_conn.content[: self.max_length]
@@ -216,6 +222,7 @@ class HTTPReq():
             waf_guard=self.waf_guard,
             waf_module=self.waf_module,
         )
+        self._count("request_count")
         self.conn = conn
         self._touch_progress()
 
@@ -427,6 +434,10 @@ class FileLeak(BaseThread):
         self.skip_by_policy = False
         self.waf_guard = waf_guard
         self.progress_callback = progress_callback
+        self.request_metrics = {
+            "request_count": 0,
+            "dedup_hit": 0,
+        }
 
     def _touch_progress(self):
         if callable(self.progress_callback):
@@ -557,6 +568,7 @@ class FileLeak(BaseThread):
                 waf_module="file_leak",
                 progress_callback=self.progress_callback,
                 response_cache=self.response_cache,
+                request_metrics=self.request_metrics,
             )
             req.req()
             self._touch_progress()
@@ -1005,6 +1017,12 @@ def _scan_file_leak_site(
             "responses": response_items,
             "skip_by_policy": bool(file_leak_runner.skip_by_policy),
             "waf_block_hosts": _collect_child_waf_blocks(waf_guard),
+            "metrics": {
+                "request_count": int(file_leak_runner.request_metrics.get("request_count", 0) or 0),
+                "dedup_hit": int(file_leak_runner.request_metrics.get("dedup_hit", 0) or 0),
+                "metrics_complete": True,
+            },
+            "pending_urls": [],
             "error": "",
         }
     except Exception as e:
@@ -1015,7 +1033,13 @@ def _scan_file_leak_site(
             "pages": [],
             "skip_by_policy": False,
             "waf_block_hosts": _collect_child_waf_blocks(waf_guard),
-            "error": str(e),
+            "metrics": {
+                "request_count": 0,
+                "dedup_hit": 0,
+                "metrics_complete": False,
+            },
+            "pending_urls": [],
+            "error": safe_error_text(e),
         }
 
 
@@ -1040,7 +1064,13 @@ def run_file_leak_worker_from_files(job_path: str, result_path: str, heartbeat_p
             "ok": False,
             "pages": [],
             "skip_by_policy": False,
-            "error": str(e),
+            "metrics": {
+                "request_count": 0,
+                "dedup_hit": 0,
+                "metrics_complete": False,
+            },
+            "pending_urls": [],
+            "error": safe_error_text(e),
         }
 
     _write_json_file(result_path, result)
@@ -1159,6 +1189,29 @@ def _apply_child_responses(discovery_context, result):
             )
 
 
+def _record_child_request_metrics(discovery_context, result):
+    """将子进程真实请求与复用次数回流父任务，形成可对账的外部边界指标。"""
+    if discovery_context is None or not isinstance(result, dict):
+        return
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+    try:
+        discovery_context.record_metric(
+            "external_network_file_leak_request_count",
+            int(metrics.get("request_count", 0) or 0),
+        )
+        discovery_context.record_metric(
+            "external_network_file_leak_dedup_hit",
+            int(metrics.get("dedup_hit", 0) or 0),
+        )
+        if not bool(metrics.get("metrics_complete", False)):
+            discovery_context.record_metric(
+                "external_network_file_leak_metrics_incomplete"
+            )
+    except Exception as exc:
+        logger.debug(
+            "fileleak child metrics reflow failed error_type:%s",
+            type(exc).__name__,
+        )
 def _file_leak_dict_signature(dicts) -> str:
     """字典内容签名：数量 + 内容摘要，作为账本 input_signature。"""
     items = [str(item or "") for item in list(dicts or [])]
@@ -1202,6 +1255,9 @@ def _run_file_leak_site_with_watchdog(
                 "output_count": 0,
                 "pending_count": len(urls),
                 "degraded_count": 1,
+                "request_count": 0,
+                "dedup_hit": 0,
+                "metrics_complete": False,
             },
         )
 
@@ -1279,18 +1335,21 @@ def _run_file_leak_site_with_watchdog(
                 waf_guard_context=_build_waf_guard_context(waf_guard),
                 response_cache=response_cache,
             )
+            _record_child_request_metrics(discovery_context, result)
             _apply_directory_waf_blocks(discovery_context, result)
             _apply_child_responses(discovery_context, result)
+            fallback_metrics = {
+                "status": "success" if result.get("ok") else "error",
+                "end_reason": "inline_fallback",
+                "input_count": len(urls),
+                "output_count": len(result.get("pages") or []),
+                "failed_count": 0 if result.get("ok") else 1,
+                "degraded_count": 1,
+            }
+            fallback_metrics.update(dict(result.get("metrics") or {}))
             return FileLeakResult(
                 result.get("pages") or [],
-                metrics={
-                    "status": "success" if result.get("ok") else "error",
-                    "end_reason": "inline_fallback",
-                    "input_count": len(urls),
-                    "output_count": len(result.get("pages") or []),
-                    "failed_count": 0 if result.get("ok") else 1,
-                    "degraded_count": 1,
-                },
+                metrics=fallback_metrics,
             )
 
         start_at = float(time_fn())
@@ -1328,6 +1387,14 @@ def _run_file_leak_site_with_watchdog(
                 )
             )
             _kill_file_leak_subprocess(proc)
+            _record_child_request_metrics(
+                discovery_context,
+                {"metrics": {
+                    "request_count": 0,
+                    "dedup_hit": 0,
+                    "metrics_complete": False,
+                }},
+            )
             return FileLeakResult(
                 [],
                 metrics={
@@ -1338,6 +1405,9 @@ def _run_file_leak_site_with_watchdog(
                     "pending_count": len(urls),
                     "timeout_count": 1,
                     "degraded_count": 1,
+                    "request_count": 0,
+                    "dedup_hit": 0,
+                    "metrics_complete": False,
                 },
             )
 
@@ -1353,6 +1423,14 @@ def _run_file_leak_site_with_watchdog(
                     target, getattr(proc, "returncode", None)
                 )
             )
+            _record_child_request_metrics(
+                discovery_context,
+                {"metrics": {
+                    "request_count": 0,
+                    "dedup_hit": 0,
+                    "metrics_complete": False,
+                }},
+            )
             return FileLeakResult(
                 [],
                 metrics={
@@ -1362,9 +1440,13 @@ def _run_file_leak_site_with_watchdog(
                     "output_count": 0,
                     "pending_count": len(urls),
                     "failed_count": 1,
+                    "request_count": 0,
+                    "dedup_hit": 0,
+                    "metrics_complete": False,
                 },
             )
 
+        _record_child_request_metrics(discovery_context, result)
         _apply_directory_waf_blocks(discovery_context, result)
         _apply_child_responses(discovery_context, result)
 
@@ -1383,19 +1465,27 @@ def _run_file_leak_site_with_watchdog(
                     "output_count": 0,
                     "pending_count": len(urls),
                     "failed_count": 1,
+                    "request_count": int((result.get("metrics") or {}).get("request_count", 0) or 0),
+                    "dedup_hit": int((result.get("metrics") or {}).get("dedup_hit", 0) or 0),
+                    "metrics_complete": bool((result.get("metrics") or {}).get("metrics_complete", False)),
                 },
             )
 
         pages = list(result.get("pages") or [])
+        completed_metrics = {
+            "status": "success",
+            "end_reason": "completed",
+            "input_count": len(urls),
+            "output_count": len(pages),
+            "success_count": 1,
+        }
+        completed_metrics.update(dict(result.get("metrics") or {}))
+        completed_metrics.setdefault("request_count", 0)
+        completed_metrics.setdefault("dedup_hit", 0)
+        completed_metrics.setdefault("metrics_complete", False)
         return FileLeakResult(
             pages,
-            metrics={
-                "status": "success",
-                "end_reason": "completed",
-                "input_count": len(urls),
-                "output_count": len(pages),
-                "success_count": 1,
-            },
+            metrics=completed_metrics,
         )
     finally:
         _cleanup_file_leak_watchdog_dir(temp_dir)
@@ -1595,6 +1685,8 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None, discovery_context=N
                 "timeout_count": sum(int(item.get("timeout_count", 0) or 0) for item in site_metrics),
                 "degraded_count": sum(int(item.get("degraded_count", 0) or 0) for item in site_metrics),
                 "pending_count": sum(int(item.get("pending_count", 0) or 0) for item in site_metrics),
+                "request_count": sum(int(item.get("request_count", 0) or 0) for item in site_metrics),
+                "dedup_hit": sum(int(item.get("dedup_hit", 0) or 0) for item in site_metrics),
             },
         )
 
@@ -1645,5 +1737,7 @@ def file_leak(targets, dicts, gen_dict=True, waf_guard=None, discovery_context=N
             "timeout_count": timeout_count,
             "degraded_count": degraded_count,
             "pending_count": pending_count,
+            "request_count": sum(int(item.get("request_count", 0) or 0) for item in site_metrics),
+            "dedup_hit": sum(int(item.get("dedup_hit", 0) or 0) for item in site_metrics),
         },
     )

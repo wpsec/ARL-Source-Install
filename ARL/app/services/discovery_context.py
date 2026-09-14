@@ -874,6 +874,7 @@ class DiscoveryContext:
         response_max_total_body_bytes: int = DEFAULT_MAX_TOTAL_BODY_BYTES,
         waf_threshold: int = 3,
         ledger: Optional[DiscoveryLedger] = None,
+        response_backend: Any = None,
         scheduler_limits: Optional[Mapping[str, int]] = None,
         scheduler_per_host_limit: int = DEFAULT_PER_HOST_LIMIT,
         candidate_max_entries: int = DEFAULT_CANDIDATE_MAX_ENTRIES,
@@ -889,6 +890,16 @@ class DiscoveryContext:
             response_max_body_bytes,
             response_max_total_body_bytes,
         )
+        self.response_backend = response_backend
+        ensure_response_indexes = getattr(response_backend, "ensure_indexes", None)
+        if callable(ensure_response_indexes):
+            try:
+                ensure_response_indexes()
+            except Exception as exc:
+                logger.debug(
+                    "response cache index setup failed error_type:%s",
+                    type(exc).__name__,
+                )
         self.candidate_registry = CandidateRegistry(
             max_entries=candidate_max_entries,
             on_evict=self._on_candidates_evicted,
@@ -1103,6 +1114,29 @@ class DiscoveryContext:
         consumer: str = "",
     ) -> Optional[ResponseRecord]:
         item = self.response_registry.get(url, method, request_profile)
+        if item is None and self.response_backend is not None:
+            backend_get = getattr(self.response_backend, "get", None)
+            if callable(backend_get):
+                try:
+                    persisted = backend_get(url, method, request_profile)
+                except Exception as exc:
+                    persisted = None
+                    logger.debug(
+                        "response cache restore failed task_id:%s error_type:%s",
+                        self.task_id, type(exc).__name__,
+                    )
+                if isinstance(persisted, Mapping):
+                    item, _ = self.response_registry.put(
+                        url=persisted.get("normalized_url", url),
+                        method=persisted.get("method", method),
+                        request_profile=persisted.get("request_profile", request_profile),
+                        status_code=persisted.get("status_code", 0),
+                        headers=persisted.get("headers", {}),
+                        content_type=persisted.get("content_type", ""),
+                        body=persisted.get("body", b""),
+                        source=persisted.get("source", ""),
+                        consumer=consumer,
+                    )
         if item is None:
             # 口径说明：miss ≠ 网络请求（single-flight 跟随者、驱逐后重取
             # 都计 miss），真实发起数看 network_request_count。
@@ -1159,6 +1193,15 @@ class DiscoveryContext:
             # （leader 竞态兜底或驱逐后重取），这才是有意义的"重复请求"。
             self.record_metric("actual_duplicate_request_count")
         if created:
+            backend_put = getattr(self.response_backend, "put", None)
+            if callable(backend_put):
+                try:
+                    backend_put(item)
+                except Exception as exc:
+                    logger.debug(
+                        "response cache persist failed task_id:%s error_type:%s",
+                        self.task_id, type(exc).__name__,
+                    )
             # PageFetched 只对新登记的响应发布一次，重复登记不产生第二份事件。
             self.publish(
                 DiscoveryEvent(

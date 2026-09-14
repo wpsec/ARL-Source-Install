@@ -1,0 +1,38 @@
+id: poc-yaml-finereport-remote-channel-java-deserialization
+info:
+  name: FineReport remote/channel 反序列化漏洞
+  severity: high
+  tags:
+  - 反序列化
+  - rce
+  finger: FineReport
+variables:
+  r_path: '/webroot/decision/
+
+    /decision/
+
+    /bi/decision/
+
+    /BI/decision/
+
+    /BI/
+
+    /Bi/
+
+    /Bi/decision/
+
+    /
+
+    '
+requests:
+- method: GET
+  path: '{{.r_path}}remote/design/channel'
+  expression: 'substr(body, 0, 3) != "\x1f\x8b\x08" && contains(body, "not supported")
+
+    '
+- method: POST
+  path: '{{.r_path}}remote/design/channel'
+  expression: 'substr(body, 0, 3) == "\x1f\x8b\x08" && !contains(body, "</")
+
+    '
+transport: http

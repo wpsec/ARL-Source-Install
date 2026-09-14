@@ -1,0 +1,18 @@
+id: poc-yaml-grafana-identify
+info:
+  name: 发现 Grafana
+  severity: info
+  tags:
+  - identify
+  finger: Grafana
+variables:
+  path: '/login
+
+    /grafana/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "Grafana</title>")
+
+    '
+transport: http

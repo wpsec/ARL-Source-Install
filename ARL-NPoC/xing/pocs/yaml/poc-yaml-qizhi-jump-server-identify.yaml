@@ -1,0 +1,19 @@
+id: poc-yaml-qizhi-jump-server-identify
+info:
+  name: 发现齐治堡垒机
+  severity: info
+  tags:
+  - identify
+  finger: 齐治堡垒机
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body, "DLLRegistered(\"XECtrl13.XFPAuthenExportX\")") &&
+
+    contains(body, "xfpverify.php")
+
+    '
+variables: {}
+transport: http

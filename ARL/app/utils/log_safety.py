@@ -20,6 +20,12 @@ _USERINFO_SECRET_PATTERN = re.compile(
     r"(https?://[^/\s:@]+:)[^@\s]+(@)",
     re.IGNORECASE,
 )
+_ABSOLUTE_PATH_PATTERN = re.compile(
+    r"(?<!https:)(?<!http:)(?<![A-Za-z0-9_])"
+    r"/(?:Users|home|root|code|opt|tmp|var|private|etc|workspace)"
+    r"(?:/[A-Za-z0-9._~+@%=-]+)+",
+    re.IGNORECASE,
+)
 
 
 def _redact_query_value(fragment):
@@ -33,6 +39,7 @@ def sanitize_log_text(value, max_length=1200):
     text = _QUERY_SECRET_PATTERN.sub(lambda match: _redact_query_value(match.group(1)), text)
     text = _HEADER_SECRET_PATTERN.sub(r"\1[REDACTED]", text)
     text = _USERINFO_SECRET_PATTERN.sub(r"\1[REDACTED]\2", text)
+    text = _ABSOLUTE_PATH_PATTERN.sub("[PATH]", text)
     if max_length and len(text) > max_length:
         return text[:max_length] + "..."
     return text

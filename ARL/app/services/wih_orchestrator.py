@@ -352,6 +352,7 @@ def _legacy_endpoint_followup(task, wih_endpoints, discovery_context):
             followup_items,
             waf_guard=task.waf_guard,
             discovery_context=discovery_context,
+            url_in_scope=task._url_in_task_scope,
         ),
         detail="endpoints={}".format(len(followup_items)),
         input_count=len(followup_items),
@@ -504,7 +505,11 @@ def _registry_endpoint_followup(task, registry, wih_endpoints, discovery_context
 
     def _probe():
         return services.run_wih_endpoint_probe(
-            items, waf_guard=task.waf_guard, discovery_context=discovery_context)
+            items,
+            waf_guard=task.waf_guard,
+            discovery_context=discovery_context,
+            url_in_scope=task._url_in_task_scope,
+        )
 
     try:
         results = task._run_substage(
@@ -748,6 +753,7 @@ class WihOrchestrator(object):
                         list(records),
                         waf_guard=task.waf_guard,
                         discovery_context=getattr(task, "discovery_context", None),
+                        url_in_scope=task._url_in_task_scope,
                     ),
                     detail="sites={}".format(len(scan_sites)),
                     input_count=len(scan_sites),

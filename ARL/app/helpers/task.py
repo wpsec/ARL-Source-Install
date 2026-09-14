@@ -36,6 +36,20 @@ _WEB_HEAVY_OPTION_KEYS = (
     "afrog_scan",
     "web_info_hunter",
 )
+
+
+def npoc_poc_scan_enabled(options):
+    """兼容旧任务：缺少总开关时由已启用的漏洞 POC 配置推导。"""
+    if not isinstance(options, dict):
+        return False
+    if options.get("npoc_poc_scan") is not None:
+        return bool(options.get("npoc_poc_scan"))
+    config = options.get("poc_config")
+    return isinstance(config, list) and any(
+        isinstance(item, dict) and bool(item.get("enable")) for item in config
+    )
+
+
 def apply_arch_compat_options(options):
     """
     保留任务选项，架构差异由镜像构建阶段提供对应的工具实现。
@@ -67,6 +81,8 @@ def normalize_task_poc_config(config):
         )
         if not plugin_info:
             raise Exception("没有找到 {} POC 插件".format(plugin_name))
+        if plugin_info.get("status", "ready") != "ready":
+            raise Exception("POC {} 当前不可执行".format(plugin_name))
         seen.add(plugin_name)
         result.append({
             "plugin_name": plugin_name,
@@ -215,7 +231,7 @@ def get_ip_domain_list(target):
     return ip_list, domain_list
 
 
-def build_task_data(task_name, task_target, task_type, task_tag, options):
+def build_task_data(task_name, task_target, task_type, task_tag, options, owner_username=None):
     """
     构建任务数据
     
@@ -256,6 +272,7 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
     options_cp["poc_config"] = normalize_task_poc_config(
         options_cp.get("poc_config", [])
     )
+    options_cp["npoc_poc_scan"] = npoc_poc_scan_enabled(options_cp)
 
     if task_type in [TaskType.IP, TaskType.DOMAIN]:
         options_cp, arch_compat_notices = apply_arch_compat_options(options_cp)
@@ -281,6 +298,9 @@ def build_task_data(task_name, task_target, task_type, task_tag, options):
         "service": [],
         "celery_id": ""
     }
+    owner_username = str(owner_username or "").strip()
+    if owner_username:
+        task_data["owner_username"] = owner_username
 
     if arch_compat_notices:
         task_data["compat_notice"] = {
@@ -638,7 +658,7 @@ def submit_task(task_data):
     return task_data
 
 
-def submit_task_task(target, name, options):
+def submit_task_task(target, name, options, owner_username=None):
     """
     根据目标自动创建并提交任务
     
@@ -666,7 +686,7 @@ def submit_task_task(target, name, options):
         ip_target = " ".join(ip_list)
         task_data = build_task_data(task_name=name, task_target=ip_target,
                                     task_type=TaskType.IP, task_tag=TaskTag.TASK,
-                                    options=options)
+                                    options=options, owner_username=owner_username)
 
         task_data = submit_task(task_data)
         task_data_list.append(task_data)
@@ -676,7 +696,7 @@ def submit_task_task(target, name, options):
         for domain_target in domain_list:
             task_data = build_task_data(task_name=name, task_target=domain_target,
                                         task_type=TaskType.DOMAIN, task_tag=TaskTag.TASK,
-                                        options=options)
+                                        options=options, owner_username=owner_username)
             task_data = submit_task(task_data)
             task_data_list.append(task_data)
 
@@ -685,12 +705,12 @@ def submit_task_task(target, name, options):
 
 
 # 风险巡航任务下发
-def submit_risk_cruising(target, name, options):
+def submit_risk_cruising(target, name, options, owner_username=None):
     target_lists = target2list(target)
     task_data_list = []
     task_data = build_task_data(task_name=name, task_target=target_lists,
                                 task_type=TaskType.RISK_CRUISING, task_tag=TaskTag.RISK_CRUISING,
-                                options=options)
+                                options=options, owner_username=owner_username)
 
     task_data = submit_task(task_data)
     task_data_list.append(task_data)
@@ -698,7 +718,7 @@ def submit_risk_cruising(target, name, options):
     return task_data_list
 
 
-def submit_add_asset_site_task(task_name: str, target: list, options: dict) -> dict:
+def submit_add_asset_site_task(task_name: str, target: list, options: dict, owner_username=None) -> dict:
     task_data = {
         'name': task_name,
         'target': "站点：{}".format(len(target)),
@@ -712,6 +732,9 @@ def submit_add_asset_site_task(task_name: str, target: list, options: dict) -> d
         "cruising_target": target,
         "celery_id": ""
     }
+    owner_username = str(owner_username or "").strip()
+    if owner_username:
+        task_data["owner_username"] = owner_username
     task_data = submit_task(task_data)
     return task_data
 

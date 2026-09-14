@@ -1,0 +1,15 @@
+id: poc-yaml-citrix-sharefile-mismanagement-of-power
+info:
+  name: Citrix ShareFile 权限管理不当(CVE-2021-22941)
+  severity: critical
+  tags:
+  - CVE-2021-22941
+  - 两高一弱
+  finger: sharefile_storagezones_controller
+  fofa: body="ShareFile Storage Server"
+requests:
+- method: GET
+  path: /configservice/Home/Error
+  expression: status_code == 200 && contains(body,"../ConfigService/Views/Shared/Error.cshtml")
+variables: {}
+transport: http

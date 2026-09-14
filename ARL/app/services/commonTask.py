@@ -226,7 +226,8 @@ class WebSiteFetch(CommonTask):
         "console", "panel", "oa", "vpn", "api",
     )
 
-    def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None):
+    def __init__(self, task_id: str, sites: list, options: dict, scope_domain: list = None,
+                 discovery_context=None):
         super(WebSiteFetch, self).__init__(task_id)
         self.task_id = task_id
         self.sites = sites  # ** 这个是用户提交的目标
@@ -265,7 +266,7 @@ class WebSiteFetch(CommonTask):
             discovery_candidate_max = int(getattr(Config, "DISCOVERY_CANDIDATE_MAX", 20000) or 20000)
         except (TypeError, ValueError):
             discovery_candidate_max = 20000
-        self.discovery_context = DiscoveryContext(
+        self.discovery_context = discovery_context or DiscoveryContext(
             task_id=self.task_id,
             allowed_hosts=self.sites,
             response_max_body_bytes=getattr(Config, "PAGE_INTEL_MAX_PAGE_BYTES", 384 * 1024),
@@ -273,6 +274,12 @@ class WebSiteFetch(CommonTask):
             # 账本走 Mongo 后端：跨 worker 重启保存可恢复阶段状态；后端内部全量 fail-open。
             ledger=DiscoveryLedger(MongoLedgerBackend(self.task_id)),
         )
+        if discovery_context is not None:
+            # 复用域名任务上下文时把当前站点加入同一安全边界，避免跨 stage
+            # 的缓存可见性与实际任务目标集合不一致。
+            self.discovery_context.allowed_hosts.update(
+                url_host(site) for site in self.sites if url_host(site)
+            )
         try:
             new_host_queue_max = int(getattr(Config, "DISCOVERY_NEW_HOST_QUEUE_MAX", 50) or 50)
         except (TypeError, ValueError):

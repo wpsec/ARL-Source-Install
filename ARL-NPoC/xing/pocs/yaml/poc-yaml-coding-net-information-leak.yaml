@@ -1,0 +1,14 @@
+id: poc-yaml-coding-net-information-leak
+info:
+  name: CODing.net-信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: CODing.net
+requests:
+- method: GET
+  path: /cci/worker/simple/idna/
+  expression: status_code == 200 && contains(body, "/cci/worker") && contains(body,
+    "/cci/worker/simple/idna/") && contains(body, "href=") && contains(body, ".tar.gz")
+variables: {}
+transport: http

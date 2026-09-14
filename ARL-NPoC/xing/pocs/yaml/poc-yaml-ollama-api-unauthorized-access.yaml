@@ -1,0 +1,17 @@
+id: poc-yaml-ollama-api-unauthorized-access
+info:
+  name: Ollama API 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  - 大语言模型
+  finger: ollama
+  fofa: body="ollama is running"
+requests:
+- method: GET
+  path: /api/tags
+  expression: "status_code == 200 && \ncontains(body,\"\\\"models\\\"\") &&\ncontains(body,\"\
+    \\\"digest\\\"\") &&\ncontains(body,\"\\\"format\\\"\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+variables: {}
+transport: http

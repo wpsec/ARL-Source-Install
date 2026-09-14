@@ -939,6 +939,6 @@ class ARLConsoleSystemMonitor(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    "error": str(e),
+                    "error": utils.safe_error_text(e),
                 },
             )

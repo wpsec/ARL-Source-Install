@@ -141,7 +141,7 @@ class ARLAssetDomain(ARLResource):
         try:
             _, domain_list = get_ip_domain_list(raw_domain)
         except Exception as e:
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         # 查询资产组信息
         scope_data = utils.conn_db('asset_scope').find_one({"_id": ObjectId(scope_id)})
@@ -214,10 +214,13 @@ class ARLAssetDomain(ARLResource):
                     options.update(policy_options)
 
             # 提交扫描任务
-            submit_task_task(target=target, name=name, options=options)
+            submit_task_task(
+                target=target, name=name, options=options,
+                owner_username=utils.request_owner_username(),
+            )
         except Exception as e:
             logger.exception(e)
-            return utils.build_ret(ErrorMsg.Error, {"error": str(e)})
+            return utils.build_ret(ErrorMsg.Error, {"error": utils.safe_error_text(e)})
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 

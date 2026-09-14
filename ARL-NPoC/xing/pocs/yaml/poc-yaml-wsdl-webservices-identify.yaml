@@ -1,0 +1,36 @@
+id: poc-yaml-wsdl-webservices-identify
+info:
+  name: 发现 WSDL Services
+  severity: info
+  tags:
+  - identify
+  finger: java,webservice
+variables:
+  path: '/ws/
+
+    /webservice/
+
+    /services/
+
+    /service/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 && (
+
+    (
+
+    contains(body, "?wsdl\"") && contains(body, "WSDL :")
+
+    && contains(body, "Endpoint address") && contains(body, "namespace:")
+
+    )
+
+    ||
+
+    contains(title, "CXF - Service list")
+
+    )
+
+    '
+transport: http

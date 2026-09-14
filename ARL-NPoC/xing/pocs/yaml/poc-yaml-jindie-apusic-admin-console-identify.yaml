@@ -1,0 +1,26 @@
+id: poc-yaml-jindie-apusic-admin-console-identify
+info:
+  name: 发现金蝶天燕 Web 管理控制台
+  severity: info
+  tags:
+  - identify
+  finger: 金蝶天燕,apusic
+variables:
+  path: '/admin/login
+
+    /apusic/login
+
+    /login
+
+    /apusic/admin/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "username+\"|\"+userpass+\"|\"+userkapt") &&
+
+    contains(body, "IDtoken")
+
+    '
+transport: http

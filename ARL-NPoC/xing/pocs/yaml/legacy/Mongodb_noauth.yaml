@@ -1,0 +1,15 @@
+id: Mongodb_noauth
+info:
+  name: Mongodb 未授权访问
+  finger: Mongodb
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: tcp
+tcpRequests:
+- expression:
+  - conn.WriteStr(hex_decode("430000000400000000000000d40700000000000061646d696e2e24636d640000000000ffffffff1c000000016c69737444617461626173657300000000000000f03f00"))
+  - conn.ReadStr()
+  - contains(res, "sizeOnDisk") && !contains(res, "Unauthorized")
+scheme: mongodb

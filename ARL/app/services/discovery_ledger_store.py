@@ -9,6 +9,8 @@
   covered 永不可抢占。
 """
 
+import json
+import hashlib
 import os
 import re
 import time
@@ -22,12 +24,51 @@ from .discovery_context import LedgerEntry
 logger = utils.get_logger()
 
 LEDGER_COLLECTION = "task_stage_ledger"
+RESPONSE_CACHE_COLLECTION = "task_response_cache"
 
 # 单阶段最坏时长量级；过期后视为 worker 已丢失，允许被接管。
 LEDGER_CLAIM_TTL_SEC = 6 * 60 * 60
 
 # 可被 claim 接管的历史状态（非进行中、非已完成）。
 _CLAIMABLE_STATUSES = ("pending", "failed")
+
+_RESPONSE_SECRET_HEADER_PATTERN = re.compile(
+    r"(?:authorization|cookie|set-cookie|x-api-key|x-auth-token|"
+    r"x-[a-z0-9_-]*token|proxy-authorization)",
+    re.IGNORECASE,
+)
+_RESPONSE_SECRET_BODY_PATTERN = re.compile(
+    r"((?:authorization|cookie|set-cookie|x-api-key|x-auth-token|"
+    r"access[_-]?token|refresh[_-]?token|password|passwd|secret)"
+    r"\s*[:=]\s*)([^\s,;&\"']+)",
+    re.IGNORECASE,
+)
+
+
+def _redact_response_headers(headers):
+    """响应缓存只保留可用于诊断的 Header，不把认证材料跨消息持久化。"""
+    redacted = {}
+    for key, value in dict(headers or {}).items():
+        key_text = str(key)
+        redacted[key_text] = (
+            "[REDACTED]"
+            if _RESPONSE_SECRET_HEADER_PATTERN.search(key_text)
+            else str(value)
+        )
+    return redacted
+
+
+def _redact_response_body(body):
+    """对可解码文本做最小字段脱敏，二进制响应只保存 hash/空摘要。"""
+    raw_body = bytes(body or b"")
+    if not raw_body:
+        return raw_body
+    try:
+        text = raw_body.decode("utf-8")
+    except UnicodeDecodeError:
+        return b""
+    text = _RESPONSE_SECRET_BODY_PATTERN.sub(r"\1[REDACTED]", text)
+    return text.encode("utf-8", "ignore")
 
 try:
     from pymongo import ReturnDocument as _ReturnDocument
@@ -387,3 +428,115 @@ class MongoLedgerBackend(object):
     def is_covered(self, idempotency_key):
         entry = self.get(idempotency_key)
         return bool(entry is not None and entry.status == "covered")
+
+
+class MongoResponseBackend(object):
+    """跨 Celery 消息复用有界响应摘要。
+
+    只保存已截断正文、状态和内容哈希，并以 task_id、请求方法和 profile 隔离；
+    TTL 与定期 trim 防止把响应缓存变成长期业务数据或无界 Mongo 集合。
+    """
+
+    def __init__(self, task_id, utils_module=None, ttl_sec=900, max_entries=512):
+        self.task_id = str(task_id or "").strip()
+        self.utils = utils_module or utils
+        self.ttl_sec = max(60, int(ttl_sec or 900))
+        self.max_entries = max(1, int(max_entries or 1))
+        self._writes = 0
+
+    def _db(self):
+        return self.utils.conn_db(RESPONSE_CACHE_COLLECTION)
+
+    @staticmethod
+    def _key(url, method="GET", request_profile="default"):
+        from .discovery_context import normalize_url, _stable_json_value
+
+        return json.dumps(
+            [normalize_url(url), str(method or "GET").upper(), _stable_json_value(request_profile)],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    def get(self, url, method="GET", request_profile="default"):
+        key = self._key(url, method, request_profile)
+        try:
+            doc = self._db().find_one({
+                "task_id": self.task_id,
+                "key": key,
+                "expires_at": {"$gt": time.time()},
+            })
+        except Exception as exc:
+            logger.debug(
+                "response cache get failed task_id:%s error_type:%s",
+                self.task_id, type(exc).__name__,
+            )
+            return None
+        return doc if isinstance(doc, dict) else None
+
+    def put(self, record):
+        key = self._key(
+            record.normalized_url,
+            record.method,
+            record.request_profile,
+        )
+        now = time.time()
+        stored_body = _redact_response_body(record.body)
+        document = {
+            "task_id": self.task_id,
+            "key": key,
+            "normalized_url": record.normalized_url,
+            "method": record.method,
+            "request_profile": record.request_profile,
+            "status_code": int(record.status_code or 0),
+            "headers": _redact_response_headers(record.headers),
+            "content_type": str(record.content_type or ""),
+            "body": stored_body,
+            "body_hash": hashlib.sha256(stored_body).hexdigest() if stored_body else "",
+            "body_truncated": bool(record.body_truncated),
+            "source": str(record.source or ""),
+            "fetched_at": float(record.fetched_at or now),
+            "consumers": sorted(record.consumers or []),
+            "expires_at": now + self.ttl_sec,
+        }
+        try:
+            self._db().update_one(
+                {"task_id": self.task_id, "key": key},
+                {"$set": document},
+                upsert=True,
+            )
+            self._writes += 1
+            if self._writes % 64 == 0:
+                self._trim()
+        except Exception as exc:
+            logger.debug(
+                "response cache put failed task_id:%s error_type:%s",
+                self.task_id, type(exc).__name__,
+            )
+
+    def _trim(self):
+        try:
+            cursor = self._db().find(
+                {"task_id": self.task_id},
+                {"_id": 1},
+            ).sort("fetched_at", -1).skip(self.max_entries)
+            old_ids = [item.get("_id") for item in cursor if isinstance(item, dict) and item.get("_id")]
+            if old_ids:
+                self._db().delete_many({"_id": {"$in": old_ids}})
+        except Exception as exc:
+            logger.debug(
+                "response cache trim failed task_id:%s error_type:%s",
+                self.task_id, type(exc).__name__,
+            )
+
+    def ensure_indexes(self):
+        try:
+            collection = self._db()
+            collection.create_index(
+                [("task_id", 1), ("key", 1)], unique=True, background=True,
+            )
+            collection.create_index("expires_at", expireAfterSeconds=0, background=True)
+        except Exception as exc:
+            logger.debug(
+                "response cache index setup failed task_id:%s error_type:%s",
+                self.task_id, type(exc).__name__,
+            )

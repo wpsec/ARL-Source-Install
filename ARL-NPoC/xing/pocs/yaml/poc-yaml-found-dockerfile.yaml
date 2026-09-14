@@ -1,0 +1,21 @@
+id: poc-yaml-found-dockerfile
+info:
+  name: Dockerfile 文件泄漏漏洞
+  severity: high
+  tags:
+  - 配置不当
+  finger: ''
+variables:
+  path: '/docker/Dockerfile
+
+    /Dockerfile'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 && !contains(body, "<a") && !contains(body, "{\"")
+    &&
+
+    matches(body, "(FROM |RUN )")
+
+    '
+transport: http

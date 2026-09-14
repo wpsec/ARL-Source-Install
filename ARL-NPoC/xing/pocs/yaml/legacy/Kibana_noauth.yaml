@@ -1,0 +1,13 @@
+id: Kibana_noauth
+info:
+  name: Kibana 未授权访问
+  finger: Kibana
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /app/kibana
+  expression: contains(body, ".kibanaWelcomeView")

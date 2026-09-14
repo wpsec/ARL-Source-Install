@@ -1,0 +1,17 @@
+id: poc-yaml-tcp-zookeeper-unauthorized-access
+info:
+  name: Zookeeper 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: zookeeper
+scheme: zookeeper
+port: 2181
+tcpRequests:
+- expression:
+  - conn.WriteStr("srvr\n")
+  - conn.ReadStr()
+  - matches(res, `^Zookeeper version:`)
+variables: {}
+transport: tcp

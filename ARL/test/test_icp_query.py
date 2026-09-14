@@ -155,6 +155,56 @@ class TestIcpQueryEngine(unittest.TestCase):
         engine._get_captcha = lambda _session, _token: ("captcha-id", "captcha-sign")
         return engine, session
 
+    def test_query_page_executes_auth_captcha_and_query_protocol_in_order(self):
+        session = FakeSession([
+            FakeResponse({
+                "code": 200,
+                "success": True,
+                "params": {"bussiness": "protocol-token", "expire": 1000},
+            }),
+            FakeResponse({
+                "code": 200,
+                "success": True,
+                "params": {
+                    "uuid": "captcha-uuid",
+                    "smallImage": "synthetic-small-image",
+                    "bigImage": "synthetic-big-image",
+                },
+            }),
+            FakeResponse({
+                "code": 200,
+                "success": True,
+                "params": "protocol-sign",
+            }),
+            FakeResponse({
+                "code": 200,
+                "success": True,
+                "params": {
+                    "total": 1,
+                    "list": [{"unitName": "测试主体", "domainName": "example.com"}],
+                },
+            }),
+        ])
+        engine = MODULE.IcpQueryEngine(session_factory=lambda: session)
+
+        with patch.object(engine, "_slider_offset", return_value=17):
+            result = engine.query_page("web", "example.com")
+
+        self.assertEqual("测试主体", result["records"][0]["company_name"])
+        self.assertEqual(
+            [
+                MODULE.ICP_AUTH_URL,
+                MODULE.ICP_CAPTCHA_IMAGE_URL,
+                MODULE.ICP_CAPTCHA_CHECK_URL,
+                MODULE.ICP_QUERY_URL,
+            ],
+            [call[1] for call in session.calls],
+        )
+        self.assertEqual({"key": "captcha-uuid", "value": "17"}, session.calls[2][2]["json"])
+        self.assertEqual("protocol-token", session.calls[3][2]["headers"]["token"])
+        self.assertEqual("captcha-uuid", session.calls[3][2]["headers"]["uuid"])
+        self.assertEqual("protocol-sign", session.calls[3][2]["headers"]["sign"])
+
     def test_query_page_uses_fixed_official_endpoint_and_normalizes_result(self):
         engine, session = self._engine([
             FakeResponse({

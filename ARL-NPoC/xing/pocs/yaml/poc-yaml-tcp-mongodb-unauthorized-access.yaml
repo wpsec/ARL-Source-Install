@@ -1,0 +1,14 @@
+id: poc-yaml-tcp-mongodb-unauthorized-access
+info:
+  name: Mongodb 服务未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: mongodb
+scheme: mongodb
+port: 27017
+tcpRequests:
+- expression:
+  - set_var("details", check_mongodb_unauth(conn))
+variables: {}
+transport: tcp

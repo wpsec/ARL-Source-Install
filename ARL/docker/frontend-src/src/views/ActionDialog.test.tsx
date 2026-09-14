@@ -194,12 +194,16 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
       domain_dict: '/code/app/dicts/domain/domain_2w.txt',
       file_leak_dict: '/code/app/dicts/file_leak/file_top_2000.txt',
       npoc_service_detection: false,
+      npoc_poc_scan: false,
       poc_config: [],
     });
 
     await screen.findByText('测试漏洞');
-    const pluginCheckbox = screen.getByRole('checkbox', { name: '测试漏洞' }) as HTMLInputElement;
+    const pluginCheckbox = screen.getByRole('checkbox', { name: /测试漏洞/ }) as HTMLInputElement;
     expect(pluginCheckbox.checked).toBe(false);
+    expect(pluginCheckbox.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: '启用' }));
+    expect(pluginCheckbox.disabled).toBe(false);
     fireEvent.click(pluginCheckbox);
     expect(pluginCheckbox.checked).toBe(true);
     expect(screen.getByRole('button', { name: '全选' })).toBeTruthy();

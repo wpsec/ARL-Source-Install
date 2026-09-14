@@ -1,0 +1,16 @@
+id: Grafana_Identify
+info:
+  name: 发现 Grafana
+  finger: Grafana
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /login
+  - /grafana/login
+  - /monitor/login
+  expression: contains(body, "Grafana</title>")

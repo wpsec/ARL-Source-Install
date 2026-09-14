@@ -1,0 +1,17 @@
+id: poc-yaml-apache-shenyu-dashboard-weak-pass
+info:
+  name: Apache ShenYu Dashboard 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Apache ShenYu
+  osprey-id: vb_2022_0047
+requests:
+- method: GET
+  path: /platform/login
+  expression: 'contains(body, "{\"code\":200,\"message\":\"login dashboard user")
+    && contains(body, "id")
+
+    '
+variables: {}
+transport: http

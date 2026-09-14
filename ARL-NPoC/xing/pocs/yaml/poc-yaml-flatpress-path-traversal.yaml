@@ -1,0 +1,23 @@
+id: poc-yaml-flatpress-path-traversal
+info:
+  name: FlatPress 路径遍历漏洞(CVE-2023-0947)
+  severity: medium
+  tags:
+  - CVE-2023-0947
+  - 路径遍历
+  finger: flatpress
+  shodan: http.favicon.hash:-1189292869
+requests:
+- method: GET
+  path: /fp-content/
+  expression: 'status_code == 200
+
+    && contains(body,"Index of /fp-content")
+
+    && contains(title,"Index of /fp-content")
+
+    && contains(body,"Parent Directory")
+
+    '
+variables: {}
+transport: http

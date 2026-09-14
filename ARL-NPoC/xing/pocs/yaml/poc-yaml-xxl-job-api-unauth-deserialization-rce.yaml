@@ -1,0 +1,28 @@
+id: poc-yaml-xxl-job-api-unauth-deserialization-rce
+info:
+  name: XXL-JOB API 未授权反序列化漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: XXL-JOB
+  osprey-id: vb_2020_0081
+variables:
+  r_paths: '/api
+
+    /xxl-job-admin/api
+
+    /xxljob/api
+
+    /xxl-job/api
+
+    /xxl/api'
+requests:
+- method: GET
+  path: '{{.r_paths}}'
+  headers: {}
+  expression: 'contains(body, "com.xxl.rpc.util.XxlRpcException: xxl-rpc request data
+    is empty")
+
+    '
+transport: http

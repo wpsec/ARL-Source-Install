@@ -1,0 +1,13 @@
+id: Headless_remote_API_noauth
+info:
+  name: Headless Remote API 未授权访问
+  finger: Headless
+  severity: info
+  tags:
+  - legacy
+  - noauth
+transport: http
+requests:
+- method: GET
+  paths: /json/version
+  expression: contains(body, '"Protocol-Version"') && !contains(body, "<")

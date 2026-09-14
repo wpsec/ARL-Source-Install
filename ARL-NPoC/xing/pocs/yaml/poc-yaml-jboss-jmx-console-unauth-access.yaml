@@ -1,0 +1,18 @@
+id: poc-yaml-jboss-jmx-console-unauth-access
+info:
+  name: JBoss JMX Management Console 未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 未授权访问
+  finger: JBoss
+  osprey-id: vb_2021_0063
+requests:
+- method: GET
+  path: /jmx-console/
+  expression: 'contains(body, "jboss.deployment") && contains(body, "<title>JBoss
+    JMX Management Console</title>")
+
+    '
+variables: {}
+transport: http

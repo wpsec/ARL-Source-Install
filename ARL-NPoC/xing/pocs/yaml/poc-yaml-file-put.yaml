@@ -1,0 +1,30 @@
+id: poc-yaml-file-put
+info:
+  name: PUT 方法任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: ''
+variables:
+  r1: random_str(4)
+  r2: random_str(20)
+  path: '/
+
+    /static/
+
+    /file/
+
+    '
+requests:
+- method: PUT
+  path: '{{.path}}{{.r1}}.txt'
+  data: '{{.r2}}'
+  expression: 'status_code == 200 || status_code == 201
+
+    '
+- method: GET
+  path: '{{.path}}{{.r1}}.txt'
+  expression: 'status_code == 200 && contains(body, r2)
+
+    '
+transport: http

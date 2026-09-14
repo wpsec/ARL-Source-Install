@@ -1,0 +1,18 @@
+id: poc-yaml-apache-solr-identify
+info:
+  name: 发现 Apache Solr
+  severity: info
+  tags:
+  - identify
+  finger: Apache Solr
+variables:
+  path: '/solr/index.html
+
+    /Solr/index.html'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(title, "Solr Admin") && status_code == 200
+
+    '
+transport: http

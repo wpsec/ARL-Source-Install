@@ -20,6 +20,7 @@ class TaskRepository(object):
         "site",
         "url",
         "vuln",
+        "poc_scan_error",
         "cip",
         "npoc_service",
         "wih",

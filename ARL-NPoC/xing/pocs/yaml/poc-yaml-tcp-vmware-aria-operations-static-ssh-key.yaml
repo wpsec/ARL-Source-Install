@@ -1,0 +1,16 @@
+id: poc-yaml-tcp-vmware-aria-operations-static-ssh-key
+info:
+  name: VMWare Aria Operations 静态 SSH 密钥漏洞
+  severity: critical
+  tags:
+  - CVE-2023-34039
+  - 失效的身份认证
+  - 配置不当
+  finger: ssh,aria_operations
+scheme: ssh
+port: 22
+tcpRequests:
+- expression:
+  - set_var("details", check_vmware_aria_static_ssh_key(conn))
+variables: {}
+transport: tcp

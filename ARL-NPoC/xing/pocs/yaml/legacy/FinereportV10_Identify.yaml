@@ -1,0 +1,15 @@
+id: FinereportV10_Identify
+info:
+  name: 发现帆软 FineReport V10
+  finger: FineReport
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths:
+  - /webroot/decision/system/info
+  - /decision/system/info
+  expression: contains(body, "frontSeed") && contains(body, "name")

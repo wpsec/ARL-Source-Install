@@ -1,0 +1,13 @@
+id: Clickhouse_REST_API_Identify
+info:
+  name: 发现 Clickhouse REST API
+  finger: Clickhouse
+  severity: info
+  tags:
+  - legacy
+  - identify
+transport: http
+requests:
+- method: GET
+  paths: /ping
+  expression: contains(header, "read_rows") && contains(body, "Ok.")

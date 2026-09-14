@@ -1,0 +1,20 @@
+id: poc-yaml-harbor-identify
+info:
+  name: 发现 Harbor API
+  severity: info
+  tags:
+  - identify
+  finger: Harbor
+variables:
+  path: '/api/systeminfo
+
+    /harbor/api/systeminfo
+
+    /api/v2.0/systeminfo'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(body, "harbor_version\"") && !contains(body, "<")
+
+    '
+transport: http

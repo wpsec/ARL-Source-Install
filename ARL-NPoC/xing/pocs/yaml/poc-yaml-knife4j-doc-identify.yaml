@@ -1,0 +1,21 @@
+id: poc-yaml-knife4j-doc-identify
+info:
+  name: 发现 knife4j 接口文档
+  severity: medium
+  tags:
+  - identify
+  finger: Knife4j
+variables:
+  path: '/doc.html
+
+    /api/doc.html'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(title, "接口文档") || contains(title, "knife4j") || contains(title,
+    "Swagger")
+
+    || contains(body, "We''re sorry but knife4j-vue doesn''t work")
+
+    '
+transport: http

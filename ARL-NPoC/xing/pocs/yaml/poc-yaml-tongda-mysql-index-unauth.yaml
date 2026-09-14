@@ -1,0 +1,16 @@
+id: poc-yaml-tongda-mysql-index-unauth
+info:
+  name: 通达OA /mysql/index.php 未授权访问漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /mysql/index.php
+  expression: "status_code == 200 && \ncontains(title,`phpMyAdmin`) &&\ncontains(headers,`phpMyAdmin=`)\
+    \ &&\ncontains(body,`var token =`)\n"
+variables: {}
+transport: http

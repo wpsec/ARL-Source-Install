@@ -1,0 +1,18 @@
+id: poc-yaml-cloud-travel-bms-doc-unauthorized-access
+info:
+  name: 云出行后台管理系统 doc 未授权访问漏洞
+  severity: medium
+  tags:
+  - 未授权访问
+  finger: 云出行后台管理系统
+  fofa: body="云出行后台管理系统"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"云出行后台管理系统")
+- method: GET
+  path: /doc/
+  expression: status_code == 200 && contains(body,"文档说明") && contains(body,"接口文档")
+    && contains(body,"日志说明") && contains(body,"操作手册")
+variables: {}
+transport: http

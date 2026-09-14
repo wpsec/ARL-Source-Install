@@ -1,0 +1,23 @@
+id: poc-yaml-jupyter-notebook-unauthorized-access
+info:
+  name: Jupyter Notebookorized Access 未授权访问漏洞
+  severity: high
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: Jupyter Notebookorized
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /terminals/3
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "terminals/websocket") && !contains(body,
+    "Password:")
+  output: []

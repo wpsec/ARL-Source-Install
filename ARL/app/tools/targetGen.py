@@ -36,7 +36,7 @@ def normal_url(url):
 
 
 def load_file(path):
-    with open(path, "r+") as f:
+    with open(path, "r") as f:
         return f.readlines()
 
 

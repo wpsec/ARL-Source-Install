@@ -1,0 +1,22 @@
+id: poc-yaml-wanhu-eoffice10-oa-identify
+info:
+  name: 发现万户 eoffice10  OA
+  severity: info
+  tags:
+  - identify
+  finger: 万户,eoffice10
+variables:
+  path: '/eoffice10/client/web/login
+
+    /client/web/login
+
+    /mobile/login'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "localStorage.getItem(''eoffice_loading_tip'')")
+
+    '
+transport: http

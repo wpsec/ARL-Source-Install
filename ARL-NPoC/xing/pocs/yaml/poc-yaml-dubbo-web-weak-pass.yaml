@@ -1,0 +1,21 @@
+id: poc-yaml-dubbo-web-weak-pass
+info:
+  name: Dubbo Web 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: Dubbo
+  osprey-id: vb_2019_0076
+variables:
+  v_auth: 'base64("root:root")
+
+    base64("dubbo:dubbo")'
+requests:
+- method: GET
+  path: /
+  headers:
+    Authorization: Basic {{.v_auth}}
+  expression: 'contains(body, "dubbo.js") && contains(body, "Dubbo Admin")
+
+    '
+transport: http

@@ -1,0 +1,18 @@
+id: poc-yaml-f22-apparel-management-software-system-information-leak
+info:
+  name: F22服装管理软件系统 敏感信息泄露
+  severity: high
+  tags:
+  - 信息泄露
+  finger: F22服装管理软件系统
+  fofa: body="Login_btn" && body="Login_Ipt" && body="login_title"
+requests:
+- method: GET
+  path: /pos/index_login.asp
+  expression: 'status_code == 200 &&
+
+    matches(headers,"Set-Cookie: cn2=.*; path=/")
+
+    '
+variables: {}
+transport: http

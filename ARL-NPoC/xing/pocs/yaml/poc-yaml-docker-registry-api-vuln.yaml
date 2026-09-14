@@ -1,0 +1,17 @@
+id: poc-yaml-docker-registry-api-vuln
+info:
+  name: Docker Registry API 未授权访问漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: Docker
+  osprey-id: vb_2019_0018
+requests:
+- method: GET
+  path: /v2/_catalog
+  expression: 'status_code == 200 && contains(body, "{\"repositories\":") && !contains(body,
+    "<")
+
+    '
+variables: {}
+transport: http

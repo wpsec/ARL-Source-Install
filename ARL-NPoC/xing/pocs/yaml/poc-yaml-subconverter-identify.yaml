@@ -1,0 +1,15 @@
+id: poc-yaml-subconverter-identify
+info:
+  name: 发现 subconverter
+  severity: info
+  tags:
+  - identify
+  finger: subconverter
+requests:
+- method: GET
+  path: /version
+  expression: 'contains(body, "subconverter v") && contains(body, "backend")
+
+    '
+variables: {}
+transport: http

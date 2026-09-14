@@ -1,0 +1,15 @@
+id: poc-yaml-tke-installer-identify
+info:
+  name: 发现 TKE Installer
+  severity: info
+  tags:
+  - identify
+  finger: TKE Installer
+requests:
+- method: GET
+  path: /
+  expression: 'title == "TKE Installer"
+
+    '
+variables: {}
+transport: http

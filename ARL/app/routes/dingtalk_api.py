@@ -443,7 +443,7 @@ class DingtalkApiConfig(ARLResource):
             logger.exception("load dingtalk config failed: %s", exc)
             return _build_dingtalk_error(
                 "load dingtalk config failed",
-                {"error": str(exc), "config_path": str(config_path)},
+                {"error": utils.safe_error_text(exc)},
             )
 
     @auth
@@ -467,7 +467,7 @@ class DingtalkApiConfig(ARLResource):
                 logger.exception("save dingtalk config failed: %s", exc)
                 return _build_dingtalk_error(
                     "save dingtalk config failed",
-                    {"error": str(exc), "config_path": str(config_path)},
+                    {"error": utils.safe_error_text(exc)},
                 )
 
         return _build_dingtalk_success(
@@ -512,7 +512,7 @@ class DingtalkApiReveal(ARLResource):
             logger.exception("reveal dingtalk config failed: %s", exc)
             return _build_dingtalk_error(
                 "reveal dingtalk config failed",
-                {"error": str(exc), "config_path": str(config_path)},
+                {"error": utils.safe_error_text(exc)},
             )
 
         return _build_dingtalk_success(

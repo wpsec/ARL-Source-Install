@@ -1,0 +1,22 @@
+id: poc-yaml-apache-airflow-os-command-injection
+info:
+  name: Apache Airflow OS命令注入漏洞(CVE-2022-24288)
+  severity: critical
+  tags:
+  - CVE-2022-24288
+  - 命令注入
+  finger: airflow
+  shodan: title:"Airflow - DAGs"
+requests:
+- method: GET
+  path: /admin/airflow/code?root=&dag_id=example_passing_params_via_test_command
+  expression: 'status_code == 200
+
+    && contains(body,"foo was passed in via Airflow CLI Test command with value {{
+    params.foo }}")
+
+    && contains(title,"Airflow - DAGs")
+
+    '
+variables: {}
+transport: http

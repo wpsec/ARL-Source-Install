@@ -1,0 +1,17 @@
+id: poc-yaml-oray-sunlogin-identify
+info:
+  name: 发现向日葵 RPC 接口
+  severity: info
+  tags:
+  - identify
+  finger: oray-sunlogin
+requests:
+- method: GET
+  path: /
+  expression: 'status_code == 200 && contains(headers, "json")
+
+    && contains(body, "{\"success\":false,\"msg\":\"Verification failure\"}")
+
+    '
+variables: {}
+transport: http

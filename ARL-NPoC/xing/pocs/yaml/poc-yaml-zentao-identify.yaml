@@ -1,0 +1,20 @@
+id: poc-yaml-zentao-identify
+info:
+  name: 发现禅道系统
+  severity: info
+  tags:
+  - identify
+  finger: zentao
+variables:
+  path: '/zentao/
+
+    /pro/
+
+    /biz/'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'contains(headers, "zentaosid=")
+
+    '
+transport: http

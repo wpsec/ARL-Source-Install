@@ -1,0 +1,24 @@
+id: poc-yaml-jeecms-identify
+info:
+  name: 发现 JEECMS
+  severity: info
+  tags:
+  - identify
+  finger: JEECMS
+variables:
+  path: '/cnf/r/cms/front.js
+
+    /r/cms/front.js
+
+    /cms/front.js'
+requests:
+- method: GET
+  path: '{{.path}}'
+  expression: 'status_code == 200 &&
+
+    contains(body, "$.getJSON(base + \"/content_view.jspx\"") &&
+
+    contains(body, "Cms.viewCount")
+
+    '
+transport: http

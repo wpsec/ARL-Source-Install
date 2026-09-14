@@ -1,0 +1,16 @@
+id: poc-yaml-leagsoft-portal-identify
+info:
+  name: 发现联软入网身份认证登录页
+  severity: info
+  tags:
+  - identify
+  finger: leagsoft
+requests:
+- method: GET
+  path: /portal/redirect/nacc/
+  expression: 'contains(body, "\"straclname\":\"UACL_Valid_n_healthy\"") || contains(headers,
+    "UniAppServer")
+
+    '
+variables: {}
+transport: http

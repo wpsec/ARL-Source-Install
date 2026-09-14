@@ -1,0 +1,16 @@
+id: Django_Debug_Info
+info:
+  name: Django 开启调试模式
+  finger: Django
+  severity: info
+  tags:
+  - legacy
+  - poc
+transport: http
+requests:
+- method: GET
+  paths:
+  - /lljfafd
+  - /api/lljfafd
+  expression: status_code == 404 && contains(body, "Django") && contains(body, "DEBUG
+    = True") && contains(body, "<title>Page not found at") && contains(body, "lljfafd</title>")

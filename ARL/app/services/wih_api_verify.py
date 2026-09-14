@@ -133,7 +133,8 @@ def run_api_verify(
     return {"plan": plan.to_dict(), "items": results}
 
 
-def build_l1_executor(*, waf_guard: Any = None, discovery_context: Any = None):
+def build_l1_executor(*, waf_guard: Any = None, discovery_context: Any = None,
+                      url_in_scope: Any = None):
     """构造复用既有 Endpoint Probe 的 L1 执行器。
 
     执行器是显式依赖：构造本身不发请求，调用方必须主动把返回函数传给
@@ -148,6 +149,7 @@ def build_l1_executor(*, waf_guard: Any = None, discovery_context: Any = None):
             dict(item or {}),
             waf_guard=waf_guard,
             discovery_context=discovery_context,
+            url_in_scope=url_in_scope,
         )
         status = str(output.get("verification_status") or "").strip().lower()
         if status in {"probed", "observed"}:

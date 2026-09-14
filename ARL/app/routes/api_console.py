@@ -137,6 +137,11 @@ def _resolve_config_path() -> Path:
     return CONFIG_DOMAIN_SERVICE.resolve_path()
 
 
+def _config_path_for_client() -> str:
+    """对外只返回配置角色，避免把容器/宿主机文件路径写入响应。"""
+    return "runtime-config"
+
+
 def _load_config_from_file(config_path: Path):
     """
     读取 YAML 配置文件，返回字典对象。
@@ -160,6 +165,52 @@ def _ensure_json_like_config(config_obj):
         json.dumps(config_obj, ensure_ascii=False)
     except Exception as exc:
         raise ValueError('配置包含不可序列化内容') from exc
+
+
+_CONFIG_SECRET_KEY_PATTERN = re.compile(
+    r"(?:password|passwd|token|secret|api[_-]?key|access[_-]?key|"
+    r"auth[_-]?key|private[_-]?key|webhook)",
+    re.IGNORECASE,
+)
+
+
+def _sanitize_config_for_client(value):
+    """配置中心只返回脱敏副本，保存链路仍使用服务端原始配置。"""
+    if isinstance(value, dict):
+        result = {}
+        for key, child in value.items():
+            if _CONFIG_SECRET_KEY_PATTERN.search(str(key)):
+                result[key] = "<redacted>" if child not in (None, "", [], {}) else ""
+            else:
+                result[key] = _sanitize_config_for_client(child)
+        return result
+    if isinstance(value, list):
+        return [_sanitize_config_for_client(item) for item in value]
+    return value
+
+
+def _restore_redacted_config_values(current, incoming):
+    """前端回传脱敏副本时保留服务端原值，避免普通配置保存误清空凭据。"""
+    if isinstance(current, dict) and isinstance(incoming, dict):
+        result = {}
+        for key, child in incoming.items():
+            old_child = current.get(key)
+            if (_CONFIG_SECRET_KEY_PATTERN.search(str(key))
+                    and child in ("<redacted>", "", None)):
+                result[key] = old_child
+            else:
+                result[key] = _restore_redacted_config_values(old_child, child)
+        return result
+    if isinstance(incoming, list):
+        old_items = current if isinstance(current, list) else []
+        return [
+            _restore_redacted_config_values(
+                old_items[index] if index < len(old_items) else None,
+                item,
+            )
+            for index, item in enumerate(incoming)
+        ]
+    return incoming
 
 
 def _safe_int(value, default_value, min_value=1):
@@ -3573,7 +3624,7 @@ def _try_run_ai_denoise(module_id, item, ai_prompt, active_profile, rule_result,
             return None, format_error, dialogue_records
         return None, 'AI 返回格式不可解析', dialogue_records
     except Exception as exc:
-        message = str(exc)
+        message = utils.safe_error_text(exc, max_length=240)
         dialogue_records.extend(
             _normalize_dialogue_records(
                 [{'role': 'assistant', 'content': 'AI请求异常：{}'.format(_truncate_text(message, 240))}],
@@ -4125,6 +4176,17 @@ NUCLEI_TEMPLATE_REPO_URL = 'https://github.com/projectdiscovery/nuclei-templates
 AFROG_POC_REPO_URL = 'https://github.com/zan8in/afrog-pocs.git'
 
 
+def _poc_repo_commit(repo_type: str) -> str:
+    config_name = {
+        'nuclei': 'NUCLEI_TEMPLATE_COMMIT',
+        'afrog': 'AFROG_POC_COMMIT',
+    }.get(str(repo_type or '').strip().lower())
+    commit = str(getattr(Config, config_name, '') or '').strip().lower() if config_name else ''
+    if not re.fullmatch(r'[0-9a-f]{40}', commit):
+        raise RuntimeError('{} PoC 仓库未配置 40 位 commit，已拒绝不受控更新'.format(repo_type))
+    return commit
+
+
 def _normalize_git_remote_url(remote_url: str) -> str:
     """
     归一化远程地址，便于判断 origin 是否与预期仓库一致。
@@ -4287,7 +4349,7 @@ def _collect_repo_head(git_bin: str, repo_dir: Path):
     }
 
 
-def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
+def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = '', pinned_commit: str = ''):
     """
     使用 git 更新 PoC 仓库：
     - 已存在 git 仓库：fetch + pull
@@ -4296,6 +4358,9 @@ def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
     git_bin = utils.resolve_executable('git')
     if not git_bin:
         raise RuntimeError('未找到 git 命令，请先在容器中安装 git')
+    pinned_commit = str(pinned_commit or '').strip().lower()
+    if not re.fullmatch(r'[0-9a-f]{40}', pinned_commit):
+        raise ValueError('PoC 仓库必须指定完整 commit')
 
     repo_dir = _resolve_poc_repo_dir(repo_type)
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -4335,7 +4400,23 @@ def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
         operations.append('clone')
         if rc != 0:
             raise RuntimeError('git clone 失败: {}'.format(stderr or stdout or 'unknown error'))
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['fetch', '--depth', '1', 'origin', pinned_commit],
+            cwd=repo_dir,
+            timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+            env_extra=git_env,
+        )
+        operations.append('fetch-pinned-commit')
+        if rc != 0:
+            raise RuntimeError('git fetch pinned commit 失败: {}'.format(stderr or stdout or 'unknown error'))
     else:
+        rc, stdout, _ = _run_git_command(
+            git_bin, ['status', '--porcelain'], cwd=repo_dir, timeout=30, env_extra=git_env)
+        if rc != 0:
+            raise RuntimeError('检查 PoC 仓库状态失败')
+        if str(stdout or '').strip():
+            raise RuntimeError('PoC 仓库存在本地修改，已拒绝覆盖')
         rc, stdout, stderr = _run_git_command(
             git_bin,
             ['remote', 'get-url', 'origin'],
@@ -4376,7 +4457,7 @@ def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
 
         rc, stdout, stderr = _run_git_command(
             git_bin,
-            ['fetch', 'origin', '--prune'],
+            ['fetch', 'origin', '--prune', '--depth', '1', pinned_commit],
             cwd=repo_dir,
             timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
             env_extra=git_env,
@@ -4385,46 +4466,33 @@ def _sync_poc_repo(repo_type: str, repo_url: str, proxy_url: str = ''):
         if rc != 0:
             raise RuntimeError('git fetch 失败: {}'.format(stderr or stdout or 'unknown error'))
 
-        branch = _resolve_remote_default_branch(git_bin, repo_dir)
-
-        rc, current_branch, _ = _run_git_command(
-            git_bin,
-            ['rev-parse', '--abbrev-ref', 'HEAD'],
-            cwd=repo_dir,
-            timeout=30,
-            env_extra=git_env,
-        )
-        current_branch = str(current_branch or '').strip() if rc == 0 else ''
-        if (not current_branch) or current_branch == 'HEAD':
-            rc, stdout, stderr = _run_git_command(
-                git_bin,
-                ['checkout', branch],
-                cwd=repo_dir,
-                timeout=60,
-                env_extra=git_env,
-            )
-            if rc != 0:
-                rc, stdout, stderr = _run_git_command(
-                    git_bin,
-                    ['checkout', '-b', branch, '--track', 'origin/{}'.format(branch)],
-                    cwd=repo_dir,
-                    timeout=60,
-                    env_extra=git_env,
-                )
-            operations.append('checkout')
-            if rc != 0:
-                raise RuntimeError('切换分支失败: {}'.format(stderr or stdout or 'unknown error'))
-
         rc, stdout, stderr = _run_git_command(
             git_bin,
-            ['pull', '--ff-only', 'origin', branch],
+            ['checkout', '--detach', pinned_commit],
             cwd=repo_dir,
-            timeout=POC_REPO_UPDATE_TIMEOUT_SEC,
+            timeout=60,
             env_extra=git_env,
         )
-        operations.append('pull')
+        operations.append('checkout-pinned-commit')
         if rc != 0:
-            raise RuntimeError('git pull 失败: {}'.format(stderr or stdout or 'unknown error'))
+            raise RuntimeError('切换 pinned commit 失败: {}'.format(stderr or stdout or 'unknown error'))
+
+    if not is_git_repo:
+        rc, stdout, stderr = _run_git_command(
+            git_bin,
+            ['checkout', '--detach', pinned_commit],
+            cwd=repo_dir,
+            timeout=60,
+            env_extra=git_env,
+        )
+        operations.append('checkout-pinned-commit')
+        if rc != 0:
+            raise RuntimeError('切换 pinned commit 失败: {}'.format(stderr or stdout or 'unknown error'))
+
+    rc, head_stdout, head_stderr = _run_git_command(
+        git_bin, ['rev-parse', 'HEAD'], cwd=repo_dir, timeout=30, env_extra=git_env)
+    if rc != 0 or str(head_stdout or '').strip().lower() != pinned_commit:
+        raise RuntimeError('PoC 仓库 HEAD 校验失败: {}'.format(head_stderr or 'commit mismatch'))
 
     head = _collect_repo_head(git_bin, repo_dir)
     if not current_remote:
@@ -4668,8 +4736,8 @@ class ApiConsoleConfig(ARLResource):
         try:
             config_obj = _load_config_from_file(config_path)
             data = {
-                'config': config_obj,
-                'config_path': str(config_path),
+                'config': _sanitize_config_for_client(config_obj),
+                'config_path': _config_path_for_client(),
                 'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
             return utils.build_ret(ErrorMsg.Success, data)
@@ -4678,8 +4746,7 @@ class ApiConsoleConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
                 }
             )
 
@@ -4694,9 +4761,11 @@ class ApiConsoleConfig(ARLResource):
         config_path = _resolve_config_path()
 
         try:
+            current_config = _load_config_from_file(config_path)
+            config_obj = _restore_redacted_config_values(current_config, config_obj)
             _ensure_json_like_config(config_obj)
         except Exception as exc:
-            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+            return utils.build_ret(ErrorMsg.Error, {'error': utils.safe_error_text(exc)})
 
         try:
             _, persist_result = CONFIG_DOMAIN_SERVICE.save(
@@ -4709,8 +4778,7 @@ class ApiConsoleConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
                 }
             )
 
@@ -4718,7 +4786,7 @@ class ApiConsoleConfig(ARLResource):
             ErrorMsg.Success,
             {
                 'saved': True,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
@@ -4743,7 +4811,7 @@ class ApiConsoleServiceApi(ARLResource):
                 {
                     'service_api': service_api,
                     'sensitive_configured': sensitive_configured,
-                    'config_path': str(config_path),
+                    'config_path': _config_path_for_client(),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 }
             )
@@ -4752,8 +4820,8 @@ class ApiConsoleServiceApi(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -4781,8 +4849,8 @@ class ApiConsoleServiceApi(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -4792,7 +4860,7 @@ class ApiConsoleServiceApi(ARLResource):
                 'saved': True,
                 'service_api': saved_service_api,
                 'sensitive_configured': sensitive_configured,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
@@ -4831,8 +4899,8 @@ class ApiConsoleServiceApiReveal(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -4841,7 +4909,7 @@ class ApiConsoleServiceApiReveal(ARLResource):
             {
                 'service_api': service_api,
                 'sensitive_configured': sensitive_configured,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'revealed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'message': message,
             }
@@ -4892,7 +4960,7 @@ class ApiConsoleServiceApiTest(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
+                    'error': utils.safe_error_text(exc),
                     'provider': provider,
                 }
             )
@@ -4950,7 +5018,10 @@ class ApiConsoleServiceApiBatchTest(ARLResource):
                 item = {
                     'provider': provider,
                     'ok': False,
-                    'message': '{} 测试失败：{}'.format(spec.get('label') or provider, exc),
+                    'message': '{} 测试失败：{}'.format(
+                        spec.get('label') or provider,
+                        utils.safe_error_text(exc),
+                    ),
                     'test_target': _normalize_test_target_domain(test_target),
                     'detail': {},
                     'tested_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -4995,7 +5066,7 @@ class ApiConsoleAiConfig(ARLResource):
                     'ai_config': ai_config,
                     'sensitive_configured': sensitive_configured,
                     'provider_presets': AI_PROVIDER_PRESETS,
-                    'config_path': str(config_path),
+                    'config_path': _config_path_for_client(),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 }
             )
@@ -5004,8 +5075,8 @@ class ApiConsoleAiConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5034,8 +5105,8 @@ class ApiConsoleAiConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5046,7 +5117,7 @@ class ApiConsoleAiConfig(ARLResource):
                 'ai_config': saved_ai_config,
                 'sensitive_configured': sensitive_configured,
                 'provider_presets': AI_PROVIDER_PRESETS,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'backup_path': backup_path,
                 'runtime_refreshed': runtime_refreshed,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -5086,8 +5157,8 @@ class ApiConsoleAiConfigReveal(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5099,7 +5170,7 @@ class ApiConsoleAiConfigReveal(ARLResource):
                 'sensitive_configured': sensitive_configured,
                 'message': '已进入 Key 编辑模式。为安全起见，系统不会回传历史明文 Key。',
                 'provider_presets': AI_PROVIDER_PRESETS,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'revealed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
         )
@@ -5134,7 +5205,7 @@ class ApiConsoleAiConfigTest(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
+                    'error': utils.safe_error_text(exc),
                 }
             )
 
@@ -5170,7 +5241,7 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
         try:
             sop_payload = _parse_uploaded_ai_sop_yaml(upload_file.read())
         except Exception as exc:
-            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+            return utils.build_ret(ErrorMsg.Error, {'error': utils.safe_error_text(exc)})
 
         config_path = _resolve_config_path()
         prompt_id = str(AI_SOP_MODULE_PROMPT_ID_MAP.get(module_id) or '').strip()
@@ -5241,8 +5312,8 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5260,7 +5331,7 @@ class ApiConsoleAiConfigSopUpload(ARLResource):
                 'ai_config': saved_ai_config,
                 'sensitive_configured': sensitive_configured,
                 'provider_presets': AI_PROVIDER_PRESETS,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
             }
         )
 
@@ -5541,7 +5612,7 @@ class ApiConsoleAiDenoiseAnalyze(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
+                    'error': utils.safe_error_text(exc),
                     'module_id': module_id,
                 }
             )
@@ -5602,7 +5673,7 @@ class ApiConsoleScanConfig(ARLResource):
                     'scan_profiles': SCAN_CONFIG_SERVICE.build_profiles_payload(active_scan_profile),
                     'available_domain_dicts': domain_options,
                     'available_file_leak_dicts': file_leak_options,
-                    'config_path': str(config_path),
+                    'config_path': _config_path_for_client(),
                     'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 }
             )
@@ -5611,8 +5682,8 @@ class ApiConsoleScanConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5639,8 +5710,8 @@ class ApiConsoleScanConfig(ARLResource):
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
-                    'config_path': str(config_path),
+                    'error': utils.safe_error_text(exc),
+                    'config_path': _config_path_for_client(),
                 }
             )
 
@@ -5653,7 +5724,7 @@ class ApiConsoleScanConfig(ARLResource):
                 'scan_profiles': SCAN_CONFIG_SERVICE.build_profiles_payload(active_scan_profile),
                 'available_domain_dicts': domain_options,
                 'available_file_leak_dicts': file_leak_options,
-                'config_path': str(config_path),
+                'config_path': _config_path_for_client(),
                 'backup_path': backup_path,
                 'saved_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
@@ -5674,13 +5745,14 @@ class ApiConsoleNucleiPocUpdate(ARLResource):
                     'nuclei',
                     NUCLEI_TEMPLATE_REPO_URL,
                     proxy_url=str(getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip(),
+                    pinned_commit=_poc_repo_commit('nuclei'),
                 )
         except Exception as exc:
             logger.exception('update nuclei poc failed: %s', exc)
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
+                    'error': utils.safe_error_text(exc),
                     'repo_type': 'nuclei',
                     'repo_url': NUCLEI_TEMPLATE_REPO_URL,
                 }
@@ -5710,13 +5782,14 @@ class ApiConsoleAfrogPocUpdate(ARLResource):
                     'afrog',
                     AFROG_POC_REPO_URL,
                     proxy_url=str(getattr(Config, 'POC_UPDATE_PROXY', '') or '').strip(),
+                    pinned_commit=_poc_repo_commit('afrog'),
                 )
         except Exception as exc:
             logger.exception('update afrog poc failed: %s', exc)
             return utils.build_ret(
                 ErrorMsg.Error,
                 {
-                    'error': str(exc),
+                    'error': utils.safe_error_text(exc),
                     'repo_type': 'afrog',
                     'repo_url': AFROG_POC_REPO_URL,
                 }
@@ -5773,7 +5846,7 @@ class ApiConsoleDomainDictUpload(ARLResource):
                 file_obj.write(file_bytes)
         except Exception as exc:
             logger.exception('save domain dict upload failed: %s', exc)
-            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+            return utils.build_ret(ErrorMsg.Error, {'error': utils.safe_error_text(exc)})
 
         options = _collect_domain_dict_options(str(save_path))
         return utils.build_ret(
@@ -5827,7 +5900,7 @@ class ApiConsoleFileLeakDictUpload(ARLResource):
                 file_obj.write(file_bytes)
         except Exception as exc:
             logger.exception('save file leak dict upload failed: %s', exc)
-            return utils.build_ret(ErrorMsg.Error, {'error': str(exc)})
+            return utils.build_ret(ErrorMsg.Error, {'error': utils.safe_error_text(exc)})
 
         options = _collect_file_leak_dict_options(str(save_path))
         return utils.build_ret(

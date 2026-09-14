@@ -1,0 +1,14 @@
+id: poc-yaml-hfish-identify
+info:
+  name: 发现 HFish
+  severity: info
+  tags:
+  - identify
+  finger: HFish
+requests:
+- method: GET
+  path: /web/login
+  expression: "status_code == 200 &&\n  ( contains(title, \"HFish\") || contains(body,\
+    \ \"assets/hfish-ui\") )\n"
+variables: {}
+transport: http
