@@ -1,4 +1,3 @@
-import { deepClone } from './format';
 import type {FlatPayloadField, JsonValue} from './types';
 
 export function flattenPayloadFields(payload: JsonValue, parent = ''): FlatPayloadField[] {
@@ -19,15 +18,21 @@ export function flattenPayloadFields(payload: JsonValue, parent = ''): FlatPaylo
 }
 
 export function updatePayloadValue(payload: JsonValue, path: string, value: any): JsonValue {
-  const next = deepClone(payload || {});
+  // 只复制从根到目标字段的对象，避免批量 POC 配置变更时序列化整个表单。
+  const sourcePayload = payload || {};
+  const next = { ...sourcePayload };
   const parts = path.split('.');
   let cursor: any = next;
+  let source: any = sourcePayload;
   for (let i = 0; i < parts.length - 1; i += 1) {
     const key = parts[i];
-    if (!cursor[key] || typeof cursor[key] !== 'object' || Array.isArray(cursor[key])) {
-      cursor[key] = {};
-    }
-    cursor = cursor[key];
+    const sourceValue = source?.[key];
+    const nextValue = sourceValue && typeof sourceValue === 'object' && !Array.isArray(sourceValue)
+      ? { ...sourceValue }
+      : {};
+    cursor[key] = nextValue;
+    cursor = nextValue;
+    source = sourceValue;
   }
   cursor[parts[parts.length - 1]] = value;
   return next;

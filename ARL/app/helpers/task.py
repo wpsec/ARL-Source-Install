@@ -68,7 +68,7 @@ def normalize_task_poc_config(config):
     if not isinstance(config, list):
         raise Exception("poc_config 必须是列表")
 
-    result = []
+    normalized_items = []
     seen = set()
     for item in config:
         if not isinstance(item, dict):
@@ -76,18 +76,43 @@ def normalize_task_poc_config(config):
         plugin_name = str(item.get("plugin_name") or "").strip()
         if not plugin_name or plugin_name in seen:
             continue
-        plugin_info = utils.conn_db("poc").find_one(
-            {"plugin_name": plugin_name, "plugin_type": "poc"}
-        )
+        seen.add(plugin_name)
+        normalized_items.append((plugin_name, bool(item.get("enable"))))
+
+    if not normalized_items:
+        return []
+
+    plugin_names = [plugin_name for plugin_name, _ in normalized_items]
+    collection = utils.conn_db("poc")
+    plugin_infos = collection.find(
+        {
+            "plugin_name": {"$in": plugin_names},
+            "plugin_type": "poc",
+        },
+        {
+            "_id": 0,
+            "plugin_name": 1,
+            "vul_name": 1,
+            "status": 1,
+        },
+    )
+    plugin_info_by_name = {
+        str(plugin_info.get("plugin_name") or "").strip(): plugin_info
+        for plugin_info in plugin_infos
+        if str(plugin_info.get("plugin_name") or "").strip()
+    }
+
+    result = []
+    for plugin_name, enabled in normalized_items:
+        plugin_info = plugin_info_by_name.get(plugin_name)
         if not plugin_info:
             raise Exception("没有找到 {} POC 插件".format(plugin_name))
         if plugin_info.get("status", "ready") != "ready":
             raise Exception("POC {} 当前不可执行".format(plugin_name))
-        seen.add(plugin_name)
         result.append({
             "plugin_name": plugin_name,
             "vul_name": plugin_info.get("vul_name", ""),
-            "enable": bool(item.get("enable")),
+            "enable": enabled,
         })
     return result
 

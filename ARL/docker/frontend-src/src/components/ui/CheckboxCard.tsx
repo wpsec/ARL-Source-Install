@@ -26,7 +26,7 @@ export function CheckboxCard({
     <label className={`${CHECKBOX_CARD_CLASS}${checked ? ' border-primary/70 bg-primary/12' : ''} ${className}`}>
       <input
         type="checkbox"
-        className="checkbox checkbox-sm shrink-0"
+        className="checkbox checkbox-primary checkbox-sm shrink-0"
         checked={checked}
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}

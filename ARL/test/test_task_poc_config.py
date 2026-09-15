@@ -11,11 +11,11 @@ from app.services.npoc import NPoC
 class TestTaskPocConfig(unittest.TestCase):
     def test_normalize_task_poc_config_validates_database_plugin_and_deduplicates(self):
         collection = MagicMock()
-        collection.find_one.return_value = {
+        collection.find.return_value = [{
             "plugin_name": "Demo_POC",
             "plugin_type": "poc",
             "vul_name": "Demo 漏洞",
-        }
+        }]
 
         with patch("app.helpers.task.utils.conn_db", return_value=collection):
             result = normalize_task_poc_config([
@@ -27,13 +27,22 @@ class TestTaskPocConfig(unittest.TestCase):
             [{"plugin_name": "Demo_POC", "vul_name": "Demo 漏洞", "enable": True}],
             result,
         )
-        collection.find_one.assert_called_once_with(
-            {"plugin_name": "Demo_POC", "plugin_type": "poc"}
+        collection.find.assert_called_once_with(
+            {
+                "plugin_name": {"$in": ["Demo_POC"]},
+                "plugin_type": "poc",
+            },
+            {
+                "_id": 0,
+                "plugin_name": 1,
+                "vul_name": 1,
+                "status": 1,
+            },
         )
 
     def test_normalize_task_poc_config_rejects_unknown_plugin(self):
         collection = MagicMock()
-        collection.find_one.return_value = None
+        collection.find.return_value = []
 
         with patch("app.helpers.task.utils.conn_db", return_value=collection):
             with self.assertRaisesRegex(Exception, "没有找到"):
@@ -43,11 +52,11 @@ class TestTaskPocConfig(unittest.TestCase):
 
     def test_ip_task_keeps_measurement_plugin_enabled(self):
         collection = MagicMock()
-        collection.find_one.return_value = {
+        collection.find.return_value = [{
             "plugin_name": "Demo_POC",
             "plugin_type": "poc",
             "vul_name": "Demo 漏洞",
-        }
+        }]
 
         with patch("app.helpers.task.utils.conn_db", return_value=collection):
             task_data = build_task_data(

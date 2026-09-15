@@ -150,7 +150,7 @@ export function ActionDialog({
   const taskTarget = String(formPayload?.target ?? '');
   const taskDomainDict = String(formPayload?.domain_dict ?? '');
   const taskFileLeakDict = String(formPayload?.file_leak_dict ?? '');
-  const taskPortScanType = String(formPayload?.port_scan_type ?? 'test');
+  const taskPortScanType = String(formPayload?.port_scan_type ?? 'all');
   const taskPortCustom = String(formPayload?.port_custom ?? '80,443');
   const taskScheduleName = String(formPayload?.name ?? '');
   const taskScheduleTarget = String(formPayload?.target ?? '');
@@ -397,9 +397,25 @@ export function ActionDialog({
       .filter((item) => item);
   };
 
-  const selectedPolicyPocNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('poc_config')));
+  const selectedPolicyPocConfig = getPayloadValue(formPayload, getPolicyPath('poc_config'));
+  const selectedPolicyPocNames = useMemo(
+    () => extractPluginNames(selectedPolicyPocConfig),
+    [selectedPolicyPocConfig],
+  );
   const selectedPolicyBruteNames = extractPluginNames(getPayloadValue(formPayload, getPolicyPath('brute_config')));
-  const selectedTaskPocNames = extractPluginNames(getPayloadValue(formPayload, 'poc_config'));
+  const selectedTaskPocConfig = getPayloadValue(formPayload, 'poc_config');
+  const selectedTaskPocNames = useMemo(
+    () => extractPluginNames(selectedTaskPocConfig),
+    [selectedTaskPocConfig],
+  );
+  const selectedPolicyPocNameSet = useMemo(
+    () => new Set(selectedPolicyPocNames),
+    [selectedPolicyPocNames],
+  );
+  const selectedTaskPocNameSet = useMemo(
+    () => new Set(selectedTaskPocNames),
+    [selectedTaskPocNames],
+  );
   const policyNpocEnabled = Boolean(getPayloadValue(formPayload, getPolicyPath('npoc_poc_scan')));
   const policyOptionDefs = [
     { key: 'domain_config.alt_dns', label: 'DNS字典智能生成' },
@@ -556,7 +572,7 @@ export function ActionDialog({
     let page = 1;
     let total = 0;
     do {
-      const response = await requestApi(token, '/poc/', {
+      const response = await requestApi(token, '/poc/names/', {
         method: 'GET',
         signal,
         query: {
@@ -644,6 +660,9 @@ export function ActionDialog({
     const nextPayload = deepClone(initialPayload);
     if (isTaskCreate && nextPayload.npoc_service_detection === undefined) {
       nextPayload.npoc_service_detection = true;
+    }
+    if (isTaskCreate && !String(nextPayload.port_scan_type ?? '').trim()) {
+      nextPayload.port_scan_type = 'all';
     }
     if (isTaskScheduleCreate && nextPayload.notify_enable === undefined) {
       nextPayload.notify_enable = false;
@@ -1000,7 +1019,7 @@ export function ActionDialog({
                     <label key={item.plugin_name} className={CONSOLE_CHECKBOX_CARD_CLASS}>
                       <input
                         type="checkbox"
-                        checked={selectedTaskPocNames.includes(item.plugin_name)}
+                        checked={selectedTaskPocNameSet.has(item.plugin_name)}
                         disabled={!editable || !Boolean(formPayload?.npoc_poc_scan)}
                         onChange={(event) => toggleTaskPocSelection(item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
@@ -1688,7 +1707,7 @@ export function ActionDialog({
                     <label key={item.plugin_name} className={CONSOLE_CHECKBOX_CARD_CLASS}>
                       <input
                         type="checkbox"
-                        checked={selectedPolicyPocNames.includes(item.plugin_name)}
+                        checked={selectedPolicyPocNameSet.has(item.plugin_name)}
                         disabled={!editable || !policyNpocEnabled}
                         onChange={(event) => togglePolicyPluginSelection('poc_config', item.plugin_name, event.target.checked)}
                         className="checkbox checkbox-primary checkbox-sm"
@@ -1905,7 +1924,7 @@ export function ActionDialog({
                     const normalizedFileLeakDict = String(payload.file_leak_dict || '').trim();
                     const fallbackFileLeakDict = String(taskDefaultFileLeakDictPath || '').trim();
                     const resolvedFileLeakDict = normalizedFileLeakDict || fallbackFileLeakDict;
-                    const normalizedPortScanType = String(payload.port_scan_type || 'test').trim().toLowerCase();
+                    const normalizedPortScanType = String(payload.port_scan_type || 'all').trim().toLowerCase();
                     const normalizedPortCustom = String(payload.port_custom || '')
                       .replace(/[，；、]/g, ',')
                       .replace(/\s+/g, ',')

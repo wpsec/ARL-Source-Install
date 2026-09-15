@@ -31,6 +31,7 @@ import {
 } from '../api/client';
 import { Modal } from '../components/ui/Modal';
 import { DataTable } from '../components/ui/DataTable';
+import { HoverCellValue } from '../components/ui/HoverCellValue';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
   AI_DENOISE_MODULE_LABEL_MAP,
@@ -3687,7 +3688,7 @@ export function TableModuleView({
                       type="checkbox"
                       checked={selectAllChecked}
                       aria-label="选择当前页全部记录"
-                      className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
+                      className="checkbox checkbox-primary checkbox-sm cursor-pointer"
                       onChange={(event) => {
                         if (event.target.checked) {
                           const ids = displayRows
@@ -3768,7 +3769,7 @@ export function TableModuleView({
                           type="checkbox"
                           checked={checked}
                           aria-label={`选择记录 ${id || rowIndex + 1}`}
-                          className="h-5 w-5 cursor-pointer rounded-md border border-base-300 bg-base-100"
+                          className="checkbox checkbox-primary checkbox-sm cursor-pointer"
                           onChange={(event) => {
                             if (!id) return;
                             if (event.target.checked) {
@@ -3794,12 +3795,18 @@ export function TableModuleView({
                         const columnStyle = getTableColumnStyle(column);
                         const compactCellTextClass = fixedTable ? 'block max-w-full truncate' : undefined;
                         const rawCellText = normalizeValueNoTruncate(getValueByPath(row, column));
-                        const compactCellTitle = fixedTable
-                          ? (rawCellText !== '-' ? rawCellText : formattedCellText)
-                          : undefined;
+                        const fullCellText = rawCellText !== '-' ? rawCellText : formattedCellText;
+                        const showCellHover = fixedTable
+                          && !isCenteredTableColumn(module.id, column)
+                          && fullCellText !== '-'
+                          && (
+                            fullCellText.length > 48
+                            || fullCellText.includes('\n')
+                            || formattedCellText !== fullCellText
+                          );
                         const baseClassName = wrapCell
                           ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-[220px] max-w-[560px]`
-                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}${fixedTable ? ' overflow-hidden' : ''}`;
+                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}${fixedTable ? ' overflow-visible' : ''}`;
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);
@@ -3866,10 +3873,17 @@ export function TableModuleView({
                           const renderedText = shouldCollapse && !isExpanded
                             ? `${scopeLines.slice(0, collapseThreshold).join('\n')}\n...`
                             : (scopeLines.length > 0 ? scopeLines.join('\n') : '-');
+                          const scopeCopyText = scopeLines.length > 0 ? scopeLines.join('\n') : scopeText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={<div className="whitespace-pre-wrap break-all leading-relaxed max-h-24 overflow-hidden">{renderedText}</div>}
+                                fullText={scopeCopyText}
+                                label="资产范围"
+                                onCopy={copyTextToClipboard}
+                                showHover={scopeCopyText !== '-'}
+                              />
                               <div className="mt-2 flex flex-wrap items-center justify-start gap-3">
                                 {shouldCollapse ? (
                                   <button
@@ -3884,15 +3898,6 @@ export function TableModuleView({
                                     {isExpanded ? '收起' : '显示全部'}
                                   </button>
                                 ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void copyTextToClipboard(scopeLines.length > 0 ? scopeLines.join('\n') : scopeText, '资产范围')
-                                  }
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
-                                >
-                                  复制
-                                </button>
                               </div>
                             </td>
                           );
@@ -3910,10 +3915,17 @@ export function TableModuleView({
                           const renderedText = shouldCollapse && !isExpanded
                             ? `${targetLines.slice(0, collapseThreshold).join('\n')}\n...`
                             : (targetLines.length > 0 ? targetLines.join('\n') : '-');
+                          const targetCopyText = targetLines.length > 0 ? targetLines.join('\n') : targetText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-left">{renderedText}</div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={<div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-left max-h-24 overflow-hidden">{renderedText}</div>}
+                                fullText={targetCopyText}
+                                label="任务目标"
+                                onCopy={copyTextToClipboard}
+                                showHover={targetCopyText !== '-'}
+                              />
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -3943,10 +3955,17 @@ export function TableModuleView({
                           const renderedText = shouldCollapse && !isExpanded
                             ? `${optionLines.slice(0, collapseThreshold).join('\n')}\n...`
                             : (optionLines.length > 0 ? optionLines.join('\n') : '-');
+                          const optionCopyText = optionLines.length > 0 ? optionLines.join('\n') : optionText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed text-left">{renderedText}</div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={<div className="whitespace-pre-wrap break-all leading-relaxed text-left max-h-24 overflow-hidden">{renderedText}</div>}
+                                fullText={optionCopyText}
+                                label="任务配置"
+                                onCopy={copyTextToClipboard}
+                                showHover={optionCopyText !== '-'}
+                              />
                               {shouldCollapse ? (
                                 <button
                                   onClick={() =>
@@ -3979,17 +3998,26 @@ export function TableModuleView({
                         if (module.id === 'wih' && column === 'content') {
                           const sensitive = isSensitiveWihRow(row);
                           const contentText = formatModuleCellValue(module.id, column, row);
+                          const contentCopyText = normalizeValueNoTruncate(row?.content);
                           // 敏感记录在 WIH 中添加显著色块与标识，便于人工优先复核。
                           const contentClass = sensitive
-                            ? 'whitespace-pre-wrap break-all leading-relaxed rounded-box border border-error/45 bg-error/10 px-3 py-2'
-                            : 'whitespace-pre-wrap break-all leading-relaxed';
+                            ? 'max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed rounded-box border border-error/45 bg-error/10 px-3 py-2'
+                            : 'max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[680px]">
-                              <div className={contentClass}>
-                                {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
-                                  ? renderTextWithHyperlink(contentText)
-                                  : contentText}
-                              </div>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[680px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={(
+                                  <div className={contentClass}>
+                                    {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
+                                      ? renderTextWithHyperlink(contentText)
+                                      : contentText}
+                                  </div>
+                                )}
+                                fullText={contentCopyText !== '-' ? contentCopyText : contentText}
+                                label="WIH内容"
+                                onCopy={copyTextToClipboard}
+                                showHover={contentCopyText !== '-' || contentText !== '-'}
+                              />
                               {sensitive ? (
                                 <div className="mt-2 text-[11px] font-black text-error">敏感信息</div>
                               ) : null}
@@ -4079,12 +4107,20 @@ export function TableModuleView({
                           const targetRaw = normalizeValueNoTruncate(row?.target);
                           const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[320px] max-w-[760px]">
-                              <div className="min-h-[24px] flex items-center justify-start whitespace-pre-wrap break-all leading-relaxed text-left">
-                                {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
-                                  ? renderTextWithHyperlink(displayUrl)
-                                  : displayUrl}
-                              </div>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[320px] max-w-[760px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={(
+                                  <div className="min-h-[24px] block max-w-full truncate text-left">
+                                    {hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)
+                                      ? renderTextWithHyperlink(displayUrl)
+                                      : displayUrl}
+                                  </div>
+                                )}
+                                fullText={displayUrl}
+                                label="漏洞URL"
+                                onCopy={copyTextToClipboard}
+                                showHover={displayUrl !== '-' && (displayUrl.length > 48 || displayUrl.includes('\n'))}
+                              />
                             </td>
                           );
                         }
@@ -4097,19 +4133,14 @@ export function TableModuleView({
                           const hasVerifyText = copyPayload && copyPayload !== '-';
                           const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[300px] max-w-[760px]">
-                              <div className="whitespace-pre-wrap break-all leading-relaxed rounded-box border border-base-300 bg-base-100 px-3 py-2 font-mono text-left">
-                                {verifyText}
-                              </div>
-                              {hasVerifyText ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void copyTextToClipboard(copyPayload, copyLabel)}
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
-                                >
-                                  复制
-                                </button>
-                              ) : null}
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[300px] max-w-[760px]" style={columnStyle}>
+                              <HoverCellValue
+                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed rounded-box border border-base-300 bg-base-100 px-3 py-2 font-mono text-left">{verifyText}</div>}
+                                fullText={copyPayload}
+                                label={copyLabel}
+                                onCopy={copyTextToClipboard}
+                                showHover={Boolean(hasVerifyText)}
+                              />
                             </td>
                           );
                         }
@@ -4374,13 +4405,21 @@ export function TableModuleView({
                           const renderedText = shouldCollapse && !isExpanded
                             ? `${headerLines.slice(0, collapseThreshold).join('\n')}\n...`
                             : (headerLines.length > 0 ? headerLines.join('\n') : '-');
+                          const headerCopyText = normalizeValueNoTruncate(row?.headers);
 
                           return (
                             <td
                               key={column}
                               className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              style={columnStyle}
                             >
-                              <div>{renderedText}</div>
+                              <HoverCellValue
+                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>}
+                                fullText={headerCopyText !== '-' ? headerCopyText : headerText}
+                                label="响应头"
+                                onCopy={copyTextToClipboard}
+                                showHover={headerCopyText !== '-' || headerText !== '-'}
+                              />
                               {shouldCollapse ? (
                                 <button
                                   type="button"
@@ -4411,12 +4450,20 @@ export function TableModuleView({
                           const renderedText = shouldCollapse && !isExpanded
                             ? `${fingerLines.slice(0, collapseThreshold).join('\n')}\n...`
                             : (fingerLines.length > 0 ? fingerLines.join('\n') : '-');
+                          const fingerCopyText = normalizeValueNoTruncate(row?.finger);
                           return (
                             <td
                               key={column}
                               className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              style={columnStyle}
                             >
-                              <div>{renderedText}</div>
+                              <HoverCellValue
+                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>}
+                                fullText={fingerCopyText !== '-' ? fingerCopyText : fingerText}
+                                label="指纹信息"
+                                onCopy={copyTextToClipboard}
+                                showHover={fingerCopyText !== '-' || fingerText !== '-'}
+                              />
                               {shouldCollapse ? (
                                 <button
                                   type="button"
@@ -4438,25 +4485,32 @@ export function TableModuleView({
                         if (hyperlinkEnabled && isHyperlinkEnabledColumn(module.id, column)) {
                           return (
                             <td key={column} className={baseClassName} style={columnStyle}>
-                              <span className={compactCellTextClass} title={compactCellTitle}>
-                                {renderTextWithHyperlink(formattedCellText)}
-                              </span>
+                              <HoverCellValue
+                                display={renderTextWithHyperlink(formattedCellText)}
+                                fullText={fullCellText}
+                                label={getColumnLabel(column)}
+                                onCopy={copyTextToClipboard}
+                                showHover={showCellHover}
+                                displayClassName={compactCellTextClass}
+                              />
                             </td>
                           );
                         }
 
                         if (isLikelyIdColumn(column)) {
                           const rawIdValue = getValueByPath(row, column);
-                          const fullIdText = normalizeValue(rawIdValue);
+                          const fullIdText = normalizeValueNoTruncate(rawIdValue);
                           const compactIdText = fullIdText === '-' ? '-' : truncateMiddleText(fullIdText, 38, 14, 12);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                              <span
-                                title={fullIdText}
-                                className="inline-block max-w-[260px] truncate align-middle font-mono"
-                              >
-                                {compactIdText}
-                              </span>
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
+                              <HoverCellValue
+                                display={compactIdText}
+                                fullText={fullIdText}
+                                label={getColumnLabel(column)}
+                                onCopy={copyTextToClipboard}
+                                showHover={fixedTable && fullIdText !== '-' && fullIdText.length > 38}
+                                displayClassName="block max-w-[260px] truncate align-middle font-mono"
+                              />
                             </td>
                           );
                         }
@@ -4554,21 +4608,35 @@ export function TableModuleView({
                         }
 
                         if ((module.id === 'github_result' || module.id === 'github_monitor_result') && column === 'path') {
+                          const pathText = formatModuleCellValue(module.id, column, row);
+                          const pathCopyText = normalizeValueNoTruncate(row?.path);
                           return (
                             <td
                               key={column}
                               className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[260px] max-w-[640px]"
+                              style={columnStyle}
                             >
-                              {formatModuleCellValue(module.id, column, row)}
+                              <HoverCellValue
+                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed">{pathText}</div>}
+                                fullText={pathCopyText !== '-' ? pathCopyText : pathText}
+                                label="文件路径"
+                                onCopy={copyTextToClipboard}
+                                showHover={pathCopyText !== '-' && (pathCopyText.length > 48 || pathCopyText.includes('\n'))}
+                              />
                             </td>
                           );
                         }
 
                         return (
                           <td key={column} className={baseClassName} style={columnStyle}>
-                            <span className={compactCellTextClass} title={compactCellTitle}>
-                              {formattedCellText}
-                            </span>
+                            <HoverCellValue
+                              display={formattedCellText}
+                              fullText={fullCellText}
+                              label={getColumnLabel(column)}
+                              onCopy={copyTextToClipboard}
+                              showHover={showCellHover}
+                              displayClassName={compactCellTextClass}
+                            />
                           </td>
                         );
                       })}

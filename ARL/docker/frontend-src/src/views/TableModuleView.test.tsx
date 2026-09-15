@@ -155,15 +155,20 @@ describe('TableModuleView(task) 页面级', () => {
     });
     renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'url');
 
-    await waitFor(() => expect(screen.getByTitle(longUrl)).toBeTruthy());
-    const urlCell = screen.getByTitle(longUrl).closest('td');
-    const titleCell = screen.getByTitle(longTitle).closest('td');
-    const table = screen.getByTitle(longUrl).closest('table');
+    await waitFor(() => expect(screen.getByRole('button', { name: '复制URL' })).toBeTruthy());
+    const urlCopyButton = screen.getByRole('button', { name: '复制URL' });
+    const titleCopyButton = screen.getByRole('button', { name: '复制标题' });
+    const urlCell = urlCopyButton.closest('td');
+    const titleCell = titleCopyButton.closest('td');
+    const table = urlCopyButton.closest('table');
 
     expect(table?.className).toContain('table-fixed');
     expect(urlCell?.style.width).toBe('320px');
     expect(titleCell?.style.width).toBe('240px');
-    expect(screen.getByTitle(longUrl).className).toContain('truncate');
+    expect(screen.getAllByText(longUrl).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(longTitle).length).toBeGreaterThan(0);
+    expect(urlCopyButton.closest('div')?.parentElement?.textContent).toContain('URL完整内容');
+    expect(screen.getByRole('checkbox', { name: '选择当前页全部记录' }).className).toContain('checkbox-primary');
   });
 
   it('资产与风险列表统一固定每一列的布局宽度', () => {

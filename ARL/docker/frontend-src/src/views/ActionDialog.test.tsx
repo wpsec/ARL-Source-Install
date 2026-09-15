@@ -186,6 +186,11 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     const calls = installFetchMock({
       routes: {
         '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD],
+        '/poc/names/': [200, {
+          code: 200,
+          items: [{ plugin_name: 'poc.test' }],
+          total: 1,
+        }],
         '/poc/': [200, {
           code: 200,
           items: [
@@ -219,6 +224,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     expect(selectAllButton).toBeTruthy();
     fireEvent.click(selectAllButton);
     await vi.waitFor(() => expect(selectAllButton.textContent).toContain('取消全选'));
+    expect(calls.some((call) => call.url.includes('/poc/names/'))).toBe(true);
     expect(calls.some((call) => call.url.includes('size=10000'))).toBe(true);
   });
 
@@ -230,6 +236,23 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
 
     const npocServiceCheckbox = await screen.findByRole('checkbox', { name: 'NPoC 服务识别' }) as HTMLInputElement;
     expect(npocServiceCheckbox.checked).toBe(true);
+  });
+
+  it('新建任务端口扫描默认选择全端口', async () => {
+    installFetchMock({
+      routes: { '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD] },
+    });
+    renderDialog(newClient(), { name: '资产任务', target: 'example.com' });
+
+    await vi.waitFor(() => {
+      const portSelect = screen
+        .getAllByRole('combobox')
+        .find((select) =>
+          Array.from((select as HTMLSelectElement).options).some((option) => option.value === 'all'),
+        ) as HTMLSelectElement | undefined;
+      expect(portSelect, '端口扫描类型 select 未渲染').toBeTruthy();
+      expect(portSelect!.value).toBe('all');
+    });
   });
 
   it('计划任务默认不勾选钉钉通知', () => {

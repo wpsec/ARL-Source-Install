@@ -22,6 +22,7 @@ from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.services.npoc import NPoC
 from app import utils, celerytask
+from app.config import Config
 from app.modules import ErrorMsg, TaskStatus, CeleryAction
 import copy
 
@@ -109,6 +110,53 @@ class ARLPoC(ARLResource):
         data = self.build_data(args=args,  collection='poc')
 
         return data
+
+
+@ns.route('/names/')
+class ARLPoCNames(ARLResource):
+    """返回用于批量选择的PoC名称，避免传输完整规则内容。"""
+
+    parser = get_arl_parser(base_search_fields, location='args')
+
+    @auth
+    @ns.expect(parser)
+    def get(self):
+        args = self.parser.parse_args()
+        default_field = self.get_default_field(args)
+        query = self.build_db_query(args)
+        collection = utils.conn_db('poc')
+        page = default_field['page']
+        size = default_field['size']
+        offset = size * (page - 1)
+        max_offset = max(0, int(getattr(Config, 'API_MAX_PAGE_OFFSET', 50000) or 0))
+        if offset > max_offset:
+            return {
+                'page': page,
+                'size': size,
+                'total': 0,
+                'items': [],
+                'query': {},
+                'code': 400,
+                'message': '分页过深，请缩小筛选范围或使用导出任务',
+            }
+        result = (
+            collection.find(query, {'_id': 0, 'plugin_name': 1})
+            .sort(default_field['order'])
+            .skip(offset)
+            .limit(size)
+        )
+        items = []
+        for item in result:
+            plugin_name = str(item.get('plugin_name', '') or '').strip()
+            if plugin_name:
+                items.append({'plugin_name': plugin_name})
+        return {
+            'page': page,
+            'size': size,
+            'total': collection.count_documents(query),
+            'items': items,
+            'code': 200,
+        }
 
 
 @ns.route('/sync/')

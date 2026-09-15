@@ -131,7 +131,7 @@ add_task_fields = ns.model('AddTask', {
     'domain_brute_type': fields.String(example="test", description="爆破字典类型"),
     'domain_dict': fields.String(example="", description="域名爆破字典路径（可选，不填走默认）"),
     'file_leak_dict': fields.String(example="", description="敏感文件泄漏字典路径（可选，不填走默认）"),
-    "port_scan_type": fields.String(example="test", description="端口扫描类型（test/top100/top1000/all/custom）"),
+    "port_scan_type": fields.String(example="all", default="all", description="端口扫描类型（test/top100/top1000/all/custom）"),
     "port_custom": fields.String(example="80,443,8080,10000-10100", description="自定义端口（仅 port_scan_type=custom 时生效）"),
     "port_scan": fields.Boolean(example=True, description="端口扫描"),
     "service_detection": fields.Boolean(example=False, description="服务识别"),
@@ -242,6 +242,8 @@ class ARLTask(ARLResource):
         target = args.pop('target')
         if args.get('npoc_service_detection') is None:
             args['npoc_service_detection'] = True
+        if not str(args.get('port_scan_type') or '').strip():
+            args['port_scan_type'] = 'all'
         # 域名爆破字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
         custom_domain_dict = normalize_dict_path_compat(args.get('domain_dict', ''))
         custom_domain_dict = str(custom_domain_dict or '').strip()

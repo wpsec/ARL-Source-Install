@@ -1786,7 +1786,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               type="checkbox"
               checked={form.enable}
               onChange={(event) => setForm((prev) => ({ ...prev, enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+              className="checkbox checkbox-primary checkbox-sm cursor-pointer"
             />
             <span className="font-medium">启用 AI 能力</span>
           </label>
@@ -2069,7 +2069,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 type="checkbox"
                 checked={form.ai_denoise_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_denoise_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                className="checkbox checkbox-primary checkbox-sm cursor-pointer"
               />
               <span className="text-xs font-semibold">启用AI去噪</span>
             </label>
@@ -2078,7 +2078,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 type="checkbox"
                 checked={form.ai_wih_endpoint_fill_enable}
                 onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
-                className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                className="checkbox checkbox-primary checkbox-sm cursor-pointer"
               />
               <span className="text-xs font-semibold">启用WIH接口AI填充</span>
             </label>
@@ -2094,7 +2094,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
               type="checkbox"
               checked={Boolean(form.ai_wih_endpoint_fill_enable)}
               onChange={(event) => setForm((prev) => ({ ...prev, ai_wih_endpoint_fill_enable: event.target.checked }))}
-              className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+              className="checkbox checkbox-primary checkbox-sm cursor-pointer"
             />
             <span className="text-xs font-semibold">{form.ai_wih_endpoint_fill_enable ? '已开启' : '已关闭'}</span>
           </label>
@@ -2120,7 +2120,7 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                     type="checkbox"
                     checked={moduleEnabled}
                     onChange={(event) => updateAiDenoiseModuleEnabled(moduleConfig.id, event.target.checked)}
-                    className="h-4 w-4 cursor-pointer rounded border border-base-300 bg-base-100"
+                    className="checkbox checkbox-primary checkbox-sm cursor-pointer"
                     disabled={!form.ai_denoise_enable}
                   />
                   <span className="text-xs font-semibold">{moduleEnabled ? '已开启' : '已关闭'}</span>

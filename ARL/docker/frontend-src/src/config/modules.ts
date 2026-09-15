@@ -197,7 +197,7 @@ export const modules: ModuleConfig[] = [
           domain_dict: '',
           file_leak_dict: '',
           port_scan: true,
-          port_scan_type: 'test',
+          port_scan_type: 'all',
           port_custom: '80,443',
           service_detection: true,
           npoc_service_detection: true,
