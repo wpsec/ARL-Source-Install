@@ -129,6 +129,42 @@ describe('TableModuleView(task) 页面级', () => {
     expect(screen.getByText('alignment.example.com').closest('td')?.className).toContain('text-left');
     expect(screen.getByText('A').closest('td')?.className).toContain('text-center');
   });
+
+  it('URL资产表固定长文本列宽并保留完整悬浮内容', async () => {
+    const longUrl = `https://assets.example.com/${'path/'.repeat(34)}index.html`;
+    const longTitle = `页面标题-${'内容'.repeat(90)}`;
+    installFetchMock({
+      routes: {
+        '/api/url/': [200, {
+          code: 200,
+          data: {
+            items: [{
+              _id: 'url-fixed-width-1',
+              url: longUrl,
+              title: longTitle,
+              status_code: 200,
+              content_length: 1024,
+              source: 'url_probe',
+            }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+    renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'url');
+
+    await waitFor(() => expect(screen.getByTitle(longUrl)).toBeTruthy());
+    const urlCell = screen.getByTitle(longUrl).closest('td');
+    const titleCell = screen.getByTitle(longTitle).closest('td');
+    const table = screen.getByTitle(longUrl).closest('table');
+
+    expect(table?.className).toContain('table-fixed');
+    expect(urlCell?.style.width).toBe('320px');
+    expect(titleCell?.style.width).toBe('220px');
+    expect(screen.getByTitle(longUrl).className).toContain('truncate');
+  });
 });
 
 describe('TableModuleView Phase 3 选项/共享读取（React Query）', () => {
