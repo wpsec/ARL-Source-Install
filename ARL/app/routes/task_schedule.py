@@ -84,7 +84,7 @@ add_task_schedule_fields = ns.model('addTaskScheduleSite',  {
     'cron': fields.String(required=False, description="Cron"),
     'start_date': fields.String(required=False, description="开始时间"),
     'task_tag': fields.String(required=True, description="任务类别 （task|risk_cruising）"),
-    'notify_enable': fields.Boolean(required=False, description="是否启用计划任务结果通知", default=True),
+    'notify_enable': fields.Boolean(required=False, description="是否启用计划任务结果通知", default=False),
     'notify_kb_enable': fields.Boolean(required=False, description="是否推送到钉钉知识库", default=False),
     'notify_channel': fields.String(required=False, description="通知渠道（目前支持 dingding）", default="dingding"),
     'notify_on': fields.String(required=False, description="通知触发条件（finished|failed|always）", default="finished")
@@ -124,7 +124,7 @@ class ARLTaskScheduleResult(ARLResource):
         task_tag = args.pop("task_tag")
         notify_enable_value = args.pop("notify_enable", None)
         if notify_enable_value is None:
-            notify_enable = True
+            notify_enable = False
         else:
             notify_enable = bool(notify_enable_value)
 

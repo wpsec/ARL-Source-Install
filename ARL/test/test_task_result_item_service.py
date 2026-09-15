@@ -73,6 +73,16 @@ class TestTaskResultItemService(unittest.TestCase):
         self.assertEqual({}, service.build_fileleak_document(None, {}))
         self.assertEqual({}, service.build_nuclei_document(None))
 
+    def test_site_document_marks_screenshot_state_before_capture(self):
+        service = self._service()
+        disabled = service.build_site_document({"site": "https://disabled.example"}, screenshot_enabled=False)
+        pending = service.build_site_document({"site": "https://pending.example"}, screenshot_enabled=True)
+
+        self.assertEqual("", disabled["screenshot"])
+        self.assertEqual("disabled", disabled["screenshot_status"])
+        self.assertTrue(pending["screenshot"].startswith("/image/task-1/"))
+        self.assertEqual("pending", pending["screenshot_status"])
+
 
 if __name__ == "__main__":
     unittest.main()

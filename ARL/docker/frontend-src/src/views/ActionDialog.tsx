@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Play, X } from 'lucide-react';
 import { normalizeListData, requestApi } from '../api/client';
@@ -15,6 +15,7 @@ import type {JsonValue, ModuleAction} from '../domain/types';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_CHECKBOX_CARD_CLASS,
+  CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS,
   CONSOLE_FILE_INPUT_CLASS,
   CONSOLE_ICON_BUTTON_CLASS,
   CONSOLE_INPUT_CLASS,
@@ -116,11 +117,11 @@ export function ActionDialog({
       },
       {
         title: '网络探测',
-        keys: ['port_scan', 'service_detection', 'npoc_service_detection', 'os_detection', 'ssl_cert', 'skip_scan_cdn_ip'],
+        keys: ['port_scan', 'service_detection', 'npoc_service_detection', 'os_detection', 'ssl_cert', 'site_capture', 'skip_scan_cdn_ip'],
       },
       {
         title: 'Web与风险',
-        keys: ['site_identify', 'search_engines', 'site_spider', 'site_capture', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
+        keys: ['site_identify', 'search_engines', 'site_spider', 'file_leak', 'nuclei_scan', 'afrog_scan', 'findvhost', 'web_info_hunter', 'smart_skip_waf', 'ai_denoise', 'dingding_notify'],
       },
     ];
     return sections
@@ -189,6 +190,10 @@ export function ActionDialog({
   const debouncedPolicyPocKeyword = useDebouncedValue(policyPocKeyword);
   const debouncedTaskPocKeyword = useDebouncedValue(taskPocKeyword);
   const [pocPage, setPocPage] = useState(1);
+  const [pocBulkLoading, setPocBulkLoading] = useState(false);
+  const [isPocBulkPending, startPocBulkUpdate] = useTransition();
+  const [taskPocBulkSelectionKey, setTaskPocBulkSelectionKey] = useState('');
+  const [policyPocBulkSelectionKey, setPolicyPocBulkSelectionKey] = useState('');
   const pocBulkFetchAbortRef = useRef<AbortController | null>(null);
   useEffect(() => () => {
     pocBulkFetchAbortRef.current?.abort();
@@ -451,11 +456,15 @@ export function ActionDialog({
       .some((value) => String(value || '').toLowerCase().includes(keyword));
   });
   const policyPocAllSelected =
-    pocTotal > 0 && selectedPolicyPocNames.length >= pocTotal;
+    pocTotal > 0
+    && policyPocBulkSelectionKey === policyPocKeyword.trim()
+    && selectedPolicyPocNames.length >= pocTotal;
   const policyBruteAllSelected =
     policyBruteOptions.length > 0 && policyBruteOptions.every((item) => selectedPolicyBruteNames.includes(item.plugin_name));
   const taskPocAllSelected =
-    pocTotal > 0 && selectedTaskPocNames.length >= pocTotal;
+    pocTotal > 0
+    && taskPocBulkSelectionKey === taskPocKeyword.trim()
+    && selectedTaskPocNames.length >= pocTotal;
   const taskDomainDictSelectOptions = useMemo(() => {
     const next = [...taskDomainDictOptions];
     const exists = next.some((item) => item.path === taskDomainDict);
@@ -541,7 +550,8 @@ export function ActionDialog({
   };
 
   const fetchAllPocNames = async (keyword: string, signal?: AbortSignal) => {
-    const pageSize = 100;
+    // 列表仍按 100 条分页渲染；全选使用一次大页查询，避免逐页等待造成明显卡顿。
+    const pageSize = 10000;
     const names = new Set<string>();
     let page = 1;
     let total = 0;
@@ -572,19 +582,25 @@ export function ActionDialog({
   };
 
   const toggleAllTaskPocs = async () => {
+    if (pocBulkLoading || isPocBulkPending) return;
     pocBulkFetchAbortRef.current?.abort();
     const controller = new AbortController();
     pocBulkFetchAbortRef.current = controller;
+    setPocBulkLoading(true);
     try {
       if (taskPocAllSelected) {
-        setTaskPocConfig([]);
+        setTaskPocBulkSelectionKey('');
+        startPocBulkUpdate(() => setTaskPocConfig([]));
         return;
       }
-      setTaskPocConfig(await fetchAllPocNames(taskPocKeyword, controller.signal));
+      const names = await fetchAllPocNames(taskPocKeyword, controller.signal);
+      setTaskPocBulkSelectionKey(taskPocKeyword.trim());
+      startPocBulkUpdate(() => setTaskPocConfig(names));
     } catch (error) {
       if ((error as { name?: string })?.name === 'AbortError') return;
       setError((error as Error)?.message || '加载全部 PoC 失败');
     } finally {
+      setPocBulkLoading(false);
       if (pocBulkFetchAbortRef.current === controller) {
         pocBulkFetchAbortRef.current = null;
       }
@@ -592,19 +608,25 @@ export function ActionDialog({
   };
 
   const toggleAllPolicyPocs = async () => {
+    if (pocBulkLoading || isPocBulkPending) return;
     pocBulkFetchAbortRef.current?.abort();
     const controller = new AbortController();
     pocBulkFetchAbortRef.current = controller;
+    setPocBulkLoading(true);
     try {
       if (policyPocAllSelected) {
-        setPolicyPluginConfig('poc_config', []);
+        setPolicyPocBulkSelectionKey('');
+        startPocBulkUpdate(() => setPolicyPluginConfig('poc_config', []));
         return;
       }
-      setPolicyPluginConfig('poc_config', await fetchAllPocNames(policyPocKeyword, controller.signal));
+      const names = await fetchAllPocNames(policyPocKeyword, controller.signal);
+      setPolicyPocBulkSelectionKey(policyPocKeyword.trim());
+      startPocBulkUpdate(() => setPolicyPluginConfig('poc_config', names));
     } catch (error) {
       if ((error as { name?: string })?.name === 'AbortError') return;
       setError((error as Error)?.message || '加载全部 PoC 失败');
     } finally {
+      setPocBulkLoading(false);
       if (pocBulkFetchAbortRef.current === controller) {
         pocBulkFetchAbortRef.current = null;
       }
@@ -620,6 +642,12 @@ export function ActionDialog({
 
   useEffect(() => {
     const nextPayload = deepClone(initialPayload);
+    if (isTaskCreate && nextPayload.npoc_service_detection === undefined) {
+      nextPayload.npoc_service_detection = true;
+    }
+    if (isTaskScheduleCreate && nextPayload.notify_enable === undefined) {
+      nextPayload.notify_enable = false;
+    }
     setFormPayload(nextPayload);
     setError('');
     setPolicySearchKeyword('');
@@ -627,9 +655,11 @@ export function ActionDialog({
     setPolicyBruteKeyword('');
     setTaskPocKeyword('');
     setPocPage(1);
+    setTaskPocBulkSelectionKey('');
+    setPolicyPocBulkSelectionKey('');
     setFofaTesting(false);
     setFofaResultSize(null);
-  }, [initialPayload]);
+  }, [initialPayload, isTaskCreate, isTaskScheduleCreate]);
 
   const normalizeFofaQueries = (rawQuery: string): string[] => {
     const lines = String(rawQuery || '')
@@ -932,29 +962,31 @@ export function ActionDialog({
                 </div>
               </div>
               <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-3 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <label className="text-xs font-bold text-content-muted">NPoC 漏洞验证</label>
-                    <p className="text-[11px] text-content-muted mt-1">默认关闭；打开后仅执行已勾选的 POC，服务识别开关与漏洞验证相互独立。</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-content-muted">开启后，仅执行下方已选择的 NPoC POC；服务识别在网络探测中独立控制。</p>
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-bold whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(formPayload?.npoc_poc_scan)}
-                      disabled={!editable}
-                      onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'npoc_poc_scan', event.target.checked))}
-                      className="toggle toggle-primary toggle-sm"
-                    />
-                    启用
-                  </label>
-                  <button
-                    type="button"
-                    className={CONSOLE_TEXT_BUTTON_CLASS + ' text-xs font-bold text-accent hover:underline'}
-                    onClick={() => { void toggleAllTaskPocs(); }}
-                    disabled={!editable || !Boolean(formPayload?.npoc_poc_scan) || policyPocOptions.length === 0}
-                  >
-                    {taskPocAllSelected ? '清空' : '筛选结果全选'}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2 self-start">
+                    <label className="flex items-center gap-2 whitespace-nowrap text-xs font-bold">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(formPayload?.npoc_poc_scan)}
+                        disabled={!editable}
+                        onChange={(event) => setFormPayload((prev) => updatePayloadValue(prev, 'npoc_poc_scan', event.target.checked))}
+                        className="toggle toggle-primary toggle-sm"
+                      />
+                      启用
+                    </label>
+                    <button
+                      type="button"
+                      className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} min-w-[112px]`}
+                      onClick={() => { void toggleAllTaskPocs(); }}
+                      disabled={!editable || pocBulkLoading || isPocBulkPending || !Boolean(formPayload?.npoc_poc_scan) || policyPocOptions.length === 0}
+                    >
+                      {pocBulkLoading || isPocBulkPending ? '处理中...' : taskPocAllSelected ? '取消全选' : '筛选结果全选'}
+                    </button>
+                  </div>
                 </div>
                 <input
                   value={taskPocKeyword}
@@ -1619,29 +1651,31 @@ export function ActionDialog({
               </div>
 
               <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <h5 className="text-sm font-black">PoC 配置</h5>
-                    <p className="text-[11px] text-content-muted mt-1">默认关闭；启用后才会执行已选择的漏洞 POC。</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-content-muted">启用后，仅执行下方已选择的 POC；可先搜索，再对当前筛选结果执行全选。</p>
                   </div>
-                  <label className="flex items-center gap-2 text-xs font-bold whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={policyNpocEnabled}
-                      disabled={!editable}
-                      onChange={(event) => updatePolicyValue('npoc_poc_scan', event.target.checked)}
-                      className="toggle toggle-primary toggle-sm"
-                    />
-                    启用
-                  </label>
-                  <button
-                    type="button"
-                    className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-bold text-accent hover:underline`}
-                    onClick={() => { void toggleAllPolicyPocs(); }}
-                    disabled={!editable || !policyNpocEnabled || policyPocOptions.length === 0}
-                  >
-                    {policyPocAllSelected ? '清空' : '筛选结果全选'}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2 self-start">
+                    <label className="flex items-center gap-2 whitespace-nowrap text-xs font-bold">
+                      <input
+                        type="checkbox"
+                        checked={policyNpocEnabled}
+                        disabled={!editable}
+                        onChange={(event) => updatePolicyValue('npoc_poc_scan', event.target.checked)}
+                        className="toggle toggle-primary toggle-sm"
+                      />
+                      启用
+                    </label>
+                    <button
+                      type="button"
+                      className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} min-w-[112px]`}
+                      onClick={() => { void toggleAllPolicyPocs(); }}
+                      disabled={!editable || pocBulkLoading || isPocBulkPending || !policyNpocEnabled || policyPocOptions.length === 0}
+                    >
+                      {pocBulkLoading || isPocBulkPending ? '处理中...' : policyPocAllSelected ? '取消全选' : '筛选结果全选'}
+                    </button>
+                  </div>
                 </div>
                 <input
                   value={policyPocKeyword}

@@ -7,6 +7,8 @@
 import os
 from urllib.parse import urlparse
 
+from pymongo import UpdateOne
+
 from app import services, utils
 from app.config import Config, normalize_dict_path_compat
 from app.modules import CollectSource, WebSiteFetchOption
@@ -212,15 +214,43 @@ class WebSiteScreenshotStageService(object):
         self.services = services_module or services
         self.config = config or Config
 
+    def _persist_screenshot_statuses(self, status_map):
+        if not isinstance(status_map, dict):
+            return
+        writer = getattr(self.task, "_result_writer", None)
+        if writer is None or not callable(getattr(writer, "bulk_write", None)):
+            return
+
+        operations = []
+        for site in getattr(self.task, "available_sites", []) or []:
+            status = str(status_map.get(site, "") or "").strip().lower()
+            if status not in {"success", "failed"}:
+                continue
+            operations.append(
+                UpdateOne(
+                    {"task_id": self.task.task_id, "site": site},
+                    {"$set": {"screenshot_status": status}},
+                    upsert=False,
+                )
+            )
+        if operations:
+            writer.bulk_write("site", operations, ordered=False)
+
     def run(self):
         task = self.task
         capture_save_dir = self.config.SCREENSHOT_DIR + "/" + task.task_id
-        return self.services.site_screenshot(
-            task.available_sites,
-            concurrency=self.config.SITE_SCREENSHOT_CONCURRENCY,
-            capture_dir=capture_save_dir,
-            task_id=task.task_id,
-        )
+        try:
+            result = self.services.site_screenshot(
+                task.available_sites,
+                concurrency=self.config.SITE_SCREENSHOT_CONCURRENCY,
+                capture_dir=capture_save_dir,
+                task_id=task.task_id,
+            )
+        except Exception:
+            self._persist_screenshot_statuses({site: "failed" for site in task.available_sites})
+            raise
+        self._persist_screenshot_statuses(result)
+        return result
 
 
 class WebSiteSpiderStageService(object):

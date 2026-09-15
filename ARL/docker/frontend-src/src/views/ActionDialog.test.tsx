@@ -31,6 +31,13 @@ const CREATE_TASK_ACTION = {
   path: '/task/',
 } as any;
 
+const TASK_SCHEDULE_ACTION = {
+  id: 'task_schedule_add',
+  label: '添加计划任务',
+  method: 'POST',
+  path: '/task_schedule/',
+} as any;
+
 const GENERIC_ARRAY_ACTION = {
   id: 'generic_array_action',
   label: '通用动作',
@@ -45,12 +52,12 @@ const FOFA_TEST_ACTION = {
   path: '/task_fofa/test',
 } as any;
 
-function renderDialog(client: QueryClient, initialPayload: any = {}) {
+function renderDialog(client: QueryClient, initialPayload: any = {}, action = CREATE_TASK_ACTION) {
   return render(
     <QueryClientProvider client={client}>
       <ActionDialog
         token="tk-action"
-        action={CREATE_TASK_ACTION}
+        action={action}
         initialPayload={initialPayload}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => {})}
@@ -176,7 +183,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
   });
 
   it('新建任务加载并选择 NPoC 插件', async () => {
-    installFetchMock({
+    const calls = installFetchMock({
       routes: {
         '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD],
         '/poc/': [200, {
@@ -185,6 +192,7 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
             { plugin_name: 'poc.test', plugin_type: 'poc', vul_name: '测试漏洞' },
             { plugin_name: 'brute.test', plugin_type: 'brute', vul_name: '测试爆破' },
           ],
+          total: 1,
         }],
       },
     });
@@ -206,6 +214,44 @@ describe('ActionDialog 字典选项读取（React Query）', () => {
     expect(pluginCheckbox.disabled).toBe(false);
     fireEvent.click(pluginCheckbox);
     expect(pluginCheckbox.checked).toBe(true);
-    expect(screen.getByRole('button', { name: '全选' })).toBeTruthy();
+    fireEvent.click(pluginCheckbox);
+    const selectAllButton = screen.getByRole('button', { name: '筛选结果全选' });
+    expect(selectAllButton).toBeTruthy();
+    fireEvent.click(selectAllButton);
+    await vi.waitFor(() => expect(selectAllButton.textContent).toContain('取消全选'));
+    expect(calls.some((call) => call.url.includes('size=10000'))).toBe(true);
+  });
+
+  it('新建任务默认勾选 NPoC 服务识别', async () => {
+    installFetchMock({
+      routes: { '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD] },
+    });
+    renderDialog(newClient(), { name: '资产任务', target: 'example.com' });
+
+    const npocServiceCheckbox = await screen.findByRole('checkbox', { name: 'NPoC 服务识别' }) as HTMLInputElement;
+    expect(npocServiceCheckbox.checked).toBe(true);
+  });
+
+  it('计划任务默认不勾选钉钉通知', () => {
+    installFetchMock({
+      routes: {
+        '/api/policy/': [200, { items: [{ _id: 'policy-1', name: '默认策略' }] }],
+      },
+    });
+    renderDialog(
+      newClient(),
+      {
+        name: '计划任务',
+        target: 'example.com',
+        schedule_type: 'future_scan',
+        policy_id: 'policy-1',
+        start_date: '2099-01-01 00:00:00',
+        task_tag: 'task',
+      },
+      TASK_SCHEDULE_ACTION,
+    );
+
+    const notifyCheckbox = screen.getByRole('checkbox', { name: '钉钉通知' }) as HTMLInputElement;
+    expect(notifyCheckbox.checked).toBe(false);
   });
 });

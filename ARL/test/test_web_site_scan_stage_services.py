@@ -80,6 +80,9 @@ class _Writer(object):
     def delete_many(self, collection, query):
         self.calls.append(("delete_many", collection, query))
 
+    def bulk_write(self, collection, operations, ordered=False):
+        self.calls.append(("bulk_write", collection, operations, ordered))
+
 
 class _ResultItemService(object):
     @staticmethod
@@ -224,6 +227,33 @@ class TestWebSiteScanStageServices(unittest.TestCase):
             ),
             service_api.capture_call,
         )
+
+    def test_screenshot_stage_persists_capture_statuses(self):
+        task = SimpleNamespace(
+            task_id="task-1",
+            available_sites=["https://ok.example", "https://failed.example"],
+            _result_writer=_Writer(),
+        )
+
+        class _StatusServices(_Services):
+            def site_screenshot(self, sites, **kwargs):
+                self.capture_call = (sites, kwargs)
+                return {"https://ok.example": "success", "https://failed.example": "failed"}
+
+        result = WebSiteScreenshotStageService(
+            task,
+            services_module=_StatusServices(),
+            config=SimpleNamespace(
+                SCREENSHOT_DIR="/tmp/screenshots",
+                SITE_SCREENSHOT_CONCURRENCY=3,
+            ),
+        ).run()
+
+        self.assertEqual("success", result["https://ok.example"])
+        self.assertEqual("failed", result["https://failed.example"])
+        self.assertEqual("bulk_write", task._result_writer.calls[0][0])
+        self.assertEqual("site", task._result_writer.calls[0][1])
+        self.assertEqual(2, len(task._result_writer.calls[0][2]))
 
 
 if __name__ == "__main__":

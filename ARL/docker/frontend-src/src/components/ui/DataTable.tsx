@@ -14,6 +14,8 @@ const VIRTUALIZE_THRESHOLD = 200;
 export type DataTableColumn<Row> = {
   key: string;
   header: ReactNode;
+  /** 固定布局下的列宽；由 colgroup 统一约束表头和数据行。 */
+  width?: number | string;
   render?: (row: Row, index: number) => ReactNode;
   headerClass?: string;
   cellClass?: string;
@@ -96,6 +98,14 @@ export function DataTable<Row extends object>({
       className={`overflow-x-auto custom-scrollbar${shouldVirtualize ? ` overflow-y-auto ${virtualizedMaxHeightClass}` : ''}`}
     >
       <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
+        <colgroup>
+          {columns.map((column) => (
+            <col
+              key={column.key}
+              style={column.width === undefined ? undefined : { width: column.width }}
+            />
+          ))}
+        </colgroup>
         <thead className="bg-base-200 border-b border-base-300">
           {renderHeader ? renderHeader() : (
             <tr>

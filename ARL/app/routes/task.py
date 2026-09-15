@@ -147,7 +147,7 @@ add_task_fields = ns.model('AddTask', {
     "ssl_cert": fields.Boolean(example=False, description="SSL证书收集"),
     "dns_query_plugin": fields.Boolean(example=False, default=False, description="DNS查询插件"),
     "npoc_service_detection": fields.Boolean(
-        example=False, default=False, description="NPoC服务识别"
+        example=True, default=True, description="NPoC服务识别"
     ),
     "npoc_poc_scan": fields.Boolean(
         example=False, default=None, description="NPoC漏洞验证总开关（默认关闭）"
@@ -240,6 +240,8 @@ class ARLTask(ARLResource):
 
         name = args.pop('name')
         target = args.pop('target')
+        if args.get('npoc_service_detection') is None:
+            args['npoc_service_detection'] = True
         # 域名爆破字典（可选）：不填则沿用系统默认，填写则优先使用该字典。
         custom_domain_dict = normalize_dict_path_compat(args.get('domain_dict', ''))
         custom_domain_dict = str(custom_domain_dict or '').strip()

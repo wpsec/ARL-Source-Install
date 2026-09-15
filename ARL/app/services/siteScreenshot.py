@@ -27,6 +27,7 @@ class SiteScreenshot(BaseThread):
         self.capture_dir = capture_dir
         self.task_id = task_id
         self.screenshot_map = {}
+        self.screenshot_status_map = {}
         self.screenshot_engine = str(Config.SCREENSHOT_ENGINE or "playwright").strip().lower()
         if self.screenshot_engine not in ["playwright", "phantomjs", "auto"]:
             self.screenshot_engine = "playwright"
@@ -290,6 +291,7 @@ class SiteScreenshot(BaseThread):
         return os.path.exists(file_name)
 
     def work(self, site):
+        self.screenshot_status_map[site] = "failed"
         file_name = '{}/{}.jpg'.format(self.capture_dir, self.gen_filename(site))
         capture_ok = False
 
@@ -311,8 +313,10 @@ class SiteScreenshot(BaseThread):
         sync_ok = self.upload_screenshot(site, file_name)
         if self.sync_enable and not sync_ok:
             logger.warning("screenshot upload not confirmed site={} file={}".format(site, file_name))
+            return
 
         self.screenshot_map[site] = file_name
+        self.screenshot_status_map[site] = "success"
 
     def gen_filename(self, site):
         filename = site.replace('://', '_')
@@ -330,3 +334,4 @@ class SiteScreenshot(BaseThread):
 def site_screenshot(sites, concurrency=3, capture_dir="./", task_id=""):
     s = SiteScreenshot(sites, concurrency=concurrency, capture_dir=capture_dir, task_id=task_id)
     s.run()
+    return s.screenshot_status_map

@@ -11,6 +11,9 @@ from app import utils
 from app.modules import CollectSource
 from app.services.fingerprint_cache import split_fingerprint_result_items
 
+SCREENSHOT_STATUS_DISABLED = "disabled"
+SCREENSHOT_STATUS_PENDING = "pending"
+
 
 class TaskResultItemService(object):
     """构造各 collection 使用的任务结果文档。"""
@@ -20,7 +23,7 @@ class TaskResultItemService(object):
         self.curr_date = curr_date or utils.curr_date
         self.logger = logger
 
-    def build_site_document(self, site_info, web_analyze_map=None):
+    def build_site_document(self, site_info, web_analyze_map=None, screenshot_enabled=True):
         if not isinstance(site_info, dict):
             return {}
 
@@ -31,10 +34,15 @@ class TaskResultItemService(object):
         curr_date = self.curr_date()
         site_text = str(site).strip()
         item["task_id"] = self.task_id
-        item["screenshot"] = "/image/{}/{}.jpg".format(
-            self.task_id,
-            utils.gen_filename(site_text),
-        )
+        if screenshot_enabled:
+            item["screenshot"] = "/image/{}/{}.jpg".format(
+                self.task_id,
+                utils.gen_filename(site_text),
+            )
+            item["screenshot_status"] = SCREENSHOT_STATUS_PENDING
+        else:
+            item["screenshot"] = ""
+            item["screenshot_status"] = SCREENSHOT_STATUS_DISABLED
         item.setdefault("save_date", curr_date)
         item.setdefault("update_date", curr_date)
 

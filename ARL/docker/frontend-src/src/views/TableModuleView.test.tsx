@@ -162,8 +162,46 @@ describe('TableModuleView(task) 页面级', () => {
 
     expect(table?.className).toContain('table-fixed');
     expect(urlCell?.style.width).toBe('320px');
-    expect(titleCell?.style.width).toBe('220px');
+    expect(titleCell?.style.width).toBe('240px');
     expect(screen.getByTitle(longUrl).className).toContain('truncate');
+  });
+
+  it('资产与风险列表统一固定每一列的布局宽度', () => {
+    installFetchMock();
+    for (const moduleId of ['site', 'domain', 'ip', 'cert', 'fileleak', 'url', 'vuln', 'wih_endpoint']) {
+      const view = renderViewWithClient(
+        new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+        moduleId,
+      );
+      const table = view.container.querySelector('table');
+      expect(table, `${moduleId} 应渲染列表表格`).toBeTruthy();
+      expect(table?.className, `${moduleId} 应使用固定布局`).toContain('table-fixed');
+      expect(
+        Array.from(table?.querySelectorAll('col') || []).every((column) => column.getAttribute('style')?.includes('width')),
+        `${moduleId} 的列应有固定宽度`,
+      ).toBe(true);
+      view.unmount();
+    }
+  });
+
+  it('站点截图按状态显示关闭和失败，而不是显示空图片', async () => {
+    installFetchMock({
+      routes: {
+        '/api/site/': [200, {
+          code: 200,
+          items: [
+            { _id: 'site-screenshot-disabled', site: 'https://disabled.example', screenshot: '', screenshot_status: 'disabled' },
+            { _id: 'site-screenshot-failed', site: 'https://failed.example', screenshot: '/image/task-1/failed.jpg', screenshot_status: 'failed' },
+          ],
+          total: 2,
+        }],
+      },
+    });
+    renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'site');
+
+    expect(await screen.findByText('截图功能已关闭')).toBeTruthy();
+    expect(await screen.findByText('截图失败')).toBeTruthy();
+    expect(screen.queryByAltText('screenshot')).toBeNull();
   });
 });
 

@@ -101,17 +101,266 @@ import {
 } from '../ui/classes';
 import { ActionDialog } from './ActionDialog';
 
-const FIXED_ASSET_TABLE_MODULE_IDS = new Set(['url', 'fileleak']);
-const FIXED_ASSET_TABLE_COLUMN_WIDTHS: Record<string, number> = {
+const DEFAULT_FIXED_TABLE_COLUMN_WIDTHS: Record<string, number> = {
   __select: 52,
   __index: 68,
-  url: 320,
-  title: 220,
-  status_code: 92,
-  content_length: 120,
-  source: 160,
-  ai_analysis: 150,
   __operate: 96,
+  url: 320,
+  site: 280,
+  domain: 240,
+  host: 240,
+  target: 280,
+  ip: 160,
+  title: 220,
+  headers: 260,
+  finger: 260,
+  source: 180,
+  record: 180,
+  ips: 220,
+  cdn_name: 180,
+  'os_info.name': 180,
+  'port_info.port_id': 120,
+  cert_summary: 360,
+  content: 360,
+  human_content: 420,
+  human_rule: 420,
+  verify_data: 360,
+  credential: 300,
+  hit_rule: 300,
+  vuln_name: 240,
+  vul_name: 240,
+  rule_id: 180,
+  repo_full_name: 240,
+  path: 300,
+  keyword: 260,
+  scope: 360,
+  desc: 360,
+  name: 220,
+  app_name: 180,
+  service_name: 180,
+  waf_name: 180,
+  ai_analysis: 150,
+  status_code: 100,
+  content_length: 120,
+  response_size: 120,
+  ip_count: 100,
+  domain_count: 110,
+  cnt: 100,
+  run_number: 100,
+  port: 90,
+  type: 100,
+  scheme: 100,
+  method: 100,
+  status: 120,
+  severity: 110,
+  vuln_severity: 110,
+  plg_type: 120,
+  plugin_type: 130,
+  category: 160,
+  schedule_type: 130,
+  interval: 110,
+  update_date: 180,
+  save_date: 180,
+  start_time: 180,
+  end_time: 180,
+  last_run_date: 180,
+  next_run_date: 180,
+  commit_date: 180,
+  verification_status: 180,
+  manual_review_required: 160,
+};
+
+const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>> = {
+  task: {
+    name: 220,
+    target: 300,
+    statistic_summary: 240,
+    progress: 190,
+    options_summary: 300,
+    status: 140,
+    _id: 240,
+  },
+  task_schedule: {
+    name: 220,
+    target: 300,
+    policy_name: 180,
+    time_config: 220,
+    status: 140,
+    _id: 240,
+  },
+  scheduler: {
+    name: 220,
+    domain: 240,
+    scope_id: 240,
+  },
+  policy: {
+    name: 240,
+    desc: 420,
+  },
+  asset_scope: {
+    name: 220,
+    scope: 420,
+    _id: 240,
+  },
+  site: {
+    site: 300,
+    title: 240,
+    headers: 280,
+    finger: 280,
+    screenshot: 180,
+  },
+  asset_site: {
+    site: 300,
+    title: 240,
+    headers: 280,
+    finger: 280,
+  },
+  domain: {
+    domain: 260,
+    record: 200,
+    ips: 240,
+    source: 180,
+  },
+  asset_domain: {
+    domain: 260,
+    record: 200,
+    ips: 240,
+    source: 180,
+  },
+  ip: {
+    ip: 180,
+    'os_info.name': 200,
+    'port_info.port_id': 140,
+    domain: 240,
+    cdn_name: 180,
+    geo_summary: 220,
+    asn_summary: 220,
+  },
+  asset_ip: {
+    ip: 180,
+    'os_info.name': 200,
+    'port_info.port_id': 140,
+    domain: 240,
+    cdn_name: 180,
+  },
+  cert: {
+    host: 280,
+    cert_summary: 400,
+  },
+  service: {
+    service_name: 180,
+    ip_port: 220,
+    'service_info.product': 260,
+  },
+  npoc_service: {
+    scheme: 100,
+    host: 260,
+    port: 100,
+    target: 300,
+  },
+  cip: {
+    cidr_ip: 200,
+    ip_count: 110,
+    domain_count: 120,
+  },
+  stat_finger: {
+    name: 320,
+    cnt: 110,
+  },
+  url: {
+    url: 320,
+    title: 240,
+    status_code: 100,
+    content_length: 120,
+    source: 180,
+  },
+  fileleak: {
+    url: 320,
+    title: 240,
+    status_code: 100,
+    content_length: 120,
+    source: 180,
+  },
+  wih: {
+    record_type: 140,
+    content: 400,
+    source: 300,
+    site: 280,
+  },
+  wih_endpoint: {
+    target: 300,
+    url: 340,
+    method: 100,
+    status_code: 100,
+    response_size: 130,
+    verification_status: 200,
+    manual_review_required: 180,
+  },
+  waf_host: {
+    ip: 180,
+    domain: 260,
+    port: 100,
+    waf_name: 200,
+    hit_rule: 340,
+  },
+  vuln: {
+    vuln_name: 260,
+    plg_type: 130,
+    app_name: 200,
+    target: 300,
+    credential: 340,
+    save_date: 180,
+  },
+  nuclei_result: {
+    scanner_type: 130,
+    rule_id: 200,
+    target: 300,
+    vuln_name: 260,
+    vuln_severity: 120,
+    save_date: 180,
+    verify_data: 400,
+  },
+  poc: {
+    plugin_name: 260,
+    plugin_type: 140,
+    category: 180,
+    app_name: 200,
+    vuln_name: 260,
+    scheme: 100,
+    update_date: 180,
+  },
+  fingerprint: {
+    name: 300,
+    human_rule: 460,
+    update_date: 180,
+  },
+  github_task: {
+    name: 240,
+    keyword: 320,
+    result_count: 120,
+    status: 140,
+    _id: 240,
+  },
+  github_result: {
+    repo_full_name: 260,
+    path: 340,
+    human_content: 460,
+    commit_date: 180,
+    keyword: 240,
+  },
+  github_scheduler: {
+    name: 240,
+    keyword: 320,
+    cron: 180,
+    status: 140,
+  },
+  github_monitor_result: {
+    repo_full_name: 260,
+    path: 340,
+    human_content: 460,
+    commit_date: 180,
+    keyword: 240,
+  },
 };
 
 export function TableModuleView({
@@ -248,11 +497,16 @@ export function TableModuleView({
   }, [moduleCacheKey]);
 
   const hasList = Boolean(module.listPath);
-  const fixedAssetTable = FIXED_ASSET_TABLE_MODULE_IDS.has(module.id);
+  const fixedTable = hasList;
+  const getTableColumnWidth = (column: string): number | undefined => {
+    if (!fixedTable) return undefined;
+    return FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE[module.id]?.[column]
+      ?? DEFAULT_FIXED_TABLE_COLUMN_WIDTHS[column]
+      ?? 180;
+  };
   const getTableColumnStyle = (column: string): React.CSSProperties | undefined => {
-    if (!fixedAssetTable) return undefined;
-    const width = FIXED_ASSET_TABLE_COLUMN_WIDTHS[column];
-    if (!width) return undefined;
+    const width = getTableColumnWidth(column);
+    if (width === undefined) return undefined;
     return { width, minWidth: width, maxWidth: width };
   };
   const hasAdvancedSearch = Array.isArray(module.searchFields) && module.searchFields.length > 0;
@@ -3408,10 +3662,14 @@ export function TableModuleView({
         <div className="bg-base-200 border border-base-300 rounded-box overflow-hidden shadow-sm">
           <DataTable
             columns={[
-              { key: '__select', header: '' },
-              ...(showIndexColumn ? [{ key: '__index', header: '序号' }] : []),
-              ...columns.map((column) => ({ key: column, header: getColumnLabel(column) })),
-              ...(hasRowOperate ? [{ key: '__operate', header: '操作' }] : []),
+              { key: '__select', header: '', width: getTableColumnWidth('__select') },
+              ...(showIndexColumn ? [{ key: '__index', header: '序号', width: getTableColumnWidth('__index') }] : []),
+              ...columns.map((column) => ({
+                key: column,
+                header: getColumnLabel(column),
+                width: getTableColumnWidth(column),
+              })),
+              ...(hasRowOperate ? [{ key: '__operate', header: '操作', width: getTableColumnWidth('__operate') }] : []),
             ]}
             rows={displayRows}
             rowKey={(row, rowIndex) => getRowId(row) || `row-${page}-${rowIndex}`}
@@ -3421,7 +3679,7 @@ export function TableModuleView({
                 ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
                 : '暂无数据'
             }
-            tableClass={`w-full border-collapse text-sm md:text-[15px] ${fixedAssetTable ? 'table-fixed min-w-[1176px]' : ''}`}
+            tableClass={`w-full border-collapse text-sm md:text-[15px] ${fixedTable ? 'table-fixed' : ''}`}
             renderHeader={() => (
               <tr>
                   <th className="px-4 py-3 w-12 text-center" style={getTableColumnStyle('__select')}>
@@ -3527,18 +3785,21 @@ export function TableModuleView({
                         </td>
                       ) : null}
                       {columns.map((column) => {
-                        const preserveAssetText = fixedAssetTable && ['url', 'title', 'source'].includes(column);
+                        const preserveAssetText = fixedTable && ['url', 'title', 'source'].includes(column);
                         const formattedCellText = preserveAssetText
                           ? normalizeValueNoTruncate(getValueByPath(row, column))
                           : formatModuleCellValue(module.id, column, row);
                         const wrapCell = shouldWrapCell(module.id, column) || formattedCellText.includes('\n');
                         const cellAlignmentClass = isCenteredTableColumn(module.id, column) ? 'text-center' : 'text-left';
                         const columnStyle = getTableColumnStyle(column);
-                        const compactCellTextClass = fixedAssetTable ? 'block max-w-full truncate' : undefined;
-                        const compactCellTitle = fixedAssetTable ? formattedCellText : undefined;
+                        const compactCellTextClass = fixedTable ? 'block max-w-full truncate' : undefined;
+                        const rawCellText = normalizeValueNoTruncate(getValueByPath(row, column));
+                        const compactCellTitle = fixedTable
+                          ? (rawCellText !== '-' ? rawCellText : formattedCellText)
+                          : undefined;
                         const baseClassName = wrapCell
                           ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-[220px] max-w-[560px]`
-                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}${fixedAssetTable ? ' overflow-hidden' : ''}`;
+                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}${fixedTable ? ' overflow-hidden' : ''}`;
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);
@@ -3579,13 +3840,13 @@ export function TableModuleView({
                                 <button
                                   type="button"
                                   onClick={() => void openAiDenoiseDetail(row, rowIndex, analysis)}
-                                  className={`${cellClass}${fixedAssetTable ? ' max-w-full truncate' : ''}`}
+                                  className={`${cellClass}${fixedTable ? ' max-w-full truncate' : ''}`}
                                   title={contentTitle}
                                 >
                                   {analysis.display_text || '查看详情'}
                                 </button>
                               ) : (
-                                <span className={`${cellClass}${fixedAssetTable ? ' max-w-full truncate' : ''}`} title={contentTitle}>
+                                <span className={`${cellClass}${fixedTable ? ' max-w-full truncate' : ''}`} title={contentTitle}>
                                   {analysis.display_text || '-'}
                                 </span>
                               )}
@@ -4202,10 +4463,31 @@ export function TableModuleView({
 
                         if (module.id === 'site' && column === 'screenshot') {
                           const screenshot = String(row?.screenshot || '').trim();
-                          if (!screenshot) {
+                          const screenshotStatus = String(row?.screenshot_status || '').trim().toLowerCase();
+                          if (screenshotStatus === 'disabled' || (!screenshotStatus && !screenshot)) {
                             return (
-                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
-                                -
+                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
+                                <span className="badge badge-ghost border border-base-300 text-xs font-semibold text-content-muted">
+                                  截图功能已关闭
+                                </span>
+                              </td>
+                            );
+                          }
+                          if (screenshotStatus === 'failed' || (screenshotStatus === 'success' && !screenshot)) {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
+                                <span className="badge badge-soft badge-error text-xs font-semibold">
+                                  截图失败
+                                </span>
+                              </td>
+                            );
+                          }
+                          if (screenshotStatus === 'pending') {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
+                                <span className="badge badge-soft badge-warning text-xs font-semibold">
+                                  截图生成中
+                                </span>
                               </td>
                             );
                           }
@@ -4220,7 +4502,7 @@ export function TableModuleView({
                           }
 
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[180px]">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[180px]" style={columnStyle}>
                               <button
                                 type="button"
                                 onClick={() =>

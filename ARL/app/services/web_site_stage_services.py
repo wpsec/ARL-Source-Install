@@ -227,10 +227,13 @@ class WebSiteResultPersistStageService(object):
         from pymongo import UpdateOne
 
         task = self.task
+        task_options = getattr(task, "options", None)
+        screenshot_enabled = True if not isinstance(task_options, dict) else bool(task_options.get("site_capture"))
         for site_info in task.site_info_list:
             task._result_item_service.build_site_document(
                 site_info,
                 web_analyze_map=task.web_analyze_map,
+                screenshot_enabled=screenshot_enabled,
             )
 
         logger.info(

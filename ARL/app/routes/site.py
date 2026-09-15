@@ -13,11 +13,14 @@
 - 支持多维度查询和筛选
 """
 import copy
+import os
+import re
 from bson import ObjectId
 from flask_restx import Resource, Api, reqparse, fields, Namespace
 from app.utils import get_logger, auth
 from app.modules import ErrorMsg
 from app import utils
+from app.config import Config
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.repositories import ResultSetRepository, SiteRepository
 
@@ -25,6 +28,73 @@ from app.repositories import ResultSetRepository, SiteRepository
 ns = Namespace('site', description="站点信息")
 
 logger = get_logger()
+SCREENSHOT_STATUS_VALUES = {"disabled", "pending", "success", "failed"}
+SCREENSHOT_PATH_PATTERN = re.compile(r"^/(?:api/)?image/([^/]+)/([^/]+)$")
+
+
+def _screenshot_file_exists(item):
+    task_id = str(item.get("task_id", "") or "").strip()
+    screenshot_path = str(item.get("screenshot", "") or "").strip()
+    match = SCREENSHOT_PATH_PATTERN.fullmatch(screenshot_path)
+    if not task_id or not match or match.group(1) != task_id:
+        return False
+    file_name = match.group(2)
+    screenshot_root = os.path.realpath(Config.SCREENSHOT_DIR)
+    candidate = os.path.realpath(os.path.join(screenshot_root, task_id, file_name))
+    try:
+        if os.path.commonpath([screenshot_root, candidate]) != screenshot_root:
+            return False
+    except ValueError:
+        return False
+    return os.path.isfile(candidate)
+
+
+def _annotate_screenshot_statuses(data):
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return data
+
+    items = data["items"]
+    task_id_map = {}
+    object_ids = []
+    for item in items:
+        task_id = str(item.get("task_id", "") or "").strip() if isinstance(item, dict) else ""
+        if not task_id or task_id in task_id_map:
+            continue
+        try:
+            object_ids.append(ObjectId(task_id))
+        except Exception:
+            task_id_map[task_id] = None
+
+    if object_ids:
+        try:
+            task_docs = utils.conn_db("task").find(
+                {"_id": {"$in": object_ids}},
+                {"options.site_capture": 1},
+            )
+            for task_doc in task_docs:
+                task_id = str(task_doc.get("_id", "") or "")
+                options = task_doc.get("options")
+                task_id_map[task_id] = bool(options.get("site_capture")) if isinstance(options, dict) else None
+        except Exception as exc:
+            logger.warning("annotate site screenshot status failed error_type={}".format(type(exc).__name__))
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("screenshot_status", "") or "").strip().lower()
+        if status in SCREENSHOT_STATUS_VALUES:
+            continue
+        task_id = str(item.get("task_id", "") or "").strip()
+        screenshot = str(item.get("screenshot", "") or "").strip()
+        capture_enabled = task_id_map.get(task_id)
+        if capture_enabled is False or (capture_enabled is None and not screenshot):
+            status = "disabled"
+        elif not screenshot:
+            status = "failed"
+        else:
+            status = "success" if _screenshot_file_exists(item) else "failed"
+        item["screenshot_status"] = status
+    return data
 
 # 站点查询基础字段
 base_search_fields = {
@@ -97,7 +167,7 @@ class ARLSite(ARLResource):
         args = self.parser.parse_args()
         data = self.build_data(args = args,  collection = 'site')
 
-        return data
+        return _annotate_screenshot_statuses(data)
 
 
 @ns.route('/export/')

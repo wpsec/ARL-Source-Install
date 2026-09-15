@@ -125,4 +125,20 @@ describe('DataTable', () => {
     expect(table.className).toContain('text-xs');
     expect(table.className).not.toContain('table-zebra');
   });
+
+  it('按列定义输出 colgroup 宽度，保证表头与数据列共用同一约束', () => {
+    const { container } = render(
+      <DataTable
+        columns={[
+          { key: 'name', header: '名称', width: 240 },
+          { key: 'status', header: '状态', width: '120px' },
+        ]}
+        rows={[{ id: 'width-1', name: '长文本名称', status: 'ok' }]}
+        rowKey={(r) => r.id}
+        tableClass="table-fixed"
+      />,
+    );
+    const widths = Array.from(container.querySelectorAll('col')).map((column) => column.getAttribute('style'));
+    expect(widths).toEqual(['width: 240px;', 'width: 120px;']);
+  });
 });
