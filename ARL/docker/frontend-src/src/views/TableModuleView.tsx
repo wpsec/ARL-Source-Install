@@ -316,6 +316,7 @@ const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>
     scanner_type: 130,
     rule_id: 200,
     target: 300,
+    vuln_url: 360,
     vuln_name: 260,
     vuln_severity: 120,
     save_date: 180,
@@ -3805,8 +3806,8 @@ export function TableModuleView({
                             || formattedCellText !== fullCellText
                           );
                         const baseClassName = wrapCell
-                          ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-[220px] max-w-[560px]`
-                          : `px-4 py-3 align-middle text-sm whitespace-nowrap ${cellAlignmentClass}${fixedTable ? ' overflow-visible' : ''}`;
+                          ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-0 max-w-full`
+                          : `px-4 py-3 align-middle text-sm whitespace-nowrap min-w-0 max-w-full ${cellAlignmentClass}${fixedTable ? ' overflow-visible' : ''}`;
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);
@@ -3819,7 +3820,7 @@ export function TableModuleView({
 
                           if (pending) {
                             return (
-                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]" style={columnStyle}>
+                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full" style={columnStyle}>
                                 <div className="inline-flex items-center justify-center gap-1.5 text-content-muted">
                                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                                   <span className="text-xs font-semibold">分析中...</span>
@@ -3830,7 +3831,7 @@ export function TableModuleView({
 
                           if (!analysis) {
                             return (
-                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]" style={columnStyle}>
+                              <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full" style={columnStyle}>
                                 <span className="badge badge-ghost min-w-[92px] border border-base-300 px-2.5 py-3 text-xs font-semibold text-content-muted">
                                   待分析
                                 </span>
@@ -3842,7 +3843,7 @@ export function TableModuleView({
                           const cellClass = getAiDenoiseCellClass(analysis.result_level, clickable);
                           const contentTitle = analysis.summary || '查看 AI 分析详情';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[150px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full" style={columnStyle}>
                               {clickable ? (
                                 <button
                                   type="button"
@@ -3876,9 +3877,9 @@ export function TableModuleView({
                           const scopeCopyText = scopeLines.length > 0 ? scopeLines.join('\n') : scopeText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
-                                display={<div className="whitespace-pre-wrap break-all leading-relaxed max-h-24 overflow-hidden">{renderedText}</div>}
+                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
                                 fullText={scopeCopyText}
                                 label="资产范围"
                                 onCopy={copyTextToClipboard}
@@ -3918,9 +3919,9 @@ export function TableModuleView({
                           const targetCopyText = targetLines.length > 0 ? targetLines.join('\n') : targetText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
-                                display={<div className="whitespace-pre-wrap break-all leading-relaxed font-mono text-left max-h-24 overflow-hidden">{renderedText}</div>}
+                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed font-mono text-left ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
                                 fullText={targetCopyText}
                                 label="任务目标"
                                 onCopy={copyTextToClipboard}
@@ -3958,9 +3959,9 @@ export function TableModuleView({
                           const optionCopyText = optionLines.length > 0 ? optionLines.join('\n') : optionText;
 
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[640px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
-                                display={<div className="whitespace-pre-wrap break-all leading-relaxed text-left max-h-24 overflow-hidden">{renderedText}</div>}
+                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed text-left ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
                                 fullText={optionCopyText}
                                 label="任务配置"
                                 onCopy={copyTextToClipboard}
@@ -3987,7 +3988,7 @@ export function TableModuleView({
                           const recordType = String(row?.record_type || '').trim();
                           const sensitive = isSensitiveWihRow(row);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <span className={getWihRecordTypeTagClass(recordType, sensitive)}>
                                 {recordType || '-'}
                               </span>
@@ -4004,7 +4005,7 @@ export function TableModuleView({
                             ? 'max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed rounded-box border border-error/45 bg-error/10 px-3 py-2'
                             : 'max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[260px] max-w-[680px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
                                 display={(
                                   <div className={contentClass}>
@@ -4034,7 +4035,7 @@ export function TableModuleView({
                                 ? 'badge badge-soft badge-success text-xs font-bold'
                                 : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-content-muted text-xs font-bold';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <span className={tagClass}>{methodText || '-'}</span>
                             </td>
                           );
@@ -4050,7 +4051,7 @@ export function TableModuleView({
                                 ? 'badge badge-soft badge-error gap-1'
                                 : 'badge badge-ghost border border-base-300';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <span className={statusClass}>{formatWihVerificationStatus(row)}</span>
                             </td>
                           );
@@ -4059,7 +4060,7 @@ export function TableModuleView({
                         if (module.id === 'wih_endpoint' && column === 'manual_review_required') {
                           const required = Boolean(row?.manual_review_required || row?.auth_anomaly_candidate);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <span className={required ? 'badge badge-soft badge-warning' : 'badge badge-ghost border border-base-300'}>
                                 {required ? '需要复核' : '无需复核'}
                               </span>
@@ -4069,7 +4070,7 @@ export function TableModuleView({
 
                         if ((module.id === 'nuclei_result' || module.id === 'vuln') && column === 'detail_action') {
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <button
                                 type="button"
                                 onClick={() => openRiskRecordDetail(module.id, row, rowIndex)}
@@ -4083,7 +4084,7 @@ export function TableModuleView({
 
                         if (module.id === 'wih_endpoint' && column === 'detail_action') {
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <button
                                 type="button"
                                 onClick={() => openWihEndpointDetail(row, rowIndex)}
@@ -4107,7 +4108,7 @@ export function TableModuleView({
                           const targetRaw = normalizeValueNoTruncate(row?.target);
                           const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[320px] max-w-[760px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
                                 display={(
                                   <div className="min-h-[24px] block max-w-full truncate text-left">
@@ -4133,7 +4134,7 @@ export function TableModuleView({
                           const hasVerifyText = copyPayload && copyPayload !== '-';
                           const copyLabel = scannerType === 'afrog' ? 'afrog curl命令' : '验证信息';
                           return (
-                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-[300px] max-w-[760px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-top text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <HoverCellValue
                                 display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed rounded-box border border-base-300 bg-base-100 px-3 py-2 font-mono text-left">{verifyText}</div>}
                                 fullText={copyPayload}
@@ -4159,7 +4160,7 @@ export function TableModuleView({
                             }
                           }
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <button
                                 type="button"
                                 onClick={() => onOpenModule(destinationModule, nextFilters)}
@@ -4174,7 +4175,7 @@ export function TableModuleView({
 
                         if (module.id === 'task' && column === 'progress') {
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <div className="mx-auto w-[170px] space-y-1 text-left">
                                 <div className="flex items-center justify-between gap-2 text-xs">
                                   <span className="font-semibold text-content-muted">进度</span>
@@ -4212,12 +4213,12 @@ export function TableModuleView({
                           );
                           const showTaskTargetStatTooltip = hasAny || hasWafSummary;
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-[220px] max-w-[560px]">
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full" style={columnStyle}>
                               <div className="group relative flex items-start justify-start w-full gap-2">
                                 <button
                                   type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} min-w-0 text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
                                   title="点击查看该任务详情"
                                 >
                                   {targetText}
@@ -4302,7 +4303,7 @@ export function TableModuleView({
                           );
 
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <div className="group relative inline-flex items-center justify-center">
                                 {statusNode}
                                 <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
@@ -4370,7 +4371,7 @@ export function TableModuleView({
 
                         if (module.id === 'task' && column === 'name') {
                           return (
-                            <td key={column} className={baseClassName}>
+                            <td key={column} className={baseClassName} style={columnStyle}>
                               <button
                                 onClick={() => openTaskLocalView(id)}
                                 className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
@@ -4384,7 +4385,7 @@ export function TableModuleView({
 
                         if (module.id === 'task' && (column === 'start_time' || column === 'end_time')) {
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
                               <span className="inline-block min-w-[19ch] font-mono tabular-nums">
                                 {formatModuleCellValue(module.id, column, row)}
                               </span>
@@ -4410,11 +4411,11 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-0 max-w-full"
                               style={columnStyle}
                             >
                               <HoverCellValue
-                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>}
+                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
                                 fullText={headerCopyText !== '-' ? headerCopyText : headerText}
                                 label="响应头"
                                 onCopy={copyTextToClipboard}
@@ -4454,11 +4455,11 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[220px] max-w-[560px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-0 max-w-full"
                               style={columnStyle}
                             >
                               <HoverCellValue
-                                display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all leading-relaxed">{renderedText}</div>}
+                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
                                 fullText={fingerCopyText !== '-' ? fingerCopyText : fingerText}
                                 label="指纹信息"
                                 onCopy={copyTextToClipboard}
@@ -4556,7 +4557,7 @@ export function TableModuleView({
                           }
 
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-[180px]" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full" style={columnStyle}>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -4581,7 +4582,7 @@ export function TableModuleView({
 
                         if (module.id === 'github_scheduler' && column === 'name') {
                           return (
-                            <td key={column} className={baseClassName}>
+                            <td key={column} className={baseClassName} style={columnStyle}>
                               <button
                                 onClick={() => openGithubSchedulerDetail(id)}
                                 className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
@@ -4595,7 +4596,7 @@ export function TableModuleView({
 
                         if (module.id === 'github_task' && column === 'name') {
                           return (
-                            <td key={column} className={baseClassName}>
+                            <td key={column} className={baseClassName} style={columnStyle}>
                               <button
                                 onClick={() => openGithubTaskDetail(id)}
                                 className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
@@ -4613,7 +4614,7 @@ export function TableModuleView({
                           return (
                             <td
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-[260px] max-w-[640px]"
+                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-0 max-w-full"
                               style={columnStyle}
                             >
                               <HoverCellValue
@@ -4641,7 +4642,7 @@ export function TableModuleView({
                         );
                       })}
                       {hasRowOperate ? (
-                        <td className={`px-4 py-3 align-middle whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}>
+                        <td className={`px-4 py-3 align-middle whitespace-nowrap text-center ${rowOperateColumnWidthClass}`} style={getTableColumnStyle('__operate')}>
                           {showTaskRowOperate ? (
                             (() => {
                               const taskRowDone = isTaskTerminalStatus(row?.status);

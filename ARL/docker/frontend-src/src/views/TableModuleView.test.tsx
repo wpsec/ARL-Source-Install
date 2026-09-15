@@ -155,19 +155,21 @@ describe('TableModuleView(task) 页面级', () => {
     });
     renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'url');
 
+    const urlTrigger = await screen.findByLabelText('查看URL完整内容');
+    const titleTrigger = screen.getByLabelText('查看标题完整内容');
+    fireEvent.focus(urlTrigger);
     await waitFor(() => expect(screen.getByRole('button', { name: '复制URL' })).toBeTruthy());
     const urlCopyButton = screen.getByRole('button', { name: '复制URL' });
-    const titleCopyButton = screen.getByRole('button', { name: '复制标题' });
-    const urlCell = urlCopyButton.closest('td');
-    const titleCell = titleCopyButton.closest('td');
-    const table = urlCopyButton.closest('table');
+    const urlCell = urlTrigger.closest('td');
+    const titleCell = titleTrigger.closest('td');
+    const table = urlTrigger.closest('table');
 
     expect(table?.className).toContain('table-fixed');
     expect(urlCell?.style.width).toBe('320px');
     expect(titleCell?.style.width).toBe('240px');
     expect(screen.getAllByText(longUrl).length).toBeGreaterThan(0);
     expect(screen.getAllByText(longTitle).length).toBeGreaterThan(0);
-    expect(urlCopyButton.closest('div')?.parentElement?.textContent).toContain('URL完整内容');
+    expect(screen.getByText('URL完整内容')).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: '选择当前页全部记录' }).className).toContain('checkbox-primary');
   });
 

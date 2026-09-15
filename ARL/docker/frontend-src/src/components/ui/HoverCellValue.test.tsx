@@ -16,7 +16,13 @@ describe('HoverCellValue', () => {
       />,
     );
 
+    const trigger = screen.getByLabelText('查看URL完整内容');
+    expect(screen.queryByText(fullText)).toBeNull();
+    fireEvent.focus(trigger);
     expect(screen.getByText(fullText)).toBeTruthy();
+    const panel = screen.getByText('URL完整内容').parentElement?.parentElement?.parentElement;
+    expect(panel?.className).toContain('fixed');
+    expect(panel?.parentElement).toBe(document.body);
     fireEvent.click(screen.getByRole('button', {name: '复制URL'}));
     expect(onCopy).toHaveBeenCalledWith(fullText, 'URL');
   });
