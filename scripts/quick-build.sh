@@ -460,7 +460,9 @@ build_image_with_offline_fallback() {
     cp "$dockerfile" "$temp_dockerfile"
 
     local image=""
-    local image_id=""
+    local fallback_tag=""
+    local fallback_index=0
+    local -a fallback_tags=()
     local processed_images=""
     while IFS= read -r image; do
         [ -z "$image" ] && continue
@@ -473,29 +475,43 @@ build_image_with_offline_fallback() {
             echo -e "${RED}错误: 本地不存在基础镜像 $image${NC}"
             echo "请先执行: docker pull $image"
             rm -f "$temp_dockerfile"
+            for fallback_tag in "${fallback_tags[@]}"; do
+                docker image rm "$fallback_tag" >/dev/null 2>&1 || true
+            done
             return 1
         fi
 
-        image_id=$(docker image inspect "$image" --format '{{.Id}}')
-        if [ -z "$image_id" ]; then
-            echo -e "${RED}错误: 无法获取本地镜像ID $image${NC}"
+        fallback_index=$((fallback_index + 1))
+        fallback_tag="arl-build-fallback-$$-${fallback_index}:local"
+        if ! docker tag "$image" "$fallback_tag"; then
+            echo -e "${RED}错误: 无法为本地基础镜像创建临时标签 $image${NC}"
             rm -f "$temp_dockerfile"
+            for fallback_tag in "${fallback_tags[@]}"; do
+                docker image rm "$fallback_tag" >/dev/null 2>&1 || true
+            done
             return 1
         fi
+        fallback_tags+=("$fallback_tag")
 
-        # 仅替换 FROM 行中的镜像名称，保留 AS 别名
-        perl -i -pe 's{^(\s*FROM\s+)\Q'"$image"'\E(\s|$)}{$1'"$image_id"'$2}i' "$temp_dockerfile"
+        # 仅替换 FROM 行中的镜像名称，保留 AS 别名；BuildKit 不接受裸 sha256 ID 作为 FROM 引用。
+        perl -i -pe 's{^(\s*FROM\s+)\Q'"$image"'\E(\s|$)}{$1'"$fallback_tag"'$2}i' "$temp_dockerfile"
     done <<EOF
 $from_images_text
 EOF
 
-    echo -e "${YELLOW}本地基础镜像回退: 使用本地镜像 ID 构建${NC}"
+    echo -e "${YELLOW}本地基础镜像回退: 使用临时本地标签构建${NC}"
     if ! run_docker_build "$temp_dockerfile" "$image_tag" "0"; then
         rm -f "$temp_dockerfile"
+        for fallback_tag in "${fallback_tags[@]}"; do
+            docker image rm "$fallback_tag" >/dev/null 2>&1 || true
+        done
         return 1
     fi
 
     rm -f "$temp_dockerfile"
+    for fallback_tag in "${fallback_tags[@]}"; do
+        docker image rm "$fallback_tag" >/dev/null 2>&1 || true
+    done
     return 0
 }
 
