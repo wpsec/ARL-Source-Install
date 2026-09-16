@@ -14,6 +14,19 @@ import re
 import time
 from urllib.parse import urlparse, urlunparse, urlencode, parse_qsl
 from app.modules import WihRecord
+try:
+    from app.utils.log_safety import safe_error_text
+except (ImportError, ValueError):
+    # 保持按文件加载的测试工具可用；生产 package import 始终走上面的脱敏实现。
+    _log_safety_path = os.path.join(os.path.dirname(__file__), "..", "utils", "log_safety.py")
+    _log_safety_spec = importlib.util.spec_from_file_location(
+        "arl_infohunter_log_safety", _log_safety_path
+    )
+    if _log_safety_spec is None or _log_safety_spec.loader is None:
+        raise ImportError("log safety module is unavailable")
+    _log_safety_module = importlib.util.module_from_spec(_log_safety_spec)
+    _log_safety_spec.loader.exec_module(_log_safety_module)
+    safe_error_text = _log_safety_module.safe_error_text
 from .url_candidate_filter import (
     has_route_template_markers,
     is_js_resource_path,
@@ -179,6 +192,10 @@ class InfoHunter(object):
         self.wih_total_budget_sec = int(getattr(Config, "WIH_TOTAL_BUDGET_SEC", 0) or 0)
         self.wih_concurrency = int(getattr(Config, "WIH_CONCURRENCY", 8) or 8)
         self.wih_concurrency_per_site = int(getattr(Config, "WIH_CONCURRENCY_PER_SITE", 2) or 2)
+        self.wih_limit_reader_size = int(
+            getattr(Config, "WIH_LIMIT_READER_SIZE", 4 * 1024 * 1024)
+            or (4 * 1024 * 1024)
+        )
         self.wih_max_batch_size = int(getattr(Config, "WIH_MAX_BATCH_SIZE", 12) or 12)
         self.wih_adaptive_runtime_enable = bool(getattr(Config, "WIH_ADAPTIVE_RUNTIME_ENABLE", True))
         self.wih_runtime_enable = bool(getattr(Config, "WIH_RUNTIME_ENABLE", True))
@@ -217,6 +234,8 @@ class InfoHunter(object):
             self.wih_concurrency = 1
         if self.wih_concurrency_per_site < 1:
             self.wih_concurrency_per_site = 1
+        if self.wih_limit_reader_size < 1024 * 1024:
+            self.wih_limit_reader_size = 4 * 1024 * 1024
         if self.wih_max_batch_size < 1:
             self.wih_max_batch_size = 12
         if self.wih_runtime_timeout_sec < 1:
@@ -1209,7 +1228,7 @@ class InfoHunter(object):
                 "completed": None,
                 "stderr": "",
                 "stdout": "",
-                "error": utils.safe_error_text(e),
+                "error": safe_error_text(e),
             }
         except Exception as e:
             logger.warning(
@@ -1226,7 +1245,7 @@ class InfoHunter(object):
                 "completed": None,
                 "stderr": "",
                 "stdout": "",
-                "error": utils.safe_error_text(e),
+                "error": safe_error_text(e),
             }
 
         stderr_text = completed.stderr.decode("utf-8", errors="ignore").strip() if completed.stderr else ""
@@ -1379,13 +1398,14 @@ class InfoHunter(object):
 
             command = self._build_command(runtime_profile=profile)
             logger.info(
-                "run wih batch stage:{} depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} runtime:{} cmd:{}".format(
+                "run wih batch stage:{} depth:{} sites:{} timeout:{}s concurrency:{} per_site:{} body_limit:{} runtime:{} cmd:{}".format(
                     stage_name,
                     depth,
                     len(current_sites),
                     profile_timeout_sec,
                     self.wih_concurrency,
                     self.wih_concurrency_per_site,
+                    self.wih_limit_reader_size,
                     profile["runtime_enable"],
                     " ".join(command),
                 )
@@ -1604,12 +1624,13 @@ class InfoHunter(object):
         self._wih_binary_logged = True
         version_text = self._load_wih_version_text() or "unknown"
         logger.info(
-            "using wih binary path:{} version_text:{} timeout:{}s concurrency:{} per_site:{} max_batch:{} runtime:{} driver:{}".format(
+            "using wih binary path:{} version_text:{} timeout:{}s concurrency:{} per_site:{} body_limit:{} max_batch:{} runtime:{} driver:{}".format(
                 self.wih_bin_path,
                 version_text,
                 self.wih_timeout_sec,
                 self.wih_concurrency,
                 self.wih_concurrency_per_site,
+                self.wih_limit_reader_size,
                 self.wih_max_batch_size,
                 self.wih_runtime_enable,
                 self.wih_runtime_driver,
@@ -1650,6 +1671,8 @@ class InfoHunter(object):
         ]
 
         self._append_wih_control_flags(command)
+        if self._supports_flag("--limit-reader-size"):
+            command.extend(["--limit-reader-size", str(self.wih_limit_reader_size)])
         if self._supports_flag("--runtime-enable"):
             command.append("--runtime-enable={}".format("true" if profile["runtime_enable"] else "false"))
 

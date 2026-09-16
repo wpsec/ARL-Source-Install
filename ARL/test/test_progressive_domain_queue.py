@@ -34,6 +34,13 @@ class _FakeCollection(object):
 class TestProgressiveDomainQueue(unittest.TestCase):
     TASK_ID = "507f1f77bcf86cd799439011"
 
+    def test_wih_is_scheduled_before_poc(self):
+        stage_order = celerytask_module._DOMAIN_DEEP_STAGE_ORDER
+        self.assertLess(stage_order.index("wih"), stage_order.index("poc"))
+        self.assertEqual("poc", celerytask_module._next_domain_deep_stage("wih"))
+        self.assertEqual("wih", celerytask_module._next_domain_deep_stage("poc", stage_order_version=1))
+        self.assertEqual("finalize", celerytask_module._next_domain_deep_stage("poc", stage_order_version=2))
+
     def test_claim_only_allows_one_consumer(self):
         collection = _FakeCollection(modified_count=1)
         with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
@@ -78,8 +85,48 @@ class TestProgressiveDomainQueue(unittest.TestCase):
         ready_update = collection.update_calls[0][1]
         self.assertEqual("queued", ready_update["$set"]["deep_scan"]["status"])
         self.assertEqual("arlheavy", ready_update["$set"]["deep_scan"]["queue"])
+        self.assertEqual(
+            2,
+            ready_update["$set"]["deep_scan"]["stage_order_version"],
+        )
         id_update = collection.update_calls[-1][1]
         self.assertEqual("celery-deep-1", id_update["$set"]["deep_scan.celery_id"])
+
+    def test_legacy_stage_keeps_legacy_order_version(self):
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "status": "deep_scan_pending",
+                    "deep_scan": {"stage": "poc"},
+                }
+            ],
+            modified_count=1,
+        )
+        async_result = SimpleNamespace(id="celery-legacy-deep-1")
+        with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+            with patch.object(
+                celerytask_module,
+                "_resolve_domain_deep_dispatch_queue",
+                return_value=("arlheavy", "progressive_domain_deep"),
+            ):
+                with patch.object(
+                    celerytask_module.arl_task_heavy,
+                    "apply_async",
+                    return_value=async_result,
+                ):
+                    self.assertTrue(
+                        celerytask_module.enqueue_domain_deep_task(
+                            self.TASK_ID,
+                            "example.com",
+                            {"port_scan": True},
+                        )
+                    )
+
+        ready_update = collection.update_calls[0][1]
+        self.assertEqual(
+            1,
+            ready_update["$set"]["deep_scan"]["stage_order_version"],
+        )
 
     def test_enqueue_falls_back_to_main_queue_when_heavy_consumer_unavailable(self):
         collection = _FakeCollection(

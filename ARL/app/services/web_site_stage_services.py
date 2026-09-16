@@ -161,7 +161,7 @@ class WebSiteDiscoveryContextStageService(object):
 
 
 class WebSiteExternalScanStageService(object):
-    """执行文件泄漏、AI-PoC 计划、Nuclei 和 afrog。"""
+    """执行 WIH 之后的文件泄漏、Nuclei 和 Afrog 主动扫描。"""
 
     def __init__(self, task):
         self.task = task
@@ -389,11 +389,15 @@ class WebSiteWafStageService(object):
                 "detected_host_count": summary.get("detected_host_count", 0),
                 "blocked_host_count": summary.get("blocked_host_count", 0),
                 "class_blocked_host_count": summary.get("class_blocked_host_count", 0),
+                "cdn_detected_host_count": summary.get("cdn_detected_host_count", 0),
+                "waf_detected_host_count": summary.get("waf_detected_host_count", 0),
                 "observed_site_count": summary.get("observed_site_count", 0),
                 "skip_site_count": summary.get("skip_site_count", 0),
                 "skip_request_count": summary.get("skip_request_count", 0),
                 "preclassified_count": summary.get("preclassified_count", 0),
+                "npoc_promoted_count": summary.get("npoc_promoted_count", 0),
                 "timeout_count": summary.get("timeout_count", 0),
+                "timeout_by_class": summary.get("timeout_by_class", {}),
                 "observation_elapsed_sec": summary.get("observation_elapsed_sec", 0.0),
                 "stage_stats": summary.get("stage_stats", {}),
             },

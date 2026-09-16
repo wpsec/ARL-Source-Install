@@ -65,8 +65,10 @@ class DomainTaskOrchestrator(object):
                 break
         task.start_site_fetch()
         task.start_find_vhost()
-        task.start_poc_run()
+        # WIH 产生的域名先完成回灌；PoC 放在全部站点情报之后，降低 WAF
+        # 提前封禁对后续情报和资产更新的连带影响。
         task.start_wih_domain_update()
+        task.start_poc_run()
         # 统一收尾：有界 drain 动态候选 + 残余显式记 pending，先于统计与终态。
         # 终态由收尾器决策决定（Review 20260905 §4 重要项1）：队列证明清空才写
         # done；有残余写 done_pending；收尾证据不可证明写 done_degraded。

@@ -28,6 +28,18 @@ class _Task(object):
     def save_site_info(self):
         self.calls.append("save_site_info")
 
+    def run_web_info_hunter(self):
+        self.calls.append("run_web_info_hunter")
+
+    def file_leak(self):
+        self.calls.append("file_leak")
+
+    def nuclei_scan(self):
+        self.calls.append("nuclei_scan")
+
+    def afrog_scan(self):
+        self.calls.append("afrog_scan")
+
     def _save_waf_skip_summary(self):
         self.calls.append("waf_summary")
 
@@ -58,6 +70,32 @@ class TestWebSiteFetchOrchestrator(unittest.TestCase):
 
         self.assertEqual(
             ["fetch_site", "site_identify", "save_site_info", "file_leak"],
+            [item for item in task.calls if isinstance(item, str) and item != "waf_summary"],
+        )
+
+    def test_intel_runs_before_active_scans(self):
+        task = _Task()
+        task.options.update(
+            {
+                WebSiteFetchOption.Info_Hunter: True,
+                WebSiteFetchOption.FILE_LEAK: True,
+                WebSiteFetchOption.NUCLEI_SCAN: True,
+                WebSiteFetchOption.AFROG_SCAN: True,
+            }
+        )
+
+        WebSiteFetchOrchestrator(task).run()
+
+        self.assertEqual(
+            [
+                "fetch_site",
+                "site_identify",
+                "save_site_info",
+                "run_web_info_hunter",
+                "file_leak",
+                "nuclei_scan",
+                "afrog_scan",
+            ],
             [item for item in task.calls if isinstance(item, str) and item != "waf_summary"],
         )
 

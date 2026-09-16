@@ -8,6 +8,7 @@ from app import services, utils
 from app.config import Config
 from app.modules import ScanPortType
 from app.services.task_result_write_service import TaskResultWriteService
+from app.services.probe_policy import normalize_port_id, select_probe_port_infos
 
 
 logger = utils.get_logger()
@@ -100,10 +101,25 @@ class IPSiteDiscoveryStageService(object):
 
     def _build_candidates(self):
         url_temp_list = []
+        selected_port_count = 0
+        dropped_port_count = 0
+        suspected_all_open_count = 0
         for ip_info in self.task.ip_info_list:
-            for port_info in ip_info["port_info"]:
+            port_info_list = list(ip_info.get("port_info", []) or [])
+            suspected_all_open = bool(ip_info.get("_suspected_all_open"))
+            if suspected_all_open:
+                suspected_all_open_count += 1
+            selected_ports = select_probe_port_infos(
+                port_info_list,
+                getattr(Config, "SITE_DISCOVERY_MAX_PORTS_PER_HOST", 32),
+                suspected_all_open=suspected_all_open,
+                probe_kind="http",
+            )
+            selected_port_count += len(selected_ports)
+            dropped_port_count += max(0, len(port_info_list) - len(selected_ports))
+            for port_info in selected_ports:
                 curr_ip = ip_info["ip"]
-                port_id = port_info["port_id"]
+                port_id = normalize_port_id(port_info)
                 if port_id == 80:
                     url_temp_list.append("http://{}".format(curr_ip))
                 elif port_id == 443:
@@ -115,6 +131,13 @@ class IPSiteDiscoveryStageService(object):
                             "https://{}:{}".format(curr_ip, port_id),
                         ]
                     )
+        logger.info(
+            "ip site candidate ports selected:{} dropped:{} suspected_all_open:{}".format(
+                selected_port_count,
+                dropped_port_count,
+                suspected_all_open_count,
+            )
+        )
         return url_temp_list
 
     def run(self):

@@ -392,6 +392,8 @@ ARL:
   ASSET_DISCOVERY_STAGE_TIMEOUT_SEC: 1800
   # 单个 IP:Port 最多尝试的 SNI 域名数量（0=仅扫描默认证书）
   CERT_MULTI_SNI_MAX_PER_ENDPOINT: 3
+  # 每个主机最多用于证书探测的端点数；不裁剪端口扫描资产结果
+  SSL_CERT_MAX_ENDPOINTS_PER_HOST: 32
   # SSL 证书抓取分批大小（按 endpoint+SNI 展开后目标数）
   SSL_CERT_FETCH_TARGET_BATCH_SIZE: 120
   # SSL 证书抓取单批并发
@@ -555,6 +557,7 @@ ARL:
   WIH_CONCURRENCY: 8
   # WIH 单站点并发（若 wih 二进制支持 --concurrency-per-site）
   WIH_CONCURRENCY_PER_SITE: 2
+  WIH_LIMIT_READER_SIZE: 4194304
   # WIH 单批最大站点数，避免超时后把大批次整批重跑
   WIH_MAX_BATCH_SIZE: 12
   # 是否启用周期任务 WIH 结果复用骨架（第一阶段默认关闭，灰度后再打开）
@@ -691,6 +694,8 @@ ARL:
   DOMAIN_INFO_CONCURRENCY: 10
   # HTTP可用性检查并发
   HTTP_CHECK_CONCURRENCY: 10
+  SITE_DISCOVERY_MAX_PORTS_PER_HOST: 32
+  SITE_DISCOVERY_MAX_CANDIDATES: 5000
   # 站点抓取并发
   HTTP_FETCH_SITE_CONCURRENCY: 8
   # 站点探测并发

@@ -437,6 +437,7 @@ def refresh_runtime_config_best_effort(force=False):
             "WIH_TOTAL_BUDGET_SEC",
             "WIH_CONCURRENCY",
             "WIH_CONCURRENCY_PER_SITE",
+            "WIH_LIMIT_READER_SIZE",
             "WIH_MAX_BATCH_SIZE",
             "WIH_PERIODIC_REUSE_ENABLE",
             "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
@@ -473,6 +474,9 @@ def refresh_runtime_config_best_effort(force=False):
             "FILE_LEAK_NO_PROGRESS_TIMEOUT_MAX_SEC",
             "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
             "SSL_CERT_FETCH_CONCURRENCY",
+            "SITE_DISCOVERY_MAX_PORTS_PER_HOST",
+            "SITE_DISCOVERY_MAX_CANDIDATES",
+            "SSL_CERT_MAX_ENDPOINTS_PER_HOST",
             "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
             "DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE",
             "URLFINDER_URL_PROBE_MAX_TARGETS",
@@ -1090,6 +1094,8 @@ class Config(object):
     WIH_CONCURRENCY = 8
     # WIH 单站点并发（透传给 wih --concurrency-per-site）
     WIH_CONCURRENCY_PER_SITE = 2
+    # WIH 单次响应读取上限；大响应通常是静态资源或错误页，避免与并发相乘放大内存
+    WIH_LIMIT_READER_SIZE = 4 * 1024 * 1024
     # WIH 单批最大站点数，避免大批次超时后整批重跑
     WIH_MAX_BATCH_SIZE = 12
     # 是否启用周期任务 WIH 结果复用骨架（仅同 schedule + 同 target + 同站点签名命中）
@@ -1350,6 +1356,10 @@ class Config(object):
     DOMAIN_INFO_CONCURRENCY = 10
     # HTTP可用性检查并发
     HTTP_CHECK_CONCURRENCY = 10
+    # 每个主机最多用于站点发现的端口数；端口扫描结果本身不裁剪
+    SITE_DISCOVERY_MAX_PORTS_PER_HOST = 32
+    # 站点发现最终最多提交的 URL 候选数，避免大规模域名/错误开放端口拖垮任务
+    SITE_DISCOVERY_MAX_CANDIDATES = 5000
     # 站点抓取并发
     HTTP_FETCH_SITE_CONCURRENCY = 8
     # 站点探测并发
@@ -1463,6 +1473,8 @@ class Config(object):
     SSL_CERT_STAGE_TIMEOUT_PER_TARGET_SEC = 3
     # SSL 证书阶段超时预算上限（秒），0 表示不限制
     SSL_CERT_STAGE_TIMEOUT_MAX_SEC = 3600
+    # 每个主机最多用于证书探测的端点数；默认握手与 SNI 仍按端点展开
+    SSL_CERT_MAX_ENDPOINTS_PER_HOST = 32
     # 域名插件查询阶段每批来源数
     DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE = 4
     # 测绘结果按域名分批校验，避免大量候选一次性阻塞后续阶段
@@ -2301,6 +2313,8 @@ try:
         "DOMAIN_RESOLVE_CONCURRENCY",
         "DOMAIN_INFO_CONCURRENCY",
         "HTTP_CHECK_CONCURRENCY",
+        "SITE_DISCOVERY_MAX_PORTS_PER_HOST",
+        "SITE_DISCOVERY_MAX_CANDIDATES",
         "HTTP_FETCH_SITE_CONCURRENCY",
         "PROBE_HTTP_CONCURRENCY",
         "SITE_SCREENSHOT_CONCURRENCY",
@@ -2328,6 +2342,7 @@ try:
         "WIH_TOTAL_BUDGET_SEC",
         "WIH_CONCURRENCY",
         "WIH_CONCURRENCY_PER_SITE",
+        "WIH_LIMIT_READER_SIZE",
         "WIH_MAX_BATCH_SIZE",
         "WIH_PERIODIC_REUSE_ENABLE",
         "WIH_PERIODIC_REUSE_MAX_BASELINE_TASKS",
@@ -2349,6 +2364,7 @@ try:
         "WIH_ENDPOINT_AI_FILL_RESPONSE_MAX_BYTES",
         "SSL_CERT_FETCH_TARGET_BATCH_SIZE",
         "SSL_CERT_FETCH_CONCURRENCY",
+        "SSL_CERT_MAX_ENDPOINTS_PER_HOST",
         "DOMAIN_DNS_QUERY_PLUGIN_SOURCE_BATCH_SIZE",
         "DNS_QUERY_PLUGIN_DOMAIN_BATCH_SIZE",
         "AFROG_TARGETS_PER_BATCH",

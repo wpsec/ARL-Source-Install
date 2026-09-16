@@ -63,6 +63,7 @@ from app.helpers.message_notify import push_task_finish_notify
 from app.services.discovery_context import DiscoveryContext, DiscoveryLedger
 from app.services.discovery_ledger_store import MongoLedgerBackend, MongoResponseBackend
 from app.services.waf_guard import WAFSmartSkipGuard
+from app.services.probe_policy import select_probe_port_infos
 from app.services.domain_stage_services import (
     AltDNS,
     DomainBrute as _DomainBruteService,
@@ -218,8 +219,12 @@ class ScanPort(object):
 
             # 该标记只服务于端口扫描内部的两阶段调度，不能进入既有 IPInfo 模型。
             ip_info_data = dict(result)
+            suspected_all_open = bool(ip_info_data.get("_suspected_all_open"))
             ip_info_data.pop("_suspected_all_open", None)
-            ip_info_obj.append(modules.IPInfo(**ip_info_data))
+            ip_info_model = modules.IPInfo(**ip_info_data)
+            # 后续 HTTP/SSL 探测需要知道该主机是否疑似全开，但不能污染资产序列化。
+            setattr(ip_info_model, "_suspected_all_open", suspected_all_open)
+            ip_info_obj.append(ip_info_model)
 
         if self.skip_scan_cdn_ip:
             skipped_cdn_ip_info = self.build_fake_cdn_ip_info()
@@ -290,17 +295,27 @@ class FindSite(object):
 
     def _build(self):
         url_temp_list = []
+        selected_port_count = 0
+        dropped_port_count = 0
         for info in self.ip_info_list:
+            port_info_list = list(info.port_info_list or [])
+            if not port_info_list and info.cdn_name:
+                # CDN IP 跳过端口扫描时，仍以业务域名探测 80/443，避免把
+                # CDN 边缘 IP 的未验证端口写成资产结果。
+                port_info_list = [
+                    modules.PortInfo(port_id=80, service_name="http"),
+                    modules.PortInfo(port_id=443, service_name="https"),
+                ]
+            selected_ports = select_probe_port_infos(
+                port_info_list,
+                getattr(Config, "SITE_DISCOVERY_MAX_PORTS_PER_HOST", 32),
+                suspected_all_open=bool(getattr(info, "_suspected_all_open", False)),
+                probe_kind="http",
+            )
+            selected_port_count += len(selected_ports)
+            dropped_port_count += max(0, len(port_info_list) - len(selected_ports))
             for domain in info.domain:
-                port_info_list = list(info.port_info_list or [])
-                if not port_info_list and info.cdn_name:
-                    # CDN IP 跳过端口扫描时，仍以业务域名探测 80/443，避免把
-                    # CDN 边缘 IP 的未验证端口写成资产结果。
-                    port_info_list = [
-                        modules.PortInfo(port_id=80, service_name="http"),
-                        modules.PortInfo(port_id=443, service_name="https"),
-                    ]
-                for port_info in port_info_list:
+                for port_info in selected_ports:
                     port_id = port_info.port_id
                     if port_id == 80:
                         url_temp = "http://{}".format(domain)
@@ -317,6 +332,13 @@ class FindSite(object):
                     url_temp_list.append(url_temp1)
                     url_temp_list.append(url_temp2)
 
+        logger.info(
+            "site candidate ports selected:{} dropped:{} suspected_all_open:{}".format(
+                selected_port_count,
+                dropped_port_count,
+                sum(1 for info in self.ip_info_list if getattr(info, "_suspected_all_open", False)),
+            )
+        )
         return url_temp_list
 
     def run(self):

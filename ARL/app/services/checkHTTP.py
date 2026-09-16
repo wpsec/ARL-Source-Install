@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from app import utils
 from app.config import Config
 from .baseThread import BaseThread
+from .probe_policy import cap_http_probe_urls
 
 import requests.exceptions
 from app.utils.log_safety import safe_error_text
@@ -16,13 +17,16 @@ logger = utils.get_logger()
 
 class CheckHTTP(BaseThread):
     def __init__(self, urls, concurrency=10, prevalidated_dns_domains=None):
-        super().__init__(urls, concurrency=concurrency)
+        target_urls = list(urls or [])
+        super().__init__(target_urls, concurrency=concurrency)
         self.timeout = (5, 3)
         self.checkout_map = {}
         self.dns_policy_cache = {}
         self.http_connect_cache = {}
         self.prevalidated_dns_domains = self._normalize_domains(prevalidated_dns_domains)
         self._metrics = {
+            "candidate_input_count": len(target_urls),
+            "candidate_capped_count": 0,
             "request_count": 0,
             "dns_policy_skip_count": 0,
             "dns_policy_override_count": 0,
@@ -175,9 +179,11 @@ class CheckHTTP(BaseThread):
         with self._metrics_lock:
             metrics = dict(self._metrics)
         logger.info(
-            "end check http candidates:{} result:{} dns_policy_skipped:{} "
+            "end check http candidates:{} candidate_input:{} candidate_dropped:{} result:{} dns_policy_skipped:{} "
             "dns_policy_overridden:{} request_count:{} request_errors:{} elapsed:{}".format(
                 len(self.targets),
+                metrics["candidate_input_count"],
+                metrics["candidate_capped_count"],
                 len(self.checkout_map),
                 metrics["dns_policy_skip_count"],
                 metrics["dns_policy_override_count"],
@@ -190,11 +196,26 @@ class CheckHTTP(BaseThread):
 
 
 def check_http(urls, concurrency=None, prevalidated_dns_domains=None):
+    raw_urls = list(urls or [])
+    selected_urls, capped_count = cap_http_probe_urls(
+        raw_urls,
+        getattr(Config, "SITE_DISCOVERY_MAX_CANDIDATES", 5000),
+    )
+    if capped_count:
+        logger.warning(
+            "check_http candidate cap input:{} selected:{} dropped:{} limit:{}".format(
+                len(raw_urls),
+                len(selected_urls),
+                capped_count,
+                getattr(Config, "SITE_DISCOVERY_MAX_CANDIDATES", 5000),
+            )
+        )
     if concurrency is None:
         concurrency = Config.HTTP_CHECK_CONCURRENCY
     c = CheckHTTP(
-        urls,
+        selected_urls,
         concurrency,
         prevalidated_dns_domains=prevalidated_dns_domains,
     )
+    c._metrics["candidate_capped_count"] = capped_count
     return c.run()

@@ -275,6 +275,11 @@ def http_req(url, method='get', **kwargs):
 
     last_error = None
     for attempt_index, provider_proxy in enumerate(provider_attempts):
+        if waf_guard:
+            should_skip, detail = waf_guard.should_skip(url, module=waf_module)
+            if should_skip:
+                return waf_guard.build_skip_response(url, detail)
+
         session = None
         conn = None
         # pooled_session=True 的 Session 关闭会摧毁共享连接池，必须跳过 close()。
@@ -339,6 +344,10 @@ def http_req(url, method='get', **kwargs):
             return conn
         except requests.exceptions.RequestException as exc:
             last_error = exc
+            if waf_guard:
+                observe_error = getattr(waf_guard, "observe_error", None)
+                if callable(observe_error):
+                    observe_error(url, exc, module=waf_module)
             if provider_context:
                 text = str(exc).lower()
                 record_request(
@@ -355,6 +364,13 @@ def http_req(url, method='get', **kwargs):
                     pass
             if session is not None and not pooled_session:
                 session.close()
+
+            # 当前失败已经把该类别推入熔断时，不再切换 provider 或继续重试。
+            if waf_guard:
+                should_skip, detail = waf_guard.should_skip(url, module=waf_module)
+                if should_skip:
+                    return waf_guard.build_skip_response(url, detail)
+
             retryable = isinstance(
                 exc,
                 (

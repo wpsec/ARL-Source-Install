@@ -14,7 +14,7 @@ from app.services.web_site_stage_services import (
 
 
 class WebSiteFetchOrchestrator(object):
-    """执行站点信息、文件泄漏、外部扫描和 WIH 阶段。"""
+    """按被动情报优先、主动扫描收尾的顺序执行站点阶段。"""
 
     def __init__(self, task):
         self.task = task
@@ -25,8 +25,10 @@ class WebSiteFetchOrchestrator(object):
         task._nuclei_final_skip = False
 
         WebSiteDiscoveryStageService(task).run()
-        WebSiteExternalScanStageService(task).run()
+        # WIH 先消费站点、页面和脚本情报；主动扫描统一放到情报阶段之后，避免
+        # POC/Nuclei/Afrog 先触发 WAF 后影响后续被动收集。
         WebSiteIntelStageService(task).run()
+        WebSiteExternalScanStageService(task).run()
         WebSitePostProcessStageService(task).run()
 
         # 统一收尾：站点作为唯一宿主（独立 WebSiteFetch/预览/PoC/资产监控）时

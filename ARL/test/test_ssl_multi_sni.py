@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from app.helpers.message_notify import _extract_alert_domain
-from app.services.fetchCert import _build_cert_scan_targets, _build_target_info
+from app import modules
+from app.services.fetchCert import SSLCert, _build_cert_scan_targets, _build_target_info
 
 
 class TestSSLMultiSNIScan(unittest.TestCase):
@@ -48,6 +50,27 @@ class TestSSLMultiSNIScan(unittest.TestCase):
             task_domain_set={"legacy.example.com"},
         )
         self.assertEqual(domain, "api.example.com")
+
+    @patch("app.services.fetchCert.fetch_cert", return_value={})
+    def test_suspected_all_open_host_limits_certificate_endpoints(self, mock_fetch_cert):
+        info = modules.IPInfo(
+            ip="203.0.113.12",
+            port_info=[
+                modules.PortInfo(port_id=443),
+                modules.PortInfo(port_id=12345),
+                modules.PortInfo(port_id=23456),
+            ],
+            os_info={},
+            domain=["all-open.example.com"],
+            cdn_name="",
+        )
+        info._suspected_all_open = True
+
+        SSLCert([info], "example.com").run()
+
+        targets = mock_fetch_cert.call_args.args[0]
+        self.assertTrue(targets)
+        self.assertEqual({443}, {item["port"] for item in targets})
 
 
 if __name__ == "__main__":

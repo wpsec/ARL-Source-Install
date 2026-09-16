@@ -161,6 +161,33 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertFalse(strong_hit)
         self.assertEqual([], signals)
 
+    def test_cloudflare_challenge_header_is_strong_waf_signal(self):
+        response = SimpleNamespace(
+            status_code=200,
+            headers={"CF-Mitigated": "challenge", "CF-Ray": "abc123"},
+            content=b"",
+        )
+
+        strong_hit, signals, _ = WAFSmartSkipGuard._collect_signals(response)
+
+        self.assertTrue(strong_hit)
+        self.assertIn("header:cf-mitigated", signals)
+
+    def test_fastly_headers_are_edge_evidence_not_waf_identity(self):
+        response = SimpleNamespace(
+            status_code=200,
+            headers={"X-Served-By": "cache-sin1", "X-Cache-Hits": "1", "X-Timer": "S1"},
+            content=b"normal page",
+        )
+
+        name, _, evidence = WAFSmartSkipGuard._identify_vendor(
+            WAFSmartSkipGuard._extract_response_context(response)[2]
+        )
+
+        self.assertEqual("Fastly CDN", name)
+        self.assertTrue(evidence)
+        self.assertFalse(WAFSmartSkipGuard._is_waf_vendor(name, evidence))
+
     def test_dns_vendor_signals_use_exact_suffix_matching(self):
         vendor, confidence, evidence = WAFSmartSkipGuard.identify_vendor_from_dns(
             cname="edge.365cyd.cn."
@@ -206,6 +233,38 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertEqual(0, summary["request_count"])
         self.assertEqual("domain_cname", summary["detected_hosts"][0]["module"])
         self.assertIn("dns:365cyd.cn", summary["detected_hosts"][0]["dns_evidence"])
+        self.assertEqual("waf", summary["detected_hosts"][0]["dns_edge_kind"])
+
+    def test_dns_edge_kind_distinguishes_cdn_from_waf(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://cdn.example.com", "https://waf.example.com"],
+        )
+        cdn_result = guard.observe_dns(
+            "https://cdn.example.com",
+            cname="edge.wscdn.cn",
+            module="domain_cname",
+        )
+        waf_result = guard.observe_dns(
+            "https://waf.example.com",
+            cname="edge.365cyd.cn",
+            module="domain_cname",
+        )
+
+        self.assertEqual("cdn", cdn_result["edge_kind"])
+        self.assertEqual("网宿CDN", cdn_result["waf_name"])
+        self.assertEqual("waf", waf_result["edge_kind"])
+        cdn_targets, cdn_skipped = guard.filter_targets(
+            ["https://cdn.example.com"], module="npoc", preclassify=True
+        )
+        waf_targets, waf_skipped = guard.filter_targets(
+            ["https://waf.example.com"], module="npoc", preclassify=True
+        )
+        self.assertEqual(["https://cdn.example.com"], cdn_targets)
+        self.assertEqual(0, cdn_skipped)
+        self.assertEqual([], waf_targets)
+        self.assertEqual(1, waf_skipped)
 
 
     def test_directory_signal_only_pauses_directory_queue(self):
@@ -417,6 +476,81 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertEqual(1, summary["class_blocked_host_count"])
         self.assertEqual(2, summary["class_blocked_hosts"][0]["timeout_count"])
 
+    def test_timeout_threshold_isolated_by_traffic_class(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+            timeout_block_threshold=2,
+        )
+        guard.observe_error(
+            "https://example.com/normal-1",
+            TimeoutError("timed out"),
+            module="fetch_site",
+        )
+        guard.observe_error(
+            "https://example.com/npoc-1",
+            TimeoutError("timed out"),
+            module="npoc",
+        )
+        guard.observe_error(
+            "https://example.com/normal-2",
+            TimeoutError("timed out"),
+            module="fetch_site",
+        )
+
+        self.assertTrue(
+            guard.should_skip("https://example.com/next", module="fetch_site")[0]
+        )
+        self.assertFalse(
+            guard.should_skip("https://example.com/next", module="npoc")[0]
+        )
+        self.assertEqual(
+            {"normal": 2, "npoc": 1},
+            guard.summary()["detected_hosts"][0]["timeout_by_class"],
+        )
+
+    def test_vendor_only_body_does_not_trigger_on_success_response(self):
+        response = SimpleNamespace(
+            status_code=200,
+            headers={"Content-Type": "text/html"},
+            content=b"powered by SafeLine web application firewall",
+        )
+
+        strong_hit, signals, _ = WAFSmartSkipGuard._collect_signals(response)
+
+        self.assertFalse(strong_hit)
+        self.assertEqual([], signals)
+
+    def test_waf_response_evidence_promotes_npoc_without_host_block(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+            weak_block_threshold=2,
+        )
+        response = SimpleNamespace(
+            status_code=403,
+            headers={"Server": "modsecurity", "X-Engine": "mod_security"},
+            content=b"",
+        )
+
+        guard.observe_response(
+            "https://example.com/first", response, module="fetch_site"
+        )
+        guard.observe_response(
+            "https://example.com/second", response, module="fetch_site"
+        )
+
+        self.assertFalse(guard.is_blocked_host("example.com"))
+        self.assertTrue(
+            guard.should_skip("https://example.com/next", module="fetch_site")[0]
+        )
+        self.assertTrue(
+            guard.should_skip("https://example.com/next", module="npoc")[0]
+        )
+        self.assertEqual(1, guard.summary()["npoc_promoted_count"])
+
     def test_cdn_dns_evidence_does_not_skip_npoc(self):
         guard = WAFSmartSkipGuard(
             enabled=True,
@@ -457,6 +591,36 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertEqual(["https://example.com"], targets)
         self.assertEqual(0, skipped)
         self.assertEqual(0, guard.summary()["blocked_host_count"])
+        self.assertEqual(1, guard.summary()["cdn_detected_host_count"])
+        self.assertEqual(0, guard.summary()["waf_detected_host_count"])
+
+    def test_dns_cdn_does_not_overwrite_stronger_http_waf_identity(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+        )
+        response = SimpleNamespace(
+            status_code=403,
+            headers={
+                "X-WAF-Product": "modsecurity",
+                "Server": "mod_security",
+                "X-Nocdwatcher": "enabled",
+            },
+            content=b"access denied",
+        )
+
+        guard.observe_response("https://example.com/", response, module="fetch_site")
+        guard.observe_dns(
+            "https://example.com",
+            cname="edge.wscdn.cn",
+            module="domain_cname",
+        )
+
+        item = guard.summary()["detected_hosts"][0]
+        self.assertEqual("ModSecurity", item["waf_name"])
+        self.assertEqual("网宿CDN", item["dns_waf_name"])
+        self.assertEqual("cdn", item["dns_edge_kind"])
 
     def test_high_confidence_dns_waf_preclassifies_npoc(self):
         guard = WAFSmartSkipGuard(

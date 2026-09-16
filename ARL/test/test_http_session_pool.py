@@ -146,6 +146,55 @@ class TestHttpSessionPool(unittest.TestCase):
         self.assertFalse(sessions[0].closed)
         self.assertFalse(sessions[1].closed)
 
+    def test_waf_timeout_stops_follow_up_http_attempts(self):
+        from app.services.waf_guard import WAFSmartSkipGuard
+
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://target.example.com"],
+            timeout_block_threshold=2,
+        )
+        sessions = []
+
+        class _TimeoutSession(object):
+            trust_env = False
+
+            def __init__(self):
+                self.closed = False
+                sessions.append(self)
+
+            def mount(self, prefix, adapter):
+                pass
+
+            def request(self, method, url, **kwargs):
+                raise conn_mod.requests.exceptions.ReadTimeout("timed out")
+
+            def close(self):
+                self.closed = True
+
+        original_session = conn_mod.requests.Session
+        conn_mod.requests.Session = _TimeoutSession
+        try:
+            with self.assertRaises(conn_mod.requests.exceptions.ReadTimeout):
+                conn_mod.http_req(
+                    "https://target.example.com/first",
+                    waf_guard=guard,
+                    waf_module="fetch_site",
+                )
+            response = conn_mod.http_req(
+                "https://target.example.com/second",
+                waf_guard=guard,
+                waf_module="fetch_site",
+            )
+        finally:
+            conn_mod.requests.Session = original_session
+
+        self.assertEqual(2, len(sessions))
+        self.assertEqual(444, response.status_code)
+        self.assertEqual("1", response.headers["X-ARL-WAF-SMART-SKIP"])
+        self.assertEqual(2, guard.summary()["timeout_count"])
+
 
 if __name__ == "__main__":
     unittest.main()

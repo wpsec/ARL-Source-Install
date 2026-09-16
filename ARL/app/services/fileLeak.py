@@ -832,6 +832,9 @@ def _build_waf_guard_context(waf_guard) -> dict:
         "task_id": str(getattr(waf_guard, "task_id", "") or ""),
         "scope_sites": sorted(getattr(waf_guard, "scope_hosts", set()) or []),
         "weak_block_threshold": int(getattr(waf_guard, "weak_block_threshold", 3) or 3),
+        "timeout_block_threshold": int(
+            getattr(waf_guard, "timeout_block_threshold", 3) or 3
+        ),
     }
 
 
@@ -847,6 +850,9 @@ def _build_waf_guard_from_context(waf_guard_context):
         task_id=str(waf_guard_context.get("task_id", "") or ""),
         scope_sites=list(waf_guard_context.get("scope_sites") or []),
         weak_block_threshold=int(waf_guard_context.get("weak_block_threshold", 3) or 3),
+        timeout_block_threshold=int(
+            waf_guard_context.get("timeout_block_threshold", 3) or 3
+        ),
     )
 
 

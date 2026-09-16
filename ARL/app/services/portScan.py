@@ -964,13 +964,21 @@ class PortScan:
                     )
                     break
                 ports_text = ",".join([str(x) for x in chunk_port_ids])
+                precise_remaining_sec = 0
+                if precise_stage_timeout_sec > 0:
+                    precise_remaining_sec = max(
+                        1,
+                        int(precise_stage_timeout_sec - (time.time() - precise_stage_start_ts)),
+                    )
                 precise_map, _ = self._scan_with_batches(
                     targets=[host],
                     ports=ports_text,
                     arguments=precise_args,
                     stage_name="precise",
                     force_batch_size=1,
-                    stage_timeout_sec=0,
+                    # 将全阶段剩余预算传入批次层，避免单个 nmap chunk 在外层
+                    # 超时检查前继续运行，导致阶段总耗时突破配置上限。
+                    stage_timeout_sec=precise_remaining_sec,
                 )
                 current_metrics = dict(self.last_scan_metrics)
                 for key in (

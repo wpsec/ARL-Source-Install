@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 from app.tasks.domain import FindSite, scan_port
 from app.modules import IPInfo, ScanPortType, DomainInfo
+from app import modules
 from app import services
 try:
     from test._network_test_guard import legacy_network_test
@@ -76,6 +77,28 @@ class TestCDNName(unittest.TestCase):
             mock_check_http.call_args.kwargs["prevalidated_dns_domains"],
             {"cdn.example.com"},
         )
+
+    def test_find_site_limits_suspected_all_open_ports_without_changing_asset_list(self):
+        info = IPInfo(
+            ip="203.0.113.11",
+            port_info=[
+                modules.PortInfo(port_id=80),
+                modules.PortInfo(port_id=443),
+                modules.PortInfo(port_id=12345),
+            ],
+            os_info={},
+            domain=["all-open.example.com"],
+            cdn_name="",
+        )
+        info._suspected_all_open = True
+
+        urls = set(FindSite([info])._build())
+
+        self.assertEqual(
+            {"http://all-open.example.com", "https://all-open.example.com"},
+            urls,
+        )
+        self.assertEqual([80, 443, 12345], [item.port_id for item in info.port_info_list])
 
     def test_scan_port_option_reuse_not_mutated(self):
         scan_port_option = {

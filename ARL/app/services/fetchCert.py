@@ -5,6 +5,7 @@ import time
 from app import utils, modules
 from app.config import Config
 from .baseThread import BaseThread
+from .probe_policy import normalize_port_id, select_probe_port_infos
 
 logger = utils.get_logger()
 
@@ -514,19 +515,35 @@ class SSLCert():
 
     def run(self):
         target_map = {}
+        selected_endpoint_count = 0
+        dropped_endpoint_count = 0
+        suspected_all_open_count = 0
         for info in self.ip_info_list:
             if isinstance(info, modules.IPInfo):
+                ip = str(info.ip or "").strip()
                 domains = _normalize_domains(getattr(info, "domain", []))
-                for port_info in info.port_info_list:
-                    port_id = port_info.port_id
-                    if port_id == 80:
-                        continue
-
-                    endpoint = "{}:{}".format(info.ip, port_id)
+                raw_ports = [
+                    port_info for port_info in list(info.port_info_list or [])
+                    if normalize_port_id(port_info) != 80
+                ]
+                suspected_all_open = bool(getattr(info, "_suspected_all_open", False))
+                if suspected_all_open:
+                    suspected_all_open_count += 1
+                selected_ports = select_probe_port_infos(
+                    raw_ports,
+                    getattr(Config, "SSL_CERT_MAX_ENDPOINTS_PER_HOST", 32),
+                    suspected_all_open=suspected_all_open,
+                    probe_kind="tls",
+                )
+                selected_endpoint_count += len(selected_ports)
+                dropped_endpoint_count += max(0, len(raw_ports) - len(selected_ports))
+                for port_info in selected_ports:
+                    port_id = normalize_port_id(port_info)
+                    endpoint = "{}:{}".format(ip, port_id)
                     self._append_target_info(
                         target_map=target_map,
                         endpoint=endpoint,
-                        connect_host=info.ip,
+                        connect_host=ip,
                         port=port_id,
                         domains=domains,
                     )
@@ -537,21 +554,23 @@ class SSLCert():
                     continue
 
                 domains = _normalize_domains(info.get("domain", []))
-                for port_info in info.get("port_info", []):
-                    port_id = ""
-                    if isinstance(port_info, dict):
-                        port_id = port_info.get("port_id", "")
-                    elif isinstance(port_info, modules.PortInfo):
-                        port_id = port_info.port_id
-
-                    try:
-                        port_id = int(port_id)
-                    except Exception:
-                        continue
-
-                    if port_id == 80:
-                        continue
-
+                raw_ports = [
+                    port_info for port_info in list(info.get("port_info", []) or [])
+                    if normalize_port_id(port_info) != 80
+                ]
+                suspected_all_open = bool(info.get("_suspected_all_open"))
+                if suspected_all_open:
+                    suspected_all_open_count += 1
+                selected_ports = select_probe_port_infos(
+                    raw_ports,
+                    getattr(Config, "SSL_CERT_MAX_ENDPOINTS_PER_HOST", 32),
+                    suspected_all_open=suspected_all_open,
+                    probe_kind="tls",
+                )
+                selected_endpoint_count += len(selected_ports)
+                dropped_endpoint_count += max(0, len(raw_ports) - len(selected_ports))
+                for port_info in selected_ports:
+                    port_id = normalize_port_id(port_info)
                     endpoint = "{}:{}".format(ip, port_id)
                     self._append_target_info(
                         target_map=target_map,
@@ -587,6 +606,14 @@ class SSLCert():
                 )
 
         target_temp_list = [target_map[key] for key in sorted(target_map.keys())]
+        logger.info(
+            "ssl_cert endpoint policy selected:{} dropped:{} suspected_all_open:{} limit_per_host:{}".format(
+                selected_endpoint_count,
+                dropped_endpoint_count,
+                suspected_all_open_count,
+                getattr(Config, "SSL_CERT_MAX_ENDPOINTS_PER_HOST", 32),
+            )
+        )
         # 同一端点执行 default + 多SNI 握手，避免多域名复用IP场景下证书被误判。
         expanded_targets = []
         for target_info in target_temp_list:

@@ -191,6 +191,7 @@ class TestWihTimeoutSplit(unittest.TestCase):
             "--log-level",
             "--disable-ak-sk-output",
             "--disable-structured-output",
+            "--limit-reader-size",
             "--runtime-enable",
             "--runtime-driver",
             "--runtime-timeout",
@@ -213,6 +214,8 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("32", command)
         self.assertIn("--runtime-max-requests", command)
         self.assertIn("180", command)
+        self.assertIn("--limit-reader-size", command)
+        self.assertIn(str(hunter.wih_limit_reader_size), command)
 
         minimal_command = hunter._build_command(minimal=True)
         self.assertIn("--disable-structured-output", minimal_command)
@@ -229,6 +232,7 @@ class TestWihTimeoutSplit(unittest.TestCase):
             "--log-level",
             "--disable-ak-sk-output",
             "--disable-structured-output",
+            "--limit-reader-size",
             "--runtime-enable",
             "--runtime-driver",
             "--runtime-timeout",

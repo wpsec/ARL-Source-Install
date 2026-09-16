@@ -138,6 +138,27 @@ class TestIPNetworkScanServices(unittest.TestCase):
         self.assertIn("http://192.0.2.10:8080", service_api.http_call)
         self.assertIn("https://192.0.2.10:8080", service_api.http_call)
 
+    def test_site_discovery_normalizes_persisted_string_ports(self):
+        task = SimpleNamespace(
+            ip_info_list=[
+                {
+                    "ip": "192.0.2.11",
+                    "port_info": [
+                        {"port_id": "80"},
+                        {"port_id": "443"},
+                    ],
+                }
+            ],
+            site_list=[],
+        )
+
+        candidates = IPSiteDiscoveryStageService(task)._build_candidates()
+
+        self.assertEqual(
+            {"http://192.0.2.11", "https://192.0.2.11"},
+            set(candidates),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

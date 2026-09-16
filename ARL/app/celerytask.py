@@ -108,7 +108,8 @@ _WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 _ICP_RECOVERY_CLAIM_SEC = 300
 
-_DOMAIN_DEEP_STAGE_ORDER = (
+_DOMAIN_DEEP_STAGE_ORDER_VERSION = 2
+_LEGACY_DOMAIN_DEEP_STAGE_ORDER = (
     "domain_fetch",
     "search_engines",
     "ip_query",
@@ -120,6 +121,33 @@ _DOMAIN_DEEP_STAGE_ORDER = (
     "wih",
     "finalize",
 )
+_DOMAIN_DEEP_STAGE_ORDER = (
+    "domain_fetch",
+    "search_engines",
+    "ip_query",
+    "ip_fetch",
+    "pivot",
+    "site",
+    "vhost",
+    "wih",
+    "poc",
+    "finalize",
+)
+
+
+def _normalize_domain_deep_stage_order_version(version, default=_DOMAIN_DEEP_STAGE_ORDER_VERSION):
+    try:
+        version = int(version)
+    except (TypeError, ValueError):
+        return default
+    return 1 if version == 1 else _DOMAIN_DEEP_STAGE_ORDER_VERSION
+
+
+def _domain_deep_stage_order(stage_order_version=None):
+    version = _normalize_domain_deep_stage_order_version(stage_order_version)
+    if version == 1:
+        return _LEGACY_DOMAIN_DEEP_STAGE_ORDER
+    return _DOMAIN_DEEP_STAGE_ORDER
 
 
 def _normalize_domain_deep_stage(stage, default="domain_deep"):
@@ -129,14 +157,15 @@ def _normalize_domain_deep_stage(stage, default="domain_deep"):
     return default
 
 
-def _next_domain_deep_stage(stage):
+def _next_domain_deep_stage(stage, stage_order_version=None):
     stage_text = _normalize_domain_deep_stage(stage)
-    if stage_text not in _DOMAIN_DEEP_STAGE_ORDER:
+    stage_order = _domain_deep_stage_order(stage_order_version)
+    if stage_text not in stage_order:
         return None
-    index = _DOMAIN_DEEP_STAGE_ORDER.index(stage_text)
-    if index + 1 >= len(_DOMAIN_DEEP_STAGE_ORDER):
+    index = stage_order.index(stage_text)
+    if index + 1 >= len(stage_order):
         return None
-    return _DOMAIN_DEEP_STAGE_ORDER[index + 1]
+    return stage_order[index + 1]
 
 _AI_DENOISE_STAGE_MODULE_MAP = {
     # 基础阶段：证书收集完成后即可先跑证书去噪。
@@ -645,6 +674,7 @@ def _mark_domain_deep_dispatch_ready(
         return False, False
 
     deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
+    existing_stage = str(deep_scan.get("stage") or "").strip().lower()
     deep_status = str(deep_scan.get("status", "") or "").strip().lower()
     if deep_status == "done":
         return False, False
@@ -661,6 +691,15 @@ def _mark_domain_deep_dispatch_ready(
         stage or deep_scan.get("stage"),
         default="domain_deep",
     )
+    if "stage_order_version" in deep_scan:
+        stage_order_version = _normalize_domain_deep_stage_order_version(
+            deep_scan.get("stage_order_version")
+        )
+    elif existing_stage:
+        # 没有版本字段的任务来自旧顺序，继续旧状态时不能让后续阶段跳过 WIH。
+        stage_order_version = 1
+    else:
+        stage_order_version = _DOMAIN_DEEP_STAGE_ORDER_VERSION
     now_ts = int(time.time())
     now_text = utils.curr_date()
     update = {
@@ -668,6 +707,7 @@ def _mark_domain_deep_dispatch_ready(
             "status": "deep_scan_pending",
             "deep_scan": {
                 "stage": safe_stage,
+                "stage_order_version": stage_order_version,
                 "status": "queued",
                 "target": str(target or "").strip(),
                 "queue": safe_queue_name,
@@ -1831,7 +1871,7 @@ def domain_deep_task(options):
     query_id = ObjectId(task_id) if ObjectId.is_valid(str(task_id or "")) else task_id
     item = utils.conn_db("task").find_one(
         {"_id": query_id},
-        {"status": 1, "deep_scan.stage": 1},
+        {"status": 1, "deep_scan.stage": 1, "deep_scan.stage_order_version": 1},
     )
     if not item:
         logger.warning("domain deep task not found task_id:{}".format(task_id))
@@ -1854,6 +1894,10 @@ def domain_deep_task(options):
     stage = _normalize_domain_deep_stage(
         options.get("stage") or (deep_scan or {}).get("stage"),
     )
+    stage_order_version = _normalize_domain_deep_stage_order_version(
+        (deep_scan or {}).get("stage_order_version"),
+        default=1,
+    )
     if stage in _DOMAIN_DEEP_STAGE_ORDER:
         deep_ok = wrap_tasks.domain_deep_stage_task(
             target,
@@ -1865,7 +1909,10 @@ def domain_deep_task(options):
         # 未开启分阶段的历史消息仍走原入口，避免旧 broker 消息失效。
         deep_ok = wrap_tasks.domain_deep_task(target, task_id, task_options)
     if deep_ok:
-        next_stage = _next_domain_deep_stage(stage)
+        next_stage = _next_domain_deep_stage(
+            stage,
+            stage_order_version=stage_order_version,
+        )
         if stage in _DOMAIN_DEEP_STAGE_ORDER:
             if not _complete_domain_deep_stage(task_id, stage, next_stage=next_stage):
                 _mark_domain_deep_dispatch_failed(task_id, "stage_transition_failed")
