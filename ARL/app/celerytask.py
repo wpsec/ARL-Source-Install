@@ -2232,9 +2232,10 @@ def run_export_report_task(options):
     except Exception as exc:
         logger.exception("run export report task failed job_id:%s err:%s", job_id, exc)
         try:
-            from app.routes.export import _get_export_job_collection, EXPORT_JOB_STATUS_ERROR
-            _get_export_job_collection().update_one(
-                {"_id": ObjectId(job_id)},
+            from app.repositories import ExportRepository
+            from app.routes.export import EXPORT_JOB_STATUS_ERROR
+            ExportRepository.update_job(
+                job_id,
                 {
                     "$set": {
                         "status": EXPORT_JOB_STATUS_ERROR,

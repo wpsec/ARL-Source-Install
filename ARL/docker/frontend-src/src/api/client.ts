@@ -154,7 +154,14 @@ export async function requestApi(token: string, path: string, options: ApiReques
     const primaryUrl = buildUrl(primaryPath, options.query);
 
     let response = await fetch(primaryUrl, buildFetchOptions());
-    if ((response.status === 404 || response.status === 405) && fallbackPath && fallbackPath !== primaryPath) {
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const isStructuredError = contentType.includes('json');
+    if (
+      (response.status === 404 || response.status === 405)
+      && !isStructuredError
+      && fallbackPath
+      && fallbackPath !== primaryPath
+    ) {
       const fallbackUrl = buildUrl(fallbackPath, options.query);
       response = await fetch(fallbackUrl, buildFetchOptions());
     }
@@ -207,7 +214,8 @@ export async function requestApi(token: string, path: string, options: ApiReques
       }
 
       if (!response.ok || (errJson?.code && Number(errJson.code) !== 200)) {
-        throw new Error(extractErrorMessage(errJson) || `下载失败: HTTP ${response.status}`);
+        const message = extractErrorMessage(errJson) || `下载失败: HTTP ${response.status}`;
+        throw new Error(response.ok ? message : `HTTP ${response.status}: ${message}`);
       }
 
       throw new Error('下载失败，服务端未返回文件流');
@@ -220,9 +228,24 @@ export async function requestApi(token: string, path: string, options: ApiReques
 
     const blob = await response.blob();
     const contentDisposition = response.headers.get('content-disposition') || '';
-    const match = contentDisposition.match(/filename\*=UTF-8''([^;]+)|filename=([^;]+)/i);
-    const rawName = decodeURIComponent((match?.[1] || match?.[2] || 'arl-export.bin').replace(/"/g, '').trim());
-    const fileName = sanitizeFilename(rawName);
+    const rfc5987Match = contentDisposition.match(/filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i);
+    const basicMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i);
+    const requestedFileName = sanitizeFilename(String(options.downloadFileName || '').trim());
+    const rawName = (
+      rfc5987Match?.[1]
+      || requestedFileName
+      || basicMatch?.[1]
+      || basicMatch?.[2]
+      || 'arl-export.bin'
+    ).replace(/^"|"$/g, '').trim();
+    let decodedName = rawName;
+    try {
+      decodedName = decodeURIComponent(rawName);
+    } catch {
+      // 代理可能返回未编码的兼容名称，保留原值即可完成下载。
+      decodedName = rawName;
+    }
+    const fileName = sanitizeFilename(decodedName) || requestedFileName || 'arl-export.bin';
 
     const objectUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');

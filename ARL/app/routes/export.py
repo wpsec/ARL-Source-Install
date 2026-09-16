@@ -322,10 +322,43 @@ def build_export_response(file_content, filename, content_type):
     """
     构建统一的文件下载响应。
     """
+    safe_filename = _normalize_export_filename(filename)
+    ascii_filename = _build_ascii_export_filename(safe_filename)
     response = make_response(file_content)
     response.headers['Content-Type'] = content_type
-    response.headers["Content-Disposition"] = "attachment; filename={}".format(quote(filename))
+    response.headers["Content-Disposition"] = (
+        "attachment; filename=\"{}\"; filename*=UTF-8''{}"
+    ).format(ascii_filename, quote(safe_filename, safe=""))
     return response
+
+
+def _normalize_export_filename(filename):
+    """清洗下载文件名，保留中文并阻断路径分隔符。"""
+    value = sanitize_excel_value(filename).replace("\\", "_").replace("/", "_").strip()
+    value = re.sub(r'[<>:"|?*\x00-\x1f\x7f]+', "_", value)
+    value = re.sub(r"\s+", " ", value).strip(" .")
+    return value or "arl-export.bin"
+
+
+def _build_ascii_export_filename(filename):
+    """生成兼容旧客户端的 ASCII 回退名，真实名称通过 filename* 传递。"""
+    safe_filename = _normalize_export_filename(filename)
+    path = Path(safe_filename)
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", path.stem).strip("._") or "arl-export"
+    suffix = path.suffix or ".bin"
+    return "{}{}".format(stem, suffix)
+
+
+def _build_export_filename(prefix, label, suffix, fallback_label):
+    safe_label = sanitize_excel_value(label).replace("/", "_").replace("\\", "_").strip()[:20]
+    safe_label = safe_label or fallback_label
+    return _normalize_export_filename("{}_{}{}".format(prefix, safe_label, suffix))
+
+
+def _build_batch_export_filename(prefix, task_name, task_count, suffix):
+    if int(task_count or 0) > 1:
+        return _build_export_filename(prefix, "共{}个任务".format(int(task_count)), suffix, "多任务")
+    return _build_export_filename(prefix, task_name, suffix, "未知")
 
 
 def _resolve_export_job_dir() -> Path:
@@ -376,29 +409,40 @@ def _build_export_content(task_ids, export_format):
         if not task_data:
             raise ValueError("task not found")
         target = sanitize_excel_value(task_data.get("target", "")).strip() or task_id
-        target_name = target.replace("/", "_")[:20]
         if fmt == "html":
-            return export_arl_html(task_id), "ARL资产导出报告_{}.html".format(target_name), "text/html; charset=utf-8"
+            return export_arl_html(task_id), _build_export_filename(
+                "ARL资产导出报告", target, ".html", "未知目标"
+            ), "text/html; charset=utf-8"
         if fmt == "ai_markdown":
-            return export_arl_ai_markdown(task_id), "ARL_AI分析报告_{}.md".format(target_name), "text/markdown; charset=utf-8"
-        return build_single_task_workbook(task_id, apply_style=True), "ARL资产导出报告_{}.xlsx".format(target_name), "application/octet-stream"
+            return export_arl_ai_markdown(task_id), _build_export_filename(
+                "ARL_AI分析报告", target, ".md", "未知目标"
+            ), "text/markdown; charset=utf-8"
+        return build_single_task_workbook(task_id, apply_style=True), _build_export_filename(
+            "ARL资产导出报告", target, ".xlsx", "未知目标"
+        ), "application/octet-stream"
 
     first_task = get_task_data(task_id_list[0])
     if not first_task:
         raise ValueError("task not found")
     task_name = sanitize_excel_value(first_task.get("name", "未知")).strip()[:20] or "未知"
     if fmt == "html":
-        return export_merge_tasks_html(task_id_list), "ARL批量导出报告_{}.html".format(task_name), "text/html; charset=utf-8"
+        return export_merge_tasks_html(task_id_list), _build_batch_export_filename(
+            "ARL批量导出报告", task_name, len(task_id_list), ".html"
+        ), "text/html; charset=utf-8"
     if fmt == "ai_markdown":
-        return export_merge_tasks_ai_markdown(task_id_list), "ARL_AI分析报告_{}.md".format(task_name), "text/markdown; charset=utf-8"
-    return build_merge_tasks_workbook(task_id_list, apply_style=True), "ARL批量导出报告_{}.xlsx".format(task_name), "application/octet-stream"
+        return export_merge_tasks_ai_markdown(task_id_list), _build_batch_export_filename(
+            "ARL_AI分析报告", task_name, len(task_id_list), ".md"
+        ), "text/markdown; charset=utf-8"
+    return build_merge_tasks_workbook(task_id_list, apply_style=True), _build_batch_export_filename(
+        "ARL批量导出报告", task_name, len(task_id_list), ".xlsx"
+    ), "application/octet-stream"
 
 
 def _write_export_job_file(job_id: str, filename: str, file_content):
     export_dir = _resolve_export_job_dir()
-    safe_name = re.sub(r'[^A-Za-z0-9._-]+', "_", str(filename or "arl-export.bin")).strip("._") or "arl-export.bin"
+    safe_name = _normalize_export_filename(filename)
     suffix = Path(safe_name).suffix or ".bin"
-    file_name = "{}_{}{}".format(str(job_id), Path(safe_name).stem[:48] or "report", suffix)
+    file_name = "{}_report{}".format(str(job_id), suffix)
     file_path = export_dir / file_name
     tmp_path = export_dir / "{}.part".format(file_name)
 
@@ -1637,10 +1681,9 @@ class ARLExport(Resource):
             return "not found"
 
         export_format = normalize_export_format(request.args.get("format", "excel"))
-        # 生成文件名（截取目标前20个字符）
-        domain = task_data["target"].replace("/", "_")[:20]
+        domain = sanitize_excel_value(task_data.get("target", "")).strip()
         if export_format == "html":
-            filename = "ARL资产导出报告_{}.html".format(domain)
+            filename = _build_export_filename("ARL资产导出报告", domain, ".html", "未知目标")
             html_data = export_arl_html(task_id)
             return build_export_response(html_data, filename, "text/html; charset=utf-8")
         if export_format == "ai_markdown":
@@ -1648,10 +1691,10 @@ class ARLExport(Resource):
                 markdown_data = export_arl_ai_markdown(task_id)
             except ValueError as exc:
                 return {"error": utils.safe_error_text(exc)}, 400
-            filename = "ARL_AI分析报告_{}.md".format(domain)
+            filename = _build_export_filename("ARL_AI分析报告", domain, ".md", "未知目标")
             return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
-        filename = "ARL资产导出报告_{}.xlsx".format(domain)
+        filename = _build_export_filename("ARL资产导出报告", domain, ".xlsx", "未知目标")
         excel_data = export_arl(task_id)
         return build_export_response(excel_data, filename, "application/octet-stream")
 
@@ -1703,9 +1746,11 @@ class ARLBatchExcel(Resource):
             if not first_task:
                 return {"error": "任务不存在"}, 404
             
-            task_name = first_task.get("name", "未知")
+            task_name = sanitize_excel_value(first_task.get("name", "未知")).strip()
             if export_format == "html":
-                filename = "ARL批量导出报告_{}.html".format(task_name[:20])
+                filename = _build_batch_export_filename(
+                    "ARL批量导出报告", task_name, len(task_ids), ".html"
+                )
                 html_data = export_merge_tasks_html(task_ids)
                 return build_export_response(html_data, filename, "text/html; charset=utf-8")
             if export_format == "ai_markdown":
@@ -1713,10 +1758,14 @@ class ARLBatchExcel(Resource):
                     markdown_data = export_merge_tasks_ai_markdown(task_ids)
                 except ValueError as exc:
                     return {"error": utils.safe_error_text(exc)}, 400
-                filename = "ARL_AI分析报告_{}.md".format(task_name[:20])
+                filename = _build_batch_export_filename(
+                    "ARL_AI分析报告", task_name, len(task_ids), ".md"
+                )
                 return build_export_response(markdown_data, filename, "text/markdown; charset=utf-8")
 
-            filename = "ARL批量导出报告_{}.xlsx".format(task_name[:20])
+            filename = _build_batch_export_filename(
+                "ARL批量导出报告", task_name, len(task_ids), ".xlsx"
+            )
             excel_data = export_merge_tasks(task_ids)
             return build_export_response(excel_data, filename, "application/octet-stream")
         except Exception as e:
@@ -1724,7 +1773,7 @@ class ARLBatchExcel(Resource):
             return {"error": "导出失败: {}".format(utils.safe_error_text(e))}, 500
 
 
-@ns.route('/job')
+@ns.route('/job', strict_slashes=False)
 class ARLExportJobCreate(Resource):
     """异步报告导出任务创建接口"""
 
@@ -1761,7 +1810,7 @@ class ARLExportJobCreate(Resource):
             return {"error": "创建导出任务失败: {}".format(utils.safe_error_text(exc))}, 500
 
 
-@ns.route('/job/<string:job_id>')
+@ns.route('/job/<string:job_id>', strict_slashes=False)
 class ARLExportJobStatus(Resource):
     """异步报告导出任务状态接口"""
 
@@ -1797,7 +1846,7 @@ class ARLExportJobStatus(Resource):
         return {"code": 200, "data": data}
 
 
-@ns.route('/job/<string:job_id>/download')
+@ns.route('/job/<string:job_id>/download', strict_slashes=False)
 class ARLExportJobDownload(Resource):
     """异步报告导出任务下载接口"""
 

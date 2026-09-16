@@ -133,10 +133,22 @@ describe('requestApi', () => {
   });
 
   it('404 时自动切换 trailing slash 重试', async () => {
-    const calls = mockFetchQueue([makeResponse(404, { code: 404 }), makeResponse(200, { code: 200, hit: 'slash' })]);
+    const calls = mockFetchQueue([
+      makeResponse(404, '<!doctype html><title>Not Found</title>', { 'content-type': 'text/html' }),
+      makeResponse(200, { code: 200, hit: 'slash' }),
+    ]);
     const result = await requestApi('t', '/list');
     expect((result as { hit?: string }).hit).toBe('slash');
     expect(calls.map((c) => c.url)).toEqual(['/api/list', '/api/list/']);
+  });
+
+  it('JSON 404 不再被 trailing slash 重试覆盖', async () => {
+    const calls = mockFetchQueue([
+      makeResponse(404, { error: '导出任务不存在' }, { 'content-type': 'application/json' }),
+      makeResponse(200, { code: 200, hit: 'slash' }),
+    ]);
+    await expect(requestApi('t', '/export/job/missing')).rejects.toThrow('HTTP 404: 导出任务不存在');
+    expect(calls.map((c) => c.url)).toEqual(['/api/export/job/missing']);
   });
 
   it('HTTP 非 2xx 抛包含状态码与服务端消息的错误', async () => {
@@ -189,6 +201,19 @@ describe('requestApi', () => {
     const result = await requestApi('t', '/export', { download: true });
     expect(result.data.fileName).toBe('report A.csv');
     expect(created).toBe('blob:mock');
+  });
+
+  it('download 模式无响应头时使用任务返回的 Excel 文件名', async () => {
+    (URL as unknown as { createObjectURL: (b: unknown) => string }).createObjectURL = vi.fn(() => 'blob:mock');
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
+    mockFetchQueue([
+      makeResponse(200, 'xlsx-data', { 'content-type': 'application/octet-stream' }),
+    ]);
+    const result = await requestApi('t', '/export/job/j1/download', {
+      download: true,
+      downloadFileName: 'ARL批量导出报告_测试任务.xlsx',
+    });
+    expect(result.data.fileName).toBe('ARL批量导出报告_测试任务.xlsx');
   });
 
   it('download 模式遇到 JSON 错误体按消息抛出', async () => {

@@ -11,6 +11,7 @@ import unittest
 import json
 from io import BytesIO
 from unittest.mock import patch
+from urllib.parse import unquote
 
 IMPORT_ERROR = None
 try:
@@ -88,7 +89,7 @@ class TestBatchExport(unittest.TestCase):
 
         # 验证文件名包含任务名
         content_disposition = response.headers.get('Content-Disposition', '')
-        self.assertIn('ARL批量导出报告_测试任务1.xlsx', content_disposition)
+        self.assertIn('ARL批量导出报告_共2个任务.xlsx', unquote(content_disposition))
 
     @patch('app.routes.export.export_merge_tasks_html')
     @patch('app.routes.export.get_task_data')
@@ -110,7 +111,7 @@ class TestBatchExport(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.content_type)
         content_disposition = response.headers.get('Content-Disposition', '')
-        self.assertIn('ARL批量导出报告_测试任务1.html', content_disposition)
+        self.assertIn('ARL批量导出报告_测试任务1.html', unquote(content_disposition))
 
     @patch('app.routes.export.export_arl_html')
     @patch('app.routes.export.get_task_data')
@@ -127,7 +128,7 @@ class TestBatchExport(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.content_type)
         content_disposition = response.headers.get('Content-Disposition', '')
-        self.assertIn('ARL资产导出报告_example.com.html', content_disposition)
+        self.assertIn('ARL资产导出报告_example.com.html', unquote(content_disposition))
 
     def test_batch_export_api_invalid_request(self):
         """测试批量导出API无效请求"""

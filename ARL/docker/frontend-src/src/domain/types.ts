@@ -79,6 +79,7 @@ export type ApiRequestOptions = {
   query?: JsonValue;
   body?: JsonValue | FormData;
   download?: boolean;
+  downloadFileName?: string;
   signal?: AbortSignal;
 };
 

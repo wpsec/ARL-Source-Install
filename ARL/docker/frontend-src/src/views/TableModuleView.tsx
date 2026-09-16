@@ -3018,6 +3018,7 @@ export function TableModuleView({
     const downloadResult = await requestApi(token, `/export/job/${jobId}/download`, {
       method: 'GET',
       download: true,
+      downloadFileName: String(exportJobInfo?.filename || '').trim(),
     });
     const downloadedFileName = String(downloadResult?.data?.fileName || exportJobInfo?.filename || '').trim();
     updateTaskReportExportFeedback('success', {
