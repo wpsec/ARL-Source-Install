@@ -11,6 +11,54 @@ from app.config import Config
 logger = logging.getLogger(__name__)
 
 
+def migrate_legacy_resource_owners():
+    """单用户部署中补齐历史资源归属，避免升级后旧任务无法访问。"""
+    try:
+        user_documents = conn_db("user").find({}, {"username": 1})
+        usernames = {
+            str(item.get("username") or "").strip()
+            for item in user_documents
+            if str(item.get("username") or "").strip()
+        }
+        if len(usernames) != 1:
+            return {"task": 0, "export_job": 0, "skipped": True}
+
+        owner_username = next(iter(usernames))
+        legacy_owner_query = {
+            "$or": [
+                {"owner_username": {"$exists": False}},
+                {"owner_username": None},
+                {"owner_username": ""},
+                {"owner_username": {"$regex": r"^\s*$"}},
+            ]
+        }
+        result = {}
+        for collection_name in ("task", "export_job"):
+            update_result = conn_db(collection_name).update_many(
+                legacy_owner_query,
+                {"$set": {"owner_username": owner_username}},
+            )
+            result[collection_name] = int(
+                getattr(update_result, "modified_count", 0) or 0
+            )
+
+        migrated_total = result["task"] + result["export_job"]
+        if migrated_total:
+            logger.info(
+                "migrated legacy resource owners task=%s export_job=%s",
+                result["task"],
+                result["export_job"],
+            )
+        result["skipped"] = False
+        return result
+    except Exception as exc:
+        logger.warning(
+            "migrate legacy resource owners failed error_type=%s",
+            type(exc).__name__,
+        )
+        return {"task": 0, "export_job": 0, "skipped": True}
+
+
 def update_task_tag():
     """更新task任务tag信息"""
     table = "task"
@@ -124,6 +172,8 @@ def arl_update():
         return
 
     npoc_info_update()
+    # 迁移必须在更新锁判断前执行，否则已有旧锁的实例永远不会补齐历史归属。
+    migrate_legacy_resource_owners()
 
     update_lock = os.path.join(Config.TMP_PATH, 'arl_update.lock')
     if os.path.exists(update_lock):

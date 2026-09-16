@@ -112,7 +112,17 @@ def _assert_export_job_tasks_access(job_doc):
     task_ids = _normalize_task_id_list(job_doc.get("task_ids", []))
     for task_id in task_ids:
         task_data = get_task_data(task_id)
-        if not task_data or str(task_data.get("owner_username") or "").strip() != str(owner_username).strip():
+        if not task_data:
+            raise ExportTaskAccessError("task not found")
+        task_owner = str(task_data.get("owner_username") or "").strip()
+        if task_owner:
+            owner_matches = task_owner == str(owner_username).strip()
+        else:
+            owner_matches = utils.can_access_owned_resource(
+                "",
+                principal={"type": "login", "username": str(owner_username).strip()},
+            )
+        if not owner_matches:
             raise ExportTaskAccessError("task not found")
     return task_ids
 IP_EXPORT_PROJECTION = {
@@ -1579,7 +1589,12 @@ def calc_port_service_product_statist_from_ip_items(ip_items):
     total = 0
     port_info_list = []
     for item in ip_items:
-        port_info = item.get("port_info", [])
+        if not isinstance(item, dict):
+            continue
+        port_info = [
+            value for value in as_list(item.get("port_info", []))
+            if isinstance(value, dict)
+        ]
         if not port_info:
             continue
         port_info_list.extend(port_info)
@@ -1642,6 +1657,73 @@ def calc_port_service_product_statist_from_ip_items(ip_items):
         "service_percent_list": service_percent_list,
         "product_total": len(product_name_list),
         "product_percent_list": product_percent_list
+    }
+
+
+def _safe_ip_export_item(item):
+    """过滤扫描中断时可能落库的不完整 IP 记录。"""
+    if not isinstance(item, dict):
+        return None
+
+    normalized = dict(item)
+    normalized["port_info"] = [
+        value for value in as_list(item.get("port_info", []))
+        if isinstance(value, dict)
+    ]
+    normalized["geo_city"] = item.get("geo_city", {}) \
+        if isinstance(item.get("geo_city", {}), dict) else {}
+    normalized["geo_asn"] = item.get("geo_asn", {}) \
+        if isinstance(item.get("geo_asn", {}), dict) else {}
+    normalized["os_info"] = item.get("os_info", {}) \
+        if isinstance(item.get("os_info", {}), dict) else {}
+    normalized["domain"] = _merge_unique_text_list(item.get("domain", []))
+    return normalized
+
+
+def _get_safe_ip_export_items(task_id):
+    for item in get_ip_data(task_id):
+        normalized = _safe_ip_export_item(item)
+        if normalized:
+            yield normalized
+
+
+def _safe_site_export_item(item):
+    """过滤扫描中断时可能落库的不完整站点记录。"""
+    if not isinstance(item, dict):
+        return None
+
+    site = sanitize_excel_value(item.get("site") or item.get("url", "")).strip()
+    if not site:
+        return None
+    return {
+        "_id": item.get("_id", ""),
+        "site": site,
+        "title": sanitize_excel_value(item.get("title", "")),
+        "headers": sanitize_excel_value(item.get("headers", "")),
+        "finger": as_list(item.get("finger", [])),
+        "screenshot": sanitize_excel_value(item.get("screenshot", "")),
+        "status": sanitize_excel_value(item.get("status", "")),
+        "favicon": item.get("favicon", {}) if isinstance(item.get("favicon", {}), dict) else {},
+    }
+
+
+def _safe_domain_export_item(item):
+    """过滤并标准化扫描中断时可能落库的不完整域名记录。"""
+    if not isinstance(item, dict):
+        return None
+
+    domain = sanitize_excel_value(item.get("domain", "")).strip()
+    if not domain:
+        return None
+    return {
+        "domain": domain,
+        "type": sanitize_excel_value(item.get("type", "")),
+        "record": _merge_unique_text_list(item.get("record", [])),
+        "ips": _merge_unique_text_list(item.get("ips", [])),
+        "sources": _extract_domain_source_list([
+            item.get("sources", []),
+            item.get("source", ""),
+        ]),
     }
 
 
@@ -3872,7 +3954,10 @@ def build_task_export_summary(task_ids):
             state["domain_keys"].add(domain)
             merged_domain_keys.add(domain)
 
-        for ip_item in get_ip_data(task_id):
+        for raw_ip_item in get_ip_data(task_id):
+            ip_item = _safe_ip_export_item(raw_ip_item)
+            if not ip_item:
+                continue
             ip = sanitize_excel_value(ip_item.get("ip", "")).strip()
             if not ip:
                 continue
@@ -4569,7 +4654,7 @@ def _build_vuln_sheet(wb, task_ids, apply_style=True):
         set_sheet_style(ws)
 
 
-def port_service_product_statist(task_id):
+def _legacy_port_service_product_statist(task_id):
     """
     端口和服务统计分析
     
@@ -4666,6 +4751,13 @@ def port_service_product_statist(task_id):
 
 
 
+def port_service_product_statist(task_id):
+    """基于已清洗的 IP 结果计算端口、服务和产品统计。"""
+    return calc_port_service_product_statist_from_ip_items(
+        list(_get_safe_ip_export_items(task_id))
+    )
+
+
 class SaveTask(object):
     """docstring for ClassName"""
 
@@ -4711,26 +4803,29 @@ class SaveTask(object):
             ws.column_dimensions['F'].width = 55.0
             column_tilte = ["IP", "端口信息", "开放端口数目", "geo", "as 编号", "操作系统"]
             ws.append(column_tilte)
-            for item in get_ip_data(self.task_id):
-                row = []
-                row.append(item["ip"])
-
-                port_ids = [str(x["port_id"]) for x in item["port_info"]]
-                row.append(" \r\n".join(port_ids))
-                row.append(len(item["port_info"]))
-                if "country_name" in item["geo_city"]:
-                    row.append("{}/{}".format(item["geo_city"]["country_name"],
-                                              item["geo_city"]["region_name"]))
-                    row.append(item["geo_asn"].get("organization", ""))
-                else:
-                    row.append("")
-                    row.append("")
-
-                osname = ""
-                if item.get("os_info"):
-                    osname = item["os_info"]["name"]
-                row.append(osname)
-                ws.append(row)
+            for item in _get_safe_ip_export_items(self.task_id):
+                port_ids = [
+                    sanitize_excel_value(value.get("port_id"))
+                    for value in item["port_info"]
+                    if value.get("port_id") is not None
+                ]
+                geo_city = item["geo_city"]
+                geo_text = ""
+                as_text = ""
+                if geo_city.get("country_name"):
+                    geo_text = "{}/{}".format(
+                        sanitize_excel_value(geo_city.get("country_name")),
+                        sanitize_excel_value(geo_city.get("region_name", "")),
+                    )
+                    as_text = sanitize_excel_value(item["geo_asn"].get("organization", ""))
+                ws.append([
+                    sanitize_excel_value(item.get("ip", "")),
+                    sanitize_excel_value(" \r\n".join(port_ids)),
+                    len(item["port_info"]),
+                    geo_text,
+                    as_text,
+                    sanitize_excel_value(item["os_info"].get("name", "")),
+                ])
         else:
             ws.column_dimensions['F'].width = 60.0
             ws.column_dimensions['G'].width = 40.0
@@ -4742,37 +4837,38 @@ class SaveTask(object):
             column_tilte.append("CDN")
             column_tilte.append("类别")
             ws.append(column_tilte)
-            for item in get_ip_data(self.task_id):
-                row = []
-                row.append(item["ip"])
-
-                port_ids = [str(x["port_id"]) for x in item["port_info"]]
-                row.append(" \r\n".join(port_ids))
-
-                row.append(len(item["port_info"]))
-                if "country_name" in item["geo_city"]:
-                    row.append("{}/{}".format(item["geo_city"]["country_name"],
-                                              item["geo_city"]["region_name"]))
-                    row.append(item["geo_asn"].get("organization", ""))
-                else:
-                    row.append("")
-                    row.append("")
-
-                row.append(" \r\n".join(item.get("domain", [])))
-
-                osname = ""
-                if item.get("os_info"):
-                    osname = item["os_info"]["name"]
-                row.append(osname)
-                row.append(item.get("cdn_name", ""))
-                row.append(item.get("ip_type", ""))
-                ws.append(row)
+            for item in _get_safe_ip_export_items(self.task_id):
+                port_ids = [
+                    sanitize_excel_value(value.get("port_id"))
+                    for value in item["port_info"]
+                    if value.get("port_id") is not None
+                ]
+                geo_city = item["geo_city"]
+                geo_text = ""
+                as_text = ""
+                if geo_city.get("country_name"):
+                    geo_text = "{}/{}".format(
+                        sanitize_excel_value(geo_city.get("country_name")),
+                        sanitize_excel_value(geo_city.get("region_name", "")),
+                    )
+                    as_text = sanitize_excel_value(item["geo_asn"].get("organization", ""))
+                ws.append([
+                    sanitize_excel_value(item.get("ip", "")),
+                    sanitize_excel_value(" \r\n".join(port_ids)),
+                    len(item["port_info"]),
+                    geo_text,
+                    as_text,
+                    sanitize_excel_value(" \r\n".join(item.get("domain", []))),
+                    sanitize_excel_value(item["os_info"].get("name", "")),
+                    sanitize_excel_value(item.get("cdn_name", "")),
+                    sanitize_excel_value(item.get("ip_type", "")),
+                ])
 
         self.set_style(ws)
 
     def ignore_illegal(self, content):
         ILLEGAL_CHARACTERS_RE = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
-        content = ILLEGAL_CHARACTERS_RE.sub(r'', content)
+        content = ILLEGAL_CHARACTERS_RE.sub(r'', sanitize_excel_value(content))
         return content
 
     def build_site_xl(self):
@@ -4790,15 +4886,21 @@ class SaveTask(object):
         ws.append(column_tilte)
         ai_lookup = _build_ai_denoise_lookup([self.task_id], "site")
         for item in get_site_data(self.task_id):
+            if not isinstance(item, dict):
+                continue
+            site = sanitize_excel_value(item.get("site") or item.get("url", "")).strip()
+            if not site:
+                continue
             item_id = _normalize_ai_lookup_key(item.get("_id", ""))
             ai_result = _resolve_ai_lookup_result(ai_lookup, data_id=item_id, row_key=item_id)
             row = []
-            row.append(self.ignore_illegal(item["site"]))
-            row.append(self.ignore_illegal(item["title"]))
+            row.append(self.ignore_illegal(site))
+            row.append(self.ignore_illegal(item.get("title", "")))
             row.append(self.ignore_illegal(sanitize_excel_value(item.get("headers", ""))))
-            row.append(" \r\n".join([self.ignore_illegal(x["name"]) for x in item["finger"]]))
-            row.append(item["status"])
-            row.append(item["favicon"].get("hash", ""))
+            row.append(self.ignore_illegal(extract_finger_names(item.get("finger", []))).replace(",", " \r\n"))
+            row.append(sanitize_excel_value(item.get("status", "")))
+            favicon = item.get("favicon", {}) if isinstance(item.get("favicon", {}), dict) else {}
+            row.append(sanitize_excel_value(favicon.get("hash", "")))
             row.append(self.ignore_illegal(sanitize_excel_value(item.get("screenshot", ""))))
             row.append(sanitize_excel_value(ai_result.get("text", "未分析")))
             ws.append(row)
@@ -4817,11 +4919,16 @@ class SaveTask(object):
 
         ws.append(column_tilte)
         for item in get_domain_data(self.task_id):
+            if not isinstance(item, dict):
+                continue
+            domain = sanitize_excel_value(item.get("domain", "")).strip()
+            if not domain:
+                continue
             row = []
-            row.append(item["domain"])
-            row.append(item["type"])
-            row.append(" \r\n".join(item["record"]))
-            row.append(" \r\n".join(item["ips"]))
+            row.append(domain)
+            row.append(sanitize_excel_value(item.get("type", "")))
+            row.append(sanitize_excel_value(" \r\n".join(_merge_unique_text_list(item.get("record", [])))))
+            row.append(sanitize_excel_value(" \r\n".join(_merge_unique_text_list(item.get("ips", [])))))
             row.append(_format_domain_source_text([item.get("sources", []), item.get("source", "")]))
             ws.append(row)
 
@@ -4876,7 +4983,9 @@ class SaveTask(object):
         _build_cert_sheet(self.wb, [self.task_id], apply_style=self.apply_style)
 
     def build_statist(self):
-        statist = port_service_product_statist(self.task_id)
+        statist = calc_port_service_product_statist_from_ip_items(
+            list(_get_safe_ip_export_items(self.task_id))
+        )
         ws = self.wb.create_sheet(title="资产统计")
         ws.column_dimensions['A'].width = 20.0
         ws.column_dimensions['F'].width = 20.0
@@ -5098,14 +5207,15 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                 "geo_asn": ip_item.get("geo_asn", {}) if isinstance(ip_item.get("geo_asn", {}), dict) else {},
                 "domain": domain_list,
                 "os_info": ip_item.get("os_info", {}) if isinstance(ip_item.get("os_info", {}), dict) else {},
-                "cdn_name": ip_item.get("cdn_name", ""),
-                "ip_type": ip_item.get("ip_type", ""),
+                "cdn_name": sanitize_excel_value(ip_item.get("cdn_name", "")),
+                "ip_type": sanitize_excel_value(ip_item.get("ip_type", "")),
             })
 
-        for domain_item in get_domain_data(task_id):
-            domain = domain_item.get("domain")
-            if not domain:
+        for raw_domain_item in get_domain_data(task_id):
+            domain_item = _safe_domain_export_item(raw_domain_item)
+            if not domain_item:
                 continue
+            domain = domain_item["domain"]
             if domain not in merged_domains:
                 merged_domains[domain] = {
                     "domain": domain,
@@ -5135,10 +5245,11 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                     )
                 )
 
-        for site_item in get_site_data(task_id):
-            site = site_item.get("site") or site_item.get("url")
-            if not site:
+        for raw_site_item in get_site_data(task_id):
+            site_item = _safe_site_export_item(raw_site_item)
+            if not site_item:
                 continue
+            site = site_item["site"]
             site_item_id = _normalize_ai_lookup_key(site_item.get("_id", ""))
             site_ai_result = _resolve_ai_lookup_result(site_ai_lookup, data_id=site_item_id, row_key=site_item_id)
             if site not in merged_sites:
@@ -5209,7 +5320,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
             sanitize_excel_value(item.get("headers", "")),
             sanitize_excel_value(extract_finger_names(item.get("finger", []))).replace(",", " \r\n"),
             sanitize_excel_value(item.get("status", "")),
-            sanitize_excel_value((item.get("favicon", {}) or {}).get("hash", "")),
+            sanitize_excel_value((item.get("favicon", {}) if isinstance(item.get("favicon", {}), dict) else {}).get("hash", "")),
             sanitize_excel_value(item.get("screenshot", "")),
             sanitize_excel_value((item.get("ai_result") or {}).get("text", "未分析")),
         ])
@@ -5271,7 +5382,7 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
                 len(item.get("port_info", [])),
                 sanitize_excel_value(geo_text),
                 sanitize_excel_value(as_text),
-                sanitize_excel_value(" \r\n".join(as_list(item.get("domain", [])))),
+            sanitize_excel_value(" \r\n".join(_merge_unique_text_list(item.get("domain", [])))),
                 sanitize_excel_value(osname),
                 sanitize_excel_value(item.get("cdn_name", "")),
                 sanitize_excel_value(item.get("ip_type", "")),
@@ -5312,8 +5423,8 @@ def build_merge_tasks_workbook(task_id_list, apply_style=True):
         ws.append([
             sanitize_excel_value(item.get("domain", "")),
             sanitize_excel_value(item.get("type", "")),
-            sanitize_excel_value(" \r\n".join(as_list(item.get("record", [])))),
-            sanitize_excel_value(" \r\n".join(as_list(item.get("ips", [])))),
+            sanitize_excel_value(" \r\n".join(_merge_unique_text_list(item.get("record", [])))),
+            sanitize_excel_value(" \r\n".join(_merge_unique_text_list(item.get("ips", [])))),
             sanitize_excel_value(_format_domain_source_text(item.get("sources", []))),
         ])
     if apply_style:

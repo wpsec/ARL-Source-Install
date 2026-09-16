@@ -1,6 +1,8 @@
 """
 用户认证和授权工具
 """
+import logging
+
 from flask import  request
 from app import modules
 from app.config import Config
@@ -8,6 +10,7 @@ from . import gen_md5, random_choices
 from .conn import conn_db
 
 salt = 'arlsalt!@#'
+logger = logging.getLogger(__name__)
 
 def user_login(username = None, password = None):
     if not username or not password:
@@ -72,7 +75,7 @@ def request_owner_username():
 
 
 def can_access_owned_resource(owner_username, principal=None):
-    """API 主体可管理全局资源，普通登录主体只能访问自己的资源。"""
+    """API 主体可管理全局资源，登录主体只能访问自己的资源。"""
     if not Config.AUTH:
         return True
     principal = principal if isinstance(principal, dict) else current_principal()
@@ -82,7 +85,19 @@ def can_access_owned_resource(owner_username, principal=None):
         return True
     owner = str(owner_username or "").strip()
     username = str(principal.get("username") or "").strip()
-    return bool(owner and username and owner == username)
+    if owner:
+        return bool(username and owner == username)
+
+    # 旧版本未记录资源归属。只有系统中仍存在唯一应用用户时，才能安全地
+    # 将这类历史资源视为该用户的资源；多用户场景必须继续拒绝模糊归属。
+    try:
+        return bool(username and conn_db("user").count_documents({}) == 1)
+    except Exception as exc:
+        logger.warning(
+            "legacy resource owner lookup failed error_type=%s",
+            type(exc).__name__,
+        )
+        return False
 
 
 
