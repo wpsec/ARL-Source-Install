@@ -80,6 +80,42 @@ describe('DashboardView（React Query）', () => {
     expect(calls.some((c) => c.url.includes('/domain/'))).toBe(false);
   });
 
+  it('最近任务名称和目标按实际布局溢出提供完整悬浮内容', async () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 100 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, value: 320 });
+    try {
+      installFetchMock({
+        routes: {
+          '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+          '/api/task/': [200, {
+            code: 200,
+            data: {
+              items: [{
+                _id: 'dashboard-task-1',
+                name: '生产环境站点资产长期扫描任务',
+                target: 'https://dashboard.example.com/very/long/target/path',
+                status: 'running',
+              }],
+              total: 1,
+              page: 1,
+              size: 6,
+            },
+          }],
+        },
+      });
+      renderView();
+      await vi.waitFor(() => expect(screen.getByLabelText('查看任务名称完整内容')).toBeTruthy());
+      expect(screen.getByLabelText('查看任务目标完整内容')).toBeTruthy();
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {clientWidth?: number}).clientWidth;
+      if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {scrollWidth?: number}).scrollWidth;
+    }
+  });
+
   it('聚合接口失败自动回退明细聚合，呈现兼容模式提示且不打错误条', async () => {
     const calls = installFetchMock({
       routes: { '/console/dashboard': [500, { message: '聚合不可用' }] },

@@ -89,6 +89,44 @@ describe('IcpQueryView', () => {
     expect(calls.some((call) => call.url.includes('/icp/query/task-1/results'))).toBe(true);
   });
 
+  it('ICP 结果字段按实际布局溢出提供完整悬浮内容', async () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 100 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, value: 320 });
+    try {
+      installFetchMock({
+        routes: {
+          '/icp/meta': [200, META_PAYLOAD],
+          '/icp/query/task-1/results': [200, {
+            code: 200,
+            data: {
+              items: [{
+                record_type: 'web',
+                company_name: '这是一个需要完整查看的超长主体名称',
+                domain: 'example.com',
+              }],
+              total: 1,
+              page: 1,
+              size: 26,
+            },
+          }],
+          '/icp/query/task-1': [200, COMPLETED_TASK],
+          '/icp/query': [200, { code: 200, data: { task_id: 'task-1' } }],
+        },
+      });
+      renderView();
+      fireEvent.change(screen.getByPlaceholderText('请输入域名、主体名称或应用名称'), { target: { value: 'example.com' } });
+      fireEvent.click(screen.getByRole('button', { name: '查询' }));
+      expect(await screen.findByLabelText('查看主体名称完整内容')).toBeTruthy();
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {clientWidth?: number}).clientWidth;
+      if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {scrollWidth?: number}).scrollWidth;
+    }
+  });
+
   it('日志标签页提交级别和日期范围筛选', async () => {
     const calls = installFetchMock({ routes: { '/icp/meta': [200, META_PAYLOAD] } });
     renderView();

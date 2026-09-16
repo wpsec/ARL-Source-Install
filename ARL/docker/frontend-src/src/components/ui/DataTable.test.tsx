@@ -1,7 +1,7 @@
 // DataTable 状态面契约（计划 4 UI 验收·表格/空态/加载态/虚拟滚动）。
 // 分页与筛选属于消费方（TableModuleView）语义，在 api/query.integration.test.tsx
 // 以 harness 方式覆盖数据流；此处钉死组件自身的渲染分支。
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { DataTable, type DataTableColumn } from './DataTable';
 
@@ -100,6 +100,31 @@ describe('DataTable', () => {
     const value = container.querySelector('tbody tr td span');
     expect(value?.textContent).toBe('Alpha\nBeta');
     expect(value?.className).toContain('whitespace-pre-wrap');
+  });
+
+  it('默认文本单元格按实际布局溢出接入 HoverCellValue', () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 100 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, value: 240 });
+    try {
+      const { container } = render(
+        <DataTable
+          columns={[{ key: 'name', header: '名称', getValue: (row: Row) => row.name }]}
+          rows={[{ id: 'overflow', name: '短文本' }]}
+          rowKey={(r) => r.id}
+        />,
+      );
+      const trigger = container.querySelector('[aria-label="查看名称完整内容"]');
+      expect(trigger).toBeTruthy();
+      fireEvent.focus(trigger!);
+      expect(document.body.textContent).toContain('名称完整内容');
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {clientWidth?: number}).clientWidth;
+      if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {scrollWidth?: number}).scrollWidth;
+    }
   });
 
   it('> 阈值进入虚拟滚动：内部滚动容器出现且 DOM 行数收敛', () => {

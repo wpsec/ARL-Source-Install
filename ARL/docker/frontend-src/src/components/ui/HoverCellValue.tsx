@@ -1,13 +1,15 @@
 import {createPortal} from 'react-dom';
-import {useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import type {ReactNode} from 'react';
 
 type HoverCellValueProps = {
   display: ReactNode;
   fullText: string;
   label?: string;
-  onCopy: (text: string, label: string) => void | Promise<void>;
+  onCopy?: (text: string, label: string) => void | Promise<void>;
   showHover?: boolean;
+  /** 展开/收起类预览即使尚未完成布局测量，也必须允许查看原文。 */
+  forceHover?: boolean;
   className?: string;
   displayClassName?: string;
   panelClassName?: string;
@@ -22,6 +24,16 @@ const VIEWPORT_PADDING = 8;
 const PANEL_GAP = 8;
 const PANEL_WIDTH = 420;
 
+function getDisplayText(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {
+    return String(node);
+  }
+  if (Array.isArray(node)) return node.map(getDisplayText).join('');
+  if (!isValidElement(node)) return '';
+  return getDisplayText((node.props as {children?: ReactNode}).children);
+}
+
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 
@@ -35,18 +47,50 @@ export function HoverCellValue({
   label = '内容',
   onCopy,
   showHover = true,
+  forceHover = false,
   className = '',
   displayClassName = '',
   panelClassName = '',
 }: HoverCellValueProps) {
   const copyText = String(fullText ?? '');
-  const hasContent = copyText.trim() !== '' && copyText.trim() !== '-';
-  const canInspect = showHover && hasContent;
+  const normalizedCopyText = copyText.trim();
+  const hasContent = normalizedCopyText !== '' && normalizedCopyText !== '-';
+  const displayText = getDisplayText(display).trim();
+  const hasPreviewDifference = displayText !== normalizedCopyText;
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const canInspect = showHover && hasContent && (forceHover || isOverflowing || hasPreviewDifference);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<PanelPosition>({top: VIEWPORT_PADDING, left: VIEWPORT_PADDING});
+
+  const measureOverflow = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const elements = [trigger, ...Array.from(trigger.querySelectorAll<HTMLElement>('*'))];
+    const overflowing = elements.some((element) => {
+      // 尚未布局的虚拟列表节点会返回 0；此时交给 ResizeObserver 在布局完成后重测。
+      if (element.clientWidth === 0 && element.clientHeight === 0) return false;
+      return element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1;
+    });
+    setIsOverflowing((previous) => (previous === overflowing ? previous : overflowing));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showHover || !hasContent) {
+      setIsOverflowing(false);
+      return undefined;
+    }
+    measureOverflow();
+    const trigger = triggerRef.current;
+    if (!trigger || typeof ResizeObserver === 'undefined') return undefined;
+
+    const observer = new ResizeObserver(measureOverflow);
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [displayClassName, displayText, forceHover, hasContent, measureOverflow, showHover]);
 
   const clearCloseTimer = () => {
     if (closeTimerRef.current === null) return;
@@ -87,9 +131,12 @@ export function HoverCellValue({
       const belowTop = triggerRect.bottom + PANEL_GAP;
       const canPlaceAbove = panelHeight > 0
         && triggerRect.top - panelHeight - PANEL_GAP >= VIEWPORT_PADDING;
-      const top = canPlaceAbove && belowTop + panelHeight > window.innerHeight - VIEWPORT_PADDING
+      const preferredTop = canPlaceAbove && belowTop + panelHeight > window.innerHeight - VIEWPORT_PADDING
         ? triggerRect.top - panelHeight - PANEL_GAP
         : belowTop;
+      const top = panelHeight > 0
+        ? clamp(preferredTop, VIEWPORT_PADDING, window.innerHeight - panelHeight - VIEWPORT_PADDING)
+        : Math.max(VIEWPORT_PADDING, preferredTop);
 
       setPanelPosition((previous) => (
         previous.top === top && previous.left === left
@@ -115,6 +162,12 @@ export function HoverCellValue({
       aria-expanded={canInspect ? panelOpen : undefined}
       onFocus={canInspect ? openPanel : undefined}
       onBlur={canInspect ? scheduleClose : undefined}
+      onKeyDown={canInspect ? (event) => {
+        if (event.key === 'Escape') {
+          clearCloseTimer();
+          setPanelOpen(false);
+        }
+      } : undefined}
       className={`arl-table-cell-content block w-full ${canInspect ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100' : ''} ${displayClassName}`}
     >
       {display}
@@ -131,19 +184,27 @@ export function HoverCellValue({
       onMouseLeave={scheduleClose}
       onFocusCapture={openPanel}
       onBlurCapture={scheduleClose}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          clearCloseTimer();
+          setPanelOpen(false);
+        }
+      }}
       className="fixed z-[100] w-[420px] max-w-[82vw]"
     >
       <div className={`rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg ${panelClassName}`}>
         <div className="flex items-center justify-between gap-3">
           <div className="text-xs font-black tracking-wide text-base-content">{label}完整内容</div>
-          <button
-            type="button"
-            aria-label={`复制${label}`}
-            onClick={() => void onCopy(copyText, label)}
-            className="btn btn-ghost btn-xs shrink-0 text-accent"
-          >
-            复制
-          </button>
+          {onCopy ? (
+            <button
+              type="button"
+              aria-label={`复制${label}`}
+              onClick={() => void onCopy(copyText, label)}
+              className="btn btn-ghost btn-xs shrink-0 text-accent"
+            >
+              复制
+            </button>
+          ) : null}
         </div>
         <div className="mt-2 max-h-52 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 text-xs leading-relaxed text-base-content whitespace-pre-wrap break-all">
           {copyText}

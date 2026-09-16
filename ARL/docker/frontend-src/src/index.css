@@ -238,7 +238,15 @@
 .arl-table-cell-content {
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
   overflow: hidden;
+}
+
+/* 单元格内的按钮和链接也必须参与列宽收缩，否则长标题会绕过文本容器撑开内容。 */
+.arl-fixed-table :is(td, th) .arl-table-cell-content :is(button, a) {
+  min-width: 0;
+  max-width: 100%;
 }
 
 :root {

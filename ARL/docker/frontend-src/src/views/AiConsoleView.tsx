@@ -22,6 +22,7 @@ import { USERNAME_KEY, requestApi } from '../api/client';
 import { SensitiveRevealVerifyModal } from '../components/domain/SensitiveRevealVerifyModal';
 import { Modal } from '../components/ui/Modal';
 import { DataTable } from '../components/ui/DataTable';
+import { HoverCellValue } from '../components/ui/HoverCellValue';
 import type {AiDenoiseModuleId} from '../domain/types';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
@@ -2395,10 +2396,16 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                 headerClass: 'text-content-muted text-left',
                 cellClass: 'text-left whitespace-nowrap',
                 render: (item: any) => (
-                  <>
-                    <div>{item.provider || '-'}</div>
-                    <div className="text-[11px] text-content-muted">{item.model || '-'}</div>
-                  </>
+                  <HoverCellValue
+                    display={[
+                      item.provider || '-',
+                      item.model || '-',
+                    ].join('\n')}
+                    fullText={[item.provider, item.model].filter(Boolean).join('\n') || '-'}
+                    label="模型"
+                    showHover={Boolean(item.provider || item.model)}
+                    displayClassName="block min-w-0 max-w-full max-h-12 overflow-hidden whitespace-pre-wrap break-all text-left"
+                  />
                 ),
               },
               {
@@ -2415,8 +2422,42 @@ export function ConfigAiManagementPanel({ token }: { token: string }) {
                   </>
                 ),
               },
-              { key: 'request_text', header: '用户输入摘要', headerClass: 'text-content-muted text-left', cellClass: 'text-left max-w-[260px] whitespace-normal break-all text-[11px] leading-5', render: (item: any) => getUsageLogPreviewText(item.request_text, 88) },
-              { key: 'reply_text', header: 'AI回复摘要', headerClass: 'text-content-muted text-left', cellClass: 'text-left max-w-[300px] whitespace-normal break-all text-[11px] leading-5', render: (item: any) => getUsageLogPreviewText(item.reply_text || item.error_message, 96) },
+              {
+                key: 'request_text',
+                header: '用户输入摘要',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left max-w-[260px] whitespace-normal break-all text-[11px] leading-5',
+                render: (item: any) => {
+                  const requestText = String(item.request_text || '').trim() || '-';
+                  return (
+                    <HoverCellValue
+                      display={getUsageLogPreviewText(requestText, 88)}
+                      fullText={requestText}
+                      label="用户输入摘要"
+                      showHover={requestText !== '-'}
+                      displayClassName="block max-w-full truncate text-[11px] leading-5"
+                    />
+                  );
+                },
+              },
+              {
+                key: 'reply_text',
+                header: 'AI回复摘要',
+                headerClass: 'text-content-muted text-left',
+                cellClass: 'text-left max-w-[300px] whitespace-normal break-all text-[11px] leading-5',
+                render: (item: any) => {
+                  const replyText = String(item.reply_text || item.error_message || '').trim() || '-';
+                  return (
+                    <HoverCellValue
+                      display={getUsageLogPreviewText(replyText, 96)}
+                      fullText={replyText}
+                      label="AI回复摘要"
+                      showHover={replyText !== '-'}
+                      displayClassName="block max-w-full truncate text-[11px] leading-5"
+                    />
+                  );
+                },
+              },
               {
                 key: 'action',
                 header: '操作',

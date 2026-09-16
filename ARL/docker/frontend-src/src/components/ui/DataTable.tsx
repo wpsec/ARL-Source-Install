@@ -2,6 +2,7 @@ import { Fragment, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { formatCellArrayValue } from '../../domain/cells';
+import { HoverCellValue } from './HoverCellValue';
 
 /** 超过该行数启用虚拟滚动（docs/04：超长列表 >200 虚拟滚动）。 */
 const VIRTUALIZE_THRESHOLD = 200;
@@ -34,6 +35,7 @@ export function DataTable<Row extends object>({
   virtualizedMaxHeightClass = 'max-h-[72vh]',
   renderHeader,
   renderRow,
+  onCopy,
 }: {
   columns: Array<DataTableColumn<Row>>;
   rows: Row[];
@@ -50,6 +52,8 @@ export function DataTable<Row extends object>({
   renderHeader?: () => ReactNode;
   /** 页面级表格需要保留复杂单元格交互时，自定义行；仍由 DataTable 统一承载列表和虚拟滚动。 */
   renderRow?: (row: Row, index: number) => ReactNode;
+  /** 默认文本单元格的复制回调；不提供时仍保留悬浮查看，但不显示复制按钮。 */
+  onCopy?: (text: string, label: string) => void | Promise<void>;
 }) {
   const cellPad = dense ? 'px-3 py-2' : 'px-4 py-3';
   const parentRef = useRef<HTMLDivElement>(null);
@@ -80,9 +84,17 @@ export function DataTable<Row extends object>({
         : String(rawValue ?? '-');
       return (
         <td key={column.key} className={`${cellPad} min-w-0 max-w-full overflow-hidden ${column.cellClass ?? 'text-left'}`}>
-          <span className="block min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all">
-            {displayValue}
-          </span>
+          <HoverCellValue
+            display={(
+              <span className="block min-w-0 max-w-full max-h-24 overflow-hidden whitespace-pre-wrap break-all">
+                {displayValue}
+              </span>
+            )}
+            fullText={displayValue}
+            label={typeof column.header === 'string' ? column.header : column.key}
+            onCopy={onCopy}
+            showHover={displayValue.trim() !== '' && displayValue.trim() !== '-'}
+          />
         </td>
       );
     });

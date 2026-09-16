@@ -3806,17 +3806,15 @@ export function TableModuleView({
                         const wrapCell = shouldWrapCell(module.id, column) || formattedCellText.includes('\n');
                         const cellAlignmentClass = isCenteredTableColumn(module.id, column) ? 'text-center' : 'text-left';
                         const columnStyle = getTableColumnStyle(column);
-                        const compactCellTextClass = fixedTable ? 'block max-w-full truncate' : undefined;
+                        const compactCellTextClass = fixedTable
+                          ? (wrapCell
+                            ? 'block min-w-0 max-w-full max-h-24 overflow-hidden whitespace-pre-wrap break-all'
+                            : 'block min-w-0 max-w-full truncate')
+                          : undefined;
                         const rawCellText = normalizeValueNoTruncate(getValueByPath(row, column));
                         const fullCellText = rawCellText !== '-' ? rawCellText : formattedCellText;
-                        const showCellHover = fixedTable
-                          && !isCenteredTableColumn(module.id, column)
-                          && fullCellText !== '-'
-                          && (
-                            fullCellText.length > 48
-                            || fullCellText.includes('\n')
-                            || formattedCellText !== fullCellText
-                          );
+                        // 是否需要悬浮交给 HoverCellValue 的实际布局测量，不能用字符数或列对齐方式推断。
+                        const showCellHover = fixedTable && fullCellText !== '-';
                         const baseClassName = wrapCell
                           ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-0 max-w-full overflow-hidden`
                           : `px-4 py-3 align-middle text-sm whitespace-nowrap min-w-0 max-w-full overflow-hidden ${cellAlignmentClass}`;
@@ -3854,22 +3852,30 @@ export function TableModuleView({
                           const clickable = canOpenAiDenoiseDetail(analysis);
                           const cellClass = getAiDenoiseCellClass(analysis.result_level, clickable);
                           const contentTitle = analysis.summary || '查看 AI 分析详情';
+                          const analysisText = analysis.summary || analysis.display_text || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full" style={columnStyle}>
-                              {clickable ? (
-                                <button
-                                  type="button"
-                                  onClick={() => void openAiDenoiseDetail(row, rowIndex, analysis)}
-                                  className={`${cellClass}${fixedTable ? ' max-w-full truncate' : ''}`}
-                                  title={contentTitle}
-                                >
-                                  {analysis.display_text || '查看详情'}
-                                </button>
-                              ) : (
-                                <span className={`${cellClass}${fixedTable ? ' max-w-full truncate' : ''}`} title={contentTitle}>
-                                  {analysis.display_text || '-'}
-                                </span>
-                              )}
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
+                              <HoverCellValue
+                                display={clickable ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openAiDenoiseDetail(row, rowIndex, analysis)}
+                                    className={`${cellClass} block min-w-0 max-w-full truncate`}
+                                    title={contentTitle}
+                                  >
+                                    {analysis.display_text || '查看详情'}
+                                  </button>
+                                ) : (
+                                  <span className={`${cellClass} block min-w-0 max-w-full truncate`} title={contentTitle}>
+                                    {analysis.display_text || '-'}
+                                  </span>
+                                )}
+                                fullText={analysisText}
+                                label="AI分析"
+                                onCopy={copyTextToClipboard}
+                                showHover={fixedTable && analysisText !== '-'}
+                                displayClassName="block min-w-0 max-w-full text-center"
+                              />
                             </td>
                           );
                         }
@@ -3896,6 +3902,7 @@ export function TableModuleView({
                                 label="资产范围"
                                 onCopy={copyTextToClipboard}
                                 showHover={scopeCopyText !== '-'}
+                                forceHover={shouldCollapse && !isExpanded}
                               />
                               <div className="mt-2 flex flex-wrap items-center justify-start gap-3">
                                 {shouldCollapse ? (
@@ -3938,6 +3945,7 @@ export function TableModuleView({
                                 label="任务目标"
                                 onCopy={copyTextToClipboard}
                                 showHover={targetCopyText !== '-'}
+                                forceHover={shouldCollapse && !isExpanded}
                               />
                               {shouldCollapse ? (
                                 <button
@@ -3978,6 +3986,7 @@ export function TableModuleView({
                                 label="任务配置"
                                 onCopy={copyTextToClipboard}
                                 showHover={optionCopyText !== '-'}
+                                forceHover={shouldCollapse && !isExpanded}
                               />
                               {shouldCollapse ? (
                                 <button
@@ -4000,10 +4009,15 @@ export function TableModuleView({
                           const recordType = String(row?.record_type || '').trim();
                           const sensitive = isSensitiveWihRow(row);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
-                              <span className={getWihRecordTypeTagClass(recordType, sensitive)}>
-                                {recordType || '-'}
-                              </span>
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
+                              <HoverCellValue
+                                display={<span className={`${getWihRecordTypeTagClass(recordType, sensitive)} block min-w-0 max-w-full truncate`}>{recordType || '-'}</span>}
+                                fullText={recordType || '-'}
+                                label="WIH记录类型"
+                                onCopy={copyTextToClipboard}
+                                showHover={recordType !== ''}
+                                displayClassName="block min-w-0 max-w-full text-center"
+                              />
                             </td>
                           );
                         }
@@ -4047,8 +4061,15 @@ export function TableModuleView({
                                 ? 'badge badge-soft badge-success text-xs font-bold'
                                 : 'badge badge-ghost border border-base-300 px-2.5 py-3 text-content-muted text-xs font-bold';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
-                              <span className={tagClass}>{methodText || '-'}</span>
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
+                              <HoverCellValue
+                                display={<span className={`${tagClass} block min-w-0 max-w-full truncate`}>{methodText || '-'}</span>}
+                                fullText={methodText || '-'}
+                                label="请求方法"
+                                onCopy={copyTextToClipboard}
+                                showHover={methodText !== ''}
+                                displayClassName="block min-w-0 max-w-full text-center"
+                              />
                             </td>
                           );
                         }
@@ -4062,9 +4083,17 @@ export function TableModuleView({
                               : status === 'failed' || status === 'degraded'
                                 ? 'badge badge-soft badge-error gap-1'
                                 : 'badge badge-ghost border border-base-300';
+                          const verificationText = formatWihVerificationStatus(row);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
-                              <span className={statusClass}>{formatWihVerificationStatus(row)}</span>
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
+                              <HoverCellValue
+                                display={<span className={`${statusClass} block min-w-0 max-w-full truncate`}>{verificationText}</span>}
+                                fullText={verificationText}
+                                label="验证状态"
+                                onCopy={copyTextToClipboard}
+                                showHover={verificationText !== '-'}
+                                displayClassName="block min-w-0 max-w-full text-center"
+                              />
                             </td>
                           );
                         }
@@ -4072,10 +4101,15 @@ export function TableModuleView({
                         if (module.id === 'wih_endpoint' && column === 'manual_review_required') {
                           const required = Boolean(row?.manual_review_required || row?.auth_anomaly_candidate);
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
-                              <span className={required ? 'badge badge-soft badge-warning' : 'badge badge-ghost border border-base-300'}>
-                                {required ? '需要复核' : '无需复核'}
-                              </span>
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
+                              <HoverCellValue
+                                display={<span className={`${required ? 'badge badge-soft badge-warning' : 'badge badge-ghost border border-base-300'} block min-w-0 max-w-full truncate`}>{required ? '需要复核' : '无需复核'}</span>}
+                                fullText={required ? '需要复核' : '无需复核'}
+                                label="复核要求"
+                                onCopy={copyTextToClipboard}
+                                showHover
+                                displayClassName="block min-w-0 max-w-full text-center"
+                              />
                             </td>
                           );
                         }
@@ -4132,7 +4166,7 @@ export function TableModuleView({
                                 fullText={displayUrl}
                                 label="漏洞URL"
                                 onCopy={copyTextToClipboard}
-                                showHover={displayUrl !== '-' && (displayUrl.length > 48 || displayUrl.includes('\n'))}
+                                showHover={displayUrl !== '-'}
                               />
                             </td>
                           );
@@ -4153,6 +4187,7 @@ export function TableModuleView({
                                 label={copyLabel}
                                 onCopy={copyTextToClipboard}
                                 showHover={Boolean(hasVerifyText)}
+                                forceHover={Boolean(hasVerifyText && verifyText !== copyPayload)}
                               />
                             </td>
                           );
@@ -4206,7 +4241,8 @@ export function TableModuleView({
 
                         if (module.id === 'task' && column === 'target') {
                           const targetText = formatModuleCellValue(module.id, column, row);
-                          const copyPayload = normalizeValueNoTruncate(row?.target) || targetText;
+                          const targetRawText = normalizeValueNoTruncate(row?.target);
+                          const copyPayload = targetRawText !== '-' ? targetRawText : targetText;
                           const { siteCnt, domainCnt, ipCnt, urlCnt, vulnCnt, hasAny } = extractTaskStatisticCounts(row);
                           const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object'
                             ? row.waf_skip_summary
@@ -4227,14 +4263,24 @@ export function TableModuleView({
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full arl-table-popover-cell" style={columnStyle}>
                               <div className="group relative flex items-start justify-start w-full gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openTaskLocalView(id)}
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} min-w-0 max-w-full overflow-hidden text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
-                                  title="点击查看该任务详情"
-                                >
-                                  {targetText}
-                                </button>
+                                <HoverCellValue
+                                  display={(
+                                    <button
+                                      type="button"
+                                      onClick={() => openTaskLocalView(id)}
+                                      className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full max-h-24 overflow-hidden text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left leading-relaxed`}
+                                      title="点击查看该任务详情"
+                                    >
+                                      {targetText}
+                                    </button>
+                                  )}
+                                  fullText={copyPayload}
+                                  label="目标"
+                                  onCopy={copyTextToClipboard}
+                                  showHover={copyPayload !== '-'}
+                                  className="min-w-0 flex-1"
+                                  displayClassName="min-w-0 max-w-full flex-1"
+                                />
                                 <button
                                   type="button"
                                   onClick={(event) => {
@@ -4382,15 +4428,26 @@ export function TableModuleView({
                         }
 
                         if (module.id === 'task' && column === 'name') {
+                          const taskNameText = formatModuleCellValue(module.id, column, row);
+                          const taskNameRawText = normalizeValueNoTruncate(row?.name);
                           return (
-                            <td key={column} className={baseClassName} style={columnStyle}>
-                              <button
-                                onClick={() => openTaskLocalView(id)}
-                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
-                                title="点击查看该任务详情"
-                              >
-                                {formatModuleCellValue(module.id, column, row)}
-                              </button>
+                            <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
+                              <HoverCellValue
+                                display={(
+                                  <button
+                                    onClick={() => openTaskLocalView(id)}
+                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                    title="点击查看该任务详情"
+                                  >
+                                    {taskNameText}
+                                  </button>
+                                )}
+                                fullText={taskNameRawText !== '-' ? taskNameRawText : taskNameText}
+                                label="任务名称"
+                                onCopy={copyTextToClipboard}
+                                showHover={fixedTable && taskNameText !== '-'}
+                                displayClassName="block min-w-0 max-w-full"
+                              />
                             </td>
                           );
                         }
@@ -4432,6 +4489,7 @@ export function TableModuleView({
                                 label="响应头"
                                 onCopy={copyTextToClipboard}
                                 showHover={headerCopyText !== '-' || headerText !== '-'}
+                                forceHover={shouldCollapse && !isExpanded}
                               />
                               {shouldCollapse ? (
                                 <button
@@ -4476,6 +4534,7 @@ export function TableModuleView({
                                 label="指纹信息"
                                 onCopy={copyTextToClipboard}
                                 showHover={fingerCopyText !== '-' || fingerText !== '-'}
+                                forceHover={shouldCollapse && !isExpanded}
                               />
                               {shouldCollapse ? (
                                 <button
@@ -4521,7 +4580,8 @@ export function TableModuleView({
                                 fullText={fullIdText}
                                 label={getColumnLabel(column)}
                                 onCopy={copyTextToClipboard}
-                                showHover={fixedTable && fullIdText !== '-' && fullIdText.length > 38}
+                                showHover={fixedTable && fullIdText !== '-'}
+                                forceHover={compactIdText !== fullIdText}
                                 displayClassName="block max-w-[260px] truncate align-middle font-mono"
                               />
                             </td>
@@ -4593,29 +4653,51 @@ export function TableModuleView({
                         }
 
                         if (module.id === 'github_scheduler' && column === 'name') {
+                          const schedulerNameText = formatModuleCellValue(module.id, column, row);
+                          const schedulerNameRawText = normalizeValueNoTruncate(row?.name);
                           return (
-                            <td key={column} className={baseClassName} style={columnStyle}>
-                              <button
-                                onClick={() => openGithubSchedulerDetail(id)}
-                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
-                                title="查看该监控任务结果"
-                              >
-                                {formatModuleCellValue(module.id, column, row)}
-                              </button>
+                            <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
+                              <HoverCellValue
+                                display={(
+                                  <button
+                                    onClick={() => openGithubSchedulerDetail(id)}
+                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                    title="查看该监控任务结果"
+                                  >
+                                    {schedulerNameText}
+                                  </button>
+                                )}
+                                fullText={schedulerNameRawText !== '-' ? schedulerNameRawText : schedulerNameText}
+                                label="监控任务名称"
+                                onCopy={copyTextToClipboard}
+                                showHover={fixedTable && schedulerNameText !== '-'}
+                                displayClassName="block min-w-0 max-w-full"
+                              />
                             </td>
                           );
                         }
 
                         if (module.id === 'github_task' && column === 'name') {
+                          const githubTaskNameText = formatModuleCellValue(module.id, column, row);
+                          const githubTaskNameRawText = normalizeValueNoTruncate(row?.name);
                           return (
-                            <td key={column} className={baseClassName} style={columnStyle}>
-                              <button
-                                onClick={() => openGithubTaskDetail(id)}
-                                className={`${CONSOLE_TEXT_BUTTON_CLASS} text-accent hover:underline text-left inline-block w-full`}
-                                title="查看该任务结果"
-                              >
-                                {formatModuleCellValue(module.id, column, row)}
-                              </button>
+                            <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
+                              <HoverCellValue
+                                display={(
+                                  <button
+                                    onClick={() => openGithubTaskDetail(id)}
+                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                    title="查看该任务结果"
+                                  >
+                                    {githubTaskNameText}
+                                  </button>
+                                )}
+                                fullText={githubTaskNameRawText !== '-' ? githubTaskNameRawText : githubTaskNameText}
+                                label="Github任务名称"
+                                onCopy={copyTextToClipboard}
+                                showHover={fixedTable && githubTaskNameText !== '-'}
+                                displayClassName="block min-w-0 max-w-full"
+                              />
                             </td>
                           );
                         }
@@ -4634,7 +4716,8 @@ export function TableModuleView({
                                 fullText={pathCopyText !== '-' ? pathCopyText : pathText}
                                 label="文件路径"
                                 onCopy={copyTextToClipboard}
-                                showHover={pathCopyText !== '-' && (pathCopyText.length > 48 || pathCopyText.includes('\n'))}
+                                showHover={pathCopyText !== '-'}
+                                forceHover={pathCopyText !== pathText}
                               />
                             </td>
                           );

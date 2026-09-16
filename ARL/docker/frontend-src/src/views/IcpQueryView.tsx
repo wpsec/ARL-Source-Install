@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { requestApi } from '../api/client';
+import { HoverCellValue } from '../components/ui/HoverCellValue';
 import { PageHeader } from '../layout/PageHeader';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
@@ -158,6 +159,18 @@ function formatValue(value: unknown) {
   return String(value);
 }
 
+function IcpTextCell({ value, label }: { value: unknown; label: string }) {
+  const text = formatValue(value);
+  return (
+    <HoverCellValue
+      display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all">{text}</div>}
+      fullText={text}
+      label={label}
+      showHover={text !== '-'}
+    />
+  );
+}
+
 function hasExtraFields(record: IcpRecord) {
   const extra = record.extra;
   return typeof extra === 'object' && extra !== null && Object.keys(extra).length > 0;
@@ -241,11 +254,9 @@ function ResultTable({ records }: { records: IcpRecord[] }) {
           {records.map((record, index) => (
             <Fragment key={`${record.domain || record.service_name || 'record'}-${index}`}>
               <tr key={`${record.domain || record.service_name || 'record'}-${index}`}>
-                {columns.map(([key]) => (
+                {columns.map(([key, label]) => (
                   <td key={key} className={ICP_TABLE_CELL_CLASS}>
-                    <div className="arl-table-cell-content max-h-24 whitespace-pre-wrap break-all">
-                      {formatValue(record[key])}
-                    </div>
+                    <IcpTextCell value={record[key]} label={label} />
                   </td>
                 ))}
                 <td className="min-w-0 max-w-full overflow-hidden align-top">
@@ -622,7 +633,7 @@ export function IcpQueryView({ token }: { token: string }) {
             <section className={CONSOLE_PANEL_CLASS}>
               <div className="card-body gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div><h2 className="card-title text-lg">最近批量任务</h2><p className="mt-1 break-all font-mono text-xs text-content-muted">{batchTask.task_id}</p></div>
+                  <div><h2 className="card-title text-lg">最近批量任务</h2><div className="mt-1 min-w-0 max-w-full font-mono text-xs text-content-muted"><IcpTextCell value={batchTask.task_id} label="任务 ID" /></div></div>
                   <div className="flex flex-wrap gap-2">
                     <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'json', task_id: batchTask.task_id })} aria-label="导出 JSON" title="导出 JSON"><Download className="h-3.5 w-3.5" />JSON</button>
                     <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'xlsx', task_id: batchTask.task_id })} aria-label="导出 Excel" title="导出 Excel"><Download className="h-3.5 w-3.5" />Excel</button>
@@ -634,7 +645,7 @@ export function IcpQueryView({ token }: { token: string }) {
                   <table className="arl-fixed-table table table-zebra table-sm min-w-[904px]">
                     <colgroup><col style={{ width: 64 }} /><col style={{ width: 240 }} /><col style={{ width: 110 }} /><col style={{ width: 90 }} /><col style={{ width: 260 }} /><col style={{ width: 140 }} /></colgroup>
                     <thead><tr><th>序号</th><th>关键词</th><th>状态</th><th>结果数</th><th>错误</th><th>操作</th></tr></thead>
-                    <tbody>{(batchTask.items || []).map((item, index) => <tr key={item.item_id}><th>{index + 1}</th><td className="min-w-0 max-w-full overflow-hidden break-all">{item.keyword}</td><td><StatusBadge status={item.status} /></td><td>{item.result_count || 0}</td><td className="min-w-0 max-w-full overflow-hidden break-all text-error">{item.error_message || '-'}</td><td>{item.history_id ? <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setHistoryResultPage(1); setSelectedHistoryId(item.history_id || ''); setTab('history'); }}>查看结果</button> : '-'}</td></tr>)}</tbody>
+                    <tbody>{(batchTask.items || []).map((item, index) => <tr key={item.item_id}><th>{index + 1}</th><td className="min-w-0 max-w-full overflow-hidden break-all"><IcpTextCell value={item.keyword} label="关键词" /></td><td><StatusBadge status={item.status} /></td><td>{item.result_count || 0}</td><td className="min-w-0 max-w-full overflow-hidden break-all text-error"><IcpTextCell value={item.error_message} label="错误信息" /></td><td>{item.history_id ? <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setHistoryResultPage(1); setSelectedHistoryId(item.history_id || ''); setTab('history'); }}>查看结果</button> : '-'}</td></tr>)}</tbody>
                   </table>
                 </div>
               </div>
@@ -661,7 +672,7 @@ export function IcpQueryView({ token }: { token: string }) {
           <section className={CONSOLE_PANEL_CLASS}>
             <div className="card-body p-0">
               <QueryError error={historyQuery.error} text="查询历史加载失败" />
-              {!historyQuery.isError && (historyQuery.isFetching && !historyItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : historyItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[920px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 300 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 160 }} /></colgroup><thead><tr><th>查询时间</th><th>类型</th><th>关键词</th><th>状态</th><th>结果数</th><th>操作</th></tr></thead><tbody>{historyItems.map((item) => <tr key={item.history_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all">{item.keyword}</td><td><StatusBadge status={item.status} /></td><td>{item.result_count || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setHistoryResultPage(1); setSelectedHistoryId(item.history_id); }}>查看</button><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteHistory(item.history_id)} disabled={Boolean(busy)} aria-label="删除历史记录" title="删除历史记录"><Trash2 className="h-4 w-4" /></button></div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无查询历史" />)}
+              {!historyQuery.isError && (historyQuery.isFetching && !historyItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : historyItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[920px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 300 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 160 }} /></colgroup><thead><tr><th>查询时间</th><th>类型</th><th>关键词</th><th>状态</th><th>结果数</th><th>操作</th></tr></thead><tbody>{historyItems.map((item) => <tr key={item.history_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all"><IcpTextCell value={item.keyword} label="关键词" /></td><td><StatusBadge status={item.status} /></td><td>{item.result_count || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setHistoryResultPage(1); setSelectedHistoryId(item.history_id); }}>查看</button><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteHistory(item.history_id)} disabled={Boolean(busy)} aria-label="删除历史记录" title="删除历史记录"><Trash2 className="h-4 w-4" /></button></div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无查询历史" />)}
               <Pagination page={Number(historyData.page || historyPage)} size={Number(historyData.size || 20)} total={Number(historyData.total || 0)} onChange={setHistoryPage} />
             </div>
           </section>
@@ -673,7 +684,7 @@ export function IcpQueryView({ token }: { token: string }) {
       {tab === 'tasks' ? (
         <div className="space-y-5">
           <section className={CONSOLE_PANEL_CLASS}><div className="card-body"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="card-title text-lg">批量任务</h2><p className="mt-1 text-sm text-content-muted">查看历史批量任务及其逐项执行状态。</p></div><div className="flex gap-2"><select className="select select-bordered select-sm" value={taskStatus} onChange={(event) => { setTaskStatus(event.target.value); setTaskPage(1); }}><option value="">全部状态</option><option value="queued">排队中</option><option value="running">运行中</option><option value="succeeded">已完成</option><option value="partial">部分完成</option><option value="failed">失败</option><option value="cancelled">已取消</option></select><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void batchListQuery.refetch()}><RefreshCw className="h-3.5 w-3.5" />刷新</button></div></div></div></section>
-          <section className={CONSOLE_PANEL_CLASS}><div className="card-body p-0"><QueryError error={batchListQuery.error} text="批量任务列表加载失败" />{!batchListQuery.isError && (batchListQuery.isFetching && !taskItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : taskItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[1030px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 250 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 300 }} /></colgroup><thead><tr><th>创建时间</th><th>类型</th><th>任务 ID</th><th>状态</th><th>进度</th><th>操作</th></tr></thead><tbody>{taskItems.map((item) => <tr key={item.task_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all font-mono text-xs">{item.task_id}</td><td><StatusBadge status={item.status} /></td><td>{(item.succeeded_count || 0) + (item.empty_count || 0) + (item.failed_count || 0) + (item.cancelled_count || 0)}/{item.total || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setBatchTaskId(item.task_id); setTab('batch'); }}>查看</button>{['succeeded', 'partial', 'failed', 'cancelled'].includes(item.status) ? <><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteTask(item.task_id)} disabled={Boolean(busy)} aria-label="删除批量任务" title="删除批量任务"><Trash2 className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'json', task_id: item.task_id })} aria-label="导出 JSON" title="导出 JSON"><Download className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'xlsx', task_id: item.task_id })} aria-label="导出 Excel" title="导出 Excel"><Download className="h-4 w-4" /></button></> : <button className="btn btn-ghost btn-sm" onClick={() => void cancelTask(item.task_id, 'batch')} disabled={Boolean(busy)} aria-label="取消批量任务" title="取消批量任务"><XCircle className="h-4 w-4" /></button>}</div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无批量任务" />)}<Pagination page={Number(taskData.page || taskPage)} size={Number(taskData.size || 20)} total={Number(taskData.total || 0)} onChange={setTaskPage} /></div></section>
+          <section className={CONSOLE_PANEL_CLASS}><div className="card-body p-0"><QueryError error={batchListQuery.error} text="批量任务列表加载失败" />{!batchListQuery.isError && (batchListQuery.isFetching && !taskItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : taskItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[1030px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 250 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 300 }} /></colgroup><thead><tr><th>创建时间</th><th>类型</th><th>任务 ID</th><th>状态</th><th>进度</th><th>操作</th></tr></thead><tbody>{taskItems.map((item) => <tr key={item.task_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all font-mono text-xs"><IcpTextCell value={item.task_id} label="任务 ID" /></td><td><StatusBadge status={item.status} /></td><td>{(item.succeeded_count || 0) + (item.empty_count || 0) + (item.failed_count || 0) + (item.cancelled_count || 0)}/{item.total || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setBatchTaskId(item.task_id); setTab('batch'); }}>查看</button>{['succeeded', 'partial', 'failed', 'cancelled'].includes(item.status) ? <><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteTask(item.task_id)} disabled={Boolean(busy)} aria-label="删除批量任务" title="删除批量任务"><Trash2 className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'json', task_id: item.task_id })} aria-label="导出 JSON" title="导出 JSON"><Download className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'xlsx', task_id: item.task_id })} aria-label="导出 Excel" title="导出 Excel"><Download className="h-4 w-4" /></button></> : <button className="btn btn-ghost btn-sm" onClick={() => void cancelTask(item.task_id, 'batch')} disabled={Boolean(busy)} aria-label="取消批量任务" title="取消批量任务"><XCircle className="h-4 w-4" /></button>}</div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无批量任务" />)}<Pagination page={Number(taskData.page || taskPage)} size={Number(taskData.size || 20)} total={Number(taskData.total || 0)} onChange={setTaskPage} /></div></section>
         </div>
       ) : null}
 
@@ -712,7 +723,7 @@ export function IcpQueryView({ token }: { token: string }) {
               </div>
             </div>
             <QueryError error={logsQuery.error} text="系统日志加载失败" />
-            {!logsQuery.isError && (logsQuery.isFetching && !logItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : logItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[900px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 180 }} /><col style={{ width: 450 }} /></colgroup><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>消息</th></tr></thead><tbody>{logItems.map((item, index) => <tr key={`${item.created_at}-${index}`}><td className="whitespace-nowrap text-xs">{item.created_at || '-'}</td><td><StatusBadge status={item.level === 'WARNING' ? 'partial' : item.level === 'ERROR' ? 'failed' : 'succeeded'} /></td><td className="min-w-0 max-w-full overflow-hidden break-all">{item.event || '-'}</td><td className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all">{item.message || '-'}</td></tr>)}</tbody></table></div> : <EmptyState text="暂无 ICP 系统日志" />)}
+            {!logsQuery.isError && (logsQuery.isFetching && !logItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : logItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[900px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 180 }} /><col style={{ width: 450 }} /></colgroup><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>消息</th></tr></thead><tbody>{logItems.map((item, index) => <tr key={`${item.created_at}-${index}`}><td className="whitespace-nowrap text-xs">{item.created_at || '-'}</td><td><StatusBadge status={item.level === 'WARNING' ? 'partial' : item.level === 'ERROR' ? 'failed' : 'succeeded'} /></td><td className="min-w-0 max-w-full overflow-hidden break-all"><IcpTextCell value={item.event} label="事件" /></td><td className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all"><IcpTextCell value={item.message} label="消息" /></td></tr>)}</tbody></table></div> : <EmptyState text="暂无 ICP 系统日志" />)}
             <Pagination page={Number(logData.page || logPage)} size={Number(logData.size || 50)} total={Number(logData.total || 0)} onChange={setLogPage} />
           </div>
         </section>

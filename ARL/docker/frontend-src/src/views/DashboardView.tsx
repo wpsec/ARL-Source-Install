@@ -26,6 +26,7 @@ import {
   YAxis,
 } from 'recharts';
 import { normalizeListData, requestApi } from '../api/client';
+import { HoverCellValue } from '../components/ui/HoverCellValue';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
   formatPercent,
@@ -589,28 +590,39 @@ export function DashboardView({
                   recentTasks.map((task, taskIndex) => {
                     const statusInfo = resolveTaskStatus(task?.status);
                     const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
+                    const taskNameText = normalizeValueNoTruncate(task?.name);
+                    const taskTargetText = normalizeValueNoTruncate(task?.target);
                     return (
                       <tr key={taskId || `recent-task-${taskIndex}`} className="border-b border-base-300/60 last:border-b-0">
                         <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4 font-semibold">
-                          {taskId ? (
-                            <button
-                              onClick={() => onOpenModule('site', { task_id: taskId })}
-                              className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-left text-accent hover:underline`}
-                              title="点击查看该任务详情"
-                            >
-                              {normalizeValue(task?.name)}
-                            </button>
-                          ) : (
-                            <span className="block min-w-0 max-w-full truncate">{normalizeValue(task?.name)}</span>
-                          )}
+                          <HoverCellValue
+                            display={taskId ? (
+                              <button
+                                onClick={() => onOpenModule('site', { task_id: taskId })}
+                                className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-left text-accent hover:underline`}
+                                title="点击查看该任务详情"
+                              >
+                                {taskNameText}
+                              </button>
+                            ) : (
+                              <span className="block min-w-0 max-w-full truncate">{taskNameText}</span>
+                            )}
+                            fullText={taskNameText}
+                            label="任务名称"
+                            showHover={taskNameText !== '-'}
+                            displayClassName="block min-w-0 max-w-full"
+                          />
                         </td>
                         <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4">
                           <StatusPill text={statusInfo.text} type={statusInfo.type} />
                         </td>
                         <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4 font-mono leading-relaxed">
-                          <div className="arl-table-cell-content max-h-24 whitespace-pre-wrap break-all">
-                            {formatTokenListText(task?.target)}
-                          </div>
+                          <HoverCellValue
+                            display={<div className="max-h-24 overflow-hidden whitespace-pre-wrap break-all">{formatTokenListText(task?.target)}</div>}
+                            fullText={taskTargetText}
+                            label="任务目标"
+                            showHover={taskTargetText !== '-'}
+                          />
                         </td>
                         <td className="min-w-0 max-w-full overflow-hidden py-3 text-content-muted">
                           <span className="block min-w-0 max-w-full truncate">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</span>

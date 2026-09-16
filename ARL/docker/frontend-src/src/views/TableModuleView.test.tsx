@@ -153,24 +153,34 @@ describe('TableModuleView(task) 页面级', () => {
         }],
       },
     });
-    renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'url');
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 120 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', { configurable: true, value: 480 });
+    try {
+      renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'url');
 
-    const urlTrigger = await screen.findByLabelText('查看URL完整内容');
-    const titleTrigger = screen.getByLabelText('查看标题完整内容');
-    fireEvent.focus(urlTrigger);
-    await waitFor(() => expect(screen.getByRole('button', { name: '复制URL' })).toBeTruthy());
-    const urlCopyButton = screen.getByRole('button', { name: '复制URL' });
-    const urlCell = urlTrigger.closest('td');
-    const titleCell = titleTrigger.closest('td');
-    const table = urlTrigger.closest('table');
+      const urlTrigger = await screen.findByLabelText('查看URL完整内容');
+      const titleTrigger = screen.getByLabelText('查看标题完整内容');
+      fireEvent.focus(urlTrigger);
+      await waitFor(() => expect(screen.getByRole('button', { name: '复制URL' })).toBeTruthy());
+      const urlCell = urlTrigger.closest('td');
+      const titleCell = titleTrigger.closest('td');
+      const table = urlTrigger.closest('table');
 
-    expect(table?.className).toContain('table-fixed');
-    expect(urlCell?.style.width).toBe('320px');
-    expect(titleCell?.style.width).toBe('240px');
-    expect(screen.getAllByText(longUrl).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(longTitle).length).toBeGreaterThan(0);
-    expect(screen.getByText('URL完整内容')).toBeTruthy();
-    expect(screen.getByRole('checkbox', { name: '选择当前页全部记录' }).className).toContain('checkbox-primary');
+      expect(table?.className).toContain('table-fixed');
+      expect(urlCell?.style.width).toBe('320px');
+      expect(titleCell?.style.width).toBe('240px');
+      expect(screen.getAllByText(longUrl).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(longTitle).length).toBeGreaterThan(0);
+      expect(screen.getByText('URL完整内容')).toBeTruthy();
+      expect(screen.getByRole('checkbox', { name: '选择当前页全部记录' }).className).toContain('checkbox-primary');
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {clientWidth?: number}).clientWidth;
+      if (originalScrollWidth) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      else delete (HTMLElement.prototype as HTMLElement & {scrollWidth?: number}).scrollWidth;
+    }
   });
 
   it('资产与风险列表统一固定每一列的布局宽度', () => {
