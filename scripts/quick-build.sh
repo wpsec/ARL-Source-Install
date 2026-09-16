@@ -160,6 +160,7 @@ sync_runtime_config_from_template() {
 FRONTEND_NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
 PIP_INDEX_URL="${ARL_PIP_INDEX_URL:-${PIP_INDEX_URL:-https://pypi.mirrors.ustc.edu.cn/simple/}}"
 PLAYWRIGHT_DOWNLOAD_HOST="${ARL_PLAYWRIGHT_DOWNLOAD_HOST:-${PLAYWRIGHT_DOWNLOAD_HOST:-https://cdn.npmmirror.com/binaries/playwright}}"
+RUST_DIST_SERVER="${ARL_RUST_DIST_SERVER:-${RUST_DIST_SERVER:-https://rsproxy.cn}}"
 FRONTEND_NODE_IMAGE_DEFAULT="$(resolve_frontend_node_image)"
 FRONTEND_NODE_IMAGE="${ARL_FRONTEND_BUILD_IMAGE:-$FRONTEND_NODE_IMAGE_DEFAULT}"
 # Dockerfile 使用 RUN --mount，classic builder 无法构建；没有 buildx 时使用 Docker 内置 BuildKit。
@@ -277,6 +278,7 @@ run_docker_build() {
             --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"
             --build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"
             --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=$PLAYWRIGHT_DOWNLOAD_HOST"
+            --build-arg "RUST_DIST_SERVER=$RUST_DIST_SERVER"
         )
     elif [ "$BUILD_BACKEND" = "buildkit" ]; then
         cmd=(
@@ -289,6 +291,7 @@ run_docker_build() {
             --build-arg "NPM_REGISTRY=$FRONTEND_NPM_REGISTRY"
             --build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"
             --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=$PLAYWRIGHT_DOWNLOAD_HOST"
+            --build-arg "RUST_DIST_SERVER=$RUST_DIST_SERVER"
         )
     fi
 

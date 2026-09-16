@@ -103,6 +103,7 @@ ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
 ARG RUST_VERSION=1.85.1
+ARG RUST_DIST_SERVER=https://rsproxy.cn
 ARG MATURIN_VERSION=1.8.6
 ARG NCRACK_VERSION=0.7
 ARG NUCLEI_VERSION=3.7.0
@@ -273,19 +274,40 @@ RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline \
       *) echo "[ERROR] unsupported arch for rust/arl_accel build: $ARCH"; exit 1 ;; \
     esac; \
     RUST_TARBALL="/tmp/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; \
+    RUST_DOWNLOAD_OK=0; \
     if [ -s "/tmp/rust-offline/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" ]; then \
       echo "use offline rust toolchain"; \
       cp "/tmp/rust-offline/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" "${RUST_TARBALL}"; \
-    else \
+      if xz -t "${RUST_TARBALL}" 2>/dev/null; then \
+        RUST_DOWNLOAD_OK=1; \
+      else \
+        echo "[WARN] offline Rust toolchain is invalid, retry online mirrors"; \
+        rm -f "${RUST_TARBALL}"; \
+      fi; \
+    fi; \
+    if [ "${RUST_DOWNLOAD_OK}" -ne 1 ]; then \
+      RUST_DIST_SERVER="${RUST_DIST_SERVER%/}"; \
+      if [ -z "${RUST_DIST_SERVER}" ]; then RUST_DIST_SERVER="https://rsproxy.cn"; fi; \
       for URL in \
+        "${RUST_DIST_SERVER}/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
         "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
+        "https://mirrors.ustc.edu.cn/rust-static/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
         "https://mirrors.huaweicloud.com/rust-static/${RUST_VERSION}/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
         echo "try download ${URL}"; \
-        wget -q --timeout=60 --tries=1 -O "${RUST_TARBALL}" "${URL}" && break || true; \
+        rm -f "${RUST_TARBALL}"; \
+        if wget -q --timeout=60 --tries=1 -O "${RUST_TARBALL}" "${URL}" \
+            && xz -t "${RUST_TARBALL}" 2>/dev/null; then \
+          RUST_DOWNLOAD_OK=1; \
+          break; \
+        fi; \
+        echo "[WARN] Rust toolchain source unavailable or invalid, try next mirror"; \
       done; \
     fi; \
-    xz -t "${RUST_TARBALL}" 2>/dev/null || { echo "[ERROR] rust tarball corrupt or HTML error page"; rm -f "${RUST_TARBALL}"; exit 1; }; \
-    test -s "${RUST_TARBALL}" || (echo "[ERROR] Rust toolchain package not found: ${RUST_TARBALL}" && exit 1); \
+    if [ "${RUST_DOWNLOAD_OK}" -ne 1 ]; then \
+      echo "[ERROR] Rust toolchain package unavailable for ${RUST_ARCH}"; \
+      echo "[ERROR] configure RUST_DIST_SERVER/ARL_RUST_DIST_SERVER or provide tools/rust/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; \
+      exit 1; \
+    fi; \
     cd /tmp; \
     RUST_DIR="rust-${RUST_VERSION}-${RUST_ARCH}"; \
     tar -xJf "${RUST_TARBALL}" \

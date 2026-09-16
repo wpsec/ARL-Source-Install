@@ -24,6 +24,7 @@ APP="arl-reg-${TAG}"
 NPM_REGISTRY="${ARL_FRONTEND_NPM_REGISTRY:-${NPM_REGISTRY:-https://registry.npmmirror.com}}"
 PIP_INDEX_URL="${ARL_PIP_INDEX_URL:-${PIP_INDEX_URL:-https://pypi.mirrors.ustc.edu.cn/simple/}}"
 PLAYWRIGHT_DOWNLOAD_HOST="${ARL_PLAYWRIGHT_DOWNLOAD_HOST:-${PLAYWRIGHT_DOWNLOAD_HOST:-https://cdn.npmmirror.com/binaries/playwright}}"
+RUST_DIST_SERVER="${ARL_RUST_DIST_SERVER:-${RUST_DIST_SERVER:-https://rsproxy.cn}}"
 BUILD_NETWORK="${DOCKER_BUILD_NETWORK:-host}"
 # 宿主轻依赖基线（python3.9，无 xing/arl_accel，2026-09-06 记录）：
 # Ran 768, failures=20, errors=197, skipped=49 —— 容器基线以本脚本产出为准。
@@ -39,6 +40,7 @@ BUILD_ARGS=(
     --build-arg "NPM_REGISTRY=${NPM_REGISTRY}"
     --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}"
     --build-arg "PLAYWRIGHT_DOWNLOAD_HOST=${PLAYWRIGHT_DOWNLOAD_HOST}"
+    --build-arg "RUST_DIST_SERVER=${RUST_DIST_SERVER}"
 )
 if docker buildx version >/dev/null 2>&1; then
     docker buildx build --platform "${PLATFORM}" \

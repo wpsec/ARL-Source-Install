@@ -33,9 +33,11 @@ Basic Auth 与 ARL 应用密码。直接使用 Docker Compose 时，仍需先复
 
 ### 注意！
 
-构建脚本默认使用国内 npm、PyPI 和 Playwright 镜像；网络策略不同可在 `.env` 中覆盖  
-`ARL_FRONTEND_NPM_REGISTRY`、`ARL_PIP_INDEX_URL` 和 `ARL_PLAYWRIGHT_DOWNLOAD_HOST`。  
+构建脚本默认使用国内 npm、PyPI、Playwright 和 Rust 工具链镜像；网络策略不同可在 `.env` 中覆盖
+`ARL_FRONTEND_NPM_REGISTRY`、`ARL_PIP_INDEX_URL`、`ARL_PLAYWRIGHT_DOWNLOAD_HOST` 和 `ARL_RUST_DIST_SERVER`。
 也可提前下载 Playwright 以提升部署速度。
+
+Rust 离线包不是 Git 跟踪文件。若部署环境无法访问构建镜像源，可将与 `RUST_VERSION`、目标架构匹配的 `rust-<version>-<target>.tar.xz` 放入 `tools/rust/` 后再构建；否则配置 `ARL_RUST_DIST_SERVER` 为可访问的 Rust dist server。
 
 参考文档：
 
