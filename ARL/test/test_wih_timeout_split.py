@@ -253,6 +253,43 @@ class TestWihTimeoutSplit(unittest.TestCase):
         self.assertIn("--runtime-max-requests", light_command)
         self.assertIn("60", light_command)
 
+    def test_wih_command_logs_redact_proxy_credentials(self):
+        hunter = InfoHunter(["https://a.example.com"])
+        messages = []
+        original_logger = info_hunter_module.logger
+        info_hunter_module.logger = types.SimpleNamespace(
+            info=lambda *args, **kwargs: None,
+            warning=lambda message, *args, **kwargs: messages.append(str(message)),
+            debug=lambda *args, **kwargs: None,
+            error=lambda *args, **kwargs: None,
+        )
+        command = [
+            "wih",
+            "--proxy",
+            "http://demo:review-marker@proxy.invalid",
+        ]
+
+        try:
+            with patch.object(
+                info_hunter_module.utils,
+                "exec_system",
+                side_effect=RuntimeError(
+                    "request failed http://demo:review-marker@proxy.invalid?token=review-marker"
+                ),
+            ):
+                result = hunter._run_wih_command(
+                    command,
+                    ["https://a.example.com"],
+                    "test",
+                )
+        finally:
+            info_hunter_module.logger = original_logger
+
+        self.assertFalse(result["ok"])
+        logged_text = "\n".join(messages)
+        self.assertNotIn("review-marker", logged_text)
+        self.assertIn("[REDACTED]", logged_text)
+
     def test_endpoint_sensitive_light_result_without_endpoint_escalates_to_full(self):
         hunter = InfoHunter(["https://a.example.com"], prefer_fast_mode=True)
         hunter.require_endpoint_results = True

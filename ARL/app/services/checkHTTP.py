@@ -217,5 +217,8 @@ def check_http(urls, concurrency=None, prevalidated_dns_domains=None):
         concurrency,
         prevalidated_dns_domains=prevalidated_dns_domains,
     )
-    c._metrics["candidate_capped_count"] = capped_count
+    c._metrics.update({
+        "candidate_input_count": len(raw_urls),
+        "candidate_capped_count": capped_count,
+    })
     return c.run()

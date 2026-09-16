@@ -1202,6 +1202,7 @@ class InfoHunter(object):
         return record_count < min_record_threshold
 
     def _run_wih_command(self, command: list, batch_sites: list, command_name: str, timeout_sec: int = None):
+        safe_command = safe_error_text(" ".join(str(item or "") for item in command))
         if timeout_sec is None:
             effective_timeout = max(60, int(self.wih_timeout_sec))
         else:
@@ -1219,7 +1220,7 @@ class InfoHunter(object):
                     command_name,
                     effective_timeout,
                     len(list(batch_sites or [])),
-                    " ".join(command),
+                    safe_command,
                 )
             )
             return {
@@ -1235,8 +1236,8 @@ class InfoHunter(object):
                 "wih {} exception batch_sites:{} err:{} cmd:{}".format(
                     command_name,
                     len(list(batch_sites or [])),
-                    e,
-                    " ".join(command),
+                    safe_error_text(e),
+                    safe_command,
                 )
             )
             return {
@@ -1265,8 +1266,8 @@ class InfoHunter(object):
                 command_name,
                 completed.returncode,
                 len(list(batch_sites or [])),
-                stderr_text[:500],
-                stdout_text[:500],
+                safe_error_text(stderr_text, max_length=500),
+                safe_error_text(stdout_text, max_length=500),
             )
         )
         return {
@@ -1407,7 +1408,7 @@ class InfoHunter(object):
                     self.wih_concurrency_per_site,
                     self.wih_limit_reader_size,
                     profile["runtime_enable"],
-                    " ".join(command),
+                    safe_error_text(" ".join(str(item or "") for item in command)),
                 )
             )
             result = self._run_wih_command(
@@ -1577,7 +1578,7 @@ class InfoHunter(object):
             "skip wih batch after failure depth:{} sites:{} sample:{}".format(
                 depth,
                 len(current_sites),
-                ",".join(current_sites[:3]),
+                safe_error_text(",".join(current_sites[:3])),
             )
         )
         return partial_saved
@@ -1607,7 +1608,7 @@ class InfoHunter(object):
                 stderr=subprocess.PIPE,
             )
         except Exception as e:
-            logger.debug("load wih version failed err:{}".format(e))
+            logger.debug("load wih version failed err:{}".format(safe_error_text(e)))
             return ""
 
         if completed.returncode != 0:

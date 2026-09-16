@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import patch
 
 from app.services.probe_policy import cap_http_probe_urls, select_probe_port_infos
+from app.services import checkHTTP
 
 
 class TestProbePolicy(unittest.TestCase):
@@ -36,6 +38,24 @@ class TestProbePolicy(unittest.TestCase):
         selected, dropped = cap_http_probe_urls(urls, max_candidates=2)
         self.assertEqual(["http://b.example", "https://a.example"], selected)
         self.assertEqual(2, dropped)
+
+    def test_check_http_metrics_keep_raw_input_count_after_candidate_cap(self):
+        raw_urls = [
+            "http://a.example",
+            "http://b.example",
+            "http://a.example",
+        ]
+
+        with patch.object(checkHTTP.Config, "SITE_DISCOVERY_MAX_CANDIDATES", 1), patch.object(
+            checkHTTP.CheckHTTP,
+            "run",
+            autospec=True,
+            side_effect=lambda checker: dict(checker._metrics),
+        ):
+            metrics = checkHTTP.check_http(raw_urls, concurrency=1)
+
+        self.assertEqual(3, metrics["candidate_input_count"])
+        self.assertEqual(1, metrics["candidate_capped_count"])
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from requests import Response
 from requests.structures import CaseInsensitiveDict
 
 from app import utils
+from app.utils.log_safety import safe_error_text
 from .discovery_context import traffic_class_for_module
 
 logger = utils.get_logger()
@@ -742,7 +743,7 @@ class WAFSmartSkipGuard(object):
             timeout_by_class[module_class] = current_count
             # 保留旧字段，供旧版落库/监控继续读取；新逻辑以类别计数为准。
             state["consecutive_timeout_count"] = current_count
-            state["last_url"] = str(url or "")
+            state["last_url"] = safe_error_text(url)
             state["module"] = module_name or module_class
             if module_class in state.get("blocked_classes", set()):
                 return
@@ -944,7 +945,7 @@ class WAFSmartSkipGuard(object):
             state = self._get_state(host)
             state["request_count"] += 1
             state["last_status"] = status_code
-            state["last_url"] = str(url or "")
+            state["last_url"] = safe_error_text(url)
             timeout_by_class = state.setdefault("timeout_by_class", {})
             timeout_by_class[module_class] = 0
             state["consecutive_timeout_count"] = 0
@@ -1282,7 +1283,7 @@ class WAFSmartSkipGuard(object):
                     int(item.get("consecutive_block_count", 0) or 0),
                 )
                 state["last_status"] = int(item.get("last_status", 0) or 0)
-                state["last_url"] = str(item.get("last_url", "") or "")
+                state["last_url"] = safe_error_text(item.get("last_url", "") or "")
                 for key in (
                     "reason",
                     "rule",

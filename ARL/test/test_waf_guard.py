@@ -44,6 +44,29 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertEqual(1, summary["request_count"])
         self.assertEqual("Cloudflare", summary["detected_hosts"][0]["waf_name"])
 
+    def test_waf_summary_redacts_query_credentials(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            task_id="task-demo",
+            scope_sites=["https://example.com"],
+        )
+        response = SimpleNamespace(
+            status_code=403,
+            headers={"CF-Mitigated": "challenge", "CF-Ray": "abc123"},
+            content=b"",
+        )
+
+        guard.observe_response(
+            "https://example.com/login?access_token=review-marker",
+            response,
+            module="fetch_site",
+        )
+        last_url = guard.summary()["detected_hosts"][0]["last_url"]
+
+        self.assertNotIn("review-marker", last_url)
+        self.assertIn("access_token=[REDACTED]", last_url)
+
     def test_penetration_bypass_semantics_removed(self):
         """计划 1 收口：penetration_test 试探绕过语义删除后的行为钉。
 
