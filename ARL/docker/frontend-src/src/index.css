@@ -211,6 +211,36 @@
   --noise: 0;
 }
 
+/* 数据表格统一使用固定布局；详情面板通过 Portal 脱离表格，不依赖单元格溢出显示。 */
+.arl-fixed-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.arl-fixed-table :is(th, td) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.arl-fixed-table > thead > tr > th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arl-fixed-table > tbody > tr > td {
+  overflow: hidden;
+}
+
+.arl-fixed-table > tbody > tr > td.arl-table-popover-cell {
+  overflow: visible;
+}
+
+.arl-table-cell-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
 :root {
   --brand-bg: #111a25;
   --brand-bg-rgb: 17, 26, 37;

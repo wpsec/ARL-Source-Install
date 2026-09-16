@@ -81,6 +81,9 @@ describe('IcpQueryView', () => {
     fireEvent.change(screen.getByPlaceholderText('请输入域名、主体名称或应用名称'), { target: { value: 'example.com' } });
     fireEvent.click(screen.getByRole('button', { name: '查询' }));
     await screen.findByText('example.com');
+    const resultValue = screen.getByText('example.com');
+    expect(resultValue.closest('table')?.className).toContain('arl-fixed-table');
+    expect(resultValue.closest('td')?.className).toContain('overflow-hidden');
     fireEvent.click(screen.getByRole('button', { name: '展开' }));
     expect(screen.getByText(/"company_name": "测试主体"/)).toBeTruthy();
     expect(calls.some((call) => call.url.includes('/icp/query/task-1/results'))).toBe(true);

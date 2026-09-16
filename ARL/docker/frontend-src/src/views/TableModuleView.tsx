@@ -171,6 +171,15 @@ const DEFAULT_FIXED_TABLE_COLUMN_WIDTHS: Record<string, number> = {
   manual_review_required: 160,
 };
 
+const FIXED_ROW_OPERATION_WIDTHS: Record<string, number> = {
+  task: 520,
+  asset_scope: 760,
+  policy: 300,
+  task_schedule: 220,
+  github_task: 220,
+  github_scheduler: 300,
+};
+
 const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>> = {
   task: {
     name: 220,
@@ -502,6 +511,9 @@ export function TableModuleView({
   const fixedTable = hasList;
   const getTableColumnWidth = (column: string): number | undefined => {
     if (!fixedTable) return undefined;
+    if (column === '__operate' && FIXED_ROW_OPERATION_WIDTHS[module.id]) {
+      return FIXED_ROW_OPERATION_WIDTHS[module.id];
+    }
     return FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE[module.id]?.[column]
       ?? DEFAULT_FIXED_TABLE_COLUMN_WIDTHS[column]
       ?? 180;
@@ -3681,7 +3693,7 @@ export function TableModuleView({
                 ? '暂无数据。请确认任务已开启目录扫描，且目标未被 DNS 策略过滤。'
                 : '暂无数据'
             }
-            tableClass={`w-full border-collapse text-sm md:text-[15px] ${fixedTable ? 'table-fixed' : ''}`}
+            tableClass={`arl-fixed-table w-full border-collapse text-sm md:text-[15px] ${fixedTable ? 'table-fixed' : ''}`}
             renderHeader={() => (
               <tr>
                   <th className="px-4 py-3 w-12 text-center" style={getTableColumnStyle('__select')}>
@@ -3806,8 +3818,8 @@ export function TableModuleView({
                             || formattedCellText !== fullCellText
                           );
                         const baseClassName = wrapCell
-                          ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-0 max-w-full`
-                          : `px-4 py-3 align-middle text-sm whitespace-nowrap min-w-0 max-w-full ${cellAlignmentClass}${fixedTable ? ' overflow-visible' : ''}`;
+                          ? `px-4 py-3 align-top text-sm whitespace-pre-wrap break-all ${cellAlignmentClass} leading-relaxed min-w-0 max-w-full overflow-hidden`
+                          : `px-4 py-3 align-middle text-sm whitespace-nowrap min-w-0 max-w-full overflow-hidden ${cellAlignmentClass}`;
 
                         if (column === 'ai_analysis' && aiDenoiseModuleId) {
                           const rowKey = buildAiDenoiseRowKey(row, rowIndex);
@@ -4108,7 +4120,7 @@ export function TableModuleView({
                           const targetRaw = normalizeValueNoTruncate(row?.target);
                           const displayUrl = (vulnUrlRaw && vulnUrlRaw !== '-' ? vulnUrlRaw : targetRaw) || '-';
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full overflow-hidden" style={columnStyle}>
                               <HoverCellValue
                                 display={(
                                   <div className="min-h-[24px] block max-w-full truncate text-left">
@@ -4213,12 +4225,12 @@ export function TableModuleView({
                           );
                           const showTaskTargetStatTooltip = hasAny || hasWafSummary;
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full" style={columnStyle}>
+                            <td key={column} className="px-4 py-3 align-middle text-sm text-left min-w-0 max-w-full arl-table-popover-cell" style={columnStyle}>
                               <div className="group relative flex items-start justify-start w-full gap-2">
                                 <button
                                   type="button"
                                   onClick={() => openTaskLocalView(id)}
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} min-w-0 text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
+                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} min-w-0 max-w-full overflow-hidden text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left inline-block flex-1 leading-relaxed`}
                                   title="点击查看该任务详情"
                                 >
                                   {targetText}
@@ -4292,19 +4304,19 @@ export function TableModuleView({
                             <button
                               type="button"
                               onClick={() => openTaskErrorDialog(row)}
-                              className={`${CONSOLE_TEXT_BUTTON_CLASS} inline-flex items-center gap-1 text-error hover:underline font-semibold`}
+                              className={`${CONSOLE_TEXT_BUTTON_CLASS} inline-flex min-w-0 max-w-full items-center gap-1 text-error hover:underline font-semibold`}
                               title="点击查看异常详情"
                             >
                               <AlertTriangle className="w-4 h-4" />
-                              <span>{visibleStatusText}</span>
+                              <span className="block min-w-0 max-w-full truncate">{visibleStatusText}</span>
                             </button>
                           ) : (
-                            <span>{visibleStatusText}</span>
+                            <span className="block min-w-0 max-w-full truncate">{visibleStatusText}</span>
                           );
 
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center" style={columnStyle}>
-                              <div className="group relative inline-flex items-center justify-center">
+                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden arl-table-popover-cell" style={columnStyle}>
+                              <div className="group relative flex min-w-0 max-w-full items-center justify-center">
                                 {statusNode}
                                 <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
                                   <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
@@ -4642,7 +4654,7 @@ export function TableModuleView({
                         );
                       })}
                       {hasRowOperate ? (
-                        <td className={`px-4 py-3 align-middle whitespace-nowrap text-center ${rowOperateColumnWidthClass}`} style={getTableColumnStyle('__operate')}>
+                        <td className={`px-4 py-3 align-middle whitespace-nowrap text-center arl-table-popover-cell ${rowOperateColumnWidthClass}`} style={getTableColumnStyle('__operate')}>
                           {showTaskRowOperate ? (
                             (() => {
                               const taskRowDone = isTaskTerminalStatus(row?.status);

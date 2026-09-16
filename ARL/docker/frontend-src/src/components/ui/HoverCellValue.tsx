@@ -115,7 +115,7 @@ export function HoverCellValue({
       aria-expanded={canInspect ? panelOpen : undefined}
       onFocus={canInspect ? openPanel : undefined}
       onBlur={canInspect ? scheduleClose : undefined}
-      className={`min-w-0 max-w-full ${canInspect ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100' : ''} ${displayClassName}`}
+      className={`arl-table-cell-content block w-full ${canInspect ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100' : ''} ${displayClassName}`}
     >
       {display}
     </div>
@@ -156,7 +156,7 @@ export function HoverCellValue({
     <div
       onMouseEnter={openPanel}
       onMouseLeave={scheduleClose}
-      className={`relative inline-block min-w-0 max-w-full align-middle ${className}`}
+      className={`arl-table-cell-content relative block w-full align-middle ${className}`}
     >
       {displayNode}
       {typeof document === 'undefined' ? null : createPortal(panel, document.body)}

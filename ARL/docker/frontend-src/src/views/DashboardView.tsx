@@ -563,7 +563,13 @@ export function DashboardView({
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="arl-fixed-table w-full text-left text-xs">
+              <colgroup>
+                <col style={{ width: '28%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '40%' }} />
+                <col style={{ width: '16%' }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-base-300">
                   <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">名称</th>
@@ -585,26 +591,30 @@ export function DashboardView({
                     const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
                     return (
                       <tr key={taskId || `recent-task-${taskIndex}`} className="border-b border-base-300/60 last:border-b-0">
-                        <td className="py-3 pr-4 font-semibold">
+                        <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4 font-semibold">
                           {taskId ? (
                             <button
                               onClick={() => onOpenModule('site', { task_id: taskId })}
-                              className={`${CONSOLE_TEXT_BUTTON_CLASS} max-w-full break-all text-left text-accent hover:underline`}
+                              className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-left text-accent hover:underline`}
                               title="点击查看该任务详情"
                             >
                               {normalizeValue(task?.name)}
                             </button>
                           ) : (
-                            normalizeValue(task?.name)
+                            <span className="block min-w-0 max-w-full truncate">{normalizeValue(task?.name)}</span>
                           )}
                         </td>
-                        <td className="py-3 pr-4">
+                        <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4">
                           <StatusPill text={statusInfo.text} type={statusInfo.type} />
                         </td>
-                        <td className="py-3 pr-4 font-mono whitespace-pre-wrap break-all leading-relaxed">
-                          {formatTokenListText(task?.target)}
+                        <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4 font-mono leading-relaxed">
+                          <div className="arl-table-cell-content max-h-24 whitespace-pre-wrap break-all">
+                            {formatTokenListText(task?.target)}
+                          </div>
                         </td>
-                        <td className="py-3 text-content-muted">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</td>
+                        <td className="min-w-0 max-w-full overflow-hidden py-3 text-content-muted">
+                          <span className="block min-w-0 max-w-full truncate">{formatTime(task?.create_time || task?.update_time || task?.start_time)}</span>
+                        </td>
                       </tr>
                     );
                   })

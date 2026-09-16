@@ -82,8 +82,11 @@ describe('DataTable', () => {
       />,
     );
     const value = container.querySelector('tbody tr td span');
+    expect(container.querySelector('table')?.className).toContain('arl-fixed-table');
     expect(value?.textContent).toBe('Alpha\nBeta');
     expect(value?.className).toContain('whitespace-pre-wrap');
+    expect(value?.className).toContain('break-all');
+    expect(value?.className).toContain('overflow-hidden');
   });
 
   it('默认数组单元格统一按行展示', () => {

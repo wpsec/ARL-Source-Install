@@ -66,7 +66,7 @@ export function DataTable<Row extends object>({
     columns.map((column) => {
       if (column.render) {
         return (
-          <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-left'}`}>
+          <td key={column.key} className={`${cellPad} min-w-0 max-w-full overflow-hidden ${column.cellClass ?? 'text-left'}`}>
             {column.render(row, index)}
           </td>
         );
@@ -79,8 +79,8 @@ export function DataTable<Row extends object>({
         ? formatCellArrayValue(rawValue)
         : String(rawValue ?? '-');
       return (
-        <td key={column.key} className={`${cellPad} ${column.cellClass ?? 'text-left'}`}>
-          <span className={displayValue.includes('\n') ? 'whitespace-pre-wrap break-all' : undefined}>
+        <td key={column.key} className={`${cellPad} min-w-0 max-w-full overflow-hidden ${column.cellClass ?? 'text-left'}`}>
+          <span className="block min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all">
             {displayValue}
           </span>
         </td>
@@ -97,7 +97,7 @@ export function DataTable<Row extends object>({
       ref={parentRef}
       className={`overflow-x-auto custom-scrollbar${shouldVirtualize ? ` overflow-y-auto ${virtualizedMaxHeightClass}` : ''}`}
     >
-      <table className={`table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
+      <table className={`arl-fixed-table table text-sm md:text-[15px] ${zebra ? 'table-zebra' : ''} ${tableClass}`}>
         <colgroup>
           {columns.map((column) => (
             <col
