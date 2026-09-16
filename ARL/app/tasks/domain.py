@@ -939,6 +939,7 @@ class DomainTask(CommonTask):
     def _prepare_deep_site_context(self):
         """为跨消息的后置阶段恢复站点目标和共享发现上下文。"""
         DomainSiteStageService(self).run_load_saved_sites()
+        domain_info_list = list(self.domain_info_list or [])
         self.web_site_fetch = WebSiteFetch(
             task_id=self.task_id,
             sites=list(self.site_list),
@@ -946,6 +947,18 @@ class DomainTask(CommonTask):
             scope_domain=[self.base_domain],
             discovery_context=self.discovery_context,
         )
+        for info in domain_info_list:
+            domain = str(getattr(info, "domain", "") or "").strip()
+            record_list = list(getattr(info, "record_list", []) or [])
+            if not domain or not record_list:
+                continue
+            self.web_site_fetch.waf_guard.observe_dns(
+                domain,
+                cname=record_list[0],
+                dns_names=record_list,
+                module="domain_cname",
+            )
+        self.domain_info_list = []
         self.web_site_fetch.available_sites = list(self.site_list)
         self.web_site_fetch.terminal_finalize_host_owned = True
         return self.web_site_fetch

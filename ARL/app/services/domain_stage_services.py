@@ -2297,7 +2297,7 @@ class DomainSiteStageService(object):
         task = self.task
         pipeline = TaskPipeline(task)
         pipeline.run_stage("find_site", self.run_find_site)
-        task.domain_info_list = []
+        domain_info_list = list(task.domain_info_list or [])
 
         # 延迟导入避免把站点任务实现重新耦合到域名阶段服务的导入过程。
         from app.services.commonTask import WebSiteFetch
@@ -2309,6 +2309,18 @@ class DomainSiteStageService(object):
             scope_domain=[task.base_domain],
             discovery_context=task.discovery_context,
         )
+        for info in domain_info_list:
+            domain = str(getattr(info, "domain", "") or "").strip()
+            record_list = list(getattr(info, "record_list", []) or [])
+            if not domain or not record_list:
+                continue
+            web_site_fetch.waf_guard.observe_dns(
+                domain,
+                cname=record_list[0],
+                dns_names=record_list,
+                module="domain_cname",
+            )
+        task.domain_info_list = []
         # 终态唯一 owner 是 DomainTaskOrchestrator.run_deep 的 TaskFinalizer：
         # 嵌套站点层跳过收尾，避免 drain/显影双执行。
         web_site_fetch.terminal_finalize_host_owned = True
@@ -2370,10 +2382,16 @@ class DomainPostProcessStageService(object):
             return 0
 
         from app.services import run_risk_cruising
+        from app.services.npoc import build_npoc_target_profiles
 
         targets = task.site_list.copy()
         targets += list(task.npoc_service_target_set)
-        result = run_risk_cruising(targets=targets, plugins=plugins)
+        result = run_risk_cruising(
+            targets=targets,
+            plugins=plugins,
+            waf_guard=getattr(getattr(task, "web_site_fetch", None), "waf_guard", None),
+            target_profiles=build_npoc_target_profiles(task.task_id, targets),
+        )
         saved_count = 0
         for item in result:
             target = str(item.get("target", "") or item.get("url", "")).strip()
@@ -2385,7 +2403,8 @@ class DomainPostProcessStageService(object):
                 continue
             item["task_id"] = task.task_id
             item["save_date"] = utils.curr_date()
-            _task_result_writer(task).insert_one("vuln", item)
+            collection = "poc_scan_error" if item.get("result_status") == "partial" else "vuln"
+            _task_result_writer(task).insert_one(collection, item)
             saved_count += 1
         return saved_count
 

@@ -328,6 +328,29 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertTrue(skip_wih)
         self.assertFalse(skip_fetch)
 
+    def test_weak_status_threshold_requires_consecutive_responses(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            task_id="task-demo",
+            scope_sites=["https://example.com"],
+            weak_block_threshold=2,
+        )
+        blocked = SimpleNamespace(status_code=403, headers={}, content=b"")
+        normal = SimpleNamespace(status_code=200, headers={}, content=b"")
+
+        guard.observe_response("https://example.com/a", blocked, module="page_intel_scan")
+        guard.observe_response("https://example.com/b", normal, module="page_intel_scan")
+        guard.observe_response("https://example.com/c", blocked, module="page_intel_scan")
+        self.assertFalse(
+            guard.should_skip("https://example.com/d", module="urlfinder_extract")[0]
+        )
+
+        guard.observe_response("https://example.com/e", blocked, module="page_intel_scan")
+        self.assertTrue(
+            guard.should_skip("https://example.com/f", module="urlfinder_extract")[0]
+        )
+
     def test_strong_signal_still_host_wide_and_sink_reports_scope(self):
         captured = []
         guard = WAFSmartSkipGuard(
@@ -373,6 +396,91 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         # 空 scope（不限制）时追加会被跳过，避免反向收窄
         unrestricted = WAFSmartSkipGuard(enabled=True, smart_skip_enabled=True, task_id="t")
         self.assertFalse(unrestricted.add_scope_host("any.example.org"))
+
+    def test_npoc_timeout_threshold_only_blocks_npoc_class(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+            timeout_block_threshold=2,
+        )
+        guard.observe_timeout(
+            "https://example.com/a", TimeoutError("timed out"), module="npoc"
+        )
+        guard.observe_timeout(
+            "https://example.com/b", TimeoutError("timed out"), module="npoc"
+        )
+
+        self.assertTrue(guard.should_skip("https://example.com/c", module="npoc")[0])
+        self.assertFalse(guard.should_skip("https://example.com/c", module="fetch_site")[0])
+        summary = guard.summary()
+        self.assertEqual(1, summary["class_blocked_host_count"])
+        self.assertEqual(2, summary["class_blocked_hosts"][0]["timeout_count"])
+
+    def test_cdn_dns_evidence_does_not_skip_npoc(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+        )
+        guard.observe_dns(
+            "https://example.com",
+            cname="edge.cloudflare.com",
+            module="domain_cname",
+        )
+        targets, skipped = guard.filter_targets(
+            ["https://example.com"], module="npoc", preclassify=True
+        )
+
+        self.assertEqual(["https://example.com"], targets)
+        self.assertEqual(0, skipped)
+
+    def test_normal_cdn_response_does_not_skip_npoc(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+        )
+        normal_cdn_response = SimpleNamespace(
+            status_code=200,
+            headers={"CF-Ray": "abc123", "CF-Cache-Status": "HIT"},
+            content=b"normal application response",
+        )
+
+        guard.observe_response(
+            "https://example.com/", normal_cdn_response, module="fetch_site"
+        )
+
+        targets, skipped = guard.filter_targets(
+            ["https://example.com"], module="npoc", preclassify=True
+        )
+        self.assertEqual(["https://example.com"], targets)
+        self.assertEqual(0, skipped)
+        self.assertEqual(0, guard.summary()["blocked_host_count"])
+
+    def test_high_confidence_dns_waf_preclassifies_npoc(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            scope_sites=["https://example.com"],
+        )
+        guard.observe_dns(
+            "https://example.com",
+            cname="edge.365cyd.cn",
+            module="domain_cname",
+        )
+
+        targets, skipped = guard.filter_targets(
+            ["https://example.com"], module="npoc", preclassify=True
+        )
+
+        self.assertEqual([], targets)
+        self.assertEqual(1, skipped)
+        self.assertEqual(1, guard.summary()["preclassified_count"])
+        self.assertEqual(
+            ["npoc"],
+            guard.summary()["class_blocked_hosts"][0]["blocked_classes"],
+        )
 
 
 if __name__ == "__main__":

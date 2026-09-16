@@ -156,6 +156,8 @@ class CommonTask(object):
             "nuclei_scan": "NUCLEI_STAGE_TIMEOUT_SEC",
             "nuclei_scan_retry": "NUCLEI_STAGE_TIMEOUT_SEC",
             "afrog_scan": "AFROG_STAGE_TIMEOUT_SEC",
+            "poc_run": "NPOC_STAGE_TIMEOUT_SEC",
+            "poc": "NPOC_STAGE_TIMEOUT_SEC",
         }
         config_key = budget_key_map.get(stage_key)
         if not config_key:
@@ -238,6 +240,7 @@ class WebSiteFetch(CommonTask):
             smart_skip_enabled=self.smart_skip_waf,
             task_id=self.task_id,
             scope_sites=self.sites,
+            timeout_block_threshold=getattr(Config, "NPOC_WAF_TIMEOUT_THRESHOLD", 3),
             signal_sink=self._on_waf_guard_block,
         )
         self.base_update_task = BaseUpdateTask(self.task_id)

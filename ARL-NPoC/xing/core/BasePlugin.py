@@ -2,6 +2,11 @@ import os
 from xing.conf import Conf
 from xing.core import PluginType, DEFAULT_PORT_SCHEME_LIST
 from xing.utils import parse_target_info, get_logger, load_file
+from xing.core.request_context import (
+    NPoCExecutionTimeout,
+    NPoCRequestSkipped,
+    current_request_context,
+)
 import socket
 
 class BasePlugin:
@@ -155,7 +160,16 @@ class BasePlugin:
                 return
             do_action = self.do_map[self.plugin_type]
             return do_action()
+        except NPoCRequestSkipped as e:
+            self.logger.debug("skip [%s] %s reason:%s", plugin_name, target, e)
+            return
+        except NPoCExecutionTimeout as e:
+            self.logger.warning("timeout [%s] %s reason:%s", plugin_name, target, e)
+            return
         except Exception as e:
+            request_context = current_request_context()
+            if request_context is not None:
+                request_context.observe_error(self.target, e)
             error = self.target
             if self.plugin_type == PluginType.SNIFFER:
                 error = self.target_info['raw_target']
@@ -198,8 +212,22 @@ class BasePlugin:
 
         host = self.target_info["host"]
         port = self.target_info["port"]
+        request_context = current_request_context()
+        tcp_url = "tcp://{}:{}".format(host, port)
+        if request_context is not None:
+            request_context.before_request(tcp_url)
+            timeout = request_context.limit_timeout(timeout)
         client = socket.socket()
-        client.settimeout(timeout)
-        client.connect((host, port))
+        try:
+            client.settimeout(timeout)
+            client.connect((host, port))
+        except NPoCRequestSkipped:
+            client.close()
+            raise
+        except Exception as exc:
+            if request_context is not None:
+                request_context.observe_error(tcp_url, exc)
+            client.close()
+            raise
 
         return client

@@ -122,6 +122,8 @@ class RiskCruising(CommonTask):
         self.npoc_service_target_set = set()  # NPoc识别的服务集合
         self.user_target_site_set = set()  # 用户提交的站点集合
         self.available_sites = []  # 可访问的站点列表
+        self.web_site_fetch = None
+        self._last_npoc_metrics = {}
 
     def init_plugin_name(self):
         """
@@ -233,13 +235,21 @@ class RiskCruising(CommonTask):
         run_total = len(self.poc_plugin_name) * len(targets)
         if run_total <= 0:
             return
-        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_POC_CONCURRENCY)
-        npoc_instance.prepare_runner(self.poc_plugin_name, targets)
+        target_profiles = npoc.build_npoc_target_profiles(self.task_id, targets)
+        waf_guard = getattr(self.web_site_fetch, "waf_guard", None)
+        result_holder = []
         thread_error = []
 
         def run_npoc():
             try:
-                npoc_instance.run_poc(self.poc_plugin_name, targets)
+                result_holder.append(
+                    npoc.run_risk_cruising(
+                        plugins=self.poc_plugin_name,
+                        targets=targets,
+                        waf_guard=waf_guard,
+                        target_profiles=target_profiles,
+                    )
+                )
             except Exception as exc:
                 thread_error.append(exc)
 
@@ -249,22 +259,24 @@ class RiskCruising(CommonTask):
         # 等待执行完成，每5秒更新一次进度
         while run_thread.is_alive():
             time.sleep(5)
-            runner_cnt = int(getattr(npoc_instance.runner, "runner_cnt", 0) or 0)
-            status = "poc {}/{}".format(runner_cnt, run_total)
+            status = "poc running/{}".format(run_total)
             logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      runner_cnt, run_total))
+                                                      "running", run_total))
             self.update_task_field("status", status)
         run_thread.join()
         if thread_error:
             raise thread_error[0]
 
         # 保存检测结果
-        result = npoc_instance.result
+        result = result_holder[0] if result_holder else []
+        self._last_npoc_metrics = dict(getattr(result, "metrics", {}) or {})
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
             collection = "poc_scan_error" if item.get("result_status") == "partial" else "vuln"
             self._result_writer.insert_one(collection, item)
+        if self.web_site_fetch is not None:
+            self.web_site_fetch._save_waf_skip_summary()
 
     def run_brute(self):
         """
@@ -288,13 +300,21 @@ class RiskCruising(CommonTask):
         if run_total <= 0:
             return
 
-        npoc_instance = npoc.NPoC(tmp_dir=Config.TMP_PATH, concurrency=Config.NPOC_BRUTE_CONCURRENCY)
-        npoc_instance.prepare_runner(plugin_name, target)
+        target_profiles = npoc.build_npoc_target_profiles(self.task_id, target)
+        waf_guard = getattr(self.web_site_fetch, "waf_guard", None)
+        result_holder = []
         thread_error = []
 
         def run_npoc():
             try:
-                npoc_instance.run_poc(plugin_name, target)
+                result_holder.append(
+                    npoc.run_risk_cruising(
+                        plugins=plugin_name,
+                        targets=target,
+                        waf_guard=waf_guard,
+                        target_profiles=target_profiles,
+                    )
+                )
             except Exception as exc:
                 thread_error.append(exc)
 
@@ -304,23 +324,24 @@ class RiskCruising(CommonTask):
         # 等待执行完成，每5秒更新一次进度
         while run_thread.is_alive():
             time.sleep(5)
-            runner_cnt = int(getattr(npoc_instance.runner, "runner_cnt", 0) or 0)
-            status = "brute {}/{}".format(runner_cnt, run_total)
+            status = "brute running/{}".format(run_total)
             logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      runner_cnt, run_total))
+                                                      "running", run_total))
             self.update_task_field("status", status)
         run_thread.join()
         if thread_error:
             raise thread_error[0]
 
         # 保存爆破结果
-        result = npoc_instance.result
+        result = result_holder[0] if result_holder else []
+        self._last_npoc_metrics = dict(getattr(result, "metrics", {}) or {})
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            self._result_writer.insert_one('vuln', item)
+            collection = "poc_scan_error" if item.get("result_status") == "partial" else "vuln"
+            self._result_writer.insert_one(collection, item)
 
-    def update_services(self, status, elapsed):
+    def update_services(self, status, elapsed, metrics=None):
         """
         更新任务服务执行信息
         
@@ -334,7 +355,12 @@ class RiskCruising(CommonTask):
         """
         elapsed = "{:.2f}".format(elapsed)
         self.update_task_field("status", status)
-        update = {"$push": {"service": {"name": status, "elapsed": float(elapsed)}}}
+        service = {"name": status, "elapsed": float(elapsed)}
+        if isinstance(metrics, dict) and metrics:
+            service["status"] = str(metrics.get("status", "") or "")
+            service["end_reason"] = str(metrics.get("end_reason", "") or "")
+            service["metrics"] = dict(metrics)
+        update = {"$push": {"service": service}}
         utils.conn_db('task').update_one(self.query, update)
 
     def update_task_field(self, field=None, value=None):
@@ -394,6 +420,7 @@ class RiskCruising(CommonTask):
         # 站点探测和信息采集
         web_site_fetch = WebSiteFetch(task_id=self.task_id,
                                       sites=list(self.user_target_site_set), options=self.options)
+        self.web_site_fetch = web_site_fetch
         web_site_fetch.run()
         self.available_sites = web_site_fetch.available_sites
 
@@ -414,7 +441,7 @@ class RiskCruising(CommonTask):
             t1 = time.time()
             self.run_brute()
             elapse = time.time() - t1
-            self.update_services("weak_brute", elapse)
+            self.update_services("weak_brute", elapse, metrics=self._last_npoc_metrics)
 
         # PoC扫描
         if self.poc_plugin_name:
@@ -422,7 +449,7 @@ class RiskCruising(CommonTask):
             t1 = time.time()
             self.run_poc()
             elapse = time.time() - t1
-            self.update_services("PoC", elapse)
+            self.update_services("PoC", elapse, metrics=self._last_npoc_metrics)
 
         # 通用处理：统计、同步
         self.common_run()

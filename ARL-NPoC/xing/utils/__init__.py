@@ -21,6 +21,7 @@ import requests
 import hashlib
 from xing.utils.file import load_file,append_file
 from xing.conf import Conf
+from xing.core.request_context import current_request_context, NPoCRequestSkipped
 
 
 def exec_system(cmd, **kwargs):
@@ -108,14 +109,34 @@ UA = "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like G
 
 # http 请求封装函数
 def http_req(url, method='get', **kwargs):
+    request_context = current_request_context()
+    if request_context is not None:
+        request_context.before_request(url)
+
     if kwargs.get("disable_normal"):
         # 禁用 URL 规范化处理，仅仅支持GET
         kwargs.pop("disable_normal")
-        return req_disable_normal(url, method, **kwargs)
+        if request_context is not None:
+            kwargs["timeout"] = request_context.limit_timeout(
+                kwargs.get("timeout", (Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT))
+            )
+        try:
+            response = req_disable_normal(url, method, **kwargs)
+        except NPoCRequestSkipped:
+            raise
+        except Exception as exc:
+            if request_context is not None:
+                request_context.observe_error(url, exc)
+            raise
+        if request_context is not None:
+            request_context.observe_response(url, response)
+        return response
 
     kwargs.setdefault('verify', Conf.TLS_VERIFY)
     kwargs.setdefault('timeout', (Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT))
     kwargs.setdefault('allow_redirects', False)
+    if request_context is not None:
+        kwargs["timeout"] = request_context.limit_timeout(kwargs.get("timeout"))
 
     headers = kwargs.get("headers", {})
     if headers is None:
@@ -138,10 +159,20 @@ def http_req(url, method='get', **kwargs):
         kwargs["proxies"] = proxies
 
     request_method = getattr(requests, method, None)
-    if request_method is None:
-        conn = requests.request(method.upper(), url, **kwargs)
-    else:
-        conn = request_method(url, **kwargs)
+    try:
+        if request_method is None:
+            conn = requests.request(method.upper(), url, **kwargs)
+        else:
+            conn = request_method(url, **kwargs)
+    except NPoCRequestSkipped:
+        raise
+    except Exception as exc:
+        if request_context is not None:
+            request_context.observe_error(url, exc)
+        raise
+
+    if request_context is not None:
+        request_context.observe_response(url, conn)
 
     return conn
 
@@ -201,7 +232,7 @@ def req_disable_normal(url, method='get', **kwargs):
 
     with requests.Session() as session:
         return session.send(prep, verify=kwargs.get("verify", Conf.TLS_VERIFY), proxies=proxies, allow_redirects=False,
-                            timeout=(Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT))
+                            timeout=kwargs.get("timeout", (Conf.CONNECT_TIMEOUT, Conf.READ_TIMEOUT)))
 
 
 def md5(data):

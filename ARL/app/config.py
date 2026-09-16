@@ -494,6 +494,11 @@ def refresh_runtime_config_best_effort(force=False):
             "ICP_QUERY_KEYWORD_MAX_LENGTH",
             "ICP_QUERY_HISTORY_RETENTION_DAYS",
             "ICP_QUERY_LOG_RETENTION_DAYS",
+            "NPOC_PLUGIN_TIMEOUT_SEC",
+            "NPOC_TARGET_TIMEOUT_SEC",
+            "NPOC_STAGE_TIMEOUT_SEC",
+            "NPOC_WAF_TIMEOUT_THRESHOLD",
+            "NPOC_PROCESS_KILL_GRACE_SEC",
         ]
         for key_name in positive_keys:
             value = arl_conf.get(key_name)
@@ -627,6 +632,11 @@ def refresh_runtime_config_best_effort(force=False):
                 arl_conf.get("DOMAIN_DEEP_STAGE_SPLIT_ENABLE"),
                 Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
             )
+        if arl_conf.get("NPOC_PROCESS_ISOLATION_ENABLE") is not None:
+            Config.NPOC_PROCESS_ISOLATION_ENABLE = _safe_runtime_bool(
+                arl_conf.get("NPOC_PROCESS_ISOLATION_ENABLE"),
+                Config.NPOC_PROCESS_ISOLATION_ENABLE,
+            )
         if arl_conf.get("PORT_SCAN_SYN_ENABLE") is not None:
             Config.PORT_SCAN_SYN_ENABLE = _safe_runtime_bool(
                 arl_conf.get("PORT_SCAN_SYN_ENABLE"), Config.PORT_SCAN_SYN_ENABLE
@@ -730,6 +740,10 @@ def refresh_runtime_config_best_effort(force=False):
         Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = env_bool(
             "ARL_DOMAIN_DEEP_STAGE_SPLIT_ENABLE",
             Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
+        )
+        Config.NPOC_PROCESS_ISOLATION_ENABLE = env_bool(
+            "ARL_NPOC_PROCESS_ISOLATION_ENABLE",
+            Config.NPOC_PROCESS_ISOLATION_ENABLE,
         )
         Config.ICP_QUERY_ENABLE = env_bool(
             "ARL_ICP_QUERY_ENABLE", Config.ICP_QUERY_ENABLE
@@ -1348,6 +1362,15 @@ class Config(object):
     NPOC_POC_CONCURRENCY = 6
     # NPoC 弱口令并发
     NPOC_BRUTE_CONCURRENCY = 4
+    # NPoC 单个插件、单个目标和整个阶段的硬超时（秒）
+    NPOC_PLUGIN_TIMEOUT_SEC = 60
+    NPOC_TARGET_TIMEOUT_SEC = 300
+    NPOC_STAGE_TIMEOUT_SEC = 1800
+    # 连续网络超时达到阈值后暂停该主机的 NPoC 队列
+    NPOC_WAF_TIMEOUT_THRESHOLD = 3
+    # 使用独立进程承载 NPoC，确保失控插件不会长期占用 Celery worker
+    NPOC_PROCESS_ISOLATION_ENABLE = True
+    NPOC_PROCESS_KILL_GRACE_SEC = 5
     # 资产站点监控并发
     ASSET_SITE_MONITOR_CONCURRENCY = 8
     # 资产站点发现并发
@@ -1976,6 +1999,11 @@ try:
         Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE = bool(
             y["ARL"]["DOMAIN_DEEP_STAGE_SPLIT_ENABLE"]
         )
+    if y["ARL"].get("NPOC_PROCESS_ISOLATION_ENABLE") is not None:
+        Config.NPOC_PROCESS_ISOLATION_ENABLE = safe_bool(
+            y["ARL"]["NPOC_PROCESS_ISOLATION_ENABLE"],
+            Config.NPOC_PROCESS_ISOLATION_ENABLE,
+        )
 
     if y["ARL"].get("URLFINDER_URL_PROBE_ENABLE") is not None:
         Config.URLFINDER_URL_PROBE_ENABLE = bool(y["ARL"]["URLFINDER_URL_PROBE_ENABLE"])
@@ -2279,6 +2307,11 @@ try:
         "NPOC_SNIFFER_CONCURRENCY",
         "NPOC_POC_CONCURRENCY",
         "NPOC_BRUTE_CONCURRENCY",
+        "NPOC_PLUGIN_TIMEOUT_SEC",
+        "NPOC_TARGET_TIMEOUT_SEC",
+        "NPOC_STAGE_TIMEOUT_SEC",
+        "NPOC_WAF_TIMEOUT_THRESHOLD",
+        "NPOC_PROCESS_KILL_GRACE_SEC",
         "ASSET_SITE_MONITOR_CONCURRENCY",
         "ASSET_SITE_DISCOVERY_CONCURRENCY",
         "CELERY_HEAVY_WORKER_CONCURRENCY",
@@ -2788,6 +2821,10 @@ try:
         "ARL_DOMAIN_DEEP_STAGE_SPLIT_ENABLE",
         Config.DOMAIN_DEEP_STAGE_SPLIT_ENABLE,
     )
+    Config.NPOC_PROCESS_ISOLATION_ENABLE = env_bool(
+        "ARL_NPOC_PROCESS_ISOLATION_ENABLE",
+        Config.NPOC_PROCESS_ISOLATION_ENABLE,
+    )
     for key_name in ("SEARCH_ENGINE_PAGE_INTERVAL_SEC", "SEARCH_ENGINE_EXPANSION_INTERVAL_SEC"):
         setattr(
             Config,
@@ -3157,6 +3194,11 @@ try:
             "NUCLEI_STAGE_MAX_TARGETS",
             "AFROG_STAGE_MAX_TARGETS",
             "PROGRESSIVE_SCAN_ENABLE",
+            "NPOC_PLUGIN_TIMEOUT_SEC",
+            "NPOC_TARGET_TIMEOUT_SEC",
+            "NPOC_STAGE_TIMEOUT_SEC",
+            "NPOC_WAF_TIMEOUT_THRESHOLD",
+            "NPOC_PROCESS_ISOLATION_ENABLE",
         )
     }
     # 诊断必须走 stderr：该模块在 `python3 -c` 命令替换中被广泛 import（start_web.sh

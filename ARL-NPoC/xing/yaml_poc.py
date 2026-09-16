@@ -28,6 +28,11 @@ import yaml
 from xing.conf import Conf
 from xing.core.BasePlugin import BasePlugin
 from xing.core.const import PluginType
+from xing.core.request_context import (
+    NPoCRequestSkipped,
+    NPoCExecutionTimeout,
+    current_request_context,
+)
 from xing.utils import get_logger, http_req
 
 
@@ -252,7 +257,11 @@ class _DnsLogContext:
 
 
 class _TcpConnection:
-    def __init__(self, host, port, timeout, use_tls=False):
+    def __init__(self, host, port, timeout, use_tls=False, request_context=None,
+                 request_url=""):
+        self.request_context = request_context
+        self.request_url = request_url
+        self._timeout_reported = False
         self.socket = socket.create_connection((host, port), timeout=timeout)
         if use_tls:
             import ssl
@@ -264,6 +273,12 @@ class _TcpConnection:
             self.socket = context.wrap_socket(self.socket, server_hostname=host)
         self.socket.settimeout(timeout)
         self.buffer = b""
+
+    def _observe_read_timeout(self):
+        if self._timeout_reported or self.request_context is None:
+            return
+        self._timeout_reported = True
+        self.request_context.observe_error(self.request_url, socket.timeout("read timed out"))
 
     def WriteStr(self, value):
         if isinstance(value, str):
@@ -277,6 +292,8 @@ class _TcpConnection:
             try:
                 chunk = self.socket.recv(65535)
             except socket.timeout:
+                if not chunks and not self.buffer:
+                    self._observe_read_timeout()
                 break
             if not chunk:
                 break
@@ -293,6 +310,8 @@ class _TcpConnection:
             try:
                 chunk = self.socket.recv(4096)
             except socket.timeout:
+                if not self.buffer:
+                    self._observe_read_timeout()
                 break
             if not chunk:
                 break
@@ -722,7 +741,16 @@ def _bounded_sleep(seconds):
         seconds = max(0.0, min(float(seconds), 5.0))
     except (TypeError, ValueError) as exc:
         raise YamlPocError("sleep 参数无效") from exc
+    context = current_request_context()
+    if context is not None:
+        remaining = context.remaining_sec()
+        if remaining is not None:
+            if remaining <= 0:
+                raise NPoCExecutionTimeout("NPoC execution deadline exceeded")
+            seconds = min(seconds, max(0.0, remaining))
     time.sleep(seconds)
+    if context is not None and context.deadline_reached():
+        raise NPoCExecutionTimeout("NPoC execution deadline exceeded")
     return True
 
 
@@ -968,6 +996,9 @@ class YamlPocExecutor:
                 self.last_expression = result["expression"]
                 if request.get("stop-at-first-match"):
                     break
+            except (NPoCRequestSkipped, NPoCExecutionTimeout):
+                # 熔断和 deadline 不能被规则的 ignoreError 继续吞掉，否则后续请求仍会放大封禁。
+                raise
             except Exception:
                 if request.get("ignoreError"):
                     continue
@@ -1209,13 +1240,23 @@ class YamlPocExecutor:
     def _execute_raw_tcp(self, target, request):
         host, port = self._target_host_port(target)
         raw = _render(request.get("rawTCP"), self.variables)
-        conn = _TcpConnection(
-            host,
-            port,
-            self.timeout,
-            use_tls=urlsplit(self._base_url(target)).scheme == "https",
-        )
+        context = current_request_context()
+        tcp_url = "tcp://{}:{}".format(host, port)
+        if context is not None:
+            context.before_request(tcp_url)
+            timeout = context.limit_timeout(self.timeout)
+        else:
+            timeout = self.timeout
+        conn = None
         try:
+            conn = _TcpConnection(
+                host,
+                port,
+                timeout,
+                use_tls=urlsplit(self._base_url(target)).scheme == "https",
+                request_context=context,
+                request_url=tcp_url,
+            )
             conn.WriteStr(raw)
             response_text = conn.ReadStr()
             status_code = _status_from_raw(response_text)
@@ -1223,20 +1264,37 @@ class YamlPocExecutor:
             evidence = self._tcp_evidence(raw, response_text, status_code)
             evidence["conn"] = conn
             return response, evidence
+        except NPoCRequestSkipped:
+            raise
+        except Exception as exc:
+            if context is not None:
+                context.observe_error(tcp_url, exc)
+            raise
         finally:
-            conn.Close()
+            if conn is not None:
+                conn.Close()
 
     def _execute_tcp_sequence(self, target, request):
         host, port = self._target_host_port(target)
-        conn = _TcpConnection(
-            host,
-            port,
-            self.timeout,
-            use_tls=urlsplit(self._base_url(target)).scheme == "https",
-        )
+        context = current_request_context()
+        tcp_url = "tcp://{}:{}".format(host, port)
+        if context is not None:
+            context.before_request(tcp_url)
+            timeout = context.limit_timeout(self.timeout)
+        else:
+            timeout = self.timeout
+        conn = None
         response_text = ""
         matched = True
         try:
+            conn = _TcpConnection(
+                host,
+                port,
+                timeout,
+                use_tls=urlsplit(self._base_url(target)).scheme == "https",
+                request_context=context,
+                request_url=tcp_url,
+            )
             expressions = request.get("expression") or []
             for command in expressions:
                 if not isinstance(command, str):
@@ -1267,8 +1325,15 @@ class YamlPocExecutor:
             evidence = self._tcp_evidence("", response_text, status_code)
             evidence["conn"] = conn
             return response, evidence, matched
+        except NPoCRequestSkipped:
+            raise
+        except Exception as exc:
+            if context is not None:
+                context.observe_error(tcp_url, exc)
+            raise
         finally:
-            conn.Close()
+            if conn is not None:
+                conn.Close()
 
     def _target_host_port(self, target):
         candidate = self._base_url(target)
@@ -1398,6 +1463,26 @@ class YamlPocPlugin(BasePlugin):
                 "match_summary": executor.last_expression,
                 "evidence": executor.last_evidence,
                 "verify_data": executor.last_expression,
+            }
+        except NPoCRequestSkipped:
+            # 熔断属于调度决策，不应被记录成某个 PoC 的误报或失败结果。
+            return None
+        except NPoCExecutionTimeout:
+            # deadline 由上层汇总为 partial；保留当前规则的执行边界，避免继续发请求。
+            return {
+                "__yaml_result__": True,
+                "result_status": "partial",
+                "poc_engine": self.poc_engine,
+                "poc_id": self._plugin_name,
+                "poc_source": self.poc_source,
+                "severity": self.severity,
+                "tags": self.tags,
+                "request_index": getattr(locals().get("executor"), "last_request_index", -1),
+                "match_summary": "",
+                "evidence": {},
+                "error_type": "NPoCExecutionTimeout",
+                "error": "NPoC execution deadline exceeded",
+                "verify_data": None,
             }
         except Exception as exc:
             return {

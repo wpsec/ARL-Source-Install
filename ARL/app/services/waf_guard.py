@@ -7,11 +7,13 @@ WAF 观测与智能跳过守卫。
 - 在保留智能跳过能力的同时，避免把单个通用字符串当成确定性厂商结论
 """
 import re
+import socket
 import threading
 import time
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+import requests
 from requests import Response
 from requests.structures import CaseInsensitiveDict
 
@@ -28,7 +30,7 @@ class WAFSmartSkipGuard(object):
 
     # 常见被拦截状态码（弱信号）
     WAF_STATUS_CODES = {403, 406, 429, 503}
-    # Header 命中这些关键字视为强信号
+    # Header 关键字用于记录厂商/边界证据；其中仅部分关键字本身代表拦截。
     STRONG_HEADER_KEYWORDS = (
         "cf-ray",
         "x-sucuri-id",
@@ -51,6 +53,23 @@ class WAFSmartSkipGuard(object):
         "x-bytedance",
         "x-dbapp",
         "x-chaitin",
+    )
+    STRONG_BLOCK_HEADER_KEYWORDS = (
+        "x-waf-",
+        "x-cdn-waf",
+        "x-denied-reason",
+        "x-firewall",
+        "x-safedog",
+        "x-yunaq",
+        "x-yundun",
+        "yundun",
+        "wswaf",
+        "anquanbao",
+        "anyu",
+        "x-anyu",
+        "x-dbapp",
+        "x-chaitin",
+        "x-amzn-waf-action",
     )
     # Body 命中这些关键字视为强信号
     STRONG_BODY_KEYWORDS = (
@@ -157,12 +176,17 @@ class WAFSmartSkipGuard(object):
         weak_block_threshold: int = 3,
         smart_skip_enabled: Optional[bool] = None,
         signal_sink=None,
+        timeout_block_threshold: Optional[int] = None,
     ):
         self.enabled = bool(enabled)
         self.smart_skip_enabled = bool(enabled if smart_skip_enabled is None else smart_skip_enabled)
         self.task_id = str(task_id or "").strip()
         self.scope_hosts = self._build_scope_hosts(scope_sites or [])
         self.weak_block_threshold = max(2, int(weak_block_threshold or 3))
+        self.timeout_block_threshold = max(
+            2,
+            int(timeout_block_threshold or self.weak_block_threshold),
+        )
         # signal_sink(url, module, reason)：确认阻断时把证据回流给任务级发现上下文，
         # 由 DiscoveryContext 做流量类别隔离；回调异常不得影响守卫本身。
         self._signal_sink = signal_sink if callable(signal_sink) else None
@@ -173,6 +197,7 @@ class WAFSmartSkipGuard(object):
         self._observation_elapsed_sec = 0.0
         self._observed_sites = set()
         self._skipped_sites = set()
+        self._preclassified_count = 0
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -200,6 +225,52 @@ class WAFSmartSkipGuard(object):
             if host:
                 hosts.add(host)
         return hosts
+
+    @staticmethod
+    def _module_class(module: str) -> str:
+        module_name = str(module or "").strip().lower()
+        if "npoc" in module_name or module_name in {"poc", "risk_cruising"}:
+            return "npoc"
+        return traffic_class_for_module(module)
+
+    @classmethod
+    def _is_timeout_error(cls, error) -> bool:
+        if isinstance(error, (requests.exceptions.Timeout, socket.timeout, TimeoutError)):
+            return True
+        error_name = type(error).__name__.lower()
+        error_text = str(error or "").lower()
+        if "timeout" in error_name:
+            return True
+        return any(token in error_text for token in ("timed out", "timeout", "time out"))
+
+    @staticmethod
+    def _is_waf_vendor(waf_name: str) -> bool:
+        """只把高置信度安全防护厂商当作 Web PoC 预分类依据。"""
+        name = str(waf_name or "").strip().lower()
+        if not name:
+            return False
+        cdn_only_names = {
+            "腾讯云cdn",
+            "阿里云cdn",
+            "华为云cdn",
+            "chinacache cdn",
+            "cloudflare cdn/waf",
+            "akamai cdn/waf",
+            "aws cloudfront",
+            "fastly cdn",
+            "azure front door",
+            "百度云加速",
+            "字节跳动cdn/waf",
+        }
+        if name in cdn_only_names:
+            return False
+        return any(
+            token in name
+            for token in (
+                "waf", "防护", "防火墙", "安全狗", "云锁", "卫士", "创宇",
+                "安全宝", "安域", "360", "knownsec", "safedog", "yunsuo",
+            )
+        )
 
     def _in_scope(self, host: str) -> bool:
         if not host:
@@ -235,6 +306,10 @@ class WAFSmartSkipGuard(object):
                 "waf_evidence": [],
                 "dns_evidence": [],
                 "blocked_classes": set(),
+                "timeout_count": 0,
+                "consecutive_timeout_count": 0,
+                "consecutive_block_count": 0,
+                "preclassified_classes": set(),
             }
             self._host_state[host] = state
         return state
@@ -282,7 +357,15 @@ class WAFSmartSkipGuard(object):
         for keyword in cls.STRONG_HEADER_KEYWORDS:
             if keyword in header_text:
                 signals.append("header:{}".format(keyword))
-                strong_hit = True
+
+        if (
+            status_code in cls.WAF_STATUS_CODES
+            and any(
+                keyword in header_text
+                for keyword in cls.STRONG_BLOCK_HEADER_KEYWORDS
+            )
+        ):
+            strong_hit = True
 
         for keyword in cls.STRONG_BODY_KEYWORDS:
             if keyword in body_text:
@@ -426,7 +509,7 @@ class WAFSmartSkipGuard(object):
 
         with self._lock:
             state = self._get_state(host)
-            module_class = traffic_class_for_module(module)
+            module_class = self._module_class(module)
             class_only_block = module_class in state.get("blocked_classes", set())
             if not state.get("blocked") and not class_only_block:
                 return False, {}
@@ -448,6 +531,112 @@ class WAFSmartSkipGuard(object):
                 "scope": "host" if state.get("blocked") else "directory_class",
             }
             return True, detail
+
+    def observe_timeout(self, url: str, error, module: str = ""):
+        """把连续网络超时转为 NPoC 类别熔断，避免继续消耗 worker。"""
+        if not self.enabled or not self.smart_skip_enabled or not self._is_timeout_error(error):
+            return
+
+        host = self._extract_host(url)
+        if not host or not self._in_scope(host):
+            return
+        module_name = str(module or "").strip()
+        module_class = self._module_class(module_name)
+        if module_class != "npoc":
+            return
+
+        should_signal = False
+        reason = ""
+        with self._lock:
+            state = self._get_state(host)
+            state["request_count"] += 1
+            state["timeout_count"] += 1
+            state["consecutive_timeout_count"] += 1
+            state["last_url"] = str(url or "")
+            state["module"] = module_name or "npoc"
+            if module_class in state.get("blocked_classes", set()):
+                return
+            if state["consecutive_timeout_count"] < self.timeout_block_threshold:
+                return
+
+            state.setdefault("blocked_classes", set()).add(module_class)
+            state["rule"] = "timeout_threshold"
+            reason = "timeout_count:{} threshold:{}".format(
+                state["consecutive_timeout_count"], self.timeout_block_threshold
+            )
+            state["reason"] = reason
+            self._event_total += 1
+            should_signal = True
+
+            logger.info(
+                "task_id:{} waf observe host:{} module:{} rule:{} scope:{} reason:{} url:{}".format(
+                    self.task_id,
+                    host,
+                    module_name or "-",
+                    state["rule"],
+                    "npoc_class",
+                    reason,
+                    state["last_url"],
+                )
+            )
+
+        if should_signal and self._signal_sink is not None:
+            try:
+                self._signal_sink(url, module_name or "npoc", reason, "npoc_class")
+            except Exception as exc:
+                logger.warning(
+                    "waf timeout signal sink failed host:{} module:{} error_type:{}".format(
+                        host, module_name or "-", type(exc).__name__
+                    )
+                )
+
+    def reset_timeout(self, url: str, module: str = ""):
+        """非超时网络错误打断连续性，避免把不相邻故障累计成 WAF 熔断。"""
+        if not self.enabled:
+            return
+        host = self._extract_host(url)
+        if not host or not self._in_scope(host):
+            return
+        if self._module_class(module) != "npoc":
+            return
+        with self._lock:
+            state = self._get_state(host)
+            state["consecutive_timeout_count"] = 0
+
+    def _preclassify_target(self, target: str, module: str) -> Tuple[bool, Dict]:
+        """根据已有 DNS 高置信度 WAF 证据预先熔断 NPoC，不把 CDN 当成 WAF。"""
+        host = self._extract_host(target)
+        if not host or not self._in_scope(host):
+            return False, {}
+        module_class = self._module_class(module)
+        if module_class != "npoc":
+            return False, {}
+
+        with self._lock:
+            state = self._get_state(host)
+            if (
+                self._confidence_rank(state.get("waf_confidence", "")) < 3
+                or not self._is_waf_vendor(state.get("waf_name", ""))
+            ):
+                return False, {}
+            if module_class not in state.setdefault("preclassified_classes", set()):
+                state["preclassified_classes"].add(module_class)
+                state.setdefault("blocked_classes", set()).add(module_class)
+                state["rule"] = "dns_waf_preclassify"
+                state["module"] = str(module or "npoc")
+                state["reason"] = "dns_waf:{} confidence:high".format(
+                    state.get("waf_name", "unknown")
+                )
+                self._preclassified_count += 1
+                self._event_total += 1
+            return True, {
+                "host": host,
+                "reason": state.get("reason", ""),
+                "rule": state.get("rule", "dns_waf_preclassify"),
+                "module": state.get("module", "npoc"),
+                "waf_name": state.get("waf_name", ""),
+                "scope": "npoc_class",
+            }
 
     def prepare_request(
         self,
@@ -512,6 +701,7 @@ class WAFSmartSkipGuard(object):
             state["request_count"] += 1
             state["last_status"] = status_code
             state["last_url"] = str(url or "")
+            state["consecutive_timeout_count"] = 0
 
             if waf_name:
                 prev_rank = self._confidence_rank(state.get("waf_confidence", ""))
@@ -523,10 +713,13 @@ class WAFSmartSkipGuard(object):
 
             if weak_hit or strong_hit:
                 state["hit_count"] += 1
+                state["consecutive_block_count"] += 1
                 state["signals"] = signals[-4:]
                 state["module"] = module_name
+            else:
+                state["consecutive_block_count"] = 0
 
-            module_class = traffic_class_for_module(module_name)
+            module_class = self._module_class(module_name)
             if state.get("blocked") or module_class in state.get("blocked_classes", set()):
                 return
 
@@ -535,7 +728,7 @@ class WAFSmartSkipGuard(object):
             if strong_hit:
                 should_block = True
                 rule = "strong_signal"
-            elif weak_hit and state["hit_count"] >= self.weak_block_threshold:
+            elif weak_hit and state["consecutive_block_count"] >= self.weak_block_threshold:
                 should_block = True
                 rule = "weak_status_threshold"
 
@@ -558,7 +751,9 @@ class WAFSmartSkipGuard(object):
             if strong_hit and signals:
                 state["reason"] = ",".join(signals[:3])
             else:
-                state["reason"] = "status:{} hit_count:{}".format(status_code, state["hit_count"])
+                state["reason"] = "status:{} consecutive_count:{}".format(
+                    status_code, state["consecutive_block_count"]
+                )
             self._event_total += 1
 
             logger.info(
@@ -614,15 +809,27 @@ class WAFSmartSkipGuard(object):
             state = self._host_state.get(normalized_host)
             return bool(state and state.get("blocked"))
 
-    def filter_targets(self, targets: List[str]) -> Tuple[List[str], int]:
+    def filter_targets(
+        self,
+        targets: List[str],
+        module: str = "",
+        preclassify: bool = False,
+    ) -> Tuple[List[str], int]:
         if not self.enabled or not self.smart_skip_enabled:
             return list(targets or []), 0
 
         keep_targets = []
         skipped = 0
+        module_name = str(module or "").strip()
         for target in targets or []:
             host = self._extract_host(target)
-            if host and self.is_blocked_host(host):
+            if module_name and preclassify:
+                self._preclassify_target(target, module_name)
+            if module_name:
+                should_skip, _ = self.should_skip(target, module=module_name)
+            else:
+                should_skip = bool(host and self.is_blocked_host(host))
+            if should_skip:
                 site = self._extract_site(target)
                 if site:
                     with self._lock:
@@ -632,27 +839,34 @@ class WAFSmartSkipGuard(object):
             keep_targets.append(target)
         return keep_targets, skipped
 
-    def summary(self) -> Dict:
+    def summary(self, include_all: bool = False) -> Dict:
         with self._lock:
             detected_hosts = []
             blocked_hosts = []
             class_blocked_hosts = []
             skip_request_count = 0
             request_count = 0
+            timeout_count = 0
 
             for host, state in self._host_state.items():
                 request_count += int(state.get("request_count", 0) or 0)
                 skip_request_count += int(state.get("skip_count", 0) or 0)
+                timeout_count += int(state.get("timeout_count", 0) or 0)
 
                 blocked_classes = sorted(str(cls) for cls in (state.get("blocked_classes") or set()))
                 has_detection = bool(
-                    state.get("blocked") or blocked_classes or state.get("waf_name") or state.get("hit_count")
+                    state.get("blocked")
+                    or blocked_classes
+                    or state.get("waf_name")
+                    or state.get("hit_count")
+                    or state.get("timeout_count")
                 )
                 if not has_detection:
                     continue
 
                 host_item = {
                     "host": host,
+                    "blocked": bool(state.get("blocked")),
                     "reason": state.get("reason", ""),
                     "rule": state.get("rule", ""),
                     "module": state.get("module", ""),
@@ -665,6 +879,13 @@ class WAFSmartSkipGuard(object):
                     "waf_confidence": state.get("waf_confidence", ""),
                     "waf_evidence": list(state.get("waf_evidence", []) or []),
                     "dns_evidence": list(state.get("dns_evidence", []) or []),
+                    "timeout_count": int(state.get("timeout_count", 0) or 0),
+                    "consecutive_timeout_count": int(
+                        state.get("consecutive_timeout_count", 0) or 0
+                    ),
+                    "consecutive_block_count": int(
+                        state.get("consecutive_block_count", 0) or 0
+                    ),
                 }
                 detected_hosts.append(host_item)
                 if not self.smart_skip_enabled:
@@ -686,7 +907,7 @@ class WAFSmartSkipGuard(object):
             class_blocked_hosts.sort(
                 key=lambda item: (item.get("skip_count", 0), item.get("hit_count", 0)), reverse=True
             )
-            return {
+            result = {
                 "enabled": self.enabled,
                 "smart_skip_enabled": self.smart_skip_enabled,
                 "detected_host_count": len(detected_hosts),
@@ -694,6 +915,7 @@ class WAFSmartSkipGuard(object):
                 "class_blocked_host_count": len(class_blocked_hosts),
                 "request_count": int(request_count),
                 "skip_request_count": int(skip_request_count),
+                "timeout_count": int(timeout_count),
                 "observed_site_count": len(self._observed_sites),
                 "skip_site_count": len(self._skipped_sites),
                 "observation_elapsed_sec": round(max(0.0, self._observation_elapsed_sec), 6),
@@ -701,7 +923,57 @@ class WAFSmartSkipGuard(object):
                 "class_blocked_hosts": class_blocked_hosts,
                 "detected_hosts": detected_hosts[:20],
                 "event_total": int(self._event_total),
+                "preclassified_count": int(self._preclassified_count),
             }
+            if include_all:
+                result["all_hosts"] = detected_hosts
+                result["observed_sites"] = sorted(self._observed_sites)
+                result["skipped_sites"] = sorted(self._skipped_sites)
+            return result
+
+    def merge_summary(self, summary: Optional[Dict]):
+        """合并隔离子进程的 WAF 观测，保证阶段超时隔离后主任务仍可落库。"""
+        if not isinstance(summary, dict):
+            return
+        host_items = summary.get("all_hosts") or summary.get("detected_hosts") or []
+        with self._lock:
+            for item in host_items:
+                host = self._extract_host(item.get("host", ""))
+                if not host or not self._in_scope(host):
+                    continue
+                state = self._get_state(host)
+                for key in ("request_count", "hit_count", "skip_count", "timeout_count"):
+                    incoming = int(item.get(key, 0) or 0)
+                    state[key] = max(int(state.get(key, 0) or 0), incoming)
+                state["consecutive_timeout_count"] = max(
+                    int(state.get("consecutive_timeout_count", 0) or 0),
+                    int(item.get("consecutive_timeout_count", 0) or 0),
+                )
+                state["consecutive_block_count"] = max(
+                    int(state.get("consecutive_block_count", 0) or 0),
+                    int(item.get("consecutive_block_count", 0) or 0),
+                )
+                state["last_status"] = int(item.get("last_status", 0) or 0)
+                state["last_url"] = str(item.get("last_url", "") or "")
+                for key in ("reason", "rule", "module", "waf_name", "waf_confidence"):
+                    if item.get(key):
+                        state[key] = item[key]
+                for key in ("waf_evidence", "dns_evidence"):
+                    values = list(item.get(key, []) or [])
+                    if values:
+                        state[key] = values[:4]
+                state["blocked_classes"].update(item.get("blocked_classes") or [])
+                if item.get("rule") == "strong_signal" or item.get("blocked"):
+                    state["blocked"] = True
+            self._event_total = max(
+                int(self._event_total), int(summary.get("event_total", 0) or 0)
+            )
+            self._preclassified_count = max(
+                int(self._preclassified_count),
+                int(summary.get("preclassified_count", 0) or 0),
+            )
+            self._observed_sites.update(summary.get("observed_sites", []) or [])
+            self._skipped_sites.update(summary.get("skipped_sites", []) or [])
 
     def summary_text(self) -> str:
         data = self.summary()
@@ -714,6 +986,8 @@ class WAFSmartSkipGuard(object):
         observed_sites = int(data.get("observed_site_count", 0) or 0)
         skipped_sites = int(data.get("skip_site_count", 0) or 0)
         observation_elapsed = float(data.get("observation_elapsed_sec", 0.0) or 0.0)
+        timeout_count = int(data.get("timeout_count", 0) or 0)
+        preclassified_count = int(data.get("preclassified_count", 0) or 0)
 
         if detected_count <= 0:
             return "已启用，未识别WAF，站点:{}，请求:{}，检测耗时:{:.3f}s".format(
@@ -731,6 +1005,10 @@ class WAFSmartSkipGuard(object):
             parts.append("跳过主机:{}".format(blocked_count))
             parts.append("跳过站点:{}".format(skipped_sites))
             parts.append("跳过请求:{}".format(skipped))
+        if preclassified_count:
+            parts.append("NPoC预分类跳过:{}".format(preclassified_count))
+        if timeout_count:
+            parts.append("NPoC超时:{}".format(timeout_count))
 
         host_preview = []
         for item in data.get("detected_hosts", [])[:3]:

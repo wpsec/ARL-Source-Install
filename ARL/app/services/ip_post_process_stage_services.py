@@ -5,6 +5,7 @@
 
 from app import utils
 from app.services import run_risk_cruising, run_sniffer
+from app.services.npoc import build_npoc_target_profiles
 from app.services.task_result_write_service import TaskResultWriteService
 
 
@@ -80,9 +81,18 @@ class IPBruteConfigStageService(object):
 
         targets = list(task.site_list)
         targets.extend(list(task.npoc_service_target_set))
-        result = self.risk_runner(targets=targets, plugins=plugins)
+        if self.risk_runner is run_risk_cruising:
+            result = self.risk_runner(
+                targets=targets,
+                plugins=plugins,
+                waf_guard=getattr(getattr(task, "web_site_fetch", None), "waf_guard", None),
+                target_profiles=build_npoc_target_profiles(task.task_id, targets),
+            )
+        else:
+            result = self.risk_runner(targets=targets, plugins=plugins)
         for item in result:
             item["task_id"] = task.task_id
             item["save_date"] = self.utils.curr_date()
-            _task_result_writer(task, self.utils).insert_one("vuln", item)
+            collection = "poc_scan_error" if item.get("result_status") == "partial" else "vuln"
+            _task_result_writer(task, self.utils).insert_one(collection, item)
         return result

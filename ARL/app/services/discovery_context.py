@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # §8.1 请求 profile → 流量类别映射：api_doc→api_doc、graphql_schema_optional→api_doc
 # （同一文档获取通道）；api_endpoint_probe/soap_endpoint_observe→endpoint_probe；
 # browser→browser（Playwright 自有网络栈=外部边界，不经过本枚举的调度面）。
-TRAFFIC_CLASSES = ("normal", "crawler", "wih", "directory", "browser",
+TRAFFIC_CLASSES = ("normal", "crawler", "wih", "directory", "browser", "npoc",
                    "api_doc", "endpoint_probe")
 
 # 与各 stage 既有线程并发对齐，只削跨策略叠加峰值，不做低于单 stage 并发的大限。
@@ -35,6 +35,7 @@ DEFAULT_TRAFFIC_LIMITS = {
     "wih": 12,
     "directory": 12,
     "browser": 4,
+    "npoc": 6,
     # 第 9 批 §8.2：API 文档获取与 Endpoint 探测独立额度——文档批量抓取
     # 不挤占探测并发、探测风暴不吃文档预算（预算另有 API_DOCUMENT_* /
     # API_ENDPOINT_PROBE_MAX_TARGETS 层，此处是进程内并发闸）。

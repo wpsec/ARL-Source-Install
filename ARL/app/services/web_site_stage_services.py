@@ -106,7 +106,7 @@ class WebSiteDiscoveryContextStageService(object):
         if context is None:
             return
         try:
-            module_class = traffic_class_for_module(module)
+            module_class = task.waf_guard._module_class(module) if task.waf_guard else traffic_class_for_module(module)
             context.record_waf_signal(
                 url,
                 module_class,
@@ -272,6 +272,7 @@ class WebSiteResultPersistStageService(object):
 
     def risk_cruising(self, npoc_service_target_set: set):
         from app.services import run_risk_cruising
+        from app.services.npoc import build_npoc_target_profiles
         from app.helpers.task import npoc_poc_scan_enabled
 
         task = self.task
@@ -293,19 +294,30 @@ class WebSiteResultPersistStageService(object):
         if npoc_service_target_set is not None:
             poc_targets = task.poc_sites | npoc_service_target_set
 
-        result = run_risk_cruising(plugins=plugins, targets=poc_targets)
+        target_profiles = build_npoc_target_profiles(task.task_id, poc_targets)
+        result = run_risk_cruising(
+            plugins=plugins,
+            targets=poc_targets,
+            waf_guard=task.waf_guard,
+            target_profiles=target_profiles,
+        )
         for item in result:
-            if not task._scan_result_in_task_scope(item, target_keys=("target", "url")):
-                continue
             if item.get("result_status") == "partial":
+                target = str(item.get("target", "") or item.get("url", "")).strip()
+                if target and not task._scan_result_in_task_scope(item, target_keys=("target", "url")):
+                    continue
                 error_item = dict(item)
                 error_item["task_id"] = task.task_id
                 error_item["save_date"] = utils.curr_date()
                 task._result_writer.insert_one("poc_scan_error", error_item)
                 continue
+            if not task._scan_result_in_task_scope(item, target_keys=("target", "url")):
+                continue
             result_item = task._result_item_service.build_risk_document(item)
             if result_item:
                 task._result_writer.insert_one("vuln", result_item)
+        task._save_waf_skip_summary()
+        return result
 
 
 class WebSiteWafStageService(object):
@@ -376,9 +388,12 @@ class WebSiteWafStageService(object):
             "metrics": {
                 "detected_host_count": summary.get("detected_host_count", 0),
                 "blocked_host_count": summary.get("blocked_host_count", 0),
+                "class_blocked_host_count": summary.get("class_blocked_host_count", 0),
                 "observed_site_count": summary.get("observed_site_count", 0),
                 "skip_site_count": summary.get("skip_site_count", 0),
                 "skip_request_count": summary.get("skip_request_count", 0),
+                "preclassified_count": summary.get("preclassified_count", 0),
+                "timeout_count": summary.get("timeout_count", 0),
                 "observation_elapsed_sec": summary.get("observation_elapsed_sec", 0.0),
                 "stage_stats": summary.get("stage_stats", {}),
             },
