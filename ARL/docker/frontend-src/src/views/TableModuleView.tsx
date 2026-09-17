@@ -311,6 +311,11 @@ const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>
     domain: 260,
     port: 100,
     waf_name: 200,
+    waf_confidence: 110,
+    detection_sources: 150,
+    edge_kind: 120,
+    skipped: 100,
+    wafw00f_status: 150,
     hit_rule: 340,
   },
   vuln: {
@@ -1998,7 +2003,7 @@ export function TableModuleView({
     if (moduleId === 'service' && ['ip_port', 'service_info.product'].includes(column)) return true;
     if (moduleId === 'vuln' && column === 'credential') return true;
     if (moduleId === 'nuclei_result' && ['vuln_url', 'verify_data'].includes(column)) return true;
-    if (moduleId === 'waf_host' && column === 'hit_rule') return true;
+    if (moduleId === 'waf_host' && ['detection_sources', 'hit_rule'].includes(column)) return true;
     if (moduleId === 'wih' && ['content', 'source', 'site'].includes(column)) return true;
     if (moduleId === 'wih_endpoint' && ['target', 'page_url'].includes(column)) return true;
     if (moduleId === 'github_result' && ['path', 'human_content'].includes(column)) return true;

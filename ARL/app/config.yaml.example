@@ -717,6 +717,11 @@ ARL:
   # 以独立进程运行 NPoC，确保阶段超时后释放 worker
   NPOC_PROCESS_ISOLATION_ENABLE: true
   NPOC_PROCESS_KILL_GRACE_SEC: 5
+  # wafw00f 补充识别，仅在 smart_skip_waf 开启时生效
+  WAFW00F_TIMEOUT_SEC: 7
+  WAFW00F_CONCURRENCY: 2
+  WAFW00F_MAX_TARGETS: 200
+  WAFW00F_STAGE_TIMEOUT_SEC: 900
   # 资产站点监控并发
   ASSET_SITE_MONITOR_CONCURRENCY: 8
   # 资产站点发现并发

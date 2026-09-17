@@ -291,6 +291,18 @@ class WAFSmartSkipGuard(object):
         self._skipped_sites = set()
         self._preclassified_count = 0
         self._npoc_promoted_count = 0
+        self._wafw00f_metrics = {
+            "wafw00f_checked_total": 0,
+            "wafw00f_detected_total": 0,
+            "wafw00f_not_detected_total": 0,
+            "wafw00f_timeout_total": 0,
+            "wafw00f_error_total": 0,
+            "wafw00f_skipped_by_passive_total": 0,
+            "wafw00f_target_cap_skipped_total": 0,
+            "wafw00f_request_total": 0,
+            "wafw00f_elapsed_sec": 0.0,
+        }
+        self._active_risk_filter_stats = {}
 
     @staticmethod
     def _extract_host(value: str) -> str:
@@ -370,6 +382,7 @@ class WAFSmartSkipGuard(object):
                 "citrix", "forti", "radware", "wordfence", "dbapp",
                 "chaitin", "nsfocus", "venustech", "sangfor", "topsec",
                 "wallarm", "ddos-guard", "cloudbric", "reblaze",
+                "cloudflare", "akamai",
             )
         )
 
@@ -435,6 +448,16 @@ class WAFSmartSkipGuard(object):
                 "consecutive_block_count": 0,
                 "block_by_class": {},
                 "preclassified_classes": set(),
+                "detection_sources": set(),
+                "wafw00f_status": "",
+                "wafw00f_names": [],
+                "wafw00f_confidence": "",
+                "wafw00f_evidence": [],
+                "wafw00f_request_count": 0,
+                "wafw00f_elapsed_sec": 0.0,
+                "wafw00f_checked_at": "",
+                "wafw00f_active_risk_blocked": False,
+                "wafw00f_endpoints": {},
             }
             self._host_state[host] = state
         return state
@@ -654,6 +677,7 @@ class WAFSmartSkipGuard(object):
                 if item not in existing_evidence:
                     existing_evidence.append(item)
             state["dns_evidence"] = existing_evidence[:8]
+            state.setdefault("detection_sources", set()).add("dns")
             state["dns_edge_kind"] = self._merge_edge_kind(
                 state.get("dns_edge_kind", ""), edge_kind
             )
@@ -692,6 +716,24 @@ class WAFSmartSkipGuard(object):
         with self._lock:
             state = self._get_state(host)
             module_class = self._module_class(module)
+            if (
+                self._is_active_risk_module(module)
+                and state.get("wafw00f_active_risk_blocked")
+                and self.smart_skip_enabled
+            ):
+                site = self._extract_site(url)
+                if site:
+                    self._skipped_sites.add(site)
+                state["skip_count"] += 1
+                self._event_total += 1
+                return True, {
+                    "host": host,
+                    "reason": "wafw00f:{}".format(",".join(state.get("wafw00f_names") or []) or "detected"),
+                    "rule": "wafw00f_named_waf",
+                    "module": str(module or module_class),
+                    "waf_name": state.get("waf_name", ""),
+                    "scope": "wafw00f_active_risk",
+                }
             class_only_block = module_class in state.get("blocked_classes", set())
             if not state.get("blocked") and not class_only_block:
                 return False, {}
@@ -719,6 +761,166 @@ class WAFSmartSkipGuard(object):
                 "scope": block_scope,
             }
             return True, detail
+
+    @classmethod
+    def _is_active_risk_module(cls, module: str) -> bool:
+        name = str(module or "").strip().lower()
+        return any(token in name for token in ("npoc", "nuclei", "afrog", "risk_cruising")) or name in {
+            "poc", "poc_run", "active_risk",
+        }
+
+    def _record_filter_stat_locked(
+        self, stage_name, input_count=0, output_count=0, skipped_count=0, reason="", skip_reasons=None
+    ):
+        key = str(stage_name or "waf_filter").strip() or "waf_filter"
+        item = self._active_risk_filter_stats.setdefault(
+            key,
+            {
+                "input_count": 0,
+                "output_count": 0,
+                "skipped_count": 0,
+                "skip_reasons": {},
+            },
+        )
+        item["input_count"] += max(0, int(input_count or 0))
+        item["output_count"] += max(0, int(output_count or 0))
+        item["skipped_count"] += max(0, int(skipped_count or 0))
+        if reason and skipped_count:
+            reasons = item.setdefault("skip_reasons", {})
+            reasons[reason] = int(reasons.get(reason, 0) or 0) + int(skipped_count)
+        for reason_name, count in (skip_reasons or {}).items():
+            if not reason_name or not count:
+                continue
+            reasons = item.setdefault("skip_reasons", {})
+            reasons[reason_name] = int(reasons.get(reason_name, 0) or 0) + int(count)
+
+    def can_probe_wafw00f(self, target: str) -> bool:
+        """判断目标是否仍需补充识别，状态以 endpoint 为缓存粒度。"""
+        if not self.enabled or not self.smart_skip_enabled:
+            return False
+        host = self._extract_host(target)
+        if not host or not self._in_scope(host):
+            return False
+        from .wafw00f_adapter import WAFW00FAdapter
+
+        endpoint = WAFW00FAdapter.endpoint_key(target)
+        if not endpoint:
+            return False
+        with self._lock:
+            state = self._get_state(host)
+            if endpoint in (state.get("wafw00f_endpoints") or {}):
+                return False
+            if state.get("blocked") or state.get("blocked_classes"):
+                return False
+            return not self.has_high_confidence_waf(host, _locked=True)
+
+    def has_high_confidence_waf(self, host: str, _locked=False) -> bool:
+        normalized_host = self._extract_host(host)
+        if not normalized_host:
+            return False
+        def check():
+            state = self._get_state(normalized_host)
+            return bool(
+                self._confidence_rank(state.get("waf_confidence", "")) >= 3
+                and self._is_waf_vendor(
+                    state.get("waf_name", ""),
+                    state.get("waf_evidence", []),
+                )
+            ) or bool(
+                self._confidence_rank(state.get("dns_waf_confidence", "")) >= 3
+                and state.get("dns_edge_kind") in {"waf", "mixed"}
+            )
+        if _locked:
+            return check()
+        with self._lock:
+            return check()
+
+    def record_wafw00f_result(self, target: str, result: Optional[Dict]) -> bool:
+        """合并一次 endpoint 结果；重复恢复数据不增加计数。"""
+        if not self.enabled:
+            return False
+        from .wafw00f_adapter import WAFW00FAdapter
+
+        endpoint = WAFW00FAdapter.endpoint_key(target)
+        host = self._extract_host(target)
+        if not endpoint or not host or not self._in_scope(host):
+            return False
+        item = result if isinstance(result, dict) else {}
+        status = str(item.get("status", "error") or "error").strip().lower()
+        if status not in {"detected", "generic", "not_detected", "timeout", "error"}:
+            status = "error"
+        names = [str(value).strip()[:120] for value in (item.get("names") or []) if str(value).strip()]
+        evidence = [str(value).strip()[:180] for value in (item.get("evidence") or []) if str(value).strip()]
+        checked_at = str(item.get("checked_at") or utils.curr_date())
+        with self._lock:
+            state = self._get_state(host)
+            endpoint_map = state.setdefault("wafw00f_endpoints", {})
+            if endpoint in endpoint_map:
+                return False
+            endpoint_map[endpoint] = {
+                "status": status,
+                "names": names[:8],
+                "confidence": str(item.get("confidence", "") or "")[:16],
+                "evidence": evidence[:8],
+                "request_count": max(0, int(item.get("request_count", 0) or 0)),
+                "elapsed_sec": round(max(0.0, float(item.get("elapsed_sec", 0.0) or 0.0)), 6),
+                "checked_at": checked_at,
+            }
+            state["wafw00f_request_count"] += endpoint_map[endpoint]["request_count"]
+            state["wafw00f_elapsed_sec"] += endpoint_map[endpoint]["elapsed_sec"]
+            state["wafw00f_checked_at"] = checked_at
+            state["wafw00f_status"] = self._merge_wafw00f_status(
+                state.get("wafw00f_status", ""), status
+            )
+            state["wafw00f_confidence"] = (
+                "high" if status == "detected" else state.get("wafw00f_confidence", "") or str(item.get("confidence", ""))
+            )
+            for value in names:
+                if value not in state["wafw00f_names"]:
+                    state["wafw00f_names"].append(value)
+            for value in evidence:
+                if value not in state["wafw00f_evidence"]:
+                    state["wafw00f_evidence"].append(value)
+            state.setdefault("detection_sources", set()).add("wafw00f")
+            if status == "detected":
+                state["wafw00f_active_risk_blocked"] = True
+                state["edge_kind"] = self._merge_edge_kind(state.get("edge_kind", ""), "waf")
+                if self._confidence_rank(state.get("waf_confidence", "")) < 3:
+                    state["waf_name"] = names[0] if names else state.get("waf_name", "")
+                    state["waf_confidence"] = "high"
+                for value in evidence:
+                    if value not in state["waf_evidence"]:
+                        state["waf_evidence"].append(value)
+        return True
+
+    @staticmethod
+    def _merge_wafw00f_status(current, incoming):
+        rank = {"": 0, "error": 1, "timeout": 2, "not_detected": 3, "generic": 4, "detected": 5}
+        current = str(current or "")
+        incoming = str(incoming or "")
+        return incoming if rank.get(incoming, 0) >= rank.get(current, 0) else current
+
+    def record_wafw00f_metrics(self, metrics: Optional[Dict]):
+        if not isinstance(metrics, dict):
+            return
+        mapping = {
+            "checked_count": "wafw00f_checked_total",
+            "detected_count": "wafw00f_detected_total",
+            "not_detected_count": "wafw00f_not_detected_total",
+            "timeout_count": "wafw00f_timeout_total",
+            "error_count": "wafw00f_error_total",
+            "skipped_by_passive_count": "wafw00f_skipped_by_passive_total",
+            "target_cap_skipped_count": "wafw00f_target_cap_skipped_total",
+            "request_count": "wafw00f_request_total",
+            "elapsed_sec": "wafw00f_elapsed_sec",
+        }
+        with self._lock:
+            for source_key, target_key in mapping.items():
+                value = metrics.get(source_key, 0)
+                if target_key.endswith("elapsed_sec"):
+                    self._wafw00f_metrics[target_key] += max(0.0, float(value or 0.0))
+                else:
+                    self._wafw00f_metrics[target_key] += max(0, int(value or 0))
 
     def observe_timeout(self, url: str, error, module: str = ""):
         """把连续网络超时转为当前流量类别熔断，避免继续消耗 worker。"""
@@ -946,12 +1148,15 @@ class WAFSmartSkipGuard(object):
             state["request_count"] += 1
             state["last_status"] = status_code
             state["last_url"] = safe_error_text(url)
+            if response_waf_evidence or response_edge_kind:
+                state.setdefault("detection_sources", set()).add("http")
             timeout_by_class = state.setdefault("timeout_by_class", {})
             timeout_by_class[module_class] = 0
             state["consecutive_timeout_count"] = 0
             block_by_class = state.setdefault("block_by_class", {})
 
             if waf_name:
+                state.setdefault("detection_sources", set()).add("http")
                 http_prev_rank = self._confidence_rank(state.get("http_waf_confidence", ""))
                 curr_rank = self._confidence_rank(confidence)
                 if curr_rank >= http_prev_rank:
@@ -1103,29 +1308,67 @@ class WAFSmartSkipGuard(object):
         targets: List[str],
         module: str = "",
         preclassify: bool = False,
+        stage_name: str = "",
     ) -> Tuple[List[str], int]:
         if not self.enabled or not self.smart_skip_enabled:
             return list(targets or []), 0
 
         keep_targets = []
         skipped = 0
+        skip_reasons = {}
         module_name = str(module or "").strip()
         for target in targets or []:
             host = self._extract_host(target)
             if module_name and preclassify:
                 self._preclassify_target(target, module_name)
             if module_name:
-                should_skip, _ = self.should_skip(target, module=module_name)
+                should_skip, detail = self.should_skip(target, module=module_name)
             else:
                 should_skip = bool(host and self.is_blocked_host(host))
+                detail = {}
             if should_skip:
                 site = self._extract_site(target)
                 if site:
                     with self._lock:
                         self._skipped_sites.add(site)
                 skipped += 1
+                reason = str(detail.get("scope") or detail.get("rule") or "waf_guard")
+                skip_reasons[reason] = int(skip_reasons.get(reason, 0) or 0) + 1
                 continue
             keep_targets.append(target)
+        with self._lock:
+            self._record_filter_stat_locked(
+                stage_name or module or "waf_filter",
+                input_count=len(targets or []),
+                output_count=len(keep_targets),
+                skipped_count=skipped,
+                reason="",
+                skip_reasons=skip_reasons,
+            )
+        return keep_targets, skipped
+
+    def filter_target_items(self, targets, module="", stage_name=""):
+        keep_targets = []
+        skipped = 0
+        skip_reasons = {}
+        for item in targets or []:
+            target = item.get("target", "") if isinstance(item, dict) else item
+            should_skip, detail = self.should_skip(target, module=module)
+            if should_skip:
+                skipped += 1
+                reason = str(detail.get("scope") or detail.get("rule") or "waf_guard")
+                skip_reasons[reason] = int(skip_reasons.get(reason, 0) or 0) + 1
+                continue
+            keep_targets.append(item)
+        with self._lock:
+            self._record_filter_stat_locked(
+                stage_name or module or "waf_filter",
+                input_count=len(targets or []),
+                output_count=len(keep_targets),
+                skipped_count=skipped,
+                reason="",
+                skip_reasons=skip_reasons,
+            )
         return keep_targets, skipped
 
     def summary(self, include_all: bool = False) -> Dict:
@@ -1158,6 +1401,7 @@ class WAFSmartSkipGuard(object):
                     or state.get("edge_kind")
                     or state.get("hit_count")
                     or state.get("timeout_count")
+                    or state.get("wafw00f_status")
                 )
                 if not has_detection:
                     continue
@@ -1200,6 +1444,17 @@ class WAFSmartSkipGuard(object):
                     "consecutive_block_count": int(
                         state.get("consecutive_block_count", 0) or 0
                     ),
+                    "detection_sources": sorted(state.get("detection_sources") or set())
+                    or self._inferred_detection_sources(state),
+                    "wafw00f_status": state.get("wafw00f_status", ""),
+                    "wafw00f_names": list(state.get("wafw00f_names", []) or []),
+                    "wafw00f_confidence": state.get("wafw00f_confidence", ""),
+                    "wafw00f_evidence": list(state.get("wafw00f_evidence", []) or []),
+                    "wafw00f_request_count": int(state.get("wafw00f_request_count", 0) or 0),
+                    "wafw00f_elapsed_sec": round(float(state.get("wafw00f_elapsed_sec", 0.0) or 0.0), 6),
+                    "wafw00f_checked_at": state.get("wafw00f_checked_at", ""),
+                    "wafw00f_active_risk_blocked": bool(state.get("wafw00f_active_risk_blocked")),
+                    "wafw00f_endpoints": dict(state.get("wafw00f_endpoints") or {}),
                 }
                 detected_hosts.append(host_item)
                 if host_item["edge_kind"] in {"waf", "mixed"}:
@@ -1242,16 +1497,30 @@ class WAFSmartSkipGuard(object):
                 "observation_elapsed_sec": round(max(0.0, self._observation_elapsed_sec), 6),
                 "blocked_hosts": blocked_hosts,
                 "class_blocked_hosts": class_blocked_hosts,
-                "detected_hosts": detected_hosts[:20],
+                "detected_hosts": detected_hosts,
                 "event_total": int(self._event_total),
                 "preclassified_count": int(self._preclassified_count),
                 "npoc_promoted_count": int(self._npoc_promoted_count),
+                "active_risk_filter_stats": dict(self._active_risk_filter_stats),
+                "wafw00f_checked_host_count": sum(
+                    1 for item in detected_hosts if item.get("wafw00f_status")
+                ),
+                **dict(self._wafw00f_metrics),
             }
             if include_all:
                 result["all_hosts"] = detected_hosts
                 result["observed_sites"] = sorted(self._observed_sites)
                 result["skipped_sites"] = sorted(self._skipped_sites)
             return result
+
+    @staticmethod
+    def _inferred_detection_sources(state):
+        sources = []
+        if state.get("http_waf_name") or state.get("http_waf_evidence") or state.get("response_edge_kind"):
+            sources.append("http")
+        if state.get("dns_waf_name") or state.get("dns_evidence") or state.get("dns_edge_kind"):
+            sources.append("dns")
+        return sources
 
     def merge_summary(self, summary: Optional[Dict]):
         """合并隔离子进程的 WAF 观测，保证阶段超时隔离后主任务仍可落库。"""
@@ -1296,6 +1565,9 @@ class WAFSmartSkipGuard(object):
                     "dns_waf_confidence",
                     "dns_edge_kind",
                     "response_edge_kind",
+                    "wafw00f_status",
+                    "wafw00f_confidence",
+                    "wafw00f_checked_at",
                 ):
                     if item.get(key):
                         if key in {"dns_edge_kind", "response_edge_kind"}:
@@ -1308,6 +1580,31 @@ class WAFSmartSkipGuard(object):
                     values = list(item.get(key, []) or [])
                     if values:
                         state[key] = values[:8]
+                for key in ("wafw00f_names", "wafw00f_evidence"):
+                    values = list(item.get(key, []) or [])
+                    if values:
+                        existing = state.setdefault(key, [])
+                        for value in values:
+                            if value not in existing:
+                                existing.append(value)
+                        state[key] = existing[:8]
+                state["wafw00f_request_count"] = max(
+                    int(state.get("wafw00f_request_count", 0) or 0),
+                    int(item.get("wafw00f_request_count", 0) or 0),
+                )
+                state["wafw00f_elapsed_sec"] = max(
+                    float(state.get("wafw00f_elapsed_sec", 0.0) or 0.0),
+                    float(item.get("wafw00f_elapsed_sec", 0.0) or 0.0),
+                )
+                state["wafw00f_active_risk_blocked"] = bool(
+                    state.get("wafw00f_active_risk_blocked")
+                    or item.get("wafw00f_active_risk_blocked")
+                )
+                state.setdefault("detection_sources", set()).update(
+                    item.get("detection_sources") or []
+                )
+                for endpoint, endpoint_item in (item.get("wafw00f_endpoints") or {}).items():
+                    state.setdefault("wafw00f_endpoints", {}).setdefault(endpoint, endpoint_item)
                 state["edge_kind"] = self._merge_edge_kind(
                     state.get("edge_kind", ""), item.get("edge_kind", "")
                 )
@@ -1327,6 +1624,29 @@ class WAFSmartSkipGuard(object):
             )
             self._observed_sites.update(summary.get("observed_sites", []) or [])
             self._skipped_sites.update(summary.get("skipped_sites", []) or [])
+            for key in self._wafw00f_metrics:
+                incoming = summary.get(key, 0)
+                if key.endswith("elapsed_sec"):
+                    self._wafw00f_metrics[key] = max(
+                        float(self._wafw00f_metrics[key] or 0.0), float(incoming or 0.0)
+                    )
+                else:
+                    self._wafw00f_metrics[key] = max(
+                        int(self._wafw00f_metrics[key] or 0), int(incoming or 0)
+                    )
+            for key, value in (summary.get("active_risk_filter_stats") or {}).items():
+                current = self._active_risk_filter_stats.setdefault(
+                    key,
+                    {"input_count": 0, "output_count": 0, "skipped_count": 0, "skip_reasons": {}},
+                )
+                for count_key in ("input_count", "output_count", "skipped_count"):
+                    current[count_key] = max(
+                        int(current.get(count_key, 0) or 0), int(value.get(count_key, 0) or 0)
+                    )
+                for reason, count in (value.get("skip_reasons") or {}).items():
+                    current.setdefault("skip_reasons", {})[reason] = max(
+                        int(current["skip_reasons"].get(reason, 0) or 0), int(count or 0)
+                    )
 
     def summary_text(self) -> str:
         data = self.summary()
@@ -1342,11 +1662,15 @@ class WAFSmartSkipGuard(object):
         timeout_count = int(data.get("timeout_count", 0) or 0)
         preclassified_count = int(data.get("preclassified_count", 0) or 0)
         npoc_promoted_count = int(data.get("npoc_promoted_count", 0) or 0)
+        wafw00f_checked = int(data.get("wafw00f_checked_total", 0) or 0)
+        wafw00f_detected = int(data.get("wafw00f_detected_total", 0) or 0)
 
         if detected_count <= 0:
-            return "已启用，未识别WAF，站点:{}，请求:{}，检测耗时:{:.3f}s".format(
+            return "已启用，未识别WAF，站点:{}，请求:{}，补充检查:{}/{}，检测耗时:{:.3f}s".format(
                 observed_sites,
                 int(data.get("request_count", 0) or 0),
+                wafw00f_detected,
+                wafw00f_checked,
                 observation_elapsed,
             )
 
@@ -1355,6 +1679,8 @@ class WAFSmartSkipGuard(object):
             "观测站点:{}".format(observed_sites),
             "检测耗时:{:.3f}s".format(observation_elapsed),
         ]
+        if wafw00f_checked:
+            parts.append("wafw00f检查:{}/{}".format(wafw00f_detected, wafw00f_checked))
         if self.smart_skip_enabled:
             parts.append("跳过主机:{}".format(blocked_count))
             parts.append("跳过站点:{}".format(skipped_sites))

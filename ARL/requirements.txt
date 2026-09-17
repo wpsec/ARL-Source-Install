@@ -6,6 +6,7 @@ Werkzeug==2.0.3
 celery==5.1.2
 flask-restx==1.0.3
 requests==2.26.0
+wafw00f==2.4.2
 dnspython==2.2.1
 tld==0.12.6
 PyYAML==6.0.2

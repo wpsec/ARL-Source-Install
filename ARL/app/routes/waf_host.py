@@ -2,7 +2,7 @@
 WAF 识别结果查询模块
 
 功能说明：
-- 展示任务执行中被 WAF 智能跳过的主机（来源 task.waf_skip_summary.blocked_hosts）
+- 展示任务执行中的 WAF 识别主机（优先读取 detected_hosts，兼容历史 blocked_hosts）
 - 支持按任务、IP、域名、端口、WAF 厂商进行筛选
 - 主要用于任务详情中快速查看“哪些主机因为 WAF 被跳过”
 """
@@ -28,6 +28,8 @@ base_search_fields = {
     "port": fields.Integer(required=False, description="端口"),
     "waf_name": fields.String(required=False, description="WAF 厂商"),
     "hit_rule": fields.String(required=False, description="命中规则/理由"),
+    "detection_source": fields.String(required=False, description="识别来源"),
+    "wafw00f_status": fields.String(required=False, description="wafw00f 状态"),
 }
 base_search_fields.update(base_query_fields)
 
@@ -91,12 +93,27 @@ def _parse_host_port(host: str, last_url: str):
     return ip, domain, port
 
 
-def _format_hit_rule(rule: str, reason: str) -> str:
+def _format_hit_rule(rule: str, reason: str, wafw00f_status="", wafw00f_evidence=None) -> str:
     rule_text = str(rule or "").strip()
     reason_text = str(reason or "").strip()
     if rule_text and reason_text:
         return "{} | {}".format(rule_text, reason_text)
-    return rule_text or reason_text or "-"
+    if rule_text or reason_text:
+        return rule_text or reason_text
+    evidence = [str(item).strip() for item in (wafw00f_evidence or []) if str(item).strip()]
+    return "wafw00f:{}".format(",".join(evidence)) if evidence else (
+        "wafw00f:{}".format(wafw00f_status) if wafw00f_status else "-"
+    )
+
+
+def _summary_host_items(summary):
+    if not isinstance(summary, dict):
+        return []
+    for key in ("detected_hosts", "blocked_hosts", "class_blocked_hosts"):
+        value = summary.get(key)
+        if isinstance(value, list) and value:
+            return value
+    return []
 
 
 @ns.route("/")
@@ -118,9 +135,17 @@ class ARLWafHost(ARLResource):
         domain_kw = str(args.get("domain") or "").strip().lower()
         waf_name_kw = str(args.get("waf_name") or "").strip().lower()
         hit_rule_kw = str(args.get("hit_rule") or "").strip().lower()
+        source_kw = str(args.get("detection_source") or "").strip().lower()
+        wafw00f_status_kw = str(args.get("wafw00f_status") or "").strip().lower()
         port_kw = _safe_int(args.get("port"), 0)
 
-        task_query = {"waf_skip_summary.blocked_hosts.0": {"$exists": True}}
+        task_query = {
+            "$or": [
+                {"waf_skip_summary.detected_hosts.0": {"$exists": True}},
+                {"waf_skip_summary.blocked_hosts.0": {"$exists": True}},
+                {"waf_skip_summary.class_blocked_hosts.0": {"$exists": True}},
+            ]
+        }
         if task_id_list:
             object_id_list = []
             for item in task_id_list:
@@ -140,7 +165,9 @@ class ARLWafHost(ARLResource):
                 "name": 1,
                 "target": 1,
                 "start_time": 1,
+                "waf_skip_summary.detected_hosts": 1,
                 "waf_skip_summary.blocked_hosts": 1,
+                "waf_skip_summary.class_blocked_hosts": 1,
             },
         )
         if order == "_id":
@@ -152,12 +179,8 @@ class ARLWafHost(ARLResource):
         seen = set()
         for task_item in task_cursor:
             task_id = str(task_item.get("_id"))
-            blocked_hosts = (
-                ((task_item.get("waf_skip_summary") or {}).get("blocked_hosts") or [])
-                if isinstance(task_item.get("waf_skip_summary"), dict)
-                else []
-            )
-            for host_item in blocked_hosts:
+            host_items = _summary_host_items(task_item.get("waf_skip_summary"))
+            for host_item in host_items:
                 if isinstance(host_item, dict):
                     host_data = host_item
                 else:
@@ -169,7 +192,14 @@ class ARLWafHost(ARLResource):
                 waf_name = str(host_data.get("waf_name", "") or "").strip() or "unknown"
                 rule = str(host_data.get("rule", "") or "").strip()
                 reason = str(host_data.get("reason", "") or "").strip()
-                hit_rule = _format_hit_rule(rule, reason)
+                wafw00f_status = str(host_data.get("wafw00f_status", "") or "").strip()
+                wafw00f_evidence = host_data.get("wafw00f_evidence") or []
+                hit_rule = _format_hit_rule(rule, reason, wafw00f_status, wafw00f_evidence)
+                detection_sources = [
+                    str(item).strip()
+                    for item in (host_data.get("detection_sources") or [])
+                    if str(item).strip()
+                ]
                 ip, domain, port = _parse_host_port(host, last_url)
 
                 if ip_kw and ip_kw not in ip:
@@ -180,10 +210,14 @@ class ARLWafHost(ARLResource):
                     continue
                 if hit_rule_kw and hit_rule_kw not in hit_rule.lower():
                     continue
+                if source_kw and source_kw not in {item.lower() for item in detection_sources}:
+                    continue
+                if wafw00f_status_kw and wafw00f_status_kw != wafw00f_status.lower():
+                    continue
                 if port_kw > 0 and port_kw != port:
                     continue
 
-                uniq_key = (task_id, host, port, waf_name)
+                uniq_key = (task_id, host, port, waf_name, wafw00f_status)
                 if uniq_key in seen:
                     continue
                 seen.add(uniq_key)
@@ -197,6 +231,20 @@ class ARLWafHost(ARLResource):
                         "port": port if port > 0 else "",
                         "waf_name": waf_name,
                         "hit_rule": hit_rule,
+                        "detection_sources": detection_sources,
+                        "waf_confidence": str(host_data.get("waf_confidence", "") or ""),
+                        "edge_kind": str(host_data.get("edge_kind", "") or ""),
+                        "skipped": bool(
+                            host_data.get("blocked")
+                            or host_data.get("blocked_classes")
+                            or host_data.get("wafw00f_active_risk_blocked")
+                        ),
+                        "wafw00f_status": wafw00f_status,
+                        "wafw00f_names": list(host_data.get("wafw00f_names") or []),
+                        "wafw00f_confidence": str(host_data.get("wafw00f_confidence", "") or ""),
+                        "wafw00f_active_risk_blocked": bool(
+                            host_data.get("wafw00f_active_risk_blocked")
+                        ),
                     }
                 )
 

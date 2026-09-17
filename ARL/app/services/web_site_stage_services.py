@@ -14,6 +14,7 @@ from app import utils
 from app.modules import WebSiteFetchOption, WebSiteFetchStatus
 from app.services.discovery_context import traffic_class_for_module
 from app.services.single_scan_stage_services import WebSiteSingleStageService
+from app.services.wafw00f_adapter import WAFW00FAdapter
 
 
 logger = utils.get_logger()
@@ -301,6 +302,28 @@ class WebSiteResultPersistStageService(object):
             waf_guard=task.waf_guard,
             target_profiles=target_profiles,
         )
+        result_metrics = getattr(result, "metrics", {}) or {}
+        waf_skipped_count = int(result_metrics.get("waf_skipped_count", 0) or 0)
+        task._waf_stage_stats.setdefault(
+            "npoc",
+            {
+                "input_count": 0,
+                "output_count": 0,
+                "skipped_count": 0,
+                "invocation_count": 0,
+                "skip_reasons": {},
+            },
+        )
+        npoc_stage_stat = task._waf_stage_stats["npoc"]
+        npoc_stage_stat["input_count"] += len(poc_targets)
+        npoc_stage_stat["output_count"] += max(0, len(poc_targets) - waf_skipped_count)
+        npoc_stage_stat["skipped_count"] += waf_skipped_count
+        npoc_stage_stat["invocation_count"] += 1
+        if waf_skipped_count:
+            npoc_stage_stat.setdefault("skip_reasons", {})["waf_guard"] = (
+                int(npoc_stage_stat.setdefault("skip_reasons", {}).get("waf_guard", 0) or 0)
+                + waf_skipped_count
+            )
         for item in result:
             if item.get("result_status") == "partial":
                 target = str(item.get("target", "") or item.get("url", "")).strip()
@@ -326,13 +349,38 @@ class WebSiteWafStageService(object):
     def __init__(self, task):
         self.task = task
 
-    def filter_targets(self, targets, stage_name="") -> list:
+    def run(self):
+        stage = WebSiteSingleStageService(self.task, logger=logger)
+        return stage.run(
+            WebSiteFetchStatus.WAF_IDENTIFY,
+            self.identify,
+            fallback={
+                "status": "partial",
+                "end_reason": "stage_fallback",
+                "input_count": 0,
+                "output_count": 0,
+            },
+            fallback_note="继续执行主动风险阶段",
+        )
+
+    def filter_targets(self, targets, stage_name="", module="") -> list:
         task = self.task
         target_list = list(targets or [])
         if not task.waf_guard:
             return target_list
 
-        keep_targets, skipped = task.waf_guard.filter_targets(target_list)
+        if any(isinstance(item, dict) for item in target_list):
+            keep_targets, skipped = task.waf_guard.filter_target_items(
+                target_list,
+                module=module,
+                stage_name=stage_name,
+            )
+        else:
+            keep_targets, skipped = task.waf_guard.filter_targets(
+                target_list,
+                module=module,
+                stage_name=stage_name,
+            )
         stage_key = str(stage_name or "waf_filter").strip() or "waf_filter"
         stage_stat = task._waf_stage_stats.setdefault(
             stage_key,
@@ -341,12 +389,18 @@ class WebSiteWafStageService(object):
                 "output_count": 0,
                 "skipped_count": 0,
                 "invocation_count": 0,
+                "skip_reasons": {},
             },
         )
         stage_stat["input_count"] += len(target_list)
         stage_stat["output_count"] += len(keep_targets)
         stage_stat["skipped_count"] += int(skipped)
         stage_stat["invocation_count"] += 1
+        if skipped:
+            stage_stat.setdefault("skip_reasons", {})["waf_guard"] = (
+                int(stage_stat.setdefault("skip_reasons", {}).get("waf_guard", 0) or 0)
+                + int(skipped)
+            )
         if skipped > 0:
             logger.info(
                 "task_id:{} waf smart skip stage:{} keep:{} skipped:{}".format(
@@ -358,12 +412,31 @@ class WebSiteWafStageService(object):
             )
         return keep_targets
 
+    def identify(self):
+        task = self.task
+        if not getattr(task, "smart_skip_waf", False):
+            return {
+                "status": "skipped",
+                "end_reason": "smart_skip_disabled",
+                "input_count": 0,
+                "output_count": 0,
+            }
+        targets = list(dict.fromkeys(list(getattr(task, "available_sites", []) or [])))
+        metrics = WAFW00FAdapter().run(
+            targets,
+            task.waf_guard,
+            task_id=getattr(task, "task_id", ""),
+        )
+        # 识别结果必须在主动风险阶段启动前落库，跨 Celery worker 才能恢复缓存。
+        self.save_waf_skip_summary()
+        return metrics
+
     def save_waf_skip_summary(self):
         task = self.task
         if not task.waf_guard or not getattr(task.waf_guard, "enabled", False):
             return
 
-        summary = task.waf_guard.summary()
+        summary = task.waf_guard.summary(include_all=True)
         summary["updated_at"] = utils.curr_date()
         summary["stage_stats"] = dict(task._waf_stage_stats)
         summary_text = task.waf_guard.summary_text()
@@ -400,32 +473,44 @@ class WebSiteWafStageService(object):
                 "timeout_by_class": summary.get("timeout_by_class", {}),
                 "observation_elapsed_sec": summary.get("observation_elapsed_sec", 0.0),
                 "stage_stats": summary.get("stage_stats", {}),
+                "active_risk_filter_stats": summary.get("active_risk_filter_stats", {}),
+                "wafw00f_checked_total": summary.get("wafw00f_checked_total", 0),
+                "wafw00f_detected_total": summary.get("wafw00f_detected_total", 0),
+                "wafw00f_not_detected_total": summary.get("wafw00f_not_detected_total", 0),
+                "wafw00f_timeout_total": summary.get("wafw00f_timeout_total", 0),
+                "wafw00f_error_total": summary.get("wafw00f_error_total", 0),
+                "wafw00f_skipped_by_passive_total": summary.get("wafw00f_skipped_by_passive_total", 0),
+                "wafw00f_target_cap_skipped_total": summary.get("wafw00f_target_cap_skipped_total", 0),
+                "wafw00f_request_total": summary.get("wafw00f_request_total", 0),
+                "wafw00f_elapsed_sec": summary.get("wafw00f_elapsed_sec", 0.0),
             },
         }
         observation_elapsed = float(summary.get("observation_elapsed_sec", 0.0) or 0.0)
-        if getattr(task, "base_update_task", None):
-            task.base_update_task.append_service(
-                service_name,
-                observation_elapsed,
-                detail=summary_text,
-                metadata=service_metadata,
-                trigger_ai=False,
-            )
-        else:
-            task._result_writer.update_one(
-                "task",
-                query,
-                {
-                    "$push": {
-                        "service": {
-                            "name": service_name,
-                            "elapsed": round(observation_elapsed, 3),
-                            "detail": summary_text,
-                            **service_metadata,
+        if not getattr(task, "_waf_summary_service_saved", False):
+            if getattr(task, "base_update_task", None):
+                task.base_update_task.append_service(
+                    service_name,
+                    observation_elapsed,
+                    detail=summary_text,
+                    metadata=service_metadata,
+                    trigger_ai=False,
+                )
+            else:
+                task._result_writer.update_one(
+                    "task",
+                    query,
+                    {
+                        "$push": {
+                            "service": {
+                                "name": service_name,
+                                "elapsed": round(observation_elapsed, 3),
+                                "detail": summary_text,
+                                **service_metadata,
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            task._waf_summary_service_saved = True
         logger.info(
             "task_id:{} waf smart skip summary {}".format(
                 task.task_id,

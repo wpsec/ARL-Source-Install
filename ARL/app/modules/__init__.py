@@ -147,6 +147,7 @@ class WebSiteFetchOption:
     NUCLEI_SCAN = "nuclei_scan"  # nuclei 扫描
     AFROG_SCAN = "afrog_scan"  # afrog 扫描
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
+    WAF_IDENTIFY = "waf_identify"
     SMART_SKIP_WAF = "smart_skip_waf"  # 智能跳过 WAF 拦截目标
 
 
@@ -162,6 +163,7 @@ class WebSiteFetchStatus:
     NUCLEI_SCAN = "nuclei_scan"
     AFROG_SCAN = "afrog_scan"
     Info_Hunter = "web_info_hunter"  # 对 JS 调用WebInfoHunter
+    WAF_IDENTIFY = "waf_identify"
 
 
 class CeleryAction:

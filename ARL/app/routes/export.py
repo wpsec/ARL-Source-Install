@@ -2965,7 +2965,7 @@ def _extract_wih_endpoint_rows(task_ids):
 
 def _extract_waf_rows(task_ids):
     """
-    汇总任务的 WAF 识别结果（来源 task.waf_skip_summary.blocked_hosts）。
+    汇总任务的 WAF 识别结果（优先 detected_hosts，兼容历史阻断字段）。
     """
     task_id_list = _normalize_task_id_list(task_ids)
     rows = []
@@ -2977,13 +2977,14 @@ def _extract_waf_rows(task_ids):
             continue
 
         waf_skip_summary = task_data.get("waf_skip_summary", {})
-        blocked_hosts = (
-            (waf_skip_summary or {}).get("blocked_hosts", [])
-            if isinstance(waf_skip_summary, dict)
-            else []
-        )
+        host_items = []
+        if isinstance(waf_skip_summary, dict):
+            for key in ("detected_hosts", "blocked_hosts", "class_blocked_hosts"):
+                if isinstance(waf_skip_summary.get(key), list) and waf_skip_summary.get(key):
+                    host_items = waf_skip_summary.get(key)
+                    break
 
-        for host_item in blocked_hosts:
+        for host_item in host_items:
             if isinstance(host_item, dict):
                 host_data = host_item
             else:
@@ -2999,6 +3000,18 @@ def _extract_waf_rows(task_ids):
             hit_count = sanitize_excel_value(host_data.get("hit_count", ""))
             skip_count = sanitize_excel_value(host_data.get("skip_count", ""))
             last_status = sanitize_excel_value(host_data.get("last_status", ""))
+            detection_sources = ", ".join(
+                sanitize_excel_value(item).strip()
+                for item in as_list(host_data.get("detection_sources", []))
+                if sanitize_excel_value(item).strip()
+            )
+            edge_kind = sanitize_excel_value(host_data.get("edge_kind", "")).strip()
+            skipped = "是" if (
+                host_data.get("blocked")
+                or host_data.get("blocked_classes")
+                or host_data.get("wafw00f_active_risk_blocked")
+            ) else "否"
+            wafw00f_status = sanitize_excel_value(host_data.get("wafw00f_status", "")).strip()
             waf_evidence = " \r\n".join(
                 [
                     sanitize_excel_value(item).strip()
@@ -3009,7 +3022,7 @@ def _extract_waf_rows(task_ids):
 
             ip, domain, port = _parse_waf_host_port(host, last_url)
             port_text = str(port) if int(port or 0) > 0 else ""
-            dedup_key = (task_id, host, port_text, waf_name)
+            dedup_key = (task_id, host, port_text, waf_name, wafw00f_status)
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
@@ -3029,6 +3042,10 @@ def _extract_waf_rows(task_ids):
                     sanitize_excel_value(last_status),
                     sanitize_excel_value(last_url),
                     sanitize_excel_value(waf_evidence),
+                    sanitize_excel_value(detection_sources),
+                    sanitize_excel_value(edge_kind),
+                    sanitize_excel_value(skipped),
+                    sanitize_excel_value(wafw00f_status),
                 ]
             )
 
@@ -3074,6 +3091,10 @@ def _build_waf_sheet(wb, task_ids, apply_style=True):
     ws.column_dimensions['K'].width = 12.0
     ws.column_dimensions['L'].width = 64.0
     ws.column_dimensions['M'].width = 42.0
+    ws.column_dimensions['N'].width = 20.0
+    ws.column_dimensions['O'].width = 14.0
+    ws.column_dimensions['P'].width = 10.0
+    ws.column_dimensions['Q'].width = 18.0
     ws.append(
         [
             "IP",
@@ -3089,6 +3110,10 @@ def _build_waf_sheet(wb, task_ids, apply_style=True):
             "最后状态码",
             "最后URL",
             "命中证据",
+            "识别来源",
+            "边界类型",
+            "是否跳过",
+            "wafw00f状态",
         ]
     )
 

@@ -10,6 +10,7 @@ from app.services.web_site_stage_services import (
     WebSiteExternalScanStageService,
     WebSiteIntelStageService,
     WebSitePostProcessStageService,
+    WebSiteWafStageService,
 )
 
 
@@ -28,6 +29,7 @@ class WebSiteFetchOrchestrator(object):
         # WIH 先消费站点、页面和脚本情报；主动扫描统一放到情报阶段之后，避免
         # POC/Nuclei/Afrog 先触发 WAF 后影响后续被动收集。
         WebSiteIntelStageService(task).run()
+        WebSiteWafStageService(task).run()
         WebSiteExternalScanStageService(task).run()
         WebSitePostProcessStageService(task).run()
 

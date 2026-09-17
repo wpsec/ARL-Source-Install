@@ -1,6 +1,6 @@
 # WAF 联动增强计划：wafw00f 补充识别
 
-状态：已归档。仅完成方案设计，按此前决策暂不实施代码、依赖和配置变更。
+状态：已落地并归档。已完成代码、依赖、配置、展示和回归测试补充；真实授权目标验证另行记录。
 
 本文档路径：`docs/history/[已归档]WAF 联动增强计划：wafw00f 补充识别.md`
 
@@ -196,3 +196,20 @@ wafw00f_elapsed_sec
 - 默认低并发为 2，最大补充识别目标数为 200，优先控制 WAF 风险而不是追求全量探测速度。
 - wafw00f 只负责补充厂商指纹，不替换现有 WAF Guard、DNS/CDN 判定和分类熔断逻辑。
 - 本计划完成后，代码变更、回归测试和真实授权目标验证仍需分开记录。
+
+## Implementation Review（2026-09-17）
+
+已完成：
+
+- `ARL/requirements.txt` 固定引入 `wafw00f==2.4.2`，并增加四项超时、并发、容量和阶段预算配置。
+- 新增 `WAFW00FAdapter`，使用惰性 Python Library API、`identwaf(findall=False)`、关闭重定向、空敏感请求头、代理复用、endpoint 去重、并发/预算/容量限制和 fail-open 结果归一化。
+- `WebSiteFetch` 新增 `waf_identify` 阶段，位置固定在 WIH 后、主动风险阶段前；结果立即写回现有 `waf_skip_summary`，并支持跨 worker 恢复。
+- `WAFSmartSkipGuard` 继续作为唯一状态中心；命名厂商仅过滤 NPoC、PoC、Nuclei 和 Afrog，不制造主机级封禁，generic/not-detected/timeout/error 均保持 fail-open。
+- WAF API、XLSX 导出和前端 WAF 页面兼容旧 `blocked_hosts`/`class_blocked_hosts`，新增识别来源、置信度、边界类型、跳过状态和 wafw00f 状态。
+- Nuclei 过滤保留 `finger`，Afrog 显式使用 `module="afrog"`，阶段统计记录输入、输出、跳过和原因。
+
+Review 结论：
+
+- 已通过 Python 语法编译、`git diff --check`、前端 TypeScript 检查和生产构建。
+- 当前本机未安装项目既有 `xing` 依赖，完整 Python unittest 无法在本地导入 `app.services`；新增适配器测试使用 fake detector，不依赖真实网络，需在完整容器依赖环境中执行。
+- 未执行 `git push`，未对真实目标发起验证请求。

@@ -503,6 +503,10 @@ def refresh_runtime_config_best_effort(force=False):
             "NPOC_STAGE_TIMEOUT_SEC",
             "NPOC_WAF_TIMEOUT_THRESHOLD",
             "NPOC_PROCESS_KILL_GRACE_SEC",
+            "WAFW00F_TIMEOUT_SEC",
+            "WAFW00F_CONCURRENCY",
+            "WAFW00F_MAX_TARGETS",
+            "WAFW00F_STAGE_TIMEOUT_SEC",
         ]
         for key_name in positive_keys:
             value = arl_conf.get(key_name)
@@ -1378,6 +1382,11 @@ class Config(object):
     NPOC_STAGE_TIMEOUT_SEC = 1800
     # 连续网络超时达到阈值后暂停该主机的 NPoC 队列
     NPOC_WAF_TIMEOUT_THRESHOLD = 3
+    # wafw00f 只用于 smart_skip_waf 开启时的低频补充指纹识别。
+    WAFW00F_TIMEOUT_SEC = 7
+    WAFW00F_CONCURRENCY = 2
+    WAFW00F_MAX_TARGETS = 200
+    WAFW00F_STAGE_TIMEOUT_SEC = 900
     # 使用独立进程承载 NPoC，确保失控插件不会长期占用 Celery worker
     NPOC_PROCESS_ISOLATION_ENABLE = True
     NPOC_PROCESS_KILL_GRACE_SEC = 5
@@ -2326,6 +2335,10 @@ try:
         "NPOC_STAGE_TIMEOUT_SEC",
         "NPOC_WAF_TIMEOUT_THRESHOLD",
         "NPOC_PROCESS_KILL_GRACE_SEC",
+        "WAFW00F_TIMEOUT_SEC",
+        "WAFW00F_CONCURRENCY",
+        "WAFW00F_MAX_TARGETS",
+        "WAFW00F_STAGE_TIMEOUT_SEC",
         "ASSET_SITE_MONITOR_CONCURRENCY",
         "ASSET_SITE_DISCOVERY_CONCURRENCY",
         "CELERY_HEAVY_WORKER_CONCURRENCY",
@@ -3214,6 +3227,10 @@ try:
             "NPOC_TARGET_TIMEOUT_SEC",
             "NPOC_STAGE_TIMEOUT_SEC",
             "NPOC_WAF_TIMEOUT_THRESHOLD",
+            "WAFW00F_TIMEOUT_SEC",
+            "WAFW00F_CONCURRENCY",
+            "WAFW00F_MAX_TARGETS",
+            "WAFW00F_STAGE_TIMEOUT_SEC",
             "NPOC_PROCESS_ISOLATION_ENABLE",
         )
     }

@@ -56,6 +56,7 @@ class TestWebSiteFetchOrchestrator(unittest.TestCase):
                 ("stage", "site_identify"),
                 "site_identify",
                 "save_site_info",
+                ("stage", "waf_identify"),
                 "waf_summary",
             ],
             task.calls,
@@ -95,6 +96,32 @@ class TestWebSiteFetchOrchestrator(unittest.TestCase):
                 "file_leak",
                 "nuclei_scan",
                 "afrog_scan",
+            ],
+            [item for item in task.calls if isinstance(item, str) and item != "waf_summary"],
+        )
+
+    def test_waf_identify_stage_is_between_intel_and_active_scans(self):
+        task = _Task()
+        task.options.update(
+            {
+                WebSiteFetchOption.Info_Hunter: True,
+                WebSiteFetchOption.FILE_LEAK: True,
+            }
+        )
+        with mock.patch(
+            "app.services.web_site_fetch_orchestrator.WebSiteWafStageService"
+        ) as waf_stage_cls:
+            waf_stage_cls.return_value.run.side_effect = lambda: task.calls.append("waf_identify")
+            WebSiteFetchOrchestrator(task).run()
+
+        self.assertEqual(
+            [
+                "fetch_site",
+                "site_identify",
+                "save_site_info",
+                "run_web_info_hunter",
+                "waf_identify",
+                "file_leak",
             ],
             [item for item in task.calls if isinstance(item, str) and item != "waf_summary"],
         )

@@ -13,6 +13,7 @@ import requests
 from types import SimpleNamespace
 from urllib.parse import urlparse, parse_qsl, urlencode, urlsplit, urlunsplit, urljoin, quote
 from pymongo.errors import NetworkTimeout, AutoReconnect, ServerSelectionTimeoutError
+from bson import ObjectId
 from app import utils
 from app import services
 from app.config import Config, normalize_dict_path_compat
@@ -158,6 +159,7 @@ class CommonTask(object):
             "afrog_scan": "AFROG_STAGE_TIMEOUT_SEC",
             "poc_run": "NPOC_STAGE_TIMEOUT_SEC",
             "poc": "NPOC_STAGE_TIMEOUT_SEC",
+            "waf_identify": "WAFW00F_STAGE_TIMEOUT_SEC",
         }
         config_key = budget_key_map.get(stage_key)
         if not config_key:
@@ -264,6 +266,8 @@ class WebSiteFetch(CommonTask):
         self._task_scope_context_cache = None
         self._service_detail_overrides = {}
         self._waf_stage_stats = {}
+        self._waf_summary_service_saved = False
+        self._restore_waf_skip_summary()
         # 站点策略共享任务级上下文；候选图容量软读配置，非法值回默认而不是打断任务初始化。
         try:
             discovery_candidate_max = int(getattr(Config, "DISCOVERY_CANDIDATE_MAX", 20000) or 20000)
@@ -327,11 +331,39 @@ class WebSiteFetch(CommonTask):
             block_scope,
         )
 
+    def _restore_waf_skip_summary(self):
+        """恢复已有 wafw00f endpoint 结果，避免深度阶段重试再次触发主动探测。"""
+        if not self.smart_skip_waf:
+            return
+        try:
+            task_item = utils.conn_db("task").find_one(
+                {"_id": ObjectId(self.task_id)},
+                {"waf_skip_summary": 1},
+            )
+            summary = task_item.get("waf_skip_summary") if isinstance(task_item, dict) else None
+            if isinstance(summary, dict):
+                self.waf_guard.merge_summary(summary)
+        except Exception as exc:
+            logger.debug(
+                "task_id:{} wafw00f summary restore skipped error_type:{}".format(
+                    self.task_id, type(exc).__name__
+                )
+            )
+
     def _log_discovery_observation(self):
         return WebSiteDiscoveryContextStageService(self).log_observation()
 
     def _filter_waf_blocked_targets(self, targets, stage_name="") -> list:
         return WebSiteWafStageService(self).filter_targets(targets, stage_name)
+
+    def _filter_waf_active_risk_targets(self, targets, module="", stage_name="") -> list:
+        return WebSiteWafStageService(self).filter_targets(
+            targets, stage_name=stage_name or module, module=module
+        )
+
+    def waf_identify(self):
+        """执行一次受控的 wafw00f 补充识别；关闭 smart_skip 时完全不触网。"""
+        return WebSiteWafStageService(self).identify()
 
     def _save_waf_skip_summary(self):
         return WebSiteWafStageService(self).save_waf_skip_summary()

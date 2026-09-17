@@ -150,6 +150,7 @@ class WebSiteNucleiScanStageService(object):
                         task.task_id, e
                     )
                 )
+
                 return NucleiScanResult(
                     [],
                     metrics={
@@ -173,6 +174,26 @@ class WebSiteNucleiScanStageService(object):
                         "pending_count": 1,
                     },
                 )
+
+        input_target_count = len(nuclei_targets)
+        filter_targets = getattr(task, "_filter_waf_active_risk_targets", None)
+        if callable(filter_targets):
+            nuclei_targets = filter_targets(
+                nuclei_targets,
+                module="nuclei",
+                stage_name="nuclei",
+            )
+        if not nuclei_targets:
+            return NucleiScanResult(
+                [],
+                metrics={
+                    "status": "skipped" if input_target_count else "success",
+                    "end_reason": "waf_circuit_breaker" if input_target_count else "no_targets",
+                    "input_count": input_target_count,
+                    "output_count": 0,
+                    "waf_skipped_count": input_target_count,
+                },
+            )
 
         finger_hit_count = 0
         for item in nuclei_targets:
@@ -279,7 +300,19 @@ class WebSiteAfrogScanStageService(object):
             return
 
         origin_target_count = len(afrog_targets)
-        afrog_targets = task._filter_waf_blocked_targets(afrog_targets, stage_name="afrog")
+        active_filter = getattr(task, "_filter_waf_active_risk_targets", None)
+        if callable(active_filter):
+            afrog_targets = active_filter(
+                afrog_targets,
+                module="afrog",
+                stage_name="afrog",
+            )
+        else:
+            # 兼容未迁移的最小任务替身；正式 WebSiteFetch 始终显式传递 afrog 模块。
+            afrog_targets = task._filter_waf_blocked_targets(
+                afrog_targets,
+                stage_name="afrog",
+            )
         if not afrog_targets:
             logger.info("skip afrog_scan, no targets after waf filter")
             return
