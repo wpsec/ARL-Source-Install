@@ -23,6 +23,8 @@ type PanelPosition = {
 const VIEWPORT_PADDING = 8;
 const PANEL_GAP = 8;
 const PANEL_WIDTH = 420;
+const HOVER_OPEN_DELAY_MS = 260;
+const HOVER_CLOSE_DELAY_MS = 360;
 
 function getDisplayText(node: ReactNode): string {
   if (node === null || node === undefined || typeof node === 'boolean') return '';
@@ -61,6 +63,7 @@ export function HoverCellValue({
   const canInspect = showHover && hasContent && (forceHover || isOverflowing || hasPreviewDifference);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelPosition, setPanelPosition] = useState<PanelPosition>({top: VIEWPORT_PADDING, left: VIEWPORT_PADDING});
@@ -98,20 +101,40 @@ export function HoverCellValue({
     closeTimerRef.current = null;
   };
 
+  const clearOpenTimer = () => {
+    if (openTimerRef.current === null) return;
+    clearTimeout(openTimerRef.current);
+    openTimerRef.current = null;
+  };
+
   const openPanel = () => {
+    clearOpenTimer();
     clearCloseTimer();
     setPanelOpen(true);
   };
 
+  const scheduleOpen = () => {
+    clearCloseTimer();
+    clearOpenTimer();
+    openTimerRef.current = setTimeout(() => {
+      openTimerRef.current = null;
+      setPanelOpen(true);
+    }, HOVER_OPEN_DELAY_MS);
+  };
+
   const scheduleClose = () => {
+    clearOpenTimer();
     clearCloseTimer();
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
       setPanelOpen(false);
-    }, 160);
+    }, HOVER_CLOSE_DELAY_MS);
   };
 
-  useEffect(() => () => clearCloseTimer(), []);
+  useEffect(() => () => {
+    clearOpenTimer();
+    clearCloseTimer();
+  }, []);
 
   useLayoutEffect(() => {
     if (!panelOpen || !triggerRef.current) return undefined;
@@ -215,7 +238,7 @@ export function HoverCellValue({
 
   return (
     <div
-      onMouseEnter={openPanel}
+      onMouseEnter={scheduleOpen}
       onMouseLeave={scheduleClose}
       className={`arl-table-cell-content relative block w-full align-middle ${className}`}
     >

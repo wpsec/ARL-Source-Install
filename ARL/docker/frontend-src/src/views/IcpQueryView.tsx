@@ -124,6 +124,12 @@ const STATUS_CLASS: Record<string, string> = {
   cancelled: 'badge-ghost',
 };
 
+const LOG_LEVEL_CLASS: Record<string, string> = {
+  INFO: 'badge-info',
+  WARNING: 'badge-warning',
+  ERROR: 'badge-error',
+};
+
 const ICP_RESULT_COLUMN_WIDTHS: Record<string, number> = {
   company_name: 180,
   domain: 180,
@@ -178,6 +184,11 @@ function hasExtraFields(record: IcpRecord) {
 
 function StatusBadge({ status }: { status: string }) {
   return <span className={`badge badge-sm ${STATUS_CLASS[status] || 'badge-outline'}`}>{STATUS_LABELS[status] || status || '-'}</span>;
+}
+
+function LogLevelBadge({ level }: { level?: string }) {
+  const normalized = String(level || 'INFO').trim().toUpperCase();
+  return <span className={`badge badge-sm ${LOG_LEVEL_CLASS[normalized] || 'badge-ghost'}`}>{normalized}</span>;
 }
 
 function EmptyState({ text = '暂无数据' }: { text?: string }) {
@@ -570,26 +581,31 @@ export function IcpQueryView({ token }: { token: string }) {
             </div>
           </section>
 
-          {singleTask ? (
+          {singleTaskId ? (
             <section className={CONSOLE_PANEL_CLASS}>
               <div className="card-body gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="card-title text-lg">查询任务</h2>
-                    <p className="mt-1 break-all font-mono text-xs text-content-muted">{singleTask.task_id}</p>
+                    <p className="mt-1 break-all font-mono text-xs text-content-muted">{singleTask?.task_id || singleTaskId}</p>
                   </div>
-                  {(singleTask.status === 'queued' || singleTask.status === 'running') ? (
+                  {singleTask && (singleTask.status === 'queued' || singleTask.status === 'running') ? (
                     <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void cancelTask(singleTask.task_id, 'single')} disabled={Boolean(busy)}>
                       <XCircle className="h-4 w-4" />取消查询
                     </button>
                   ) : null}
                 </div>
-                <TaskSummary task={singleTask} />
+                {singleTask ? (
+                  <>
+                    <TaskSummary task={singleTask} />
+                    {singleTask.status === 'failed' || singleTask.items?.some((item) => item.status === 'failed') ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{singleTask.error_summary || singleTask.items?.find((item) => item.status === 'failed')?.error_message || '查询失败，请查看系统日志。'}</div> : null}
+                    <QueryError error={singleResultQuery.error} text="查询结果加载失败" />
+                    {activeResult ? <ResultTable records={(activeResult.items || []) as IcpRecord[]} /> : null}
+                    {activeResult ? <Pagination page={Number(activeResult.page || singleResultPage)} size={Number(activeResult.size || 26)} total={Number(activeResult.total || 0)} onChange={setSingleResultPage} /> : null}
+                  </>
+                ) : null}
                 <QueryError error={singleTaskQuery.error} text="查询任务状态加载失败" />
-                {singleTask.status === 'failed' ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{singleTask.error_summary || '查询失败，请查看系统日志。'}</div> : null}
-                <QueryError error={singleResultQuery.error} text="查询结果加载失败" />
-                {activeResult ? <ResultTable records={(activeResult.items || []) as IcpRecord[]} /> : null}
-                {activeResult ? <Pagination page={Number(activeResult.page || singleResultPage)} size={Number(activeResult.size || 26)} total={Number(activeResult.total || 0)} onChange={setSingleResultPage} /> : null}
+                {!singleTask && !singleTaskQuery.isError ? <div role="status" className="py-8 text-center text-sm text-content-muted">正在读取查询任务状态…</div> : null}
               </div>
             </section>
           ) : (
@@ -723,16 +739,15 @@ export function IcpQueryView({ token }: { token: string }) {
               </div>
             </div>
             <QueryError error={logsQuery.error} text="系统日志加载失败" />
-            {!logsQuery.isError && (logsQuery.isFetching && !logItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : logItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[900px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 180 }} /><col style={{ width: 450 }} /></colgroup><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>消息</th></tr></thead><tbody>{logItems.map((item, index) => <tr key={`${item.created_at}-${index}`}><td className="whitespace-nowrap text-xs">{item.created_at || '-'}</td><td><StatusBadge status={item.level === 'WARNING' ? 'partial' : item.level === 'ERROR' ? 'failed' : 'succeeded'} /></td><td className="min-w-0 max-w-full overflow-hidden break-all"><IcpTextCell value={item.event} label="事件" /></td><td className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all"><IcpTextCell value={item.message} label="消息" /></td></tr>)}</tbody></table></div> : <EmptyState text="暂无 ICP 系统日志" />)}
+            {!logsQuery.isError && (logsQuery.isFetching && !logItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : logItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[900px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 180 }} /><col style={{ width: 450 }} /></colgroup><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>消息</th></tr></thead><tbody>{logItems.map((item, index) => <tr key={`${item.created_at}-${index}`}><td className="whitespace-nowrap text-xs">{item.created_at || '-'}</td><td><LogLevelBadge level={item.level} /></td><td className="min-w-0 max-w-full overflow-hidden break-all"><IcpTextCell value={item.event} label="事件" /></td><td className="min-w-0 max-w-full overflow-hidden whitespace-pre-wrap break-all"><IcpTextCell value={item.message} label="消息" /></td></tr>)}</tbody></table></div> : <EmptyState text="暂无 ICP 系统日志" />)}
             <Pagination page={Number(logData.page || logPage)} size={Number(logData.size || 50)} total={Number(logData.total || 0)} onChange={setLogPage} />
           </div>
         </section>
       ) : null}
 
       {tab === 'about' ? (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+        <div className="space-y-5">
           <section className={CONSOLE_PANEL_CLASS}><div className="card-body gap-5"><QueryError error={aboutQuery.error} text="关于信息加载失败" /><div className="flex items-start gap-3"><div className="rounded-box bg-primary/10 p-3 text-primary"><BookOpen className="h-6 w-6" /></div><div><h2 className="card-title text-lg">关于 ICP 查询</h2><p className="mt-1 text-sm text-content-muted">将 ICP 备案查询能力整合到 ARL 现有任务和数据体系中。</p></div></div><div className="space-y-3 text-sm leading-6 text-content-muted"><p>查询、批量查询、历史、任务、日志和关于页面均由 ARL 原生 UI 提供，配置管理不在本模块开放。</p><p>查询结果独立保存，不会自动写入 ARL 的域名、站点或 IP 资产集合。</p>{aboutQuery.data?.data?.source ? <p>功能参考来源：<a className="link link-primary" href={aboutQuery.data.data.source} target="_blank" rel="noreferrer">{aboutQuery.data.data.source}</a></p> : null}</div></div></section>
-          <section className={CONSOLE_PANEL_CLASS}><div className="card-body gap-3"><h2 className="card-title text-lg">当前状态</h2><div className="flex items-center justify-between text-sm"><span className="text-content-muted">适配方式</span><span className="badge badge-soft badge-success">ARL 原生</span></div><div className="flex items-center justify-between text-sm"><span className="text-content-muted">集成版本</span><span className="font-mono text-xs">{aboutQuery.data?.data?.integration_version || 'native-v1'}</span></div><div className="flex items-center justify-between text-sm"><span className="text-content-muted">独立容器</span><span>不需要</span></div><div className="flex items-center justify-between text-sm"><span className="text-content-muted">资产写回</span><span>关闭</span></div><div className="flex items-center justify-between text-sm"><span className="text-content-muted">任务队列</span><span className="font-mono text-xs">arlweb</span></div></div></section>
         </div>
       ) : null}
 

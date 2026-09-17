@@ -33,6 +33,25 @@ const COMPLETED_TASK = {
   },
 };
 
+const FAILED_TASK = {
+  code: 200,
+  data: {
+    task_id: 'task-1',
+    task_kind: 'single',
+    query_type: 'web',
+    status: 'failed',
+    total: 1,
+    queued_count: 0,
+    running_count: 0,
+    succeeded_count: 0,
+    empty_count: 0,
+    failed_count: 1,
+    cancelled_count: 0,
+    error_summary: 'ICP 任务投递失败',
+    items: [{ item_id: 'item-1', keyword: 'example.com', status: 'failed', error_message: '消息队列不可用' }],
+  },
+};
+
 function renderView() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -127,6 +146,43 @@ describe('IcpQueryView', () => {
     }
   });
 
+  it('单次查询失败时展示失败状态和错误信息', async () => {
+    installFetchMock({
+      routes: {
+        '/icp/meta': [200, META_PAYLOAD],
+        '/icp/query/task-1': [200, FAILED_TASK],
+        '/icp/query/task-1/results': [200, { code: 200, data: { items: [], total: 0, page: 1, size: 26 } }],
+        '/icp/query': [200, { code: 200, data: { task_id: 'task-1' } }],
+      },
+    });
+    renderView();
+
+    fireEvent.change(screen.getByPlaceholderText('请输入域名、主体名称或应用名称'), { target: { value: 'example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+
+    expect(await screen.findByText('失败')).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toContain('ICP 任务投递失败');
+  });
+
+  it('单次查询状态接口失败时不回退为空状态', async () => {
+    installFetchMock({
+      routes: {
+        '/icp/meta': [200, META_PAYLOAD],
+        '/icp/query/task-1': [500, { code: 500, message: '任务状态服务异常', data: {} }],
+        '/icp/query': [200, { code: 200, data: { task_id: 'task-1' } }],
+      },
+    });
+    renderView();
+
+    fireEvent.change(screen.getByPlaceholderText('请输入域名、主体名称或应用名称'), { target: { value: 'example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('查询任务状态加载失败');
+    expect(alert.textContent).toContain('任务状态服务异常');
+    expect(screen.queryByText('提交查询后，结果会在这里展示')).toBeNull();
+  });
+
   it('日志标签页提交级别和日期范围筛选', async () => {
     const calls = installFetchMock({ routes: { '/icp/meta': [200, META_PAYLOAD] } });
     renderView();
@@ -145,6 +201,46 @@ describe('IcpQueryView', () => {
       expect(logCall?.url).toContain('created_from=2026-09-08');
       expect(logCall?.url).toContain('created_to=2026-09-08');
     });
+  });
+
+  it('系统日志按真实级别展示，不把 INFO 显示成已完成', async () => {
+    installFetchMock({
+      routes: {
+        '/icp/meta': [200, META_PAYLOAD],
+        '/icp/logs': [200, {
+          code: 200,
+          data: {
+            items: [{ created_at: '2026-09-17T15:00:00Z', level: 'INFO', event: 'task_created', message: '创建 ICP 查询任务' }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+    renderView();
+
+    fireEvent.click(screen.getByRole('tab', { name: '系统日志' }));
+
+    expect(await screen.findByText('INFO')).toBeTruthy();
+    expect(screen.queryByText('已完成')).toBeNull();
+  });
+
+  it('关于页不展示部署状态信息', async () => {
+    installFetchMock({
+      routes: {
+        '/icp/meta': [200, META_PAYLOAD],
+        '/icp/about': [200, { code: 200, data: { source: 'https://example.com' } }],
+      },
+    });
+    renderView();
+
+    fireEvent.click(screen.getByRole('tab', { name: '关于' }));
+
+    expect(await screen.findByText('关于 ICP 查询')).toBeTruthy();
+    expect(screen.queryByText('当前状态')).toBeNull();
+    expect(screen.queryByText('集成版本')).toBeNull();
+    expect(screen.queryByText('任务队列')).toBeNull();
   });
 
   it('总开关闭用态不展示可操作页面', async () => {

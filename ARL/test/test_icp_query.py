@@ -706,6 +706,38 @@ class TestIcpPersistenceCleanup(unittest.TestCase):
 
 
 class TestIcpTaskLifecycle(unittest.TestCase):
+    def test_dispatch_failure_persists_failure_history_for_task_item(self):
+        task = {
+            "task_id": "task-dispatch-failed",
+            "query_type": "web",
+            "items": [{
+                "item_id": "item-1",
+                "keyword": "example.test",
+                "status": "queued",
+                "error_category": "",
+                "history_id": "",
+            }],
+        }
+        collection = MagicMock()
+
+        failed_task = {
+            **task,
+            "items": [{**task["items"][0], "status": "failed", "error_category": "dispatch_error"}],
+        }
+        with patch.object(MODULE, "get_task", return_value=failed_task), \
+                patch.object(MODULE, "_task_collection", return_value=collection), \
+                patch.object(MODULE, "_save_failure_history", return_value={"history_id": "history-dispatch"}) as save_history, \
+                patch.object(MODULE, "_recount_task"):
+            MODULE.mark_task_dispatch_failed("task-dispatch-failed", RuntimeError("broker unavailable"))
+
+        save_history.assert_called_once()
+        self.assertEqual("web", save_history.call_args.args[1].get("query_type"))
+        history_link_update = collection.update_one.call_args_list[1][0][1]
+        self.assertEqual(
+            "history-dispatch",
+            history_link_update["$set"]["items.$.history_id"],
+        )
+
     def test_recount_marks_mixed_terminal_items_as_partial(self):
         task = {
             "task_id": "task-partial",

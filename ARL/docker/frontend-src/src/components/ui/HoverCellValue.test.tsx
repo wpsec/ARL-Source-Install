@@ -1,4 +1,4 @@
-import {cleanup, fireEvent, render, screen} from '@testing-library/react';
+import {act, cleanup, fireEvent, render, screen} from '@testing-library/react';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {HoverCellValue} from './HoverCellValue';
 
@@ -101,5 +101,35 @@ describe('HoverCellValue', () => {
     expect(screen.queryByRole('button', {name: '复制标题'})).toBeNull();
     fireEvent.keyDown(trigger, {key: 'Escape'});
     expect(screen.queryByText('标题完整内容')).toBeNull();
+  });
+
+  it('鼠标悬浮延迟打开，并保留离开缓冲时间', () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <HoverCellValue
+          display="短文本..."
+          fullText="这是完整内容"
+          label="标题"
+          forceHover
+        />,
+      );
+      const trigger = screen.getByLabelText('查看标题完整内容');
+
+      fireEvent.mouseEnter(trigger);
+      expect(screen.queryByText('标题完整内容')).toBeNull();
+      act(() => vi.advanceTimersByTime(259));
+      expect(screen.queryByText('标题完整内容')).toBeNull();
+      act(() => vi.advanceTimersByTime(1));
+      expect(screen.getByText('标题完整内容')).toBeTruthy();
+
+      fireEvent.mouseLeave(trigger);
+      act(() => vi.advanceTimersByTime(359));
+      expect(screen.getByText('标题完整内容')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(1));
+      expect(screen.queryByText('标题完整内容')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

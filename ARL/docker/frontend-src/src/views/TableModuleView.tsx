@@ -4012,7 +4012,7 @@ export function TableModuleView({
                           return (
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden" style={columnStyle}>
                               <HoverCellValue
-                                display={<span className={`${getWihRecordTypeTagClass(recordType, sensitive)} block min-w-0 max-w-full truncate`}>{recordType || '-'}</span>}
+                                display={<span className={`${getWihRecordTypeTagClass(recordType, sensitive)} min-w-0 max-w-full truncate`}>{recordType || '-'}</span>}
                                 fullText={recordType || '-'}
                                 label="WIH记录类型"
                                 onCopy={copyTextToClipboard}
@@ -4294,7 +4294,7 @@ export function TableModuleView({
                                   复制
                                 </button>
                                 {showTaskTargetStatTooltip ? (
-                                  <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
+                                  <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[320px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 delay-300 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
                                     <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
                                       <div className="text-xs font-black tracking-wide text-base-content">任务资产统计</div>
                                       <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
@@ -4365,7 +4365,7 @@ export function TableModuleView({
                             <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden arl-table-popover-cell" style={columnStyle}>
                               <div className="group relative flex min-w-0 max-w-full items-center justify-center">
                                 {statusNode}
-                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
+                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 delay-300 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
                                   <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
                                     <div className="text-xs font-black tracking-wide text-base-content">任务执行时间概览</div>
                                     <div className="mt-2 rounded-box border border-base-300 bg-base-100 px-2.5 py-2">

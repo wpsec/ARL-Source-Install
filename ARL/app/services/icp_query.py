@@ -1071,10 +1071,11 @@ def _new_task(kind, query_type, keywords):
 
 def mark_task_dispatch_failed(task_id, error):
     """记录消息投递失败，避免 API 异常后留下永久 queued 任务。"""
+    safe_task_id = str(task_id or "").strip()
     safe_message = _redact_text(error)
     try:
         _task_collection().update_one(
-            {"task_id": str(task_id or "").strip()},
+            {"task_id": safe_task_id},
             {
                 "$set": {
                     "error_summary": "ICP 任务投递失败: {}".format(safe_message),
@@ -1085,7 +1086,8 @@ def mark_task_dispatch_failed(task_id, error):
             },
             array_filters=[{"item.status": {"$in": ["queued", "running"]}}],
         )
-        _recount_task(str(task_id or "").strip())
+        _persist_dispatch_failure_histories(safe_task_id, safe_message)
+        _recount_task(safe_task_id)
     except Exception as exc:
         logger.error("mark ICP dispatch failure failed task_id=%s error=%s", task_id, _redact_text(exc))
 
@@ -1294,6 +1296,46 @@ def _save_failure_history(task_id, item, error):
             task_id=task_id,
         )
         return None
+
+
+def _persist_dispatch_failure_histories(task_id, error):
+    """为未执行的投递失败任务补写失败历史，保证任务状态和历史记录一致。"""
+    try:
+        task = get_task(task_id)
+    except Exception as exc:
+        logger.warning(
+            "read ICP dispatch failure task failed task_id=%s error=%s",
+            task_id,
+            _redact_text(exc),
+        )
+        return
+    if not task:
+        return
+
+    failure = IcpQueryError(_redact_text(error), category="dispatch_error")
+    for item in task.get("items", []):
+        if item.get("status") != "failed" or item.get("error_category") != "dispatch_error":
+            continue
+        if str(item.get("history_id") or "").strip():
+            continue
+        history = _save_failure_history(
+            task_id,
+            {**item, "query_type": task.get("query_type", "")},
+            failure,
+        )
+        if not history:
+            continue
+        try:
+            _task_collection().update_one(
+                {"task_id": task_id, "items.item_id": item.get("item_id")},
+                {"$set": {"items.$.history_id": history["history_id"]}},
+            )
+        except Exception as exc:
+            logger.warning(
+                "link ICP dispatch failure history failed task_id=%s error=%s",
+                task_id,
+                _redact_text(exc),
+            )
 
 
 def _update_item(task_id, item_id, status, **values):

@@ -1461,8 +1461,9 @@ def recover_orphan_icp_tasks_on_worker_start(
                 array_filters=[{"item.status": {"$in": ["queued", "running"]}}],
             )
             try:
-                from app.services.icp_query import _recount_task
+                from app.services.icp_query import _recount_task, _persist_dispatch_failure_histories
 
+                _persist_dispatch_failure_histories(task_id, error_text)
                 _recount_task(task_id)
             except Exception as recount_exc:
                 logger.warning(
