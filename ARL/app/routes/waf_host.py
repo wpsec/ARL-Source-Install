@@ -101,7 +101,7 @@ def _format_hit_rule(rule: str, reason: str, wafw00f_status="", wafw00f_evidence
     if rule_text or reason_text:
         return rule_text or reason_text
     evidence = [str(item).strip() for item in (wafw00f_evidence or []) if str(item).strip()]
-    return "wafw00f:{}".format(",".join(evidence)) if evidence else (
+    return ",".join(evidence) if evidence else (
         "wafw00f:{}".format(wafw00f_status) if wafw00f_status else "-"
     )
 

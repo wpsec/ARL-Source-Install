@@ -211,7 +211,7 @@ RUN --mount=type=cache,id=arl-pip-${TARGETARCH},target=/root/.cache/pip set -eux
     pip3 install --upgrade "pip<24.1" "setuptools<81" wheel; \
     pip3 install -r /code/requirements.txt; \
     pip3 install dnslib==0.9.16 pycryptodomex==3.16.0 requests_ntlm==1.1.0; \
-    python3 -c 'import psutil, flask, pymongo, celery, dnslib, playwright'; \
+    python3 -c 'import psutil, flask, pymongo, celery, dnslib, playwright, wafw00f; from wafw00f.main import WAFW00F'; \
     python3 -c 'from Cryptodome.Cipher import AES'; \
     python3 -c 'from requests_ntlm import HttpNtlmAuth'
 
@@ -444,7 +444,7 @@ RUN set -eux; \
     rm -f /tmp/nuclei_*.zip; \
     chmod +x /usr/local/bin/ncrack /usr/bin/wih /usr/bin/*.sh /usr/bin/nuclei; \
     cp app/config.yaml.example app/config.yaml; \
-    python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright, openpyxl"; \
+    python3 -c "import psutil, flask, pymongo, celery, dnslib, playwright, openpyxl, wafw00f; from wafw00f.main import WAFW00F"; \
     python3 -c "import app.routes.icp_query, app.services.icp_query"; \
     python3 -c "from Cryptodome.Cipher import AES"; \
     python3 -c "from requests_ntlm import HttpNtlmAuth"; \

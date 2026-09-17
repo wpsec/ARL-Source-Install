@@ -207,9 +207,11 @@ wafw00f_elapsed_sec
 - `WAFSmartSkipGuard` 继续作为唯一状态中心；命名厂商仅过滤 NPoC、PoC、Nuclei 和 Afrog，不制造主机级封禁，generic/not-detected/timeout/error 均保持 fail-open。
 - WAF API、XLSX 导出和前端 WAF 页面兼容旧 `blocked_hosts`/`class_blocked_hosts`，新增识别来源、置信度、边界类型、跳过状态和 wafw00f 状态。
 - Nuclei 过滤保留 `finger`，Afrog 显式使用 `module="afrog"`，阶段统计记录输入、输出、跳过和原因。
+- 主生产 Dockerfile 在依赖安装层和最终运行层均校验 `wafw00f` 与 `WAFW00F` 可导入；跨 worker 合并按 endpoint 幂等保留结果，并重新汇总不同协议/端口的请求数与耗时。
 
 Review 结论：
 
-- 已通过 Python 语法编译、`git diff --check`、前端 TypeScript 检查和生产构建。
+- 已通过 Python 语法编译、`git diff --check`、前端 TypeScript 检查、生产构建和 `docker buildx build --check --file ARL/docker/Dockerfile .`（无 warning）。
+- wafw00f 适配器、WAF Guard 与阶段编排联合回归合计 48 项，Nuclei/Afrog 委托回归 2 项，WAF API/导出兼容回归 6 项，均通过；覆盖关闭开关、被动高置信度、CDN-only、generic/not-detected/timeout/error、协议端口去重、跨 worker 恢复、主动/被动阶段隔离和历史字段回退。
 - 当前本机未安装项目既有 `xing` 依赖，完整 Python unittest 无法在本地导入 `app.services`；新增适配器测试使用 fake detector，不依赖真实网络，需在完整容器依赖环境中执行。
 - 未执行 `git push`，未对真实目标发起验证请求。

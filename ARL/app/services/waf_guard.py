@@ -1565,8 +1565,6 @@ class WAFSmartSkipGuard(object):
                     "dns_waf_confidence",
                     "dns_edge_kind",
                     "response_edge_kind",
-                    "wafw00f_status",
-                    "wafw00f_confidence",
                     "wafw00f_checked_at",
                 ):
                     if item.get(key):
@@ -1576,6 +1574,17 @@ class WAFSmartSkipGuard(object):
                             )
                         else:
                             state[key] = item[key]
+                if item.get("wafw00f_status"):
+                    state["wafw00f_status"] = self._merge_wafw00f_status(
+                        state.get("wafw00f_status", ""), item["wafw00f_status"]
+                    )
+                incoming_wafw00f_confidence = str(
+                    item.get("wafw00f_confidence", "") or ""
+                )
+                if self._confidence_rank(incoming_wafw00f_confidence) > self._confidence_rank(
+                    state.get("wafw00f_confidence", "")
+                ):
+                    state["wafw00f_confidence"] = incoming_wafw00f_confidence
                 for key in ("waf_evidence", "http_waf_evidence", "dns_evidence"):
                     values = list(item.get(key, []) or [])
                     if values:
@@ -1605,6 +1614,21 @@ class WAFSmartSkipGuard(object):
                 )
                 for endpoint, endpoint_item in (item.get("wafw00f_endpoints") or {}).items():
                     state.setdefault("wafw00f_endpoints", {}).setdefault(endpoint, endpoint_item)
+                endpoint_items = list((state.get("wafw00f_endpoints") or {}).values())
+                if endpoint_items:
+                    state["wafw00f_request_count"] = sum(
+                        max(0, int(endpoint.get("request_count", 0) or 0))
+                        for endpoint in endpoint_items
+                        if isinstance(endpoint, dict)
+                    )
+                    state["wafw00f_elapsed_sec"] = round(
+                        sum(
+                            max(0.0, float(endpoint.get("elapsed_sec", 0.0) or 0.0))
+                            for endpoint in endpoint_items
+                            if isinstance(endpoint, dict)
+                        ),
+                        6,
+                    )
                 state["edge_kind"] = self._merge_edge_kind(
                     state.get("edge_kind", ""), item.get("edge_kind", "")
                 )
