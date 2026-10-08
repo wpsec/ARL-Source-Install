@@ -348,7 +348,9 @@ RUN --mount=type=cache,id=arl-go-build-${TARGETARCH},target=/root/.cache/go-buil
     else \
       echo "download massdns source from ${MASSDNS_REPOSITORY}"; \
       timeout 180 git clone --depth 1 "${MASSDNS_REPOSITORY}" "${MASSDNS_SRC}"; \
-      git -C "${MASSDNS_SRC}" checkout --detach "${MASSDNS_COMMIT}"; \
+      timeout 180 git -C "${MASSDNS_SRC}" fetch --depth 1 origin "${MASSDNS_COMMIT}"; \
+      git -C "${MASSDNS_SRC}" checkout --detach FETCH_HEAD; \
+      test "$(git -C "${MASSDNS_SRC}" rev-parse HEAD)" = "${MASSDNS_COMMIT}"; \
     fi; \
     make -C "${MASSDNS_SRC}"; \
     install -m 0755 "${MASSDNS_SRC}/bin/massdns" /code/app/tools/massdns; \
