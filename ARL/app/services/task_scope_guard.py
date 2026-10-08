@@ -5,9 +5,10 @@
 - 统一约束 WIH / 渗透测试 / PoC 等扫描链路只能处理当前任务范围内的资产
 - 默认允许：
   1) 当前任务目标域/子域
-  2) 当前任务已发现站点/URL/域名
+  2) 当前任务目标范围内已发现的站点/URL/域名
   3) 调用方显式传入的 scope_domains / seed_sites
 """
+import ipaddress
 from typing import Iterable, Set
 from urllib.parse import urlparse
 
@@ -49,45 +50,46 @@ def _split_target_values(raw_target) -> list:
     return values
 
 
-def _append_host(hosts: Set[str], flds: Set[str], value: str):
+def _append_host(hosts: Set[str], value: str):
     host = normalize_scope_host(value)
     if not host:
         return
     hosts.add(host)
-    try:
-        parsed = utils.domain_parsed(host)
-    except Exception:
-        parsed = None
-    fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
-    if fld:
-        flds.add(fld)
 
 
-def host_in_scope(value: str, allowed_hosts: Iterable[str], allowed_flds: Iterable[str]) -> bool:
+def host_in_scope(value: str, allowed_hosts: Iterable[str], allowed_flds=None) -> bool:
+    """仅允许授权主机本身及其子域；旧 FLD 参数不再授予访问范围。"""
     host = normalize_scope_host(value)
     if not host:
         return False
 
-    allowed_host_set = {str(item or "").strip().lower() for item in (allowed_hosts or []) if str(item or "").strip()}
-    allowed_fld_set = {str(item or "").strip().lower() for item in (allowed_flds or []) if str(item or "").strip()}
+    allowed_host_set = {
+        normalize_scope_host(item)
+        for item in (allowed_hosts or [])
+        if normalize_scope_host(item)
+    }
 
     if host in allowed_host_set:
         return True
-    for item in allowed_host_set:
-        if host.endswith("." + item):
-            return True
 
     try:
-        parsed = utils.domain_parsed(host)
-    except Exception:
-        parsed = None
-    fld = str(parsed.get("fld", "") if parsed else "").strip().lower()
-    if fld and fld in allowed_fld_set:
-        return True
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+
+    for item in allowed_host_set:
+        try:
+            ipaddress.ip_address(item)
+            continue
+        except ValueError:
+            pass
+        if host.endswith("." + item):
+            return True
     return False
 
 
-def url_in_scope(value: str, allowed_hosts: Iterable[str], allowed_flds: Iterable[str]) -> bool:
+def url_in_scope(value: str, allowed_hosts: Iterable[str], allowed_flds=None) -> bool:
     text = str(value or "").strip()
     if not text:
         return False
@@ -99,18 +101,17 @@ def url_in_scope(value: str, allowed_hosts: Iterable[str], allowed_flds: Iterabl
 def load_task_scope_context(task_id: str, seed_sites=None, scope_domains=None):
     task_id_text = str(task_id or "").strip()
     allowed_hosts: Set[str] = set()
-    allowed_flds: Set[str] = set()
     related_task_ids = []
 
     for site in seed_sites or []:
-        _append_host(allowed_hosts, allowed_flds, site)
+        _append_host(allowed_hosts, site)
     for domain in scope_domains or []:
-        _append_host(allowed_hosts, allowed_flds, domain)
+        _append_host(allowed_hosts, domain)
 
     if not task_id_text or len(task_id_text) != 24:
         return {
             "allowed_hosts": sorted(allowed_hosts),
-            "allowed_flds": sorted(allowed_flds),
+            "allowed_flds": [],
             "task_ids": related_task_ids,
         }
 
@@ -129,11 +130,9 @@ def load_task_scope_context(task_id: str, seed_sites=None, scope_domains=None):
 
     if isinstance(task_doc, dict):
         for value in _split_target_values(task_doc.get("target", "")):
-            _append_host(allowed_hosts, allowed_flds, value)
+            _append_host(allowed_hosts, value)
 
-    seen_task_ids = set()
     if task_id_text:
-        seen_task_ids.add(task_id_text)
         related_task_ids.append(task_id_text)
 
     if related_task_ids:
@@ -153,10 +152,12 @@ def load_task_scope_context(task_id: str, seed_sites=None, scope_domains=None):
             except Exception:
                 values = []
             for value in values or []:
-                _append_host(allowed_hosts, allowed_flds, value)
+                # 任务结果只能在原始授权根域内扩充，不能成为新的授权根。
+                if host_in_scope(value, allowed_hosts):
+                    _append_host(allowed_hosts, value)
 
     return {
         "allowed_hosts": sorted(allowed_hosts),
-        "allowed_flds": sorted(allowed_flds),
+        "allowed_flds": [],
         "task_ids": related_task_ids,
     }

@@ -1802,14 +1802,16 @@ def poc_sync_task(options):
             {"_id": job_object_id},
             {"$set": {"status": "done", "plugin_cnt": plugin_cnt,
                       "completed_at": utils.curr_date(),
-                      "updated_at": utils.curr_date()}},
+                      "updated_at": utils.curr_date()},
+             "$unset": {"active_slot": ""}},
         )
         return True
     except Exception as exc:
         job_collection.update_one(
             {"_id": job_object_id},
             {"$set": {"status": "error", "error_type": type(exc).__name__,
-                      "updated_at": utils.curr_date()}},
+                      "updated_at": utils.curr_date()},
+             "$unset": {"active_slot": ""}},
         )
         logger.exception("POC sync worker failed")
         return False

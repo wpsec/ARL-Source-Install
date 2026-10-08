@@ -192,8 +192,8 @@ class ARLAssetScope(ARLResource):
         return utils.build_ret(ErrorMsg.Success, scope_data)
 
 
-# 删除资产范围字段（GET方式）
-delete_task_get_fields = ns.model('DeleteScopeByID',  {
+# 删除资产组中的单个范围字段
+delete_scope_item_fields = ns.model('DeleteScopeByID',  {
     'scope': fields.String(description="删除资产范围", required=True),
     'scope_id': fields.String(description="资产范围id", required=True)
 })
@@ -208,15 +208,15 @@ delete_task_post_fields = ns.model('DeleteScope',  {
 class DeleteARLAssetScope(ARLResource):
     """资产范围删除接口"""
     
-    parser = get_arl_parser(delete_task_get_fields, location='args')
+    parser = get_arl_parser(delete_scope_item_fields, location='args')
 
     _table = 'asset_scope'
 
     @auth
     @ns.expect(parser)
-    def get(self):
+    def delete(self):
         """
-        从资产组中删除单个资产范围（GET方式）
+        从资产组中删除单个资产范围。
         
         参数：
             - scope_id: 资产组ID

@@ -9,6 +9,11 @@ class _Collection(object):
     def __init__(self):
         self.documents = []
         self.updates = []
+        self.indexes = []
+
+    def create_index(self, keys, **options):
+        self.indexes.append((keys, options))
+        return options.get("name", "index")
 
     def insert_one(self, document):
         document = dict(document)

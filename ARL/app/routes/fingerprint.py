@@ -25,7 +25,7 @@ import time
 import yaml
 from werkzeug.datastructures import FileStorage
 from urllib.parse import quote
-from flask import make_response
+from flask import make_response, request
 from flask_restx import Resource, Api, reqparse, fields, Namespace
 from bson import ObjectId
 from app.utils import get_logger, auth, parse_human_rule, transform_rule_map
@@ -39,6 +39,9 @@ from . import base_query_fields, ARLResource, get_arl_parser
 ns = Namespace('fingerprint', description="指纹信息")
 
 logger = get_logger()
+
+MAX_FINGERPRINT_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_FINGERPRINT_REQUEST_BYTES = MAX_FINGERPRINT_UPLOAD_BYTES + 64 * 1024
 
 base_search_fields = {
     'name': fields.String(required=False, description="名称"),
@@ -172,12 +175,29 @@ class UploadARLFinger(ARLResource):
         """
         指纹上传
         """
+        if (request.content_length is not None
+                and request.content_length > MAX_FINGERPRINT_REQUEST_BYTES):
+            return utils.build_ret(
+                ErrorMsg.Error, {'msg': "指纹文件过大（最大 5MB）"}), 413
+
         args = file_upload.parse_args()
-        file_data = args['file'].read()
+        file_data = args['file'].read(MAX_FINGERPRINT_UPLOAD_BYTES + 1)
+        if len(file_data) > MAX_FINGERPRINT_UPLOAD_BYTES:
+            return utils.build_ret(
+                ErrorMsg.Error, {'msg': "指纹文件过大（最大 5MB）"}), 413
+
         try:
-            obj = yaml.load(file_data)
+            obj = yaml.safe_load(file_data)
             if not isinstance(obj, list):
                 return utils.build_ret(ErrorMsg.Error, {'msg': "not list obj"})
+
+            if any(
+                    not isinstance(rule, dict)
+                    or not isinstance(rule.get("name"), str)
+                    or not isinstance(rule.get("rule"), str)
+                    for rule in obj):
+                return utils.build_ret(
+                    ErrorMsg.Error, {'msg': "invalid fingerprint rule format"})
 
             error_cnt = 0
             success_cnt = 0

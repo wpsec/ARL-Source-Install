@@ -15,20 +15,56 @@ PoC类型：
 - 从NPoC项目同步最新PoC
 - 清空PoC数据库
 """
+import copy
+import threading
+
 from bson import ObjectId
 from flask import request
 from flask_restx import Resource, Api, reqparse, fields, Namespace
+from pymongo.errors import DuplicateKeyError
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.services.npoc import NPoC
 from app import utils, celerytask
 from app.config import Config
 from app.modules import ErrorMsg, TaskStatus, CeleryAction
-import copy
 
 ns = Namespace('poc', description="PoC信息")
 
 logger = get_logger()
+
+_POC_SYNC_INDEX_READY = False
+_POC_SYNC_INDEX_LOCK = threading.Lock()
+_POC_SYNC_ACTIVE_SLOT = "npoc"
+_POC_SYNC_ACTIVE_QUERY = {"status": {"$in": ["queued", "running"]}}
+
+
+def ensure_poc_sync_active_index(job_collection):
+    global _POC_SYNC_INDEX_READY
+    if _POC_SYNC_INDEX_READY:
+        return
+    with _POC_SYNC_INDEX_LOCK:
+        if _POC_SYNC_INDEX_READY:
+            return
+        job_collection.create_index(
+            [("active_slot", 1)],
+            unique=True,
+            partialFilterExpression={"active_slot": _POC_SYNC_ACTIVE_SLOT},
+            name="poc_sync_active_slot_unique",
+        )
+        _POC_SYNC_INDEX_READY = True
+
+
+def reused_poc_sync_response(active_job):
+    return utils.build_ret(
+        ErrorMsg.Success,
+        {
+            "job_id": str(active_job.get("_id")),
+            "celery_id": str(active_job.get("celery_id") or ""),
+            "status": active_job.get("status", "queued"),
+            "reused": True,
+        },
+    ), 202
 
 # PoC查询字段定义
 base_search_fields = {
@@ -190,27 +226,41 @@ class ARLPoCSync(ARLResource):
         principal = utils.current_principal() or {}
         owner_username = str(principal.get("username") or "").strip()
         job_collection = utils.conn_db("poc_sync_job")
+        try:
+            ensure_poc_sync_active_index(job_collection)
+        except Exception as exc:
+            logger.warning(
+                "ensure POC sync active index failed error_type=%s",
+                type(exc).__name__,
+            )
+            return utils.build_ret(
+                ErrorMsg.Error, {"status": "unavailable"}), 503
+
         active_job = job_collection.find_one(
-            {"status": {"$in": ["queued", "running"]}},
+            _POC_SYNC_ACTIVE_QUERY,
             {"_id": 1, "status": 1, "celery_id": 1},
         )
         if active_job:
-            return utils.build_ret(
-                ErrorMsg.Success,
-                {
-                    "job_id": str(active_job.get("_id")),
-                    "celery_id": str(active_job.get("celery_id") or ""),
-                    "status": active_job.get("status", "queued"),
-                    "reused": True,
-                },
-            ), 202
+            return reused_poc_sync_response(active_job)
         job_doc = {
             "status": "queued",
+            "active_slot": _POC_SYNC_ACTIVE_SLOT,
             "requested_by": owner_username,
             "created_at": utils.curr_date(),
             "updated_at": utils.curr_date(),
         }
-        insert_result = job_collection.insert_one(job_doc)
+        try:
+            insert_result = job_collection.insert_one(job_doc)
+        except DuplicateKeyError:
+            active_job = job_collection.find_one(
+                {"active_slot": _POC_SYNC_ACTIVE_SLOT, **_POC_SYNC_ACTIVE_QUERY},
+                {"_id": 1, "status": 1, "celery_id": 1},
+            )
+            if active_job:
+                return reused_poc_sync_response(active_job)
+            logger.warning("POC sync active slot raced with job completion")
+            return utils.build_ret(
+                ErrorMsg.Error, {"status": "retry"}), 503
         job_id = str(insert_result.inserted_id)
         try:
             celery_result = celerytask.arl_task_web.delay({
@@ -224,7 +274,7 @@ class ARLPoCSync(ARLResource):
                     "status": "error",
                     "updated_at": utils.curr_date(),
                     "error_type": type(exc).__name__,
-                }},
+                }, "$unset": {"active_slot": ""}},
             )
             logger.exception("submit POC sync job failed")
             return utils.build_ret(
