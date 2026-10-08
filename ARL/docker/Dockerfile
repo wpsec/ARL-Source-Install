@@ -98,7 +98,7 @@ FROM rockylinux:8
 WORKDIR /code
 ARG TARGETARCH
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-ARG PIP_INDEX_URL=https://pypi.mirrors.ustc.edu.cn/simple/
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
