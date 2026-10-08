@@ -35,6 +35,7 @@ from app import services
 from app import modules
 from app.modules import ScanPortType, CollectSource
 from app.services import fetchCert, BaseUpdateTask
+from app.services.portScan import PortScan
 from app.services.service_detection import (
     apply_npoc_service_result,
     build_sniffer_targets,
@@ -203,10 +204,21 @@ class ScanPort(object):
             logger.info("end port_scan result {}, elapse {}".format(len(ip_port_result), elapse))
 
         ip_info_obj = []
+        confirmed_fake_all_open_host_count = 0
+        confirmed_fake_all_open_filtered_port_count = 0
         for result in ip_port_result:
             curr_ip = result["ip"]
             result["domain"] = list(self.ipv4_map[curr_ip])
             result["cdn_name"] = self.ip_cdn_map.get(curr_ip, "")
+
+            if result.get("_confirmed_fake_all_open"):
+                original_ports = list(result.get("port_info", []) or [])
+                filtered_ports = PortScan._filter_confirmed_fake_all_open_ports(original_ports)
+                confirmed_fake_all_open_host_count += 1
+                confirmed_fake_all_open_filtered_port_count += max(
+                    0, len(original_ports) - len(filtered_ports)
+                )
+                result["port_info"] = filtered_ports
 
             port_info_obj_list = []
             for port_info in result["port_info"]:
@@ -221,6 +233,7 @@ class ScanPort(object):
             ip_info_data = dict(result)
             suspected_all_open = bool(ip_info_data.get("_suspected_all_open"))
             ip_info_data.pop("_suspected_all_open", None)
+            ip_info_data.pop("_confirmed_fake_all_open", None)
             ip_info_model = modules.IPInfo(**ip_info_data)
             # 后续 HTTP/SSL 探测需要知道该主机是否疑似全开，但不能污染资产序列化。
             setattr(ip_info_model, "_suspected_all_open", suspected_all_open)
@@ -235,7 +248,16 @@ class ScanPort(object):
             "cdn_skip_enabled": bool(self.skip_scan_cdn_ip),
             "cdn_target_count": len(self.have_cdn_ip_list),
             "cdn_skipped_target_count": skipped_cdn_ip_count,
+            "confirmed_fake_all_open_host_count": confirmed_fake_all_open_host_count,
+            "confirmed_fake_all_open_filtered_port_count": confirmed_fake_all_open_filtered_port_count,
         })
+        if confirmed_fake_all_open_host_count:
+            logger.warning(
+                "port_scan high-confidence fake all-open results filtered hosts:{} dropped_ports:{} kept_ports_per_host:6".format(
+                    confirmed_fake_all_open_host_count,
+                    confirmed_fake_all_open_filtered_port_count,
+                )
+            )
         if not all_ipv4_list and skipped_cdn_ip_count:
             scan_metrics.update({
                 "stage": "cdn_filter",

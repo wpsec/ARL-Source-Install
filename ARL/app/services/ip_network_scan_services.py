@@ -7,6 +7,7 @@
 from app import services, utils
 from app.config import Config
 from app.modules import ScanPortType
+from app.services.portScan import PortScan
 from app.services.task_result_write_service import TaskResultWriteService
 from app.services.probe_policy import normalize_port_id, select_probe_port_infos
 
@@ -61,6 +62,34 @@ class IPPortScanStageService(object):
         scan_port_option = self._build_scan_options()
         targets = str(task.ip_target or "").split()
         ip_port_result = self.services.port_scan(targets, **scan_port_option)
+
+        confirmed_fake_all_open_host_count = 0
+        confirmed_fake_all_open_filtered_port_count = 0
+        for ip_info in ip_port_result:
+            if not isinstance(ip_info, dict) or not ip_info.get("_confirmed_fake_all_open"):
+                continue
+            original_ports = list(ip_info.get("port_info", []) or [])
+            filtered_ports = PortScan._filter_confirmed_fake_all_open_ports(original_ports)
+            confirmed_fake_all_open_host_count += 1
+            confirmed_fake_all_open_filtered_port_count += max(
+                0, len(original_ports) - len(filtered_ports)
+            )
+            ip_info["port_info"] = filtered_ports
+
+        metrics = getattr(ip_port_result, "metrics", None)
+        if isinstance(metrics, dict):
+            metrics.update({
+                "confirmed_fake_all_open_host_count": confirmed_fake_all_open_host_count,
+                "confirmed_fake_all_open_filtered_port_count": confirmed_fake_all_open_filtered_port_count,
+            })
+        if confirmed_fake_all_open_host_count:
+            logger.warning(
+                "port_scan high-confidence fake all-open results filtered hosts:{} dropped_ports:{} kept_ports_per_host:6".format(
+                    confirmed_fake_all_open_host_count,
+                    confirmed_fake_all_open_filtered_port_count,
+                )
+            )
+
         task.ip_info_list.extend(ip_port_result)
 
         if task.task_tag == "monitor":

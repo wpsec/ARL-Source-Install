@@ -125,11 +125,13 @@ class UrlfinderExtractService:
         wih_records: List[WihRecord],
         waf_guard=None,
         discovery_context=None,
+        url_in_scope=None,
     ):
         self.sites = list(sites or [])
         self.wih_records = list(wih_records or [])
         self.waf_guard = waf_guard
         self.discovery_context = discovery_context
+        self.url_in_scope = url_in_scope if callable(url_in_scope) else None
 
         self.max_seed_pages = 80
         self.max_js_files = 120
@@ -270,6 +272,8 @@ class UrlfinderExtractService:
 
         host = self._extract_host(normalized)
         if not host or host not in self.allowed_hosts:
+            return ""
+        if self.url_in_scope is not None and not self.url_in_scope(normalized):
             return ""
 
         path_text = strip_route_method_suffix(parsed.path or "")
@@ -714,12 +718,14 @@ def run_urlfinder_extract(
     wih_records: List[WihRecord],
     waf_guard=None,
     discovery_context=None,
+    url_in_scope=None,
 ) -> List[WihRecord]:
     extractor = UrlfinderExtractService(
         sites=sites,
         wih_records=wih_records,
         waf_guard=waf_guard,
         discovery_context=discovery_context,
+        url_in_scope=url_in_scope,
     )
     started_at = time.monotonic()
     records = extractor.run()

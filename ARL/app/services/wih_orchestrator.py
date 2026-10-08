@@ -128,6 +128,28 @@ def _record_target_profiles(task, scan_sites, records, discovery_context):
         )
 
 
+def _persist_wih_records(task, raw_records, discovery_context):
+    """持久化已通过范围校验的记录，避免后续可选阶段失败丢失主扫描结果。"""
+    for raw_record in raw_records or []:
+        record = InfoHunter.normalize_wih_record(raw_record)
+        if not record:
+            continue
+        if record.fnv_hash in task.wih_record_set:
+            continue
+        if not task._wih_record_in_task_scope(record):
+            continue
+
+        task.add_wih_domain_set(record)
+        task._save_wih_record(record)
+        register_intel_candidate(
+            discovery_context,
+            getattr(record, "recordType", "") or getattr(record, "record_type", "") or "",
+            getattr(record, "content", "") or "",
+            getattr(record, "source", "") or "",
+            getattr(record, "site", "") or "",
+        )
+
+
 def _browser_runtime_sites(scan_sites, discovery_context):
     """只把画像明确建议 runtime 的站点交给浏览器 Collector。
 
@@ -715,6 +737,7 @@ class WihOrchestrator(object):
             else:
                 raw_records = wih_result
             records = set(raw_records or [])
+            _persist_wih_records(task, records, discovery_context)
             _record_target_profiles(
                 task,
                 scan_sites,
@@ -1045,29 +1068,7 @@ class WihOrchestrator(object):
             records,
             discovery_context,
         )
-
-        for raw_record in records:
-            record = InfoHunter.normalize_wih_record(raw_record)
-            if not record:
-                continue
-            if record.fnv_hash in task.wih_record_set:
-                continue
-            if not task._wih_record_in_task_scope(record):
-                continue
-
-            task.add_wih_domain_set(record)
-            task._save_wih_record(record)
-
-            # WIH 记录同步进共享候选图，供目录/探测等后续 stage 复用来源关系。
-            # WihRecord 的属性名是 recordType（构造参数才叫 record_type），
-            # 读错属性不抛异常只会静默丢候选，两种形态都要兼容。
-            register_intel_candidate(
-                getattr(task, "discovery_context", None),
-                getattr(record, "recordType", "") or getattr(record, "record_type", "") or "",
-                getattr(record, "content", "") or "",
-                getattr(record, "source", "") or "",
-                getattr(record, "site", "") or "",
-            )
+        _persist_wih_records(task, records, discovery_context)
 
         # 计划 7 第一批：收尾时把既有候选/Endpoint Registry 汇聚到任务内证据图。
         # adapter 只读 Registry；失败只影响诊断面，不影响旧结果写回。

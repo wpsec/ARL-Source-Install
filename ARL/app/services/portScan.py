@@ -249,10 +249,18 @@ class PortScan:
 
         return False
 
+    def _is_high_confidence_fake_all_open(self, open_port_count):
+        """只在全端口扫描几乎每个端口都开放时裁剪疑似伪结果。"""
+        if self.ports != "0-65535" or self.requested_port_count < 65535:
+            return False
+        if open_port_count < 65000:
+            return False
+        return float(open_port_count) / float(self.requested_port_count) >= 0.99
+
     @staticmethod
-    def _filter_suspected_ports(port_info_list):
+    def _filter_confirmed_fake_all_open_ports(port_info_list):
         """
-        疑似伪全开端口时，保留少量高价值端口继续后续流程。
+        高置信伪全开结果只保留常用端口，避免把扫描器的通用响应写成资产。
         """
         keep_ports = {80, 443, 8080, 8443, 22, 3389}
         filtered = []
@@ -370,10 +378,16 @@ class PortScan:
 
             total_open_count = len(port_info_list)
             suspected_all_open = self._is_suspected_all_open(total_open_count)
+            confirmed_fake_all_open = self._is_high_confidence_fake_all_open(
+                total_open_count
+            )
             if suspected_all_open:
                 logger.warning(
-                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} preserve_all:true".format(
-                        host, total_open_count, self.requested_port_count
+                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} high_confidence:{}".format(
+                        host,
+                        total_open_count,
+                        self.requested_port_count,
+                        confirmed_fake_all_open,
                     )
                 )
 
@@ -385,6 +399,7 @@ class PortScan:
                 "os_info": os_info,
                 # 仅作为当前扫描链路的内部标记，IPInfo 落库时不会改变既有文档字段。
                 "_suspected_all_open": suspected_all_open,
+                "_confirmed_fake_all_open": confirmed_fake_all_open,
             })
 
         return ip_info_list
@@ -403,6 +418,7 @@ class PortScan:
                     "port_info": [PortScan._normalize_port_info_item(x) for x in item.get("port_info", [])],
                     "os_info": item.get("os_info", {}) or {},
                     "_suspected_all_open": bool(item.get("_suspected_all_open")),
+                    "_confirmed_fake_all_open": bool(item.get("_confirmed_fake_all_open")),
                 }
                 continue
 
@@ -430,6 +446,10 @@ class PortScan:
                 old["os_info"] = item["os_info"]
             old["_suspected_all_open"] = bool(
                 old.get("_suspected_all_open") or item.get("_suspected_all_open")
+            )
+            old["_confirmed_fake_all_open"] = bool(
+                old.get("_confirmed_fake_all_open")
+                or item.get("_confirmed_fake_all_open")
             )
 
     def _run_batch_scan(
