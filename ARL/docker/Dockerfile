@@ -103,7 +103,7 @@ ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 ARG PYTHON_VERSION=3.10.20
 ARG GO_VERSION=1.22.4
 ARG RUST_VERSION=1.85.1
-ARG RUST_DIST_SERVER=https://rsproxy.cn
+ARG RUST_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
 ARG MATURIN_VERSION=1.8.6
 ARG NCRACK_VERSION=0.7
 ARG NUCLEI_VERSION=3.7.0
@@ -259,8 +259,7 @@ RUN --mount=type=cache,id=arl-playwright-${TARGETARCH},target=/root/.cache/arl-p
     fi; \
     cp -a "${BROWSER_CACHE}/." "${PLAYWRIGHT_BROWSERS_PATH}/"
 
-# 与 ncrack/python/go 同规：tools/rust/ 下有离线包则优先使用（国内网络
-# 对 static.rust-lang.org 不稳，镜像站 rust-static 路径全部 404/假 200）。
+# tools/rust/ 下有离线包时优先使用；在线下载默认从中科大 Rust 镜像获取。
 # BuildKit bind mount：离线包只进构建过程，不作为 174MB 层烘进镜像。
 # 在与生产运行时相同的 Rocky/glibc 基线中构建 abi3 wheel，避免构建机 glibc 版本高于运行时。
 COPY ARL/native/arl_accel/ /code/native/arl_accel/
@@ -287,11 +286,11 @@ RUN --mount=type=bind,src=tools/rust,dst=/tmp/rust-offline \
     fi; \
     if [ "${RUST_DOWNLOAD_OK}" -ne 1 ]; then \
       RUST_DIST_SERVER="${RUST_DIST_SERVER%/}"; \
-      if [ -z "${RUST_DIST_SERVER}" ]; then RUST_DIST_SERVER="https://rsproxy.cn"; fi; \
+      if [ -z "${RUST_DIST_SERVER}" ]; then RUST_DIST_SERVER="https://mirrors.ustc.edu.cn/rust-static"; fi; \
       for URL in \
         "${RUST_DIST_SERVER}/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
         "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
-        "https://mirrors.ustc.edu.cn/rust-static/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
+        "https://mirrors.ustc.edu.cn/rust-static/dist/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz" \
         "https://mirrors.huaweicloud.com/rust-static/${RUST_VERSION}/rust-${RUST_VERSION}-${RUST_ARCH}.tar.xz"; do \
         echo "try download ${URL}"; \
         rm -f "${RUST_TARBALL}"; \
