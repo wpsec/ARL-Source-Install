@@ -24,6 +24,7 @@ from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app import utils
 from app.modules import ErrorMsg
+from app.services.collection_query_service import get_task_ids_by_name
 
 # 创建证书信息命名空间
 ns = Namespace('cert', description="证书信息")
@@ -188,6 +189,23 @@ class ARLCert(ARLResource):
         - 审计证书配置
         """
         args = self.parser.parse_args()
+        task_name = str(args.get("task_name", "") or "").strip()
+        if task_name:
+            task_ids = get_task_ids_by_name(task_name, args.get("task_id"))
+            if not task_ids:
+                default_field = self.get_default_field(args)
+                return {
+                    "page": default_field.get("page", 1),
+                    "size": default_field.get("size", 10),
+                    "total": 0,
+                    "items": [],
+                    "query": {"task_id": {"$in": []}},
+                    "code": 200,
+                }
+            args = dict(args)
+            args.pop("task_name", None)
+            args["task_id"] = ",".join(task_ids)
+
         task_id = str(args.get("task_id", "") or "").strip()
         scan_mode = str(args.get("scan_mode", "") or "").strip().lower()
 

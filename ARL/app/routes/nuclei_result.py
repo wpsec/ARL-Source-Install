@@ -26,6 +26,7 @@ from flask_restx import fields, Namespace
 from app import utils
 from app.modules import ErrorMsg
 from app.utils import get_logger, auth
+from app.services.collection_query_service import get_task_ids_by_name
 
 from . import ARLResource, base_query_fields, get_arl_parser
 
@@ -556,6 +557,23 @@ class ARLUrl(ARLResource):
         查询 PoC 扫描结果（统一聚合 Nuclei + afrog）。
         """
         args = self.parser.parse_args()
+        task_name = str(args.get("task_name", "") or "").strip()
+        if task_name:
+            task_ids = get_task_ids_by_name(task_name, args.get("task_id"))
+            if not task_ids:
+                default_field = self.get_default_field(args)
+                return {
+                    "page": default_field.get("page", 1),
+                    "size": default_field.get("size", 10),
+                    "total": 0,
+                    "items": [],
+                    "query": {"task_name": task_name},
+                    "code": 200,
+                }
+            args = dict(args)
+            args.pop("task_name", None)
+            args["task_id"] = ",".join(task_ids)
+
         default_field = self.get_default_field(args)
         page = default_field.get("page", 1)
         size = default_field.get("size", 10)

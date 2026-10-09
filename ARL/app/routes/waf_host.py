@@ -131,6 +131,7 @@ class ARLWafHost(ARLResource):
         order = str(args.get("order") or "-_id").strip()
 
         task_id_list = _split_task_ids(args.get("task_id", ""))
+        task_name = str(args.get("task_name", "") or "").strip()
         ip_kw = str(args.get("ip") or "").strip().lower()
         domain_kw = str(args.get("domain") or "").strip().lower()
         waf_name_kw = str(args.get("waf_name") or "").strip().lower()
@@ -157,6 +158,8 @@ class ARLWafHost(ARLResource):
                 task_query["_id"] = {"$in": object_id_list}
             else:
                 return {"code": 200, "page": page, "size": size, "total": 0, "items": []}
+        if task_name:
+            task_query["name"] = task_name
 
         task_cursor = utils.conn_db("task").find(
             task_query,

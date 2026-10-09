@@ -16,7 +16,7 @@ export const USERNAME_KEY = 'arl-username';
 
 export const ACTIVE_MODULE_KEY = 'arl-active-module';
 
-// 任务明细依赖的 task_id 等筛选条件必须和激活模块一起恢复，否则刷新后会退回全局列表，
+// 任务明细依赖的 task_id/task_name 等筛选条件必须和激活模块一起恢复，否则刷新后会退回全局列表，
 // 让已经落库的扫描结果看起来像丢失。
 export const ACTIVE_MODULE_FILTERS_KEY = 'arl-active-module-filters';
 

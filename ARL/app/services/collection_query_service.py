@@ -83,6 +83,27 @@ def parse_refresh_flag(value):
     return text in {"1", "true", "yes", "on", "refresh", "force"}
 
 
+def get_task_ids_by_name(task_name, task_id_filter=None):
+    """按精确任务名返回对应的字符串任务 ID。"""
+    name = str(task_name or "").strip()
+    if not name:
+        return []
+
+    task_ids = [
+        str(item["_id"])
+        for item in conn("task").find({"name": name}, {"_id": 1})
+        if isinstance(item, dict) and item.get("_id") is not None
+    ]
+    allowed_task_ids = {
+        item
+        for item in re.split(r"[,\s]+", str(task_id_filter or "").strip())
+        if item
+    }
+    if allowed_task_ids:
+        task_ids = [item for item in task_ids if item in allowed_task_ids]
+    return task_ids
+
+
 def normalize_query_classification(value):
     text = str(value or "").strip().lower()
     if text not in QUERY_CLASSIFICATIONS:
@@ -244,9 +265,17 @@ def build_collection_data(args, collection, item_builder, query_serializer):
         }
 
     def _loader():
-        query = build_db_query(working_args)
+        query_args = working_args.copy()
+        task_name = str(query_args.pop("task_name", "") or "").strip()
+        query = build_db_query(query_args)
         query = normalize_domain_source_query(collection, query)
         query = normalize_task_status_query(collection, working_args, query)
+        if task_name:
+            if collection == "task":
+                task_name_query = {"name": task_name}
+            else:
+                task_name_query = {"task_id": {"$in": get_task_ids_by_name(task_name)}}
+            query = {"$and": [query, task_name_query]} if query else task_name_query
 
         result = conn(collection).find(query).sort(orderby_list).skip(size * (page - 1)).limit(size)
         if query:

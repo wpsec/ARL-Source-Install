@@ -2742,7 +2742,6 @@ export function TableModuleView({
     const taskName = String(taskNameRaw || '').trim();
     if (!taskName) return [];
 
-    // Phase 3 数据层：命令式一次性读取也走 React Query 缓存（同名任务查看去重）。
     const response = await queryClient.fetchQuery({
       queryKey: ['module-task-ids-by-name', token, taskName],
       staleTime: 30_000,
@@ -2751,27 +2750,47 @@ export function TableModuleView({
         query: {
           page: 1,
           size: 10000,
-          name: taskName,
+          task_name: taskName,
           order: '-_id',
         },
       }),
     });
 
     const taskItems = normalizeListData(response).items || [];
-    const matchedTaskItems = taskItems.filter((item: any) => String(item?.name || '').trim() === taskName);
     return Array.from(
       new Set(
-        matchedTaskItems
-          .map((item: any) => {
-            return (
-              normalizeRowIdValue(item?._id) ||
-              normalizeRowIdValue(item?.task_id) ||
-              normalizeRowIdValue(item?.id)
-            );
-          })
+        taskItems
+          .map((item: any) => (
+            normalizeRowIdValue(item?._id) ||
+            normalizeRowIdValue(item?.task_id) ||
+            normalizeRowIdValue(item?.id)
+          ))
           .filter((id: string) => Boolean(id))
       )
     );
+  }, [queryClient, token]);
+
+  const hasTaskByName = useCallback(async (taskNameRaw: string) => {
+    const taskName = String(taskNameRaw || '').trim();
+    if (!taskName) return false;
+
+    // 精确任务名查询用于保留“无匹配任务”的反馈，不把所有任务 ID 塞进 URL。
+    const response = await queryClient.fetchQuery({
+      queryKey: ['module-task-name-exists', token, taskName],
+      staleTime: 30_000,
+      queryFn: () => requestApi(token, '/task/', {
+        method: 'GET',
+        query: {
+          page: 1,
+          size: 1,
+          task_name: taskName,
+          order: '-_id',
+        },
+      }),
+    });
+
+    const taskItems = normalizeListData(response).items || [];
+    return taskItems.some((item: any) => String(item?.name || '').trim() === taskName);
   }, [queryClient, token]);
 
   const openTaskViewByName = async () => {
@@ -2787,16 +2806,14 @@ export function TableModuleView({
     setSuccess('');
 
     try {
-      const taskIds = await fetchTaskIdsByName(taskName);
-
-      if (taskIds.length === 0) {
+      const taskExists = await hasTaskByName(taskName);
+      if (!taskExists) {
         setError(`未找到任务名为“${taskName}”的任务`);
         return;
       }
 
-      // 使用逗号拼接 task_id，后端会转换为 $in 查询，展示该任务名下全部任务扫描结果。
-      onOpenModule('site', { task_id: taskIds.join(',') });
-      setSuccess(`已切换查看任务名“${taskName}”的 ${taskIds.length} 条扫描结果`);
+      onOpenModule('site', { task_name: taskName });
+      setSuccess(`已切换查看任务名“${taskName}”的全部扫描结果`);
     } catch (err: any) {
       setError(err?.message || '同名任务查看失败');
     }

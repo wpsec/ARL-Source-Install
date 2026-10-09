@@ -15,6 +15,7 @@ import re
 from flask_restx import Resource, Api, reqparse, fields, Namespace
 from app.utils import conn_db, get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
+from app.services.collection_query_service import get_task_ids_by_name
 
 ns = Namespace('service', description="系统服务信息")
 
@@ -269,6 +270,23 @@ class ARLService(ARLResource):
             - task_id: 关联的任务ID
         """
         args = self.parser.parse_args()
+        task_name = str(args.get("task_name", "") or "").strip()
+        if task_name:
+            task_ids = get_task_ids_by_name(task_name, args.get("task_id"))
+            if not task_ids:
+                default_field = self.get_default_field(args)
+                return {
+                    "page": default_field.get("page", 1),
+                    "size": default_field.get("size", 10),
+                    "total": 0,
+                    "items": [],
+                    "query": {"task_name": task_name},
+                    "code": 200,
+                }
+            args = dict(args)
+            args.pop("task_name", None)
+            args["task_id"] = ",".join(task_ids)
+
         if not _service_collection_has_records(args):
             return _fallback_service_response(args, self.build_return_items)
         data = self.build_data(args=args, collection='service')

@@ -4,7 +4,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getModuleById } from '../config/modules';
+import { getModuleById, TASK_DETAIL_TABS } from '../config/modules';
 import { installFetchMock } from '../test/fetchMock';
 import { TableModuleView } from './TableModuleView';
 
@@ -13,14 +13,18 @@ function renderTaskView() {
   return renderViewWithClient(client);
 }
 
-function renderViewWithClient(client: QueryClient, moduleId = 'task') {
+function renderViewWithClient(
+  client: QueryClient,
+  moduleId = 'task',
+  externalFilters: Record<string, string> = {},
+) {
   return render(
     <QueryClientProvider client={client}>
       <TableModuleView
         module={getModuleById(moduleId)}
         token="tk-page"
         onOpenModule={vi.fn()}
-        externalFilters={{}}
+        externalFilters={externalFilters}
         onClearExternalFilters={vi.fn()}
         scrollResetToken={0}
         refreshSignal={0}
@@ -254,11 +258,13 @@ describe('TableModuleView Phase 3 选项/共享读取（React Query）', () => {
 describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
   const sizeOneGets = (calls: Array<{ url: string }>) =>
     calls.filter((c) => c.url.includes('size=1') && !c.url.includes('size=10')).length;
-  const nameQueryGets = (calls: Array<{ url: string }>) =>
-    calls.filter((c) => c.url.includes('size=10000') && c.url.includes('name=n1')).length;
+  const taskNameCheckGets = (calls: Array<{ url: string }>) =>
+    calls.filter((c) => c.url.includes('size=1&') && c.url.includes('task_name=n1')).length;
+  const taskIdsByNameGets = (calls: Array<{ url: string }>) =>
+    calls.filter((c) => c.url.includes('size=10000') && c.url.includes('task_name=n1')).length;
   const countBy = (calls: Array<{ url: string; method: string }>, method: string, fragment: string) =>
     calls.filter((c) => c.method === method && c.url.includes(fragment)).length;
-  // 任务名查询与主列表共用 /api/task/：返回一条 n1 任务供同名/导出链路命中。
+  // 精确任务名查询与主列表共用 /api/task/：返回一条 n1 任务供同名/导出链路命中。
   const TASK_N1_ROUTES = {
     '/api/task/': [200, { code: 200, data: { items: [{ name: 'n1', _id: 't1', status: 'done' }], total: 1, page: 1, size: 20 } }],
   } as Record<string, [number, unknown]>;
@@ -276,7 +282,36 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     expect(sizeOneGets(calls)).toBe(afterFirst);
   });
 
-  it('同名任务查看：fetchQuery 按名称键去重，二次点击复用缓存', async () => {
+  it('同名任务详情的全部 tab 计数使用短 task_name 参数', async () => {
+    const calls = installFetchMock();
+    renderViewWithClient(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      'site',
+      { task_name: '1' },
+    );
+
+    for (const tab of TASK_DETAIL_TABS) {
+      const listPath = getModuleById(tab.id).listPath;
+      expect(listPath).toBeTruthy();
+      await waitFor(() => {
+        expect(calls.some((call) => (
+          call.url.includes(`/api${listPath}`) &&
+          call.url.includes('size=1&') &&
+          call.url.includes('task_name=1')
+        ))).toBe(true);
+      });
+    }
+
+    const taskDetailCountCalls = calls.filter((call) => (
+      TASK_DETAIL_TABS.some((tab) => call.url.includes(`/api${getModuleById(tab.id).listPath}`)) &&
+      call.url.includes('size=1&')
+    ));
+    expect(taskDetailCountCalls).toHaveLength(TASK_DETAIL_TABS.length);
+    expect(taskDetailCountCalls.every((call) => call.url.includes('task_name=1'))).toBe(true);
+    expect(taskDetailCountCalls.every((call) => !call.url.includes('task_id='))).toBe(true);
+  });
+
+  it('同名任务查看：用精确任务名筛选并复用检查缓存', async () => {
     const onOpenModule = vi.fn();
     const calls = installFetchMock({ routes: TASK_N1_ROUTES });
     render(
@@ -300,14 +335,14 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     const viewByNameBtn = screen.getByRole('button', { name: '同名任务查看' });
     await waitFor(() => expect(viewByNameBtn.hasAttribute('disabled')).toBe(false));
     fireEvent.click(viewByNameBtn);
-    await waitFor(() => expect(nameQueryGets(calls)).toBe(1));
+    await waitFor(() => expect(taskNameCheckGets(calls)).toBe(1));
     fireEvent.click(viewByNameBtn);
     await new Promise((resolve) => window.setTimeout(resolve, 60));
-    expect(nameQueryGets(calls)).toBe(1);
-    expect(onOpenModule).toHaveBeenLastCalledWith('site', { task_id: 't1' });
+    expect(taskNameCheckGets(calls)).toBe(1);
+    expect(onOpenModule).toHaveBeenLastCalledWith('site', { task_name: 'n1' });
   });
 
-  it('报告导出复用同名任务查询：名称键不重发，导出事务链路完整', async () => {
+  it('报告导出按精确任务名获取 ID，导出事务链路完整', async () => {
     (URL as unknown as { createObjectURL: (b: unknown) => string }).createObjectURL = vi.fn(() => 'blob:x');
     (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
     const calls = installFetchMock({
@@ -339,7 +374,7 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     const viewByNameBtn = screen.getByRole('button', { name: '同名任务查看' });
     await waitFor(() => expect(viewByNameBtn.hasAttribute('disabled')).toBe(false));
     fireEvent.click(viewByNameBtn);
-    await waitFor(() => expect(nameQueryGets(calls)).toBe(1));
+    await waitFor(() => expect(taskNameCheckGets(calls)).toBe(1));
 
     const exportBtn = screen.getByRole('button', { name: /报告导出/ });
     await waitFor(() => expect(exportBtn.hasAttribute('disabled')).toBe(false));
@@ -348,7 +383,8 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     await waitFor(() => expect(countBy(calls, 'POST', '/export/job')).toBe(1));
     // 反馈文案在 success 条与导出弹窗中跨节点拆分，做存在性断言即可。
     await waitFor(() => expect(document.body.textContent).toContain('导出成功'));
-    // 导出前的 id 解析命中同名查看的 fetchQuery 缓存：size=10000 仍只有 1 次。
-    expect(nameQueryGets(calls)).toBe(1);
+    // 导出仍按名称取 ID；列表查看自身只传 task_name，不产生长查询 URL。
+    expect(taskNameCheckGets(calls)).toBe(1);
+    expect(taskIdsByNameGets(calls)).toBe(1);
   });
 });

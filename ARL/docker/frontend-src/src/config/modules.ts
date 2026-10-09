@@ -2026,7 +2026,8 @@ export function getDefaultModulePageSize(moduleId: string, filters?: JsonValue):
   const isTaskDetailModule = TASK_DETAIL_TABS.some((tab) => tab.id === moduleId);
   if (!isTaskDetailModule) return 50;
   const taskId = String((filters || {}).task_id || '').trim();
-  if (taskId) return 200;
+  const taskName = String((filters || {}).task_name || '').trim();
+  if (taskId || taskName) return 200;
   return 50;
 }
 

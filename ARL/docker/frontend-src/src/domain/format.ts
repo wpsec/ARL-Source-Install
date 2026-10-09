@@ -249,6 +249,7 @@ export const fieldLabelMap: Record<string, string> = {
   policy_id: '策略ID',
   scope_id: '资产组ID',
   task_id: '任务ID',
+  task_name: '任务名称',
   task_ids: '任务ID列表',
   job_id: '监控任务ID',
   keyword: '关键字',

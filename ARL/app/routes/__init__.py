@@ -47,6 +47,7 @@ base_query_fields = {
     'size': fields.Integer(description="页面大小", example=10),
     'order': fields.String(description="排序字段", example='_id'),
     '_refresh': fields.String(description="强制刷新缓存（1/true）", example='1'),
+    'task_name': fields.String(description="按精确任务名筛选关联结果"),
     'classification': fields.String(
         description="查询分类（unknown|business|credential_like）",
         example='business',
