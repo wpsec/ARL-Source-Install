@@ -98,6 +98,7 @@ export function ModuleRowOperations({
           onClick={() => actions.syncTaskRow(id, row)}
           disabled={taskPending || !taskDone}
           className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          title={taskPending ? '任务操作进行中' : taskDone ? '同步任务数据' : '任务结束后可同步'}
         >
           {pendingAction === 'sync' ? '同步中...' : '同步'}
         </button>
@@ -130,6 +131,7 @@ export function ModuleRowOperations({
           onClick={() => actions.stopTaskRow(id)}
           disabled={taskPending || taskDone}
           className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          title={taskPending ? '任务操作进行中' : taskDone ? '任务已结束，无需停止' : '停止任务'}
         >
           {pendingAction === 'stop' ? '停止中...' : '停止'}
         </button>
@@ -144,6 +146,7 @@ export function ModuleRowOperations({
           onClick={() => actions.restartTaskRow(id)}
           disabled={taskPending || !taskDone}
           className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          title={taskPending ? '任务操作进行中' : taskDone ? '重启任务' : '任务结束后可重启'}
         >
           {pendingAction === 'restart' ? '重启中...' : '重启'}
         </button>
@@ -226,8 +229,12 @@ export function ModuleRowOperations({
             编辑
           </button>
         ) : null}
-        <button onClick={() => actions.deletePolicyRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-          删除
+        <button
+          onClick={() => actions.deletePolicyRow(id)}
+          disabled={Boolean(pendingAction)}
+          className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+        >
+          {pendingAction === 'delete' ? '删除中...' : '删除'}
         </button>
       </div>
     );
@@ -237,16 +244,28 @@ export function ModuleRowOperations({
     return (
       <div className={ROW_OPERATION_GROUP_CLASS}>
         {String(row?.status || '').toLowerCase() === 'stop' ? (
-          <button onClick={() => actions.recoverTaskScheduleRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-            恢复
+          <button
+            onClick={() => actions.recoverTaskScheduleRow(id)}
+            disabled={Boolean(pendingAction)}
+            className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          >
+            {pendingAction === 'recover' ? '恢复中...' : '恢复'}
           </button>
         ) : (
-          <button onClick={() => actions.stopTaskScheduleRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-            停止
+          <button
+            onClick={() => actions.stopTaskScheduleRow(id)}
+            disabled={Boolean(pendingAction)}
+            className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          >
+            {pendingAction === 'stop' ? '停止中...' : '停止'}
           </button>
         )}
-        <button onClick={() => actions.deleteTaskScheduleRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-          删除
+        <button
+          onClick={() => actions.deleteTaskScheduleRow(id)}
+          disabled={Boolean(pendingAction)}
+          className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+        >
+          {pendingAction === 'delete' ? '删除中...' : '删除'}
         </button>
       </div>
     );
@@ -257,13 +276,22 @@ export function ModuleRowOperations({
       <div className={ROW_OPERATION_GROUP_CLASS}>
         <button
           onClick={() => actions.stopGithubTaskRow(id)}
-          disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
+          disabled={Boolean(pendingAction) || ['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
+          className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          title={pendingAction
+            ? '任务操作进行中'
+            : ['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())
+              ? '任务已结束，无需停止'
+              : '停止 GitHub 监控任务'}
+        >
+          {pendingAction === 'stop' ? '停止中...' : '停止'}
+        </button>
+        <button
+          onClick={() => actions.deleteGithubTaskRow(id)}
+          disabled={Boolean(pendingAction)}
           className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
         >
-          停止
-        </button>
-        <button onClick={() => actions.deleteGithubTaskRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-          删除
+          {pendingAction === 'delete' ? '删除中...' : '删除'}
         </button>
       </div>
     );
@@ -288,16 +316,28 @@ export function ModuleRowOperations({
           </button>
         ) : null}
         {String(row?.status || '').toLowerCase() === 'stop' ? (
-          <button onClick={() => actions.recoverGithubSchedulerRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-            恢复
+          <button
+            onClick={() => actions.recoverGithubSchedulerRow(id)}
+            disabled={Boolean(pendingAction)}
+            className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          >
+            {pendingAction === 'recover' ? '恢复中...' : '恢复'}
           </button>
         ) : (
-          <button onClick={() => actions.stopGithubSchedulerRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-            停止
+          <button
+            onClick={() => actions.stopGithubSchedulerRow(id)}
+            disabled={Boolean(pendingAction)}
+            className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+          >
+            {pendingAction === 'stop' ? '停止中...' : '停止'}
           </button>
         )}
-        <button onClick={() => actions.deleteGithubSchedulerRow(id)} className={ROW_OPERATION_BUTTON_CLASS}>
-          删除
+        <button
+          onClick={() => actions.deleteGithubSchedulerRow(id)}
+          disabled={Boolean(pendingAction)}
+          className={ROW_OPERATION_DISABLED_BUTTON_CLASS}
+        >
+          {pendingAction === 'delete' ? '删除中...' : '删除'}
         </button>
       </div>
     );

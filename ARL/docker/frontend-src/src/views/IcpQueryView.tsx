@@ -414,6 +414,7 @@ export function IcpQueryView({ token }: { token: string }) {
   });
 
   const run = async (label: string, callback: () => Promise<void>) => {
+    if (busy) return;
     setBusy(label);
     setError('');
     setNotice('');
@@ -491,7 +492,11 @@ export function IcpQueryView({ token }: { token: string }) {
     await logsQuery.refetch();
   });
 
-  const download = (params: Record<string, string>) => run(`download-${params.format}`, async () => {
+  const downloadBusyKey = (params: Record<string, string>) => (
+    `download-${params.task_id || 'history'}-${params.format}`
+  );
+  const isDownloadBusy = (params: Record<string, string>) => busy === downloadBusyKey(params);
+  const download = (params: Record<string, string>) => run(downloadBusyKey(params), async () => {
     await requestApi(token, '/icp/export', { method: 'GET', query: params, download: true });
     setNotice('导出文件已开始下载');
   });
@@ -591,7 +596,8 @@ export function IcpQueryView({ token }: { token: string }) {
                   </div>
                   {singleTask && (singleTask.status === 'queued' || singleTask.status === 'running') ? (
                     <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void cancelTask(singleTask.task_id, 'single')} disabled={Boolean(busy)}>
-                      <XCircle className="h-4 w-4" />取消查询
+                      {busy === `cancel-${singleTask.task_id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                      {busy === `cancel-${singleTask.task_id}` ? '取消中...' : '取消查询'}
                     </button>
                   ) : null}
                 </div>
@@ -651,9 +657,15 @@ export function IcpQueryView({ token }: { token: string }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div><h2 className="card-title text-lg">最近批量任务</h2><div className="mt-1 min-w-0 max-w-full font-mono text-xs text-content-muted"><IcpTextCell value={batchTask.task_id} label="任务 ID" /></div></div>
                   <div className="flex flex-wrap gap-2">
-                    <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'json', task_id: batchTask.task_id })} aria-label="导出 JSON" title="导出 JSON"><Download className="h-3.5 w-3.5" />JSON</button>
-                    <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'xlsx', task_id: batchTask.task_id })} aria-label="导出 Excel" title="导出 Excel"><Download className="h-3.5 w-3.5" />Excel</button>
-                    {(batchTask.status === 'queued' || batchTask.status === 'running') ? <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void cancelTask(batchTask.task_id, 'batch')} disabled={Boolean(busy)}><XCircle className="h-4 w-4" />取消</button> : null}
+                    <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'json', task_id: batchTask.task_id })} disabled={Boolean(busy)} aria-label="导出 JSON" title={isDownloadBusy({ format: 'json', task_id: batchTask.task_id }) ? 'JSON 导出中...' : '导出 JSON'}>
+                      {isDownloadBusy({ format: 'json', task_id: batchTask.task_id }) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      {isDownloadBusy({ format: 'json', task_id: batchTask.task_id }) ? '导出中...' : 'JSON'}
+                    </button>
+                    <button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'xlsx', task_id: batchTask.task_id })} disabled={Boolean(busy)} aria-label="导出 Excel" title={isDownloadBusy({ format: 'xlsx', task_id: batchTask.task_id }) ? 'Excel 导出中...' : '导出 Excel'}>
+                      {isDownloadBusy({ format: 'xlsx', task_id: batchTask.task_id }) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                      {isDownloadBusy({ format: 'xlsx', task_id: batchTask.task_id }) ? '导出中...' : 'Excel'}
+                    </button>
+                    {(batchTask.status === 'queued' || batchTask.status === 'running') ? <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void cancelTask(batchTask.task_id, 'batch')} disabled={Boolean(busy)}>{busy === `cancel-${batchTask.task_id}` ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}{busy === `cancel-${batchTask.task_id}` ? '取消中...' : '取消'}</button> : null}
                   </div>
                 </div>
                 <TaskSummary task={batchTask} />
@@ -680,9 +692,28 @@ export function IcpQueryView({ token }: { token: string }) {
                 <select className={CONSOLE_SELECT_CLASS} value={historyStatus} onChange={(event) => { setHistoryStatus(event.target.value); setHistoryPage(1); }}><option value="">全部状态</option><option value="succeeded">已完成</option><option value="empty">无结果</option><option value="failed">失败</option></select>
                 <input className={CONSOLE_INPUT_CLASS} type="date" value={historyFrom} onChange={(event) => { setHistoryFrom(event.target.value); setHistoryPage(1); }} aria-label="开始日期" />
                 <input className={CONSOLE_INPUT_CLASS} type="date" value={historyTo} onChange={(event) => { setHistoryTo(event.target.value); setHistoryPage(1); }} aria-label="结束日期" />
-                <div className="flex gap-2"><button className={`${CONSOLE_SECONDARY_BUTTON_CLASS} flex-1`} onClick={() => void historyQuery.refetch()}><RefreshCw className="h-4 w-4" />刷新</button><button className={CONSOLE_DANGER_BUTTON_CLASS} onClick={() => void clearHistory()} disabled={Boolean(busy)}><Trash2 className="h-4 w-4" />清空</button></div>
+                <div className="flex gap-2"><button className={`${CONSOLE_SECONDARY_BUTTON_CLASS} flex-1`} onClick={() => void historyQuery.refetch()} disabled={historyQuery.isFetching || Boolean(busy)}><RefreshCw className={`h-4 w-4 ${historyQuery.isFetching ? 'animate-spin' : ''}`} />{historyQuery.isFetching ? '刷新中...' : '刷新'}</button><button className={CONSOLE_DANGER_BUTTON_CLASS} onClick={() => void clearHistory()} disabled={Boolean(busy)}>{busy === 'clear-history' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}{busy === 'clear-history' ? '清空中...' : '清空'}</button></div>
               </div>
-              <div className="flex flex-wrap justify-end gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'json', type: historyType, keyword: historyKeyword, status: historyStatus, created_from: historyFrom, created_to: historyTo })}><Download className="h-3.5 w-3.5" />JSON</button><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void download({ format: 'xlsx', type: historyType, keyword: historyKeyword, status: historyStatus, created_from: historyFrom, created_to: historyTo })}><Download className="h-3.5 w-3.5" />Excel</button></div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
+                  onClick={() => void download({ format: 'json', type: historyType, keyword: historyKeyword, status: historyStatus, created_from: historyFrom, created_to: historyTo })}
+                  disabled={Boolean(busy)}
+                  title={isDownloadBusy({ format: 'json' }) ? 'JSON 导出中...' : '导出 JSON'}
+                >
+                  {isDownloadBusy({ format: 'json' }) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {isDownloadBusy({ format: 'json' }) ? '导出中...' : 'JSON'}
+                </button>
+                <button
+                  className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
+                  onClick={() => void download({ format: 'xlsx', type: historyType, keyword: historyKeyword, status: historyStatus, created_from: historyFrom, created_to: historyTo })}
+                  disabled={Boolean(busy)}
+                  title={isDownloadBusy({ format: 'xlsx' }) ? 'Excel 导出中...' : '导出 Excel'}
+                >
+                  {isDownloadBusy({ format: 'xlsx' }) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  {isDownloadBusy({ format: 'xlsx' }) ? '导出中...' : 'Excel'}
+                </button>
+              </div>
             </div>
           </section>
           <section className={CONSOLE_PANEL_CLASS}>
@@ -699,8 +730,8 @@ export function IcpQueryView({ token }: { token: string }) {
 
       {tab === 'tasks' ? (
         <div className="space-y-5">
-          <section className={CONSOLE_PANEL_CLASS}><div className="card-body"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="card-title text-lg">批量任务</h2><p className="mt-1 text-sm text-content-muted">查看历史批量任务及其逐项执行状态。</p></div><div className="flex gap-2"><select className="select select-bordered select-sm" value={taskStatus} onChange={(event) => { setTaskStatus(event.target.value); setTaskPage(1); }}><option value="">全部状态</option><option value="queued">排队中</option><option value="running">运行中</option><option value="succeeded">已完成</option><option value="partial">部分完成</option><option value="failed">失败</option><option value="cancelled">已取消</option></select><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void batchListQuery.refetch()}><RefreshCw className="h-3.5 w-3.5" />刷新</button></div></div></div></section>
-          <section className={CONSOLE_PANEL_CLASS}><div className="card-body p-0"><QueryError error={batchListQuery.error} text="批量任务列表加载失败" />{!batchListQuery.isError && (batchListQuery.isFetching && !taskItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : taskItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[1030px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 250 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 300 }} /></colgroup><thead><tr><th>创建时间</th><th>类型</th><th>任务 ID</th><th>状态</th><th>进度</th><th>操作</th></tr></thead><tbody>{taskItems.map((item) => <tr key={item.task_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all font-mono text-xs"><IcpTextCell value={item.task_id} label="任务 ID" /></td><td><StatusBadge status={item.status} /></td><td>{(item.succeeded_count || 0) + (item.empty_count || 0) + (item.failed_count || 0) + (item.cancelled_count || 0)}/{item.total || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setBatchTaskId(item.task_id); setTab('batch'); }}>查看</button>{['succeeded', 'partial', 'failed', 'cancelled'].includes(item.status) ? <><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteTask(item.task_id)} disabled={Boolean(busy)} aria-label="删除批量任务" title="删除批量任务"><Trash2 className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'json', task_id: item.task_id })} aria-label="导出 JSON" title="导出 JSON"><Download className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'xlsx', task_id: item.task_id })} aria-label="导出 Excel" title="导出 Excel"><Download className="h-4 w-4" /></button></> : <button className="btn btn-ghost btn-sm" onClick={() => void cancelTask(item.task_id, 'batch')} disabled={Boolean(busy)} aria-label="取消批量任务" title="取消批量任务"><XCircle className="h-4 w-4" /></button>}</div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无批量任务" />)}<Pagination page={Number(taskData.page || taskPage)} size={Number(taskData.size || 20)} total={Number(taskData.total || 0)} onChange={setTaskPage} /></div></section>
+          <section className={CONSOLE_PANEL_CLASS}><div className="card-body"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="card-title text-lg">批量任务</h2><p className="mt-1 text-sm text-content-muted">查看历史批量任务及其逐项执行状态。</p></div><div className="flex gap-2"><select className="select select-bordered select-sm" value={taskStatus} onChange={(event) => { setTaskStatus(event.target.value); setTaskPage(1); }}><option value="">全部状态</option><option value="queued">排队中</option><option value="running">运行中</option><option value="succeeded">已完成</option><option value="partial">部分完成</option><option value="failed">失败</option><option value="cancelled">已取消</option></select><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => void batchListQuery.refetch()} disabled={batchListQuery.isFetching || Boolean(busy)}><RefreshCw className={`h-3.5 w-3.5 ${batchListQuery.isFetching ? 'animate-spin' : ''}`} />{batchListQuery.isFetching ? '刷新中...' : '刷新'}</button></div></div></div></section>
+          <section className={CONSOLE_PANEL_CLASS}><div className="card-body p-0"><QueryError error={batchListQuery.error} text="批量任务列表加载失败" />{!batchListQuery.isError && (batchListQuery.isFetching && !taskItems.length ? <div className="flex justify-center py-14"><span className="loading loading-spinner" /></div> : taskItems.length ? <div className="overflow-x-auto"><table className="arl-fixed-table table table-zebra table-sm min-w-[1030px]"><colgroup><col style={{ width: 160 }} /><col style={{ width: 110 }} /><col style={{ width: 250 }} /><col style={{ width: 120 }} /><col style={{ width: 100 }} /><col style={{ width: 300 }} /></colgroup><thead><tr><th>创建时间</th><th>类型</th><th>任务 ID</th><th>状态</th><th>进度</th><th>操作</th></tr></thead><tbody>{taskItems.map((item) => <tr key={item.task_id}><td className="whitespace-nowrap">{item.created_at || '-'}</td><td>{TYPE_LABELS[item.query_type] || item.query_type}</td><td className="min-w-0 max-w-full overflow-hidden break-all font-mono text-xs"><IcpTextCell value={item.task_id} label="任务 ID" /></td><td><StatusBadge status={item.status} /></td><td>{(item.succeeded_count || 0) + (item.empty_count || 0) + (item.failed_count || 0) + (item.cancelled_count || 0)}/{item.total || 0}</td><td><div className="flex gap-2"><button className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} onClick={() => { setBatchTaskId(item.task_id); setTab('batch'); }}>查看</button>{['succeeded', 'partial', 'failed', 'cancelled'].includes(item.status) ? <><button className="btn btn-ghost btn-sm text-error" onClick={() => void deleteTask(item.task_id)} disabled={Boolean(busy)} aria-label="删除批量任务" title="删除批量任务"><Trash2 className="h-4 w-4" /></button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'json', task_id: item.task_id })} disabled={Boolean(busy)} aria-label="导出 JSON" title={isDownloadBusy({ format: 'json', task_id: item.task_id }) ? 'JSON 导出中...' : '导出 JSON'}>{isDownloadBusy({ format: 'json', task_id: item.task_id }) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}</button><button className="btn btn-ghost btn-sm" onClick={() => void download({ format: 'xlsx', task_id: item.task_id })} disabled={Boolean(busy)} aria-label="导出 Excel" title={isDownloadBusy({ format: 'xlsx', task_id: item.task_id }) ? 'Excel 导出中...' : '导出 Excel'}>{isDownloadBusy({ format: 'xlsx', task_id: item.task_id }) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}</button></> : <button className="btn btn-ghost btn-sm" onClick={() => void cancelTask(item.task_id, 'batch')} disabled={Boolean(busy)} aria-label="取消批量任务" title="取消批量任务"><XCircle className="h-4 w-4" /></button>}</div></td></tr>)}</tbody></table></div> : <EmptyState text="暂无批量任务" />)}<Pagination page={Number(taskData.page || taskPage)} size={Number(taskData.size || 20)} total={Number(taskData.total || 0)} onChange={setTaskPage} /></div></section>
         </div>
       ) : null}
 
@@ -730,11 +761,11 @@ export function IcpQueryView({ token }: { token: string }) {
                   <span className="label-text text-xs">结束日期</span>
                   <input className="input input-bordered input-sm" type="date" value={logTo} onChange={(event) => { setLogTo(event.target.value); setLogPage(1); }} aria-label="日志结束日期" />
                 </label>
-                <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void logsQuery.refetch()}>
-                  <RefreshCw className="h-4 w-4" />刷新
+                <button className={CONSOLE_SECONDARY_BUTTON_CLASS} onClick={() => void logsQuery.refetch()} disabled={logsQuery.isFetching || Boolean(busy)}>
+                  <RefreshCw className={`h-4 w-4 ${logsQuery.isFetching ? 'animate-spin' : ''}`} />{logsQuery.isFetching ? '刷新中...' : '刷新'}
                 </button>
                 <button className={CONSOLE_DANGER_BUTTON_CLASS} onClick={() => void clearLogs()} disabled={Boolean(busy)}>
-                  <Trash2 className="h-4 w-4" />清空
+                  {busy === 'clear-logs' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}{busy === 'clear-logs' ? '清空中...' : '清空'}
                 </button>
               </div>
             </div>

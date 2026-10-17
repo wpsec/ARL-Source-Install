@@ -688,9 +688,11 @@ export function DashboardView({
                 </button>
                 <button
                   onClick={() => void logsQuery.refetch()}
+                  disabled={logsQuery.isFetching}
                   className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !border-accent/50 !bg-accent/10 !text-accent hover:!border-accent/70 hover:!bg-accent/15`}
                 >
-                  刷新日志
+                  <RefreshCw className={`h-3.5 w-3.5 ${logsQuery.isFetching ? 'animate-spin' : ''}`} />
+                  {logsQuery.isFetching ? '正在刷新...' : '刷新日志'}
                 </button>
               </div>
             </div>

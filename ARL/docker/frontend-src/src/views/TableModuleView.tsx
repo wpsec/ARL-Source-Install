@@ -458,8 +458,9 @@ export function TableModuleView({
     row: any;
   } | null>(null);
   const [riskRecordDetail, setRiskRecordDetail] = useState<RiskRecordDetail | null>(null);
-  const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
+  const [rowPendingActionMap, setRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
+  const [tableExportPending, setTableExportPending] = useState('');
   const [taskReportExportFeedback, setTaskReportExportFeedback] = useState<TaskReportExportFeedback | null>(null);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
   const [taskErrorDialog, setTaskErrorDialog] = useState<TaskErrorDetail | null>(null);
@@ -574,14 +575,18 @@ export function TableModuleView({
     // done 家族(done/done_pending/done_degraded)均为终态(后端收尾器兼容映射)。
     return raw.startsWith('done') || raw === 'stop' || raw === 'error';
   };
-  const markTaskRowActionPending = (taskId: string, action: string) => {
-    setTaskRowPendingActionMap((prev) => ({ ...prev, [taskId]: action }));
+  const getRowPendingKey = (rowId: string) => `${module.id}:${rowId}`;
+  const isRowActionPending = (rowId: string) => Boolean(rowPendingActionMap[getRowPendingKey(rowId)]);
+  const markRowActionPending = (rowId: string, action: string) => {
+    const key = getRowPendingKey(rowId);
+    setRowPendingActionMap((prev) => ({ ...prev, [key]: action }));
   };
-  const clearTaskRowActionPending = (taskId: string) => {
-    setTaskRowPendingActionMap((prev) => {
-      if (!prev[taskId]) return prev;
+  const clearRowActionPending = (rowId: string) => {
+    const key = getRowPendingKey(rowId);
+    setRowPendingActionMap((prev) => {
+      if (!prev[key]) return prev;
       const next = { ...prev };
-      delete next[taskId];
+      delete next[key];
       return next;
     });
   };
@@ -1047,7 +1052,7 @@ export function TableModuleView({
     setExpandedTaskOptionRows({});
     setExpandedSiteHeaderRows({});
     setExpandedSiteFingerRows({});
-    setTaskRowPendingActionMap({});
+    setRowPendingActionMap({});
     setTaskStopAndDeleteLoading(false);
     setTaskCompactMode(true);
     setHyperlinkEnabled(false);
@@ -2097,7 +2102,7 @@ export function TableModuleView({
   };
 
   const runExport = async () => {
-    if (!module.exportPath) return;
+    if (!module.exportPath || tableExportPending) return;
 
     let payload: JsonValue = {};
     if (module.exportPath.includes('{task_id}')) {
@@ -2109,8 +2114,10 @@ export function TableModuleView({
     }
 
     const resolved = applyPathTemplate(module.exportPath, payload);
+    setTableExportPending('list');
     try {
       setError('');
+      setSuccess('');
       const filters = buildFilters();
       await requestApi(token, resolved, {
         method: 'GET',
@@ -2120,17 +2127,21 @@ export function TableModuleView({
       setSuccess('导出完成，文件已开始下载');
     } catch (err: any) {
       setError(err?.message || '导出失败');
+    } finally {
+      setTableExportPending('');
     }
   };
 
   const runAssetIpExtraExport = async (kind: 'ip' | 'domain') => {
-    if (module.id !== 'asset_ip' && module.id !== 'ip') return;
+    if ((module.id !== 'asset_ip' && module.id !== 'ip') || tableExportPending) return;
     const path = module.id === 'asset_ip'
       ? (kind === 'ip' ? '/asset_ip/export_ip/' : '/asset_ip/export_domain/')
       : (kind === 'ip' ? '/ip/export_ip/' : '/ip/export_domain/');
     const label = kind === 'ip' ? 'IP列表' : '关联域名';
+    setTableExportPending(kind);
     try {
       setError('');
+      setSuccess('');
       await requestApi(token, path, {
         method: 'GET',
         query: buildFilters(),
@@ -2139,6 +2150,8 @@ export function TableModuleView({
       setSuccess(`导出${label}完成，文件已开始下载`);
     } catch (err: any) {
       setError(err?.message || `导出${label}失败`);
+    } finally {
+      setTableExportPending('');
     }
   };
 
@@ -2413,10 +2426,11 @@ export function TableModuleView({
 
   const deletePolicyRow = async (policyId: string) => {
     if (module.id !== 'policy') return;
-    if (!policyId) return;
+    if (!policyId || isRowActionPending(policyId)) return;
     if (!(await askDeleteConfirm('将删除该策略。此操作不可恢复。'))) return;
+    markRowActionPending(policyId, 'delete');
     setError('');
-    setSuccess('');
+    setSuccess('正在删除策略，请稍候...');
     try {
       const result = await requestApi(token, '/policy/delete/', {
         method: 'POST',
@@ -2428,14 +2442,17 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
+    } finally {
+      clearRowActionPending(policyId);
     }
   };
 
   const stopTaskScheduleRow = async (jobId: string) => {
     if (module.id !== 'task_schedule') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
+    markRowActionPending(jobId, 'stop');
     setError('');
-    setSuccess('');
+    setSuccess('正在停止计划任务，请稍候...');
     try {
       const result = await requestApi(token, '/task_schedule/stop/', {
         method: 'POST',
@@ -2447,14 +2464,17 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const recoverTaskScheduleRow = async (jobId: string) => {
     if (module.id !== 'task_schedule') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
+    markRowActionPending(jobId, 'recover');
     setError('');
-    setSuccess('');
+    setSuccess('正在恢复计划任务，请稍候...');
     try {
       const result = await requestApi(token, '/task_schedule/recover/', {
         method: 'POST',
@@ -2466,15 +2486,18 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const deleteTaskScheduleRow = async (jobId: string) => {
     if (module.id !== 'task_schedule') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
     if (!(await askDeleteConfirm('将删除该计划任务。此操作不可恢复。'))) return;
+    markRowActionPending(jobId, 'delete');
     setError('');
-    setSuccess('');
+    setSuccess('正在删除计划任务，请稍候...');
     try {
       const result = await requestApi(token, '/task_schedule/delete/', {
         method: 'POST',
@@ -2486,14 +2509,17 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const stopGithubSchedulerRow = async (jobId: string) => {
     if (module.id !== 'github_scheduler') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
+    markRowActionPending(jobId, 'stop');
     setError('');
-    setSuccess('');
+    setSuccess('正在停止 GitHub 监控任务，请稍候...');
     try {
       const result = await requestApi(token, '/github_scheduler/stop/', {
         method: 'POST',
@@ -2505,14 +2531,17 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const recoverGithubSchedulerRow = async (jobId: string) => {
     if (module.id !== 'github_scheduler') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
+    markRowActionPending(jobId, 'recover');
     setError('');
-    setSuccess('');
+    setSuccess('正在恢复 GitHub 监控任务，请稍候...');
     try {
       const result = await requestApi(token, '/github_scheduler/recover/', {
         method: 'POST',
@@ -2524,15 +2553,18 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const deleteGithubSchedulerRow = async (jobId: string) => {
     if (module.id !== 'github_scheduler') return;
-    if (!jobId) return;
+    if (!jobId || isRowActionPending(jobId)) return;
     if (!(await askDeleteConfirm('将删除该 GitHub 监控任务。此操作不可恢复。'))) return;
+    markRowActionPending(jobId, 'delete');
     setError('');
-    setSuccess('');
+    setSuccess('正在删除 GitHub 监控任务，请稍候...');
     try {
       const result = await requestApi(token, '/github_scheduler/delete/', {
         method: 'POST',
@@ -2544,14 +2576,17 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
+    } finally {
+      clearRowActionPending(jobId);
     }
   };
 
   const stopGithubTaskRow = async (taskId: string) => {
     if (module.id !== 'github_task') return;
-    if (!taskId) return;
+    if (!taskId || isRowActionPending(taskId)) return;
+    markRowActionPending(taskId, 'stop');
     setError('');
-    setSuccess('');
+    setSuccess('正在停止 GitHub 任务，请稍候...');
     try {
       const result = await requestApi(token, '/github_task/stop/', {
         method: 'POST',
@@ -2563,15 +2598,18 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '操作失败');
+    } finally {
+      clearRowActionPending(taskId);
     }
   };
 
   const deleteGithubTaskRow = async (taskId: string) => {
     if (module.id !== 'github_task') return;
-    if (!taskId) return;
+    if (!taskId || isRowActionPending(taskId)) return;
     if (!(await askDeleteConfirm('将删除该 GitHub 任务。此操作不可恢复。'))) return;
+    markRowActionPending(taskId, 'delete');
     setError('');
-    setSuccess('');
+    setSuccess('正在删除 GitHub 任务，请稍候...');
     try {
       const result = await requestApi(token, '/github_task/delete/', {
         method: 'POST',
@@ -2583,6 +2621,8 @@ export function TableModuleView({
       await loadRows({ forceRefresh: true });
     } catch (err: any) {
       setError(err?.message || '删除失败');
+    } finally {
+      clearRowActionPending(taskId);
     }
   };
 
@@ -2625,53 +2665,19 @@ export function TableModuleView({
     );
   }, [queryClient, token]);
 
-  const hasTaskByName = useCallback(async (taskNameRaw: string) => {
-    const taskName = String(taskNameRaw || '').trim();
-    if (!taskName) return false;
-
-    // 精确任务名查询用于保留“无匹配任务”的反馈，不把所有任务 ID 塞进 URL。
-    const response = await queryClient.fetchQuery({
-      queryKey: ['module-task-name-exists', token, taskName],
-      staleTime: 30_000,
-      queryFn: () => requestApi(token, '/task/', {
-        method: 'GET',
-        query: {
-          page: 1,
-          size: 1,
-          task_name: taskName,
-          order: '-_id',
-        },
-      }),
-    });
-
-    const taskItems = normalizeListData(response).items || [];
-    return taskItems.some((item: any) => String(item?.name || '').trim() === taskName);
-  }, [queryClient, token]);
-
-  const openTaskViewByName = async () => {
+  const openTaskViewByName = () => {
     if (module.id !== 'task') return;
 
     const taskName = taskNameSearchText;
     if (!taskName) {
+      setSuccess('');
       setError('请先输入任务名后再进行同名任务查看');
       return;
     }
 
     setError('');
     setSuccess('');
-
-    try {
-      const taskExists = await hasTaskByName(taskName);
-      if (!taskExists) {
-        setError(`未找到任务名为“${taskName}”的任务`);
-        return;
-      }
-
-      onOpenModule('site', { task_name: taskName });
-      setSuccess(`已切换查看任务名“${taskName}”的全部扫描结果`);
-    } catch (err: any) {
-      setError(err?.message || '同名任务查看失败');
-    }
+    onOpenModule('site', { task_name: taskName });
   };
 
   const openGithubSchedulerDetail = (jobId: string) => {
@@ -2919,6 +2925,7 @@ export function TableModuleView({
 
     const taskIds = Array.from(new Set(selectedIds.filter((item) => Boolean(item))));
     if (taskIds.length === 0) {
+      setSuccess('');
       setError('请先勾选需要停止并删除的任务');
       return;
     }
@@ -2961,8 +2968,8 @@ export function TableModuleView({
   const stopTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (taskRowPendingActionMap[taskId]) return;
-    markTaskRowActionPending(taskId, 'stop');
+    if (isRowActionPending(taskId)) return;
+    markRowActionPending(taskId, 'stop');
     setError('');
     setSuccess('正在停止任务，请稍候...');
     try {
@@ -2977,16 +2984,16 @@ export function TableModuleView({
     } catch (err: any) {
       setError(err?.message || '操作失败');
     } finally {
-      clearTaskRowActionPending(taskId);
+      clearRowActionPending(taskId);
     }
   };
 
   const deleteTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (taskRowPendingActionMap[taskId]) return;
+    if (isRowActionPending(taskId)) return;
     if (!(await askDeleteConfirm('将删除该任务，并清理资产搜索中的关联结果数据。此操作不可恢复。'))) return;
-    markTaskRowActionPending(taskId, 'delete');
+    markRowActionPending(taskId, 'delete');
     setError('');
     setSuccess('正在删除任务，请稍候...');
     try {
@@ -3002,18 +3009,18 @@ export function TableModuleView({
     } catch (err: any) {
       setError(err?.message || '删除失败');
     } finally {
-      clearTaskRowActionPending(taskId);
+      clearRowActionPending(taskId);
     }
   };
 
   const restartTaskRow = async (taskId: string) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (taskRowPendingActionMap[taskId]) return;
+    if (isRowActionPending(taskId)) return;
     if (!(await askActionConfirm('将重启该任务并创建新的执行实例，是否继续？', { title: '确认重启', confirmText: '确认重启' }))) {
       return;
     }
-    markTaskRowActionPending(taskId, 'restart');
+    markRowActionPending(taskId, 'restart');
     setError('');
     setSuccess('正在重启任务，请稍候...');
     try {
@@ -3037,20 +3044,20 @@ export function TableModuleView({
     } catch (err: any) {
       setError(err?.message || '重启失败');
     } finally {
-      clearTaskRowActionPending(taskId);
+      clearRowActionPending(taskId);
     }
   };
 
   const exportTaskRow = async (taskId: string, format: TaskReportExportFormat = 'excel') => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (taskRowPendingActionMap[taskId]) return;
+    if (isRowActionPending(taskId)) return;
     if (taskReportExportBusy) {
       setError('已有报告导出任务进行中，请稍候');
       return;
     }
     setTaskReportExportMenu('');
-    markTaskRowActionPending(taskId, 'export');
+    markRowActionPending(taskId, 'export');
     setError('');
     setSuccess('');
     const formatLabel = openTaskReportExportFeedback(format, 1);
@@ -3066,14 +3073,14 @@ export function TableModuleView({
       });
       setError(errorMessage);
     } finally {
-      clearTaskRowActionPending(taskId);
+      clearRowActionPending(taskId);
     }
   };
 
   const syncTaskRow = async (taskId: string, row: any) => {
     if (module.id !== 'task') return;
     if (!taskId) return;
-    if (taskRowPendingActionMap[taskId]) return;
+    if (isRowActionPending(taskId)) return;
     if (!isTaskTerminalStatus(row?.status)) {
       setError('任务未结束，暂不支持同步');
       return;
@@ -3083,7 +3090,7 @@ export function TableModuleView({
     if (scopeId) {
       setError('');
       setSuccess('正在同步任务数据，请稍候...');
-      markTaskRowActionPending(taskId, 'sync');
+      markRowActionPending(taskId, 'sync');
       try {
         const result = await requestApi(token, '/task/sync/', {
           method: 'POST',
@@ -3097,7 +3104,7 @@ export function TableModuleView({
       } catch (err: any) {
         setError(err?.message || '同步失败');
       } finally {
-        clearTaskRowActionPending(taskId);
+        clearRowActionPending(taskId);
       }
       return;
     }
@@ -3115,9 +3122,7 @@ export function TableModuleView({
 
   const selectionStatus =
     selectedIds.length > 0 ? `${selectedIds.length} 条已选择` : hasList ? '未选择记录' : '动作模式';
-  const canUseTaskNameForReportExport = module.id === 'task' && selectedIds.length === 0 && Boolean(taskNameSearchText);
-  const taskReportExportDisabled =
-    module.id === 'task' && (taskReportExportBusy || (selectedIds.length === 0 && !canUseTaskNameForReportExport));
+  const taskReportExportDisabled = module.id === 'task' && taskReportExportBusy;
   const hasRowOperate = hasModuleRowOperations(module.id);
   const rowOperateColumnWidthClass = getModuleRowOperationColumnWidthClass(module.id);
   const taskReportMenuItemClass =
@@ -3229,17 +3234,23 @@ export function TableModuleView({
               ) : null}
               {module.exportPath && module.id !== 'task' && module.id !== 'asset_scope' ? (
                 <button
+                  type="button"
                   onClick={() => void runExport()}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+                  disabled={Boolean(tableExportPending)}
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
                 >
-                  <Download className="w-4 h-4" />
-                  {module.id === 'asset_site' || module.id === 'site'
-                    ? '导出站点'
-                    : module.id === 'domain'
-                      ? '导出子域名'
-                      : module.id === 'asset_ip' || module.id === 'ip'
-                        ? '导出IP端口'
-                        : '导出'}
+                  {tableExportPending === 'list'
+                    ? <RefreshCw className="w-4 h-4 animate-spin" />
+                    : <Download className="w-4 h-4" />}
+                  {tableExportPending === 'list'
+                    ? '导出中...'
+                    : module.id === 'asset_site' || module.id === 'site'
+                      ? '导出站点'
+                      : module.id === 'domain'
+                        ? '导出子域名'
+                        : module.id === 'asset_ip' || module.id === 'ip'
+                          ? '导出IP端口'
+                          : '导出'}
                 </button>
               ) : null}
               {module.id === 'asset_site' ? (
@@ -3263,9 +3274,9 @@ export function TableModuleView({
               ) : null}
               {module.id === 'task' ? (
                 <button
-                  onClick={() => void openTaskViewByName()}
-                  disabled={!taskNameSearchText}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-40 disabled:cursor-not-allowed`}
+                  type="button"
+                  onClick={openTaskViewByName}
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
                   title="使用上方“任务名”搜索框内容查看同名任务"
                 >
                   <Eye className="w-4 h-4" />
@@ -3286,20 +3297,28 @@ export function TableModuleView({
               ) : null}
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
+                  type="button"
                   onClick={() => void runAssetIpExtraExport('ip')}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+                  disabled={Boolean(tableExportPending)}
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
                 >
-                  <Download className="w-4 h-4" />
-                  导出IP列表
+                  {tableExportPending === 'ip'
+                    ? <RefreshCw className="w-4 h-4 animate-spin" />
+                    : <Download className="w-4 h-4" />}
+                  {tableExportPending === 'ip' ? '导出中...' : '导出IP列表'}
                 </button>
               ) : null}
               {module.id === 'asset_ip' || module.id === 'ip' ? (
                 <button
+                  type="button"
                   onClick={() => void runAssetIpExtraExport('domain')}
-                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+                  disabled={Boolean(tableExportPending)}
+                  className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
                 >
-                  <Download className="w-4 h-4" />
-                  导出关联域名
+                  {tableExportPending === 'domain'
+                    ? <RefreshCw className="w-4 h-4 animate-spin" />
+                    : <Download className="w-4 h-4" />}
+                  {tableExportPending === 'domain' ? '导出中...' : '导出关联域名'}
                 </button>
               ) : null}
             </div>
@@ -3330,11 +3349,15 @@ export function TableModuleView({
 
             {module.exportPath && module.id !== 'task' ? (
               <button
+                type="button"
                 onClick={() => void runExport()}
-                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} shrink-0 gap-2`}
+                disabled={Boolean(tableExportPending)}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} shrink-0 gap-2 disabled:opacity-60`}
               >
-                <Download className="w-4 h-4" />
-                导出
+                {tableExportPending === 'list'
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <Download className="w-4 h-4" />}
+                {tableExportPending === 'list' ? '导出中...' : '导出'}
               </button>
             ) : null}
             {showHyperlinkToggle ? (
@@ -3362,6 +3385,11 @@ export function TableModuleView({
               const disabled =
                 (needSingle && selectedIds.length !== 1) ||
                 (needMultiple && selectedIds.length === 0 && !canUseTaskNameForBatch);
+              const disabledReason = needSingle && selectedIds.length !== 1
+                ? '请先选择一条记录'
+                : needMultiple && selectedIds.length === 0 && !canUseTaskNameForBatch
+                  ? module.id === 'task' ? '请先选择记录，或输入任务名' : '请先选择至少一条记录'
+                  : undefined;
 
               return (
                 <button
@@ -3369,6 +3397,7 @@ export function TableModuleView({
                   onClick={() => openActionDialog(action)}
                   disabled={disabled}
                   className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40 disabled:cursor-not-allowed`}
+                  title={disabledReason}
                 >
                   {action.label}
                 </button>
@@ -3378,9 +3407,9 @@ export function TableModuleView({
               <button
                 type="button"
                 onClick={() => void stopAndDeleteSelectedTasks()}
-                disabled={selectedIds.length === 0 || taskStopAndDeleteLoading}
+                disabled={taskStopAndDeleteLoading}
                 className={`${CONSOLE_SECONDARY_BUTTON_CLASS} disabled:opacity-40 disabled:cursor-not-allowed`}
-                title="先停止所选任务，再执行删除"
+                title={selectedIds.length === 0 ? '请先勾选需要停止并删除的任务' : '先停止所选任务，再执行删除'}
               >
                 {taskStopAndDeleteLoading ? '停止并删除中...' : '停止并删除'}
               </button>
@@ -3389,9 +3418,18 @@ export function TableModuleView({
               <div className="relative" data-task-report-export-menu="true">
                 <button
                   type="button"
-                  onClick={() => toggleTaskReportExportMenu('batch')}
+                  onClick={() => {
+                    if (selectedIds.length === 0 && !taskNameSearchText) {
+                      setSuccess('');
+                      setError('请先勾选任务，或输入任务名后再导出报告');
+                      return;
+                    }
+                    setError('');
+                    toggleTaskReportExportMenu('batch');
+                  }}
                   disabled={taskReportExportDisabled}
                   className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-40 disabled:cursor-not-allowed`}
+                  title={taskReportExportBusy ? '报告导出进行中' : '按所选任务或任务名筛选结果导出报告'}
                 >
                   <Download className="w-4 h-4" />
                   {taskReportExportBusy ? '报告导出中...' : '报告导出'}
@@ -3415,11 +3453,15 @@ export function TableModuleView({
             ) : null}
             {module.id === 'asset_scope' && module.exportPath ? (
               <button
+                type="button"
                 onClick={() => void runExport()}
-                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2`}
+                disabled={Boolean(tableExportPending)}
+                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} gap-2 disabled:opacity-60`}
               >
-                <Download className="w-4 h-4" />
-                批量导出
+                {tableExportPending === 'list'
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <Download className="w-4 h-4" />}
+                {tableExportPending === 'list' ? '导出中...' : '批量导出'}
               </button>
             ) : null}
           </div>
@@ -4373,7 +4415,7 @@ export function TableModuleView({
                             row={row}
                             id={id}
                             taskDone={isTaskTerminalStatus(row?.status)}
-                            pendingAction={String(taskRowPendingActionMap[id] || '')}
+                            pendingAction={String(rowPendingActionMap[getRowPendingKey(id)] || '')}
                             taskReportExportBusy={taskReportExportBusy}
                             taskReportExportMenu={taskReportExportMenu}
                             config={{

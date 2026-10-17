@@ -300,7 +300,7 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     calls.filter((c) => c.url.includes('size=10000') && c.url.includes('task_name=n1')).length;
   const countBy = (calls: Array<{ url: string; method: string }>, method: string, fragment: string) =>
     calls.filter((c) => c.method === method && c.url.includes(fragment)).length;
-  // 精确任务名查询与主列表共用 /api/task/：返回一条 n1 任务供同名/导出链路命中。
+  // 精确任务名查询与主列表共用 /api/task/：返回一条 n1 任务供报告导出链路命中。
   const TASK_N1_ROUTES = {
     '/api/task/': [200, { code: 200, data: { items: [{ name: 'n1', _id: 't1', status: 'done' }], total: 1, page: 1, size: 20 } }],
   } as Record<string, [number, unknown]>;
@@ -347,7 +347,7 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     expect(taskDetailCountCalls.every((call) => !call.url.includes('task_id='))).toBe(true);
   });
 
-  it('同名任务查看：用精确任务名筛选并复用检查缓存', async () => {
+  it('同名任务查看：点击后立即按精确任务名打开站点结果', () => {
     const onOpenModule = vi.fn();
     const calls = installFetchMock({ routes: TASK_N1_ROUTES });
     render(
@@ -371,13 +371,11 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
       { target: { value: 'n1' } },
     );
     const viewByNameBtn = screen.getByRole('button', { name: '同名任务查看' });
-    await waitFor(() => expect(viewByNameBtn.hasAttribute('disabled')).toBe(false));
+    expect(viewByNameBtn.hasAttribute('disabled')).toBe(false);
     fireEvent.click(viewByNameBtn);
-    await waitFor(() => expect(taskNameCheckGets(calls)).toBe(1));
-    fireEvent.click(viewByNameBtn);
-    await new Promise((resolve) => window.setTimeout(resolve, 60));
-    expect(taskNameCheckGets(calls)).toBe(1);
-    expect(onOpenModule).toHaveBeenLastCalledWith('site', { task_name: 'n1' });
+    expect(onOpenModule).toHaveBeenCalledTimes(1);
+    expect(onOpenModule).toHaveBeenCalledWith('site', { task_name: 'n1' });
+    expect(taskNameCheckGets(calls)).toBe(0);
   });
 
   it('报告导出按精确任务名获取 ID，导出事务链路完整', async () => {
@@ -412,9 +410,7 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
       { target: { value: 'n1' } },
     );
     const viewByNameBtn = screen.getByRole('button', { name: '同名任务查看' });
-    await waitFor(() => expect(viewByNameBtn.hasAttribute('disabled')).toBe(false));
     fireEvent.click(viewByNameBtn);
-    await waitFor(() => expect(taskNameCheckGets(calls)).toBe(1));
 
     const exportBtn = screen.getByRole('button', { name: /报告导出/ });
     await waitFor(() => expect(exportBtn.hasAttribute('disabled')).toBe(false));
@@ -423,8 +419,8 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     await waitFor(() => expect(countBy(calls, 'POST', '/export/job')).toBe(1));
     // 反馈文案在 success 条与导出弹窗中跨节点拆分，做存在性断言即可。
     await waitFor(() => expect(document.body.textContent).toContain('导出成功'));
-    // 导出仍按名称取 ID；列表查看自身只传 task_name，不产生长查询 URL。
-    expect(taskNameCheckGets(calls)).toBe(1);
+    // 导出仍按名称取 ID；列表查看只传 task_name，不发起阻塞式预检查。
+    expect(taskNameCheckGets(calls)).toBe(0);
     expect(taskIdsByNameGets(calls)).toBe(1);
   });
 });
