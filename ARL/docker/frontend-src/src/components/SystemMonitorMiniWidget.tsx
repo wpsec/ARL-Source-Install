@@ -125,7 +125,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
   return (
     <section className="hidden max-w-full shrink-0 items-center gap-1.5 lg:flex" aria-label="系统监控摘要">
       <div
-        className="flex h-12 w-[360px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[420px] 2xl:w-[456px]"
+        className="flex h-12 w-[300px] shrink-0 overflow-hidden rounded-box border border-base-300 bg-base-100 xl:w-[336px] 2xl:w-[360px]"
         role="group"
         aria-label="CPU、内存与网速"
       >
@@ -134,7 +134,7 @@ export function SystemMonitorMiniWidget({ token, onOpen }: SystemMonitorMiniWidg
         <MetricRow icon={Network} label="网速" value={monitorQuery.data ? formatNetworkRate(networkRate) : '--'} data={chartData} dataKey="net" color="var(--brand-warning)" />
       </div>
 
-      <div className="hidden h-12 shrink-0 grid-cols-3 items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 xl:grid">
+      <div className="hidden h-12 shrink-0 grid-cols-3 items-center gap-3 rounded-box border border-base-300 bg-base-100 px-3 2xl:grid">
         <div className="min-w-[3.5rem] text-center" aria-label="累计发送流量">
           <div className="flex items-center justify-center gap-1 text-content-muted">
             <ArrowUp className="h-3 w-3" />

@@ -280,9 +280,9 @@
   --arl-space-page-tablet: 1.5rem;
   --arl-space-page-wide: 2rem;
   --arl-space-section: 1.5rem;
-  --arl-radius-panel: 1rem;
-  --arl-radius-control: 0.75rem;
-  --arl-radius-selector: 0.75rem;
+  --arl-radius-panel: 0.75rem;
+  --arl-radius-control: 0.625rem;
+  --arl-radius-selector: 0.5rem;
   --arl-size-control: 0.25rem;
   --arl-size-selector: 0.25rem;
   --arl-border-width: 1px;
@@ -756,8 +756,8 @@
   }
 
   .arl-sidebar .arl-sidebar-nav-row-active {
-    background-color: color-mix(in oklab, var(--brand-accent) 18%, var(--brand-card)) !important;
-    border-color: color-mix(in oklab, var(--brand-accent) 38%, var(--brand-border)) !important;
+    background-color: color-mix(in oklab, var(--brand-accent) 10%, var(--brand-card)) !important;
+    border-color: color-mix(in oklab, var(--brand-accent) 22%, var(--brand-border)) !important;
     box-shadow: inset 3px 0 0 var(--color-primary);
     color: var(--brand-accent) !important;
   }

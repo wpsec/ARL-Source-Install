@@ -423,7 +423,7 @@ export function MainShell() {
       />
 
       <main ref={mainScrollRef} className="relative z-10 min-w-0 flex-1 overflow-y-auto custom-scrollbar">
-        <header className="navbar sticky top-0 z-20 min-h-16 border-b border-base-300 bg-base-100/95 px-3 backdrop-blur sm:px-4 xl:px-6">
+        <header className="navbar sticky top-0 z-20 min-h-16 border-b border-base-300 bg-base-200/95 px-3 backdrop-blur sm:px-4 xl:px-6">
           <button
             type="button"
             className={`${CONSOLE_ICON_BUTTON_CLASS} mr-2 shrink-0 lg:hidden`}

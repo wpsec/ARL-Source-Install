@@ -3162,7 +3162,7 @@ export function TableModuleView({
         onOpenModule={onOpenModule}
       />
 
-      <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
+      <div className="rounded-box border border-base-300/80 bg-base-200/75 p-4 shadow-sm space-y-4">
         {hasExternalFilters ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-base-content">查看筛选条件:</span>
@@ -3517,7 +3517,7 @@ export function TableModuleView({
                   </th>
                   {showIndexColumn ? (
                     <th
-                      className="px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center"
+                      className="px-4 py-3 text-sm font-semibold text-content-muted whitespace-nowrap text-center"
                       style={getTableColumnStyle('__index')}
                     >
                       序号
@@ -3531,7 +3531,7 @@ export function TableModuleView({
                       <th
                         key={column}
                         style={getTableColumnStyle(column)}
-                        className={`px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap ${centered ? 'text-center' : 'text-left'}`}
+                        className={`px-4 py-3 text-sm font-semibold text-content-muted whitespace-nowrap ${centered ? 'text-center' : 'text-left'}`}
                       >
                         {sortable ? (
                           <button
@@ -3559,7 +3559,7 @@ export function TableModuleView({
                   })}
                   {hasRowOperate ? (
                     <th
-                      className={`px-4 py-3 text-sm font-black text-content-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}
+                      className={`px-4 py-3 text-sm font-semibold text-content-muted whitespace-nowrap text-center ${rowOperateColumnWidthClass}`}
                       style={getTableColumnStyle('__operate')}
                     >
                       操作

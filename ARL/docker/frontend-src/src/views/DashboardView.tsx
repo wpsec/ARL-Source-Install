@@ -392,7 +392,7 @@ export function DashboardView({
 
   const renderUsageBar = (title: string, percent: number, detail: string) => (
     <div className="space-y-2">
-      <div className="flex items-center justify-between text-[10px] font-black text-content-muted uppercase tracking-widest">
+      <div className="flex items-center justify-between text-xs font-medium text-content-muted">
         <span>{title}</span>
         <span className="text-base-content">{formatPercent(percent)}</span>
       </div>
@@ -407,13 +407,13 @@ export function DashboardView({
   );
 
   return (
-    <div className={`${CONSOLE_PAGE_CLASS} xl:space-y-8`}>
+    <div className={`${CONSOLE_PAGE_CLASS} xl:space-y-6`}>
       <PageHeader
         title="我的仪表盘"
         description="互联网资产自动化收集系统 · 实时监控中"
         actions={
           <div className="min-w-0 w-full space-y-2 text-right xl:w-auto">
-          <p className="text-xs font-black text-accent uppercase tracking-widest">最后更新</p>
+          <p className="text-[11px] font-medium text-content-muted tracking-wide">最后更新</p>
           <p className="text-sm font-mono">{lastUpdatedAt || '-'}</p>
           <div className="flex gap-2 justify-end">
             <button
@@ -564,30 +564,30 @@ export function DashboardView({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <div key={card.title} className={`${CONSOLE_PANEL_CLASS} group transition-colors hover:border-primary/50`}>
             <div className="card-body p-5">
               <div className="flex justify-between items-start mb-4">
-                <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
-                  <card.icon className="w-6 h-6" />
+                <div className={`p-2.5 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
+                  <card.icon className="h-5 w-5" />
                 </div>
                 <div className={`badge badge-soft gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
                   {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                   {card.change}
                 </div>
               </div>
-              <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
-              <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
+              <h3 className="mb-1 text-sm font-medium text-content-muted">{card.title}</h3>
+              <p className="text-3xl font-semibold tabular-nums tracking-tight">{card.value.toLocaleString()}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className={`lg:col-span-2 ${CONSOLE_PANEL_CLASS}`}>
           <div className="card-body p-6">
-            <h3 className="card-title text-xl font-black tracking-tight mb-2">资产增长趋势 (7日)</h3>
+            <h3 className="card-title mb-2 text-lg font-semibold tracking-tight">资产增长趋势 (7日)</h3>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData}>
@@ -610,7 +610,7 @@ export function DashboardView({
 
         <div className={CONSOLE_PANEL_CLASS}>
           <div className="card-body p-6">
-            <h3 className="card-title text-xl font-black tracking-tight mb-2">资产分布概览</h3>
+            <h3 className="card-title mb-2 text-lg font-semibold tracking-tight">资产分布概览</h3>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={assetOverviewData} layout="vertical">
@@ -635,14 +635,14 @@ export function DashboardView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <div className={`${CONSOLE_PANEL_CLASS} flex flex-col`}>
           <div className="card-body p-6 flex-1">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 rounded-box bg-secondary/10">
                 <Activity className="w-5 h-5 text-secondary" />
               </div>
-              <h3 className="card-title text-xl font-black tracking-tight">系统监控</h3>
+              <h3 className="card-title text-lg font-semibold tracking-tight">系统监控</h3>
             </div>
             <div className="space-y-6">
               {renderUsageBar('CPU 负载', cpuPercent, formatCpuSummary(deviceInfo))}
@@ -670,7 +670,7 @@ export function DashboardView({
                 <div className="p-2 rounded-box bg-accent/10">
                   <Terminal className="w-5 h-5 text-accent" />
                 </div>
-                <h3 className="card-title text-xl font-black tracking-tight">实时扫描日志</h3>
+                <h3 className="card-title text-lg font-semibold tracking-tight">实时扫描日志</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -719,11 +719,11 @@ export function DashboardView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <div className={`xl:col-span-2 ${CONSOLE_PANEL_CLASS}`}>
           <div className="card-body p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-xl font-black tracking-tight">最近任务</h3>
+            <h3 className="text-lg font-semibold tracking-tight">最近任务</h3>
             <button
               onClick={() => onOpenModule('task')}
               className={`${CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS} !h-9 !min-h-9 !px-3 !text-accent`}
@@ -741,10 +741,10 @@ export function DashboardView({
               </colgroup>
               <thead>
                 <tr className="border-b border-base-300">
-                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">名称</th>
-                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">状态</th>
-                  <th className="py-2 pr-4 uppercase tracking-widest text-content-muted">目标</th>
-                  <th className="py-2 uppercase tracking-widest text-content-muted">时间</th>
+                  <th className="py-2 pr-4 text-xs font-semibold text-content-muted">名称</th>
+                  <th className="py-2 pr-4 text-xs font-semibold text-content-muted">状态</th>
+                  <th className="py-2 pr-4 text-xs font-semibold text-content-muted">目标</th>
+                  <th className="py-2 text-xs font-semibold text-content-muted">时间</th>
                 </tr>
               </thead>
               <tbody>
@@ -807,7 +807,7 @@ export function DashboardView({
 
         <div className={CONSOLE_PANEL_CLASS}>
           <div className="card-body p-6">
-          <h3 className="text-lg font-black mb-4">快捷入口</h3>
+          <h3 className="mb-4 text-lg font-semibold">快捷入口</h3>
           <div className="grid grid-cols-1 gap-3">
             {quickModules.map((entry) => (
               <button
@@ -820,7 +820,7 @@ export function DashboardView({
                     <entry.icon className="w-4 h-4" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="break-words font-black text-sm">{entry.label}</p>
+                    <p className="break-words text-sm font-semibold">{entry.label}</p>
                     <p className="mt-1 break-words text-xs text-content-muted">{entry.desc}</p>
                   </div>
                 </div>

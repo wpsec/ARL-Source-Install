@@ -35,7 +35,6 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
   const navGroups = [
     {
       label: '核心功能',
-      color: 'text-primary',
       items: [
         { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
         { id: 'tasks', label: '任务管理', icon: Activity },
@@ -48,7 +47,6 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
     },
     {
       label: '扫描与漏洞',
-      color: 'text-secondary',
       items: [
         { id: 'policies', label: '策略配置', icon: FileText },
         { id: 'fingerprints', label: '指纹管理', icon: Zap },
@@ -58,7 +56,6 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
     },
     {
       label: 'GitHub 监控',
-      color: 'text-primary',
       items: [
         { id: 'github_monitor', label: 'GitHub 监控', icon: Github },
         { id: 'github_mgmt', label: 'GitHub 管理', icon: Settings },
@@ -66,7 +63,6 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
     },
     {
       label: '集成与通知',
-      color: 'text-warning',
       items: [
         { id: 'api_mgmt', label: 'API 管理', icon: Key },
         { id: 'dingtalk', label: '钉钉集成', icon: MessageSquare },
@@ -86,7 +82,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
         onClick={onClose}
       />
     ) : null}
-    <aside className={`arl-sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-base-300 bg-base-100 shadow-xl transition-transform custom-scrollbar lg:relative lg:z-10 lg:w-56 lg:shadow-none xl:w-60 2xl:w-64 ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+    <aside className={`arl-sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-base-300 bg-base-200 shadow-xl transition-transform custom-scrollbar lg:relative lg:z-10 lg:w-56 lg:shadow-none xl:w-60 2xl:w-64 ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
       <div className="flex justify-center px-2 py-4 lg:block lg:px-4 lg:py-4 xl:px-5 xl:py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
         <BrandLogo size="md" compactBelowLg />
@@ -94,7 +90,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
 
       <div className="px-1.5 py-3 lg:px-3 xl:px-4 xl:py-4">
         <motion.button 
-          whileHover={{ scale: 1.02 }}
+          whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           onClick={onNewScan}
           className={`${CONSOLE_PRIMARY_BUTTON_CLASS} w-full justify-center gap-0 shadow-sm lg:justify-start lg:gap-2`}
@@ -105,10 +101,10 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
         </motion.button>
       </div>
 
-      <nav className="flex-1 space-y-5 px-3 py-2 xl:px-4">
+      <nav className="flex-1 space-y-4 px-3 py-2 xl:px-4">
         {navGroups.map((group) => (
           <div key={group.label}>
-            <h3 className={cn("mb-2 px-3 text-[11px] font-semibold leading-4 tracking-wide opacity-80", group.color)}>
+            <h3 className="mb-2 px-3 text-[11px] font-semibold leading-4 tracking-wide text-content-muted">
               {group.label}
             </h3>
             <ul className="flex w-full list-none flex-col space-y-1 p-0">
@@ -156,13 +152,13 @@ export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, o
             {themes.map((t) => (
               <motion.button
                 key={t.id}
-                whileHover={{ scale: 1.2 }}
-                whileTap={{ scale: 0.9 }}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.96 }}
                 onClick={() => setTheme(t.id)}
                 title={t.label}
                 className={cn(
                   "w-6 h-6 rounded-full transition-all border-2",
-                  theme === t.id ? "border-base-content scale-110 shadow-lg" : "border-transparent opacity-60 hover:opacity-100"
+                  theme === t.id ? "border-primary scale-105 shadow-sm" : "border-transparent opacity-60 hover:opacity-100"
                 )}
                   style={{ backgroundColor: t.color }}
                   aria-label={t.label}
