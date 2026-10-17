@@ -37,6 +37,12 @@ import {
 } from '../domain/format';
 import { formatTokenListText } from '../domain/finger';
 import { formatCpuSummary, formatUsageSummary } from '../domain/system';
+import {
+  buildTaskExecutionAccountingSummary,
+  getTaskProgressPercent,
+  getTaskQueueStatusInfo,
+  normalizeTaskStatus,
+} from '../domain/task';
 import type {OpenModuleHandler} from '../domain/types';
 import { PageHeader } from '../layout/PageHeader';
 import {
@@ -281,6 +287,9 @@ export function DashboardView({
     : dashboardSnapshot?.stats || EMPTY_STATS;
   const deviceInfo = dashboardSnapshot?.deviceInfo || {};
   const recentTasks = dashboardSnapshot?.recentTasks || [];
+  const activeTasks = recentTasks
+    .filter((task: any) => ['running', 'waiting'].includes(normalizeTaskStatus(task?.status)))
+    .slice(0, 5);
   const assetTrend = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.assetTrend : [];
   const riskDistribution = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.riskDistribution : [];
   const networkTrend = dashboardSnapshot?.source === 'primary' ? dashboardSnapshot.networkTrend : [];
@@ -430,32 +439,86 @@ export function DashboardView({
 
       {error ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{error}</div> : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {cards.map((card) => (
-          <div key={card.title} className={`${CONSOLE_PANEL_CLASS} group transition-colors hover:border-primary/50`}>
-            <div className="card-body p-5">
-              <div className="flex justify-between items-start mb-4">
-                <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
-                  <card.icon className="w-6 h-6" />
-                </div>
-                <div className={`badge badge-soft gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
-                  {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                  {card.change}
-                </div>
-              </div>
-              <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
-              <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
+      <section className={CONSOLE_PANEL_CLASS} aria-label="运行中的任务">
+        <div className="card-body gap-4 p-4 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="card-title text-lg font-semibold sm:text-xl">运行中的任务</h2>
+              <p className="mt-1 text-sm text-content-muted">优先显示近期仍在执行或等待的任务及其当前阶段。</p>
             </div>
+            <button
+              type="button"
+              onClick={() => onOpenModule('task')}
+              className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
+            >
+              全部任务
+            </button>
           </div>
-        ))}
-      </div>
+          {activeTasks.length === 0 ? (
+            <div className="rounded-box border border-dashed border-base-300 bg-base-200/50 px-4 py-8 text-center text-sm text-content-muted">
+              当前没有正在执行或等待的近期任务。
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              {activeTasks.map((task: any, index: number) => {
+                const taskId = String(task?._id || task?.task_id || task?.id || '').trim();
+                const queueInfo = getTaskQueueStatusInfo(task);
+                const accounting = buildTaskExecutionAccountingSummary(task, Date.now());
+                const stageName = accounting.currentStageVisible
+                  ? accounting.currentStageName
+                  : queueInfo?.label || '任务执行中';
+                const stageDuration = queueInfo?.detail || (
+                  accounting.hasUncountedDuration
+                    ? `${accounting.uncountedStageName} · ${accounting.uncountedDurationLabel}`
+                    : '阶段耗时暂不可用'
+                );
+                const taskName = normalizeValueNoTruncate(task?.name);
+                const target = normalizeValueNoTruncate(task?.target);
+                const progress = getTaskProgressPercent(task);
+
+                return (
+                  <article key={taskId || `active-task-${index}`} className="min-w-0 rounded-box border border-base-300 bg-base-100 p-4">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        {taskId ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenModule('site', { task_id: taskId })}
+                            className={`${CONSOLE_TEXT_BUTTON_CLASS} block max-w-full truncate text-left font-semibold text-accent hover:underline`}
+                            title="查看任务详情"
+                          >
+                            {taskName}
+                          </button>
+                        ) : <h3 className="truncate font-semibold">{taskName}</h3>}
+                        <p className="mt-1 truncate font-mono text-xs text-content-muted" title={target}>{target}</p>
+                      </div>
+                      <StatusPill text={resolveTaskStatus(task?.status).text} type="info" />
+                    </div>
+                    <div className="mt-4 flex min-w-0 items-center justify-between gap-3 text-xs">
+                      <span className="truncate font-medium text-base-content">{stageName}</span>
+                      <span className="shrink-0 tabular-nums text-content-muted">{progress}%</span>
+                    </div>
+                    <progress
+                      className="progress progress-primary mt-2 h-1.5 w-full"
+                      value={progress}
+                      max="100"
+                      aria-label={`${taskName}扫描进度 ${progress}%`}
+                    />
+                    <p className="mt-2 truncate text-xs text-content-muted" title={stageDuration}>{stageDuration}</p>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </section>
 
       <section className={CONSOLE_PANEL_CLASS} aria-label="Celery 队列状态">
-        <div className="card-body p-6">
+        <div className="card-body p-4 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <div>
-              <h3 className="card-title text-xl font-black tracking-tight">扫描队列</h3>
-              <p className="mt-1 text-sm text-content-muted">每 10 秒更新；ready 为待消费，reserved 为已预取，active 为正在执行。等待时间按任务账本记录统计。</p>
+              <h2 className="card-title text-lg font-semibold sm:text-xl">扫描队列</h2>
+              <p className="mt-1 max-w-4xl text-sm leading-6 text-content-muted">每 10 秒更新；ready 为待消费，reserved 为已预取，active 为正在执行。等待时长来自任务账本，只用于观察当前状态。</p>
             </div>
             <button
               type="button"
@@ -500,6 +563,26 @@ export function DashboardView({
           )}
         </div>
       </section>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {cards.map((card) => (
+          <div key={card.title} className={`${CONSOLE_PANEL_CLASS} group transition-colors hover:border-primary/50`}>
+            <div className="card-body p-5">
+              <div className="flex justify-between items-start mb-4">
+                <div className={`p-3 rounded-box bg-base-100 border border-base-300 group-hover:scale-105 transition-transform ${card.color}`}>
+                  <card.icon className="w-6 h-6" />
+                </div>
+                <div className={`badge badge-soft gap-1 text-xs font-medium ${card.isUp ? 'badge-success' : 'badge-error'}`}>
+                  {card.isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                  {card.change}
+                </div>
+              </div>
+              <h3 className="text-content-muted text-xs font-black uppercase tracking-widest mb-1">{card.title}</h3>
+              <p className="text-3xl font-black tracking-tighter">{card.value.toLocaleString()}</p>
+            </div>
+          </div>
+        ))}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={`lg:col-span-2 ${CONSOLE_PANEL_CLASS}`}>

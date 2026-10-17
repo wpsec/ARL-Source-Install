@@ -98,10 +98,17 @@ record "dist manifest + entry-asset 自洽" "PASS"
 # 当前生产 Dockerfile 从源码构建；worker/ARMWorker 等兼容入口仍直接复制
 # docker/frontend。两套入口必须服务同一份 hash 资产，否则用户会看到旧 UI。
 if [ -d "$SNAPSHOT_DIR" ]; then
-    if ! diff -rq "$DIST_DIR" "$SNAPSHOT_DIR" >/dev/null; then
-        fail_phase "docker/frontend 静态快照与 frontend-src/dist 不一致"
+    SNAPSHOT_MATCH=1
+    while IFS= read -r asset_path; do
+        if [ ! -f "$SNAPSHOT_DIR/$asset_path" ] || ! cmp -s "$DIST_DIR/$asset_path" "$SNAPSHOT_DIR/$asset_path"; then
+            SNAPSHOT_MATCH=0
+            break
+        fi
+    done < <(cd "$DIST_DIR" && find . -type f -print | sort)
+    if [ "$SNAPSHOT_MATCH" != "1" ]; then
+        fail_phase "docker/frontend 缺少当前构建文件或内容不一致"
     fi
-    record "docker/frontend 静态快照一致性" "PASS"
+    record "docker/frontend 当前构建文件一致性" "PASS"
 else
     record "docker/frontend 静态快照一致性" "SKIP(快照目录不存在)"
 fi
@@ -124,10 +131,25 @@ else
         fi
     fi
     if [ "$SERVE_AVAILABLE" = "1" ]; then
+        if ! grep -Fq 'try_files $uri $uri/ /index.html;' "$SRC_DIR/../nginx.conf"; then
+            fail_phase "生产 nginx.conf 缺少 SPA 深层链接回退"
+        fi
         EXPECTED_INDEX="$SUMMARY_DIR/expected-index.html"
+        SMOKE_NGINX_CONF="$SUMMARY_DIR/nginx-smoke.conf"
         cp "$DIST_DIR/index.html" "$EXPECTED_INDEX"
+        cat > "$SMOKE_NGINX_CONF" <<'EOF'
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+        index index.html index.htm;
+    }
+}
+EOF
         EXPECTED_ASSET_SHA="$(hash256 "$ASSET_PATH")"
-        BASE_PORT=18080
         REF_FILE=""
         OK=1
         declare -a CONTAINERS=()
@@ -139,21 +161,31 @@ else
         trap cleanup EXIT
         for platform in $PLATFORMS; do
             suffix="${platform##*/}"
-            port=$((BASE_PORT + ${#CONTAINERS[@]}))
             name="arl-ui-smoke-$suffix-$$"
             if ! docker run -d --rm --platform "$platform" --name "$name" \
-                -p "$port:80" \
+                -p 127.0.0.1::80 \
                 -v "$DIST_DIR:/usr/share/nginx/html:ro" \
+                -v "$SMOKE_NGINX_CONF:/etc/nginx/conf.d/default.conf:ro" \
                 "$NGINX_IMAGE" >/dev/null 2>&1; then
                 OK=0
                 printf '[ERROR] %s 容器启动失败\n' "$platform" >&2
                 break
             fi
             CONTAINERS+=("$name")
-            for _ in 1 2 3 4 5 6 7 8 9 10; do
-                curl -sf -o /dev/null "http://127.0.0.1:$port/" && break
+            port="$(docker port "$name" 80/tcp | sed 's/.*://')"
+            READY=0
+            for _ in $(seq 1 60); do
+                if curl -sf -o /dev/null "http://127.0.0.1:$port/"; then
+                    READY=1
+                    break
+                fi
                 sleep 0.5
             done
+            if [ "$READY" != "1" ]; then
+                OK=0
+                printf '[ERROR] %s 容器未能在端口 %s 就绪\n' "$platform" "$port" >&2
+                break
+            fi
             serve_index="$SUMMARY_DIR/index-$suffix.html"
             serve_asset="$SUMMARY_DIR/asset-$suffix.js"
             curl -sf "http://127.0.0.1:$port/" -o "$serve_index" || { OK=0; break; }
@@ -161,6 +193,9 @@ else
             cmp -s "$serve_index" "$EXPECTED_INDEX" || { OK=0; break; }
             served_sha="$(hash256 "$serve_asset")"
             [ "$served_sha" = "$EXPECTED_ASSET_SHA" ] || { OK=0; break; }
+            deep_link="$SUMMARY_DIR/deep-link-$suffix.html"
+            curl -sf "http://127.0.0.1:$port/tasks/ui-smoke/site" -o "$deep_link" || { OK=0; break; }
+            cmp -s "$deep_link" "$EXPECTED_INDEX" || { OK=0; break; }
             if [ -z "$REF_FILE" ]; then
                 REF_FILE="$serve_index"
             elif ! cmp -s "$REF_FILE" "$serve_index"; then

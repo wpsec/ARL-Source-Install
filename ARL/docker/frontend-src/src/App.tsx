@@ -8,7 +8,8 @@ import {
   useState,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Lock, X } from 'lucide-react';
+import { Lock, Menu, X } from 'lucide-react';
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
 import {
   ACTIVE_MODULE_KEY,
   ACTIVE_MODULE_FILTERS_KEY,
@@ -25,6 +26,7 @@ import { TASK_DETAIL_TABS, getModuleById, resolveStoredModuleId } from './config
 import { ThemeProvider } from './context/ThemeContext';
 import { applyPathTemplate, deepClone } from './domain/format';
 import type {JsonValue, ModuleAction, OpenModuleHandler} from './domain/types';
+import { buildModuleUrl, resolveModuleRoute } from './routing/routes';
 import { LoginView } from './views/LoginView';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
@@ -72,15 +74,22 @@ function readStoredModuleFilters(): Record<string, JsonValue> {
 
 export function MainShell() {
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
   // 全局动作（侧边栏"新建扫描"等）成功后的列表失效信号：TableModuleView 激活 effect 依赖它重跑，
   // 否则"已在任务页时新建任务"没有可见刷新路径（openModule 同模块不重挂载）。
   const [listRefreshSignal, setListRefreshSignal] = useState(0);
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [username, setUsername] = useState(() => localStorage.getItem(USERNAME_KEY) || 'admin');
-  const [activeModuleId, setActiveModuleId] = useState(() => resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY)));
-  const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>(
-    readStoredModuleFilters,
-  );
+  const [activeModuleId, setActiveModuleId] = useState(() => (
+    resolveModuleRoute(window.location.pathname, window.location.search)?.moduleId
+    || resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY))
+  ));
+  const [moduleExternalFilters, setModuleExternalFilters] = useState<Record<string, JsonValue>>(() => {
+    const route = resolveModuleRoute(window.location.pathname, window.location.search);
+    if (!route) return readStoredModuleFilters();
+    return Object.keys(route.filters).length > 0 ? { [route.moduleId]: route.filters } : {};
+  });
   const [moduleScrollResetTokens, setModuleScrollResetTokens] = useState<Record<string, number>>({});
   const [globalAction, setGlobalAction] = useState<ModuleAction | null>(null);
   const [globalActionPayload, setGlobalActionPayload] = useState<JsonValue>({});
@@ -91,10 +100,36 @@ export function MainShell() {
   const [passwdForm, setPasswdForm] = useState({ old_password: '', new_password: '', check_password: '' });
   const [passwdError, setPasswdError] = useState('');
   const [passwdLoading, setPasswdLoading] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const moduleScrollResetCounterRef = useRef(0);
 
   const activeModule = getModuleById(activeModuleId);
+
+  useEffect(() => {
+    if (location.pathname === '/') {
+      const storedModuleId = resolveStoredModuleId(localStorage.getItem(ACTIVE_MODULE_KEY));
+      const storedFilters = readStoredModuleFilters()[storedModuleId] || {};
+      navigate(buildModuleUrl(storedModuleId, storedFilters), { replace: true });
+      return;
+    }
+
+    const route = resolveModuleRoute(location.pathname, location.search);
+    if (!route) {
+      navigate('/dashboard', { replace: true });
+      return;
+    }
+
+    setActiveModuleId((current) => current === route.moduleId ? current : route.moduleId);
+    setModuleExternalFilters((current) => {
+      const currentFilters = current[route.moduleId] || {};
+      if (buildFilterSignature(currentFilters) === buildFilterSignature(route.filters)) return current;
+      const next = { ...current };
+      if (Object.keys(route.filters).length > 0) next[route.moduleId] = route.filters;
+      else delete next[route.moduleId];
+      return next;
+    });
+  }, [location.key, location.pathname, location.search, navigate]);
   const viewToModuleMap: Record<string, string> = {
     dashboard: 'dashboard',
     tasks: 'task',
@@ -164,7 +199,8 @@ export function MainShell() {
       }
       return next;
     });
-  }, []);
+    navigate(buildModuleUrl(moduleId, nextFilters));
+  }, [navigate]);
   const activeExternalFilters = useMemo(
     () => moduleExternalFilters[activeModuleId] || {},
     [moduleExternalFilters, activeModuleId]
@@ -180,7 +216,14 @@ export function MainShell() {
       delete next[activeModuleId];
       return next;
     });
-  }, [activeModuleId]);
+    const path = buildModuleUrl(activeModuleId);
+    const params = new URLSearchParams(location.search);
+    Array.from(params.keys()).forEach((key) => {
+      if (key.startsWith('x.')) params.delete(key);
+    });
+    const search = params.toString();
+    navigate(search ? `${path}?${search}` : path, { replace: true });
+  }, [activeModuleId, location.search, navigate]);
   const activeViewId = useMemo(() => {
     const fallbackView = moduleToViewMap[activeModuleId] || activeModuleId;
     const isTaskDetailModule = TASK_DETAIL_TABS.some((tab) => tab.id === activeModuleId);
@@ -219,8 +262,6 @@ export function MainShell() {
       localStorage.removeItem(ACTIVE_MODULE_FILTERS_KEY);
       setToken(newToken);
       setUsername(userName);
-      setModuleExternalFilters({});
-      openModule('dashboard');
     } catch (err: any) {
       setLoginError(err?.message || '登录失败');
     } finally {
@@ -370,16 +411,40 @@ export function MainShell() {
   return (
     <div className="arl-app relative h-screen flex bg-base-100 text-base-content overflow-hidden">
       <div className="theme-atmosphere-layer pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
-      <Sidebar activeView={activeViewId} onViewChange={onSidebarViewChange} onNewScan={openQuickCreateTask} />
+      <Sidebar
+        activeView={activeViewId}
+        onViewChange={onSidebarViewChange}
+        onNewScan={() => {
+          openQuickCreateTask();
+          setMobileNavOpen(false);
+        }}
+        isOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      />
 
       <main ref={mainScrollRef} className="relative z-10 min-w-0 flex-1 overflow-y-auto custom-scrollbar">
-        <header className="navbar sticky top-0 z-20 min-h-16 px-4 xl:px-6 border-b border-base-300 bg-base-100">
-          <div className="flex-1 min-w-0 text-xs xl:text-sm text-content-muted truncate" role="status">
-            {globalNotice || ' '}
+        <header className="navbar sticky top-0 z-20 min-h-16 border-b border-base-300 bg-base-100/95 px-3 backdrop-blur sm:px-4 xl:px-6">
+          <button
+            type="button"
+            className={`${CONSOLE_ICON_BUTTON_CLASS} mr-2 shrink-0 lg:hidden`}
+            aria-label="打开导航菜单"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+            <nav className="breadcrumbs min-w-0 overflow-hidden p-0 text-xs sm:text-sm" aria-label="当前位置">
+              <ul className="min-w-0 flex-nowrap whitespace-nowrap">
+                <li><button type="button" className="text-content-muted hover:text-base-content" onClick={() => openModule('dashboard')}>ARL</button></li>
+                {activeModule.id !== 'dashboard' ? <li className="text-content-muted">{activeModule.group}</li> : null}
+                <li className="min-w-0 truncate font-medium text-base-content">{activeModule.label}</li>
+              </ul>
+            </nav>
+            {globalNotice ? <div className="truncate text-[11px] text-success sm:text-xs" role="status">{globalNotice}</div> : null}
           </div>
-          <div className="navbar-end w-auto min-w-0 shrink-0 gap-1.5 xl:gap-2">
+          <div className="navbar-end w-auto min-w-0 shrink-0 gap-1 sm:gap-1.5 xl:gap-2">
             <SystemMonitorMiniWidget token={token} onOpen={() => openModule('system_monitor')} />
-            <span className="badge badge-ghost h-9 max-w-28 truncate border border-base-300 bg-base-100 px-2 text-xs font-medium text-base-content xl:px-3 xl:text-sm">{username}</span>
+            <span className="badge badge-ghost h-9 max-w-20 truncate border border-base-300 bg-base-100 px-2 text-xs font-medium text-base-content sm:max-w-28 xl:px-3 xl:text-sm">{username}</span>
             <button
               onClick={() => setPasswdDialogOpen(true)}
               className={CONSOLE_ICON_BUTTON_CLASS}
@@ -492,8 +557,10 @@ export function MainShell() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <MainShell />
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider>
+        <MainShell />
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }

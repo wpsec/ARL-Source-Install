@@ -17,9 +17,11 @@ interface SidebarProps {
   activeView: string;
   onViewChange: (view: string) => void;
   onNewScan: () => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-export default function Sidebar({ activeView, onViewChange, onNewScan }: SidebarProps) {
+export default function Sidebar({ activeView, onViewChange, onNewScan, isOpen, onClose }: SidebarProps) {
   const { theme, setTheme } = useTheme();
 
   const themes: { id: ThemeType; label: string; color: string }[] = [
@@ -75,7 +77,16 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
   ];
 
   return (
-    <aside className="arl-sidebar relative z-10 w-16 lg:w-56 xl:w-60 2xl:w-64 shrink-0 border-r border-base-300 bg-base-200 h-screen flex flex-col overflow-y-auto custom-scrollbar">
+    <>
+    {isOpen ? (
+      <button
+        type="button"
+        className="fixed inset-0 z-30 cursor-default bg-black/35 lg:hidden"
+        aria-label="关闭导航菜单"
+        onClick={onClose}
+      />
+    ) : null}
+    <aside className={`arl-sidebar fixed inset-y-0 left-0 z-40 flex h-screen w-72 shrink-0 flex-col overflow-y-auto border-r border-base-300 bg-base-100 shadow-xl transition-transform custom-scrollbar lg:relative lg:z-10 lg:w-56 lg:shadow-none xl:w-60 2xl:w-64 ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
       <div className="flex justify-center px-2 py-4 lg:block lg:px-4 lg:py-4 xl:px-5 xl:py-5 border-b border-base-300">
         {/* 统一品牌标识：所有主题固定高对比，不跟随主题色变暗 */}
         <BrandLogo size="md" compactBelowLg />
@@ -94,10 +105,10 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </motion.button>
       </div>
 
-      <nav className="flex-1 px-1.5 py-2 space-y-5 lg:px-3 xl:px-4">
+      <nav className="flex-1 space-y-5 px-3 py-2 xl:px-4">
         {navGroups.map((group) => (
           <div key={group.label}>
-            <h3 className={cn("hidden px-3 mb-2 text-[11px] font-semibold leading-4 tracking-wide opacity-80 lg:block", group.color)}>
+            <h3 className={cn("mb-2 px-3 text-[11px] font-semibold leading-4 tracking-wide opacity-80", group.color)}>
               {group.label}
             </h3>
             <ul className="flex w-full list-none flex-col space-y-1 p-0">
@@ -110,9 +121,12 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                   )}
                 >
                   <button
-                    onClick={() => onViewChange(item.id)}
+                    onClick={() => {
+                      onViewChange(item.id);
+                      onClose();
+                    }}
                     className={cn(
-                      "arl-sidebar-nav-item group flex min-h-10 !w-full !min-w-0 !max-w-none !flex-[1_1_100%] !basis-0 cursor-pointer items-center justify-center overflow-hidden rounded-box border border-transparent px-0 py-0 text-sm font-medium transition-colors focus-visible:outline-none lg:justify-start lg:gap-3 lg:px-3",
+                      "arl-sidebar-nav-item group flex min-h-10 !w-full !min-w-0 !max-w-none !flex-[1_1_100%] !basis-0 cursor-pointer items-center justify-start gap-3 overflow-hidden rounded-box border border-transparent px-3 py-0 text-sm font-medium transition-colors focus-visible:outline-none",
                       activeView === item.id
                         ? "!bg-transparent font-semibold !text-primary"
                         : "!bg-transparent text-content-muted hover:bg-transparent hover:text-base-content",
@@ -122,7 +136,7 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
                     aria-current={activeView === item.id ? 'page' : undefined}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="hidden min-w-0 !w-full !flex-1 self-stretch items-center justify-start text-left lg:flex">{item.label}</span>
+                    <span className="flex min-w-0 !w-full !flex-1 self-stretch items-center justify-start text-left">{item.label}</span>
                   </button>
                 </li>
               ))}
@@ -171,5 +185,6 @@ export default function Sidebar({ activeView, onViewChange, onNewScan }: Sidebar
         </div>
       </div>
     </aside>
+    </>
   );
 }

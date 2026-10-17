@@ -3,6 +3,7 @@
 // Phase 3 追加：筛选选项/明细计数/AI 配置读取统一 React Query 的行为证据。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getModuleById, TASK_DETAIL_TABS } from '../config/modules';
 import { installFetchMock } from '../test/fetchMock';
@@ -19,17 +20,19 @@ function renderViewWithClient(
   externalFilters: Record<string, string> = {},
 ) {
   return render(
-    <QueryClientProvider client={client}>
-      <TableModuleView
-        module={getModuleById(moduleId)}
-        token="tk-page"
-        onOpenModule={vi.fn()}
-        externalFilters={externalFilters}
-        onClearExternalFilters={vi.fn()}
-        scrollResetToken={0}
-        refreshSignal={0}
-      />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={['/modules/task']}>
+      <QueryClientProvider client={client}>
+        <TableModuleView
+          module={getModuleById(moduleId)}
+          token="tk-page"
+          onOpenModule={vi.fn()}
+          externalFilters={externalFilters}
+          onClearExternalFilters={vi.fn()}
+          scrollResetToken={0}
+          refreshSignal={0}
+        />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -348,17 +351,19 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
     const onOpenModule = vi.fn();
     const calls = installFetchMock({ routes: TASK_N1_ROUTES });
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <TableModuleView
-          module={getModuleById('task')}
-          token="tk-page"
-          onOpenModule={onOpenModule}
-          externalFilters={{}}
-          onClearExternalFilters={vi.fn()}
-          scrollResetToken={0}
-          refreshSignal={0}
-        />
-      </QueryClientProvider>,
+      <MemoryRouter initialEntries={['/modules/task']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <TableModuleView
+            module={getModuleById('task')}
+            token="tk-page"
+            onOpenModule={onOpenModule}
+            externalFilters={{}}
+            onClearExternalFilters={vi.fn()}
+            scrollResetToken={0}
+            refreshSignal={0}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
     // 任务名输入直写 searchForm.name（taskNameSearchText），无需点“搜索”即激活同名链路。
     fireEvent.change(
@@ -387,17 +392,19 @@ describe('TableModuleView Phase 3 缓存/去重覆盖', () => {
       },
     });
     render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <TableModuleView
-          module={getModuleById('task')}
-          token="tk-page"
-          onOpenModule={vi.fn()}
-          externalFilters={{}}
-          onClearExternalFilters={vi.fn()}
-          scrollResetToken={0}
-          refreshSignal={0}
-        />
-      </QueryClientProvider>,
+      <MemoryRouter initialEntries={['/modules/task']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <TableModuleView
+            module={getModuleById('task')}
+            token="tk-page"
+            onOpenModule={vi.fn()}
+            externalFilters={{}}
+            onClearExternalFilters={vi.fn()}
+            scrollResetToken={0}
+            refreshSignal={0}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
     // 任务名输入直写 searchForm.name（taskNameSearchText），无需点“搜索”即激活同名链路。
     fireEvent.change(

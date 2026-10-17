@@ -10,6 +10,8 @@ function renderSidebar(activeView = 'dashboard') {
         activeView={activeView}
         onViewChange={vi.fn()}
         onNewScan={vi.fn()}
+        isOpen={false}
+        onClose={vi.fn()}
       />
     </ThemeProvider>,
   );
@@ -46,7 +48,7 @@ describe('Sidebar 整行菜单布局', () => {
     expect(activeButton.className).not.toContain('bg-primary/12');
     expect(activeLabel?.className).toContain('!w-full');
     expect(activeLabel?.className).toContain('flex-1');
-    expect(activeLabel?.className).toContain('lg:flex');
+    expect(activeLabel?.className).toContain('flex');
     expect(activeLabel?.className).toContain('self-stretch');
     expect(activeLabel?.className).toContain('justify-start');
     expect(activeRow?.className).toContain('arl-sidebar-nav-row');

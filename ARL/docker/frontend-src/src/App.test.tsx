@@ -13,6 +13,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   localStorage.clear();
+  window.history.replaceState({}, '', '/');
 });
 
 afterEach(() => {
@@ -122,6 +123,7 @@ describe('App 鉴权流转', () => {
     const assetNav = screen.getByRole('button', { name: '资产搜索' });
     fireEvent.click(assetNav);
     await waitFor(() => expect(localStorage.getItem('arl-active-module')).toBe('site'));
+    expect(window.location.pathname).toBe('/modules/site');
   });
 
   it('刷新后恢复任务明细筛选，避免已落库结果退回全局列表', async () => {
@@ -136,5 +138,42 @@ describe('App 鉴权流转', () => {
       const serviceCall = calls.find((call) => call.url.includes('/api/service/'));
       expect(serviceCall?.url).toContain('task_id=task-1');
     });
+    expect(window.location.pathname).toBe('/tasks/task-1/service');
+  });
+
+  it('直接访问任务详情路由会恢复 task_id 筛选', async () => {
+    window.history.replaceState({}, '', '/tasks/task-direct/site');
+    localStorage.setItem('arl-token', 'tk-existing');
+    const calls = installFetchMock();
+    renderApp();
+
+    await waitFor(() => {
+      const siteCall = calls.find((call) => call.url.includes('/api/site/'));
+      expect(siteCall?.url).toContain('task_id=task-direct');
+    });
+    expect(window.location.pathname).toBe('/tasks/task-direct/site');
+  });
+
+  it('列表筛选、页码和分页大小在 URL 中恢复', async () => {
+    window.history.replaceState({}, '', '/modules/task?page=2&size=20&status=running');
+    localStorage.setItem('arl-token', 'tk-existing');
+    installFetchMock();
+    renderApp();
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '任务管理' })).toBeTruthy());
+    expect((screen.getByLabelText('状态：') as HTMLSelectElement).value).toBe('running');
+    expect(window.location.search).toContain('page=2');
+    expect(window.location.search).toContain('size=20');
+    expect(window.location.search).toContain('status=running');
+  });
+
+  it('无效模块地址回到仪表盘', async () => {
+    window.history.replaceState({}, '', '/modules/not-a-module');
+    localStorage.setItem('arl-token', 'tk-existing');
+    installFetchMock();
+    renderApp();
+
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'));
+    expect(screen.getByRole('heading', { name: '我的仪表盘' })).toBeTruthy();
   });
 });

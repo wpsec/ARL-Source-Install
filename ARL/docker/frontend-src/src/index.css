@@ -32,12 +32,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -66,12 +66,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -100,12 +100,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -134,12 +134,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -168,12 +168,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -201,12 +201,12 @@
   --color-warning-content: var(--brand-warning-content);
   --color-error: var(--brand-danger);
   --color-error-content: var(--brand-error-content);
-  --radius-box: 1rem;
-  --radius-field: 0.75rem;
-  --radius-selector: 0.75rem;
-  --size-selector: 0.25rem;
-  --size-field: 0.25rem;
-  --border: 1px;
+  --radius-box: var(--arl-radius-panel);
+  --radius-field: var(--arl-radius-control);
+  --radius-selector: var(--arl-radius-selector);
+  --size-selector: var(--arl-size-selector);
+  --size-field: var(--arl-size-control);
+  --border: var(--arl-border-width);
   --depth: 0;
   --noise: 0;
 }
@@ -274,6 +274,37 @@
   --brand-font-size: 0.875rem;
   --brand-line-height: 1.5;
   --brand-control-line-height: 1.25;
+  --arl-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --arl-font-mono: "JetBrains Mono", "Roboto Mono", monospace;
+  --arl-space-page: 1rem;
+  --arl-space-page-tablet: 1.5rem;
+  --arl-space-page-wide: 2rem;
+  --arl-space-section: 1.5rem;
+  --arl-radius-panel: 1rem;
+  --arl-radius-control: 0.75rem;
+  --arl-radius-selector: 0.75rem;
+  --arl-size-control: 0.25rem;
+  --arl-size-selector: 0.25rem;
+  --arl-border-width: 1px;
+  --arl-shadow-panel: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --arl-shadow-modal: 0 25px 50px -12px rgb(0 0 0 / 0.45);
+  --arl-shadow-sticky: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
+  --arl-shadow-focus:
+    inset 0 0 0 1px rgba(var(--brand-accent-rgb), 0.42),
+    0 0 0 1px rgba(var(--brand-accent-rgb), 0.14);
+  --arl-motion-fast: 180ms;
+  --arl-motion-standard: 300ms;
+  --arl-ease-standard: ease;
+  --arl-transition-control:
+    border-color var(--arl-motion-fast) var(--arl-ease-standard),
+    box-shadow var(--arl-motion-fast) var(--arl-ease-standard),
+    background-color var(--arl-motion-fast) var(--arl-ease-standard),
+    color var(--arl-motion-fast) var(--arl-ease-standard),
+    transform var(--arl-motion-fast) var(--arl-ease-standard);
+  --arl-transition-surface:
+    background-color var(--arl-motion-fast) var(--arl-ease-standard),
+    border-color var(--arl-motion-fast) var(--arl-ease-standard),
+    box-shadow var(--arl-motion-fast) var(--arl-ease-standard);
   --theme-swatch-midnight: #64c7ff;
   --theme-swatch-slate: #f0b45d;
   --theme-swatch-nord: #7de2d0;
@@ -427,11 +458,11 @@
 }
 
 [data-theme='sandstone'] {
-  --brand-bg: #f5efe6;
-  --brand-bg-rgb: 245, 239, 230;
-  --brand-card: #fffaf3;
-  --brand-card-rgb: 255, 250, 243;
-  --brand-border: #d8c8b4;
+  --brand-bg: #f6f7f9;
+  --brand-bg-rgb: 246, 247, 249;
+  --brand-card: #ffffff;
+  --brand-card-rgb: 255, 255, 255;
+  --brand-border: #e1e5eb;
   --brand-accent: #9b481c;
   --brand-accent-rgb: 155, 72, 28;
   --brand-accent-strong: #7f3813;
@@ -442,19 +473,19 @@
   --brand-warning-rgb: 166, 75, 10;
   --brand-danger: #b4233b;
   --brand-danger-rgb: 180, 35, 59;
-  --brand-text: #2f2822;
-  --brand-text-muted: #685d53;
+  --brand-text: #202733;
+  --brand-text-muted: #626d7b;
   --brand-success: #047857;
   --brand-success-content: #ecfdf5;
   --brand-warning-content: #ffffff;
   --brand-error-content: #ffffff;
-  --brand-card-surface-alpha: 0.72;
-  --brand-card-elevated-alpha: 0.84;
-  --brand-shell-alpha: 0.82;
-  --brand-atmosphere-accent-alpha: 0.06;
-  --brand-atmosphere-secondary-alpha: 0.045;
-  --brand-atmosphere-warning-alpha: 0.05;
-  --brand-atmosphere-sheen-alpha: 0.025;
+  --brand-card-surface-alpha: 1;
+  --brand-card-elevated-alpha: 1;
+  --brand-shell-alpha: 1;
+  --brand-atmosphere-accent-alpha: 0.018;
+  --brand-atmosphere-secondary-alpha: 0.012;
+  --brand-atmosphere-warning-alpha: 0.01;
+  --brand-atmosphere-sheen-alpha: 0.01;
 }
 
 [data-theme='oceanic'] {
@@ -481,7 +512,36 @@
   --color-brand-text: var(--brand-text);
   --color-brand-text-muted: var(--brand-text-muted);
   --color-content-muted: var(--brand-text-muted);
-  --font-mono: "JetBrains Mono", "Roboto Mono", monospace;
+  --font-sans: var(--arl-font-sans);
+  --font-mono: var(--arl-font-mono);
+}
+
+@layer components {
+  .arl-page {
+    max-width: 1680px;
+    margin-inline: auto;
+    padding: var(--arl-space-page);
+  }
+
+  .arl-page > :not(:first-child) {
+    margin-block-start: var(--arl-space-section);
+  }
+
+  .arl-panel {
+    box-shadow: var(--arl-shadow-panel);
+  }
+
+  @media (min-width: 640px) {
+    .arl-page {
+      padding: var(--arl-space-page-tablet);
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .arl-page {
+      padding: var(--arl-space-page-wide);
+    }
+  }
 }
 
 @layer utilities {
@@ -500,7 +560,7 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: var(--brand-border);
-    border-radius: 10px;
+    border-radius: var(--arl-radius-selector);
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--brand-accent);
@@ -518,7 +578,7 @@
     background-color: var(--color-base-200);
     border: 1px solid var(--color-base-300);
     border-radius: var(--radius-box);
-    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.45);
+    box-shadow: var(--arl-shadow-modal);
   }
 
   /* 长表单必须拥有确定的高度，才能让 flex 中间区收缩并把操作栏固定在视口内。 */
@@ -546,7 +606,7 @@
   .arl-modal-box > .border-t {
     position: relative;
     z-index: 1;
-    box-shadow: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
+    box-shadow: var(--arl-shadow-sticky);
   }
 
   /* 动作弹窗的提交区是明确的布局边界，不能被表单滚动区压缩或遮挡。 */
@@ -555,7 +615,7 @@
     min-width: 0;
     position: relative;
     z-index: 2;
-    box-shadow: 0 -0.5rem 1.25rem rgb(0 0 0 / 0.12);
+    box-shadow: var(--arl-shadow-sticky);
   }
 
   .arl-modal-box > .border-t > .btn {
@@ -641,9 +701,12 @@
   }
 
   body {
-    @apply bg-brand-bg font-sans antialiased transition-colors duration-300;
+    @apply bg-brand-bg font-sans antialiased;
     color: var(--brand-text);
     background-color: rgb(var(--brand-bg-rgb));
+    transition:
+      color var(--arl-motion-standard) var(--arl-ease-standard),
+      background-color var(--arl-motion-standard) var(--arl-ease-standard);
   }
 
   /* 统一交互控件：平滑描边 + 更大点击面积 */
@@ -659,12 +722,7 @@
     border-radius: var(--radius-field);
     line-height: var(--brand-control-line-height);
     background-clip: padding-box;
-    transition:
-      border-color 0.18s ease,
-      box-shadow 0.18s ease,
-      background-color 0.18s ease,
-      color 0.18s ease,
-      transform 0.18s ease;
+    transition: var(--arl-transition-control);
   }
 
   .arl-app button {
@@ -679,10 +737,7 @@
     width: 100%;
     max-width: none;
     border: 1px solid transparent;
-    transition:
-      background-color 0.18s ease,
-      border-color 0.18s ease,
-      box-shadow 0.18s ease;
+    transition: var(--arl-transition-surface);
   }
 
   .arl-sidebar .arl-sidebar-nav-item {
@@ -781,9 +836,7 @@
   .arl-app textarea:focus-visible {
     outline: none;
     border-color: var(--brand-accent);
-    box-shadow:
-      inset 0 0 0 1px rgba(var(--brand-accent-rgb), 0.42),
-      0 0 0 1px rgba(var(--brand-accent-rgb), 0.14);
+    box-shadow: var(--arl-shadow-focus);
   }
 
   .arl-app input:not([type='checkbox']):not([type='radio'])::selection,
@@ -799,16 +852,13 @@
     width: 1.1rem;
     height: 1.1rem;
     border: 1px solid var(--brand-border);
-    border-radius: var(--radius-selector);
+    border-radius: var(--arl-radius-selector);
     background-color: var(--color-base-100);
     display: inline-grid;
     place-content: center;
     cursor: pointer;
     box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.16);
-    transition:
-      border-color 0.18s ease,
-      background-color 0.18s ease,
-      box-shadow 0.18s ease;
+    transition: var(--arl-transition-control);
   }
 
   .arl-app input[type='checkbox']:not(.toggle):not(.checkbox):hover {
@@ -828,9 +878,7 @@
 
   .arl-app input[type='checkbox']:not(.toggle):not(.checkbox):focus-visible {
     outline: none;
-    box-shadow:
-      inset 0 0 0 1px rgba(var(--brand-accent-rgb), 0.42),
-      0 0 0 1px rgba(var(--brand-accent-rgb), 0.14);
+    box-shadow: var(--arl-shadow-focus);
   }
 
   .arl-app input[type='checkbox']:not(.toggle):not(.checkbox):disabled {

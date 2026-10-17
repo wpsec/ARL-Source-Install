@@ -5,13 +5,12 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useLocation, useNavigationType, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   ChevronsUpDown,
   Download,
@@ -44,7 +43,6 @@ import {
   isAiDenoiseModule,
   isDeleteAction,
   isHyperlinkEnabledColumn,
-  LIVE_STATUS_MODULE_IDS,
 } from '../config/modules';
 import { formatModuleCellValue } from '../domain/cells';
 import { buildCidrPrefix } from '../domain/finger';
@@ -61,9 +59,6 @@ import {
   truncateMiddleText,
 } from '../domain/format';
 import {
-  buildTaskExecutionAccountingSummary,
-  buildTaskExecutionDurationInfo,
-  buildTaskServiceDurationSummary,
   extractTaskStatisticCounts,
   getAiPrioritySortWeight,
   getTaskProgressPercent,
@@ -72,7 +67,7 @@ import {
   getTaskStatusSortWeight,
   normalizeTaskStatus,
 } from '../domain/task';
-import type {AiDenoiseConfigSnapshot, AiDenoiseResultItem, JsonValue, LoadRowsOptions, ModuleAction, ModuleConfig, ModuleListCacheEntry, ModuleSearchField, OpenModuleHandler, TaskReportExportFeedback, TaskReportExportFormat, TaskReportExportPhase} from '../domain/types';
+import type {AiDenoiseConfigSnapshot, AiDenoiseResultItem, JsonValue, ModuleAction, ModuleConfig, ModuleListCacheEntry, ModuleSearchField, OpenModuleHandler, TaskReportExportFeedback, TaskReportExportFormat, TaskReportExportPhase} from '../domain/types';
 import {
   buildWihEndpointDetailUrl,
   buildWihEndpointDisplayRequestPacket,
@@ -85,6 +80,7 @@ import {
   isSensitiveWihRow,
 } from '../domain/wih';
 import { PageHeader } from '../layout/PageHeader';
+import { buildModuleListSearch, hasModuleListUrlState, parseModuleListUrlState } from '../routing/listState';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_INFO_CLASS,
@@ -102,6 +98,20 @@ import {
   UNIFIED_SELECT_CLASS,
 } from '../ui/classes';
 import { ActionDialog } from './ActionDialog';
+import { ModuleNavigation } from './components/ModuleNavigation';
+import { ModulePagination } from './components/ModulePagination';
+import { ModuleSearchFields } from './components/ModuleSearchFields';
+import { ExpandableMetadataCell } from './components/ExpandableMetadataCell';
+import {
+  getModuleRowOperationColumnWidthClass,
+  hasModuleRowOperations,
+  ModuleRowOperations,
+} from './components/ModuleRowOperations';
+import { RiskRecordDetailModal, type RiskRecordDetail } from './components/RiskRecordDetailModal';
+import { TaskErrorDialog, type TaskErrorDetail } from './components/TaskErrorDialog';
+import { TaskReportExportDialog } from './components/TaskReportExportDialog';
+import { TaskExecutionStatusCell } from './components/TaskExecutionStatusCell';
+import { useModuleListData } from './hooks/useModuleListData';
 
 const DEFAULT_FIXED_TABLE_COLUMN_WIDTHS: Record<string, number> = {
   __select: 52,
@@ -188,7 +198,7 @@ const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>
     statistic_summary: 240,
     progress: 190,
     options_summary: 300,
-    status: 140,
+    status: 220,
     _id: 240,
   },
   task_schedule: {
@@ -398,14 +408,18 @@ export function TableModuleView({
   /** 全局动作成功后的列表失效信号（App/MainShell 递增），变化即重跑激活取数。 */
   refreshSignal?: number;
 }) {
-  const [manualLoading, setManualLoading] = useState(false);
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const [, setSearchParams] = useSearchParams();
+  const defaultPageSize = getDefaultModulePageSize(module.id, externalFilters);
+  const initialUrlState = parseModuleListUrlState(location.search, module, defaultPageSize);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [page, setPage] = useState(1);
-  const [size, setSize] = useState(() => getDefaultModulePageSize(module.id, externalFilters));
-  const [order, setOrder] = useState(module.defaultOrder || '');
-  const [quickFilter, setQuickFilter] = useState('');
-  const [searchForm, setSearchForm] = useState<JsonValue>({});
+  const [page, setPage] = useState(initialUrlState.page);
+  const [size, setSize] = useState(initialUrlState.size);
+  const [order, setOrder] = useState(initialUrlState.order);
+  const [quickFilter, setQuickFilter] = useState(initialUrlState.quickFilter);
+  const [searchForm, setSearchForm] = useState<JsonValue>(initialUrlState.searchForm);
   const [selectedIds, setSelectedIdsState] = useState<string[]>([]);
   const [dialogAction, setDialogAction] = useState<ModuleAction | null>(null);
   const [dialogPayload, setDialogPayload] = useState<JsonValue>({});
@@ -443,27 +457,12 @@ export function TableModuleView({
     rowTitle: string;
     row: any;
   } | null>(null);
-  const [riskRecordDetail, setRiskRecordDetail] = useState<{
-    moduleId: string;
-    rowId: string;
-    rowTitle: string;
-    row: any;
-  } | null>(null);
+  const [riskRecordDetail, setRiskRecordDetail] = useState<RiskRecordDetail | null>(null);
   const [taskRowPendingActionMap, setTaskRowPendingActionMap] = useState<Record<string, string>>({});
   const [taskStopAndDeleteLoading, setTaskStopAndDeleteLoading] = useState(false);
   const [taskReportExportFeedback, setTaskReportExportFeedback] = useState<TaskReportExportFeedback | null>(null);
   const [taskReportExportMenu, setTaskReportExportMenu] = useState('');
-  const [taskErrorDialog, setTaskErrorDialog] = useState<{
-    taskId: string;
-    taskName: string;
-    target: string;
-    logs: Array<{
-      time: string;
-      stage: string;
-      message: string;
-      traceback: string;
-    }>;
-  } | null>(null);
+  const [taskErrorDialog, setTaskErrorDialog] = useState<TaskErrorDetail | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<{ url: string; title: string } | null>(null);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<{
     title: string;
@@ -474,12 +473,10 @@ export function TableModuleView({
   const tableRootRef = useRef<HTMLDivElement | null>(null);
   const keepBottomAfterSizeChangeRef = useRef(false);
   const pendingRestoreScrollTopRef = useRef<number | null>(null);
+  const lastUrlSearchRef = useRef(location.search);
+  const skipUrlStateWriteRef = useRef(false);
   const queryClient = useQueryClient();
   const moduleListStateCacheRef = useRef<Record<string, ModuleListCacheEntry>>({});
-  const latestLoadRowsRequestIdRef = useRef(0);
-  const activeModuleCacheKeyRef = useRef('');
-  // loadRows 精确 total 对 size=1 探测值的覆盖表（按筛选签名分键，组件生命周期内有效）。
-  const taskDetailCountOverridesRef = useRef<Record<string, Record<string, number>>>({});
   const activeExternalFilters = useMemo(
     () => (externalFilters && Object.keys(externalFilters).length > 0 ? externalFilters : {}),
     [externalFilters]
@@ -490,6 +487,35 @@ export function TableModuleView({
     () => `${module.id}::${activeExternalFilterSignature}`,
     [module.id, activeExternalFilterSignature]
   );
+  useEffect(() => {
+    if (lastUrlSearchRef.current === location.search) return;
+    lastUrlSearchRef.current = location.search;
+    if (navigationType !== 'POP') return;
+
+    const restored = parseModuleListUrlState(location.search, module, defaultPageSize);
+    skipUrlStateWriteRef.current = true;
+    setPage(restored.page);
+    setSize(restored.size);
+    setOrder(restored.order);
+    setQuickFilter(restored.quickFilter);
+    setSearchForm(restored.searchForm);
+  }, [defaultPageSize, location.search, module, navigationType]);
+
+  useEffect(() => {
+    if (skipUrlStateWriteRef.current) {
+      skipUrlStateWriteRef.current = false;
+      return;
+    }
+    const nextSearch = buildModuleListSearch(
+      location.search,
+      module,
+      { page, size, order, quickFilter, searchForm },
+      defaultPageSize,
+    );
+    if (nextSearch !== location.search) {
+      setSearchParams(new URLSearchParams(nextSearch), { replace: true });
+    }
+  }, [defaultPageSize, location.search, module, order, page, quickFilter, searchForm, setSearchParams, size]);
   const selectionContextKey = useMemo(
     () => `${moduleCacheKey}::${quickFilter}::${buildFilterSignature(searchForm)}`,
     [moduleCacheKey, quickFilter, searchForm]
@@ -509,10 +535,6 @@ export function TableModuleView({
   useEffect(() => {
     setSelectedIdsState(selectedIdsByContextRef.current[selectionContextKey] || []);
   }, [selectionContextKey]);
-  useEffect(() => {
-    activeModuleCacheKeyRef.current = moduleCacheKey;
-  }, [moduleCacheKey]);
-
   const hasList = Boolean(module.listPath);
   const fixedTable = hasList;
   const getTableColumnWidth = (column: string): number | undefined => {
@@ -590,78 +612,32 @@ export function TableModuleView({
     return { ...activeExternalFilters, ...filters };
   }, [activeExternalFilters, hasAdvancedSearch, module.quickFilterKey, module.searchFields, quickFilter, searchForm]);
 
-  const buildModuleListQueryKey = useCallback(
-    (nextPage: number, nextSize: number, nextOrder: string, filters: JsonValue) => [
-      'module-list',
-      token,
-      module.id,
-      nextPage,
-      nextSize,
-      String(nextOrder || '').trim(),
-      buildFilterSignature(filters),
-    ] as const,
-    [module.id, token],
-  );
-  const fetchModuleList = useCallback(async ({
-    nextPage,
-    nextSize,
-    nextOrder,
-    filters,
-    forceRefresh = false,
-  }: {
-    nextPage: number;
-    nextSize: number;
-    nextOrder: string;
-    filters: JsonValue;
-    forceRefresh?: boolean;
-  }) => {
-    if (!module.listPath) return { items: [], total: 0 };
-    const query: JsonValue = {
-      page: nextPage,
-      size: nextSize,
-      ...filters,
-    };
-    const orderValue = String(nextOrder || '').trim();
-    if (orderValue) {
-      query.order = orderValue;
-    } else if (module.defaultOrder && !('order' in query)) {
-      query.order = module.defaultOrder;
-    }
-    if (forceRefresh) {
-      query._refresh = '1';
-    }
-    return normalizeListData(await requestApi(token, module.listPath, { method: 'GET', query }));
-  }, [module.defaultOrder, module.listPath, token]);
-
   const listFilters = useMemo(() => buildFilters(), [buildFilters]);
   const listOrderValue = String(order || '').trim();
-  const listQueryKey = buildModuleListQueryKey(page, size, listOrderValue, listFilters);
-  const cachedListSnapshot = queryClient.getQueryData<{ items: any[]; total: number }>(listQueryKey);
-  const hasLiveTaskRows = useMemo(
-    () =>
-      module.id === 'task' &&
-      (cachedListSnapshot?.items || []).some((row: any) => {
-        const status = normalizeTaskStatus(row?.status);
-        return status === 'running' || status === 'waiting';
-      }),
-    [cachedListSnapshot, module.id],
+  const isTaskDetailModule = useMemo(
+    () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
+    [module.id]
   );
-  const moduleListQuery = useQuery({
-    queryKey: listQueryKey,
-    enabled: Boolean(hasList && (shouldInitialLoad || hasLiveTaskRows)),
-    staleTime: LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
-    refetchInterval: hasLiveTaskRows ? 15_000 : false,
-    retry: 0,
-    queryFn: () => fetchModuleList({
-      nextPage: page,
-      nextSize: size,
-      nextOrder: listOrderValue,
-      filters: listFilters,
-    }),
+  const taskDetailCountCacheKey = useMemo(
+    () => `task_detail_count::${activeExternalFilterSignature}`,
+    [activeExternalFilterSignature]
+  );
+  const { rows, total, loading, loadRows, taskDetailCountOverridesRef } = useModuleListData({
+    module,
+    token,
+    page,
+    size,
+    order: listOrderValue,
+    filters: listFilters,
+    hasList,
+    shouldInitialLoad,
+    setShouldInitialLoad,
+    moduleCacheKey,
+    isTaskDetailModule,
+    taskDetailCountCacheKey,
+    setError,
+    setSuccess,
   });
-  const rows = moduleListQuery.data?.items || [];
-  const total = Number(moduleListQuery.data?.total || 0);
-  const loading = manualLoading || moduleListQuery.isFetching;
 
   // 去噪批处理属于列表数据查询，结果跟随列表快照和配置进入 React Query cache。
   const aiDenoiseModuleId = useMemo(
@@ -991,7 +967,17 @@ export function TableModuleView({
     const defaultSize = getDefaultModulePageSize(module.id, activeExternalFilters);
     const cachedState = moduleListStateCacheRef.current[moduleCacheKey];
     const shouldResetScrollPosition = Number(scrollResetToken || 0) > 0;
-    if (cachedState) {
+    const hasUrlState = hasModuleListUrlState(location.search, module);
+    if (hasUrlState) {
+      const urlState = parseModuleListUrlState(location.search, module, defaultSize);
+      setPage(urlState.page);
+      setSize(urlState.size);
+      setOrder(urlState.order);
+      setQuickFilter(urlState.quickFilter);
+      setSearchForm(urlState.searchForm);
+      setShouldInitialLoad(Boolean(hasList));
+      pendingRestoreScrollTopRef.current = shouldResetScrollPosition ? 0 : null;
+    } else if (cachedState) {
       setPage(Math.max(1, Number(cachedState.page || 1)));
       setSize(Math.max(1, Number(cachedState.size || defaultSize)));
       setOrder(String(cachedState.order || module.defaultOrder || ''));
@@ -1014,7 +1000,7 @@ export function TableModuleView({
       setShouldInitialLoad(Boolean(hasList));
       pendingRestoreScrollTopRef.current = shouldResetScrollPosition ? 0 : null;
     }
-  }, [activeExternalFilters, buildDefaultSearchForm, hasList, module.defaultOrder, module.id, moduleCacheKey, refreshSignal, scrollResetToken]);
+  }, [activeExternalFilters, buildDefaultSearchForm, hasList, location.search, module, moduleCacheKey, refreshSignal, scrollResetToken]);
 
   useEffect(() => {
     if (!hasList) return;
@@ -1230,15 +1216,6 @@ export function TableModuleView({
     ]);
   }, [buildUniqueTextOptions, module.id, rows, vulnCategoryQuery.data]);
 
-  const isTaskDetailModule = useMemo(
-    () => TASK_DETAIL_TABS.some((tab) => tab.id === module.id),
-    [module.id]
-  );
-  const taskDetailCountCacheKey = useMemo(
-    () => `task_detail_count::${activeExternalFilterSignature}`,
-    [activeExternalFilterSignature]
-  );
-
   const taskDetailCountsQuery = useQuery({
     queryKey: ['module-task-detail-counts', token, activeExternalFilterSignature],
     queryFn: async () => {
@@ -1356,129 +1333,6 @@ export function TableModuleView({
     }
     setPage(1);
   }, [hasAdvancedSearch, module.searchFields]);
-
-  useEffect(() => {
-    if (!hasList || (!shouldInitialLoad && !hasLiveTaskRows)) return;
-    if (moduleListQuery.isFetching) {
-      return;
-    }
-
-    if (moduleListQuery.error) {
-      setError(moduleListQuery.error instanceof Error ? moduleListQuery.error.message : '加载失败');
-    } else if (moduleListQuery.data) {
-      setError('');
-      if (isTaskDetailModule) {
-        taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
-          ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
-          [module.id]: Number(moduleListQuery.data.total || 0),
-        };
-      }
-    }
-
-    setShouldInitialLoad(false);
-  }, [
-    hasList,
-    hasLiveTaskRows,
-    isTaskDetailModule,
-    module.id,
-    moduleListQuery.data,
-    moduleListQuery.error,
-    moduleListQuery.isFetching,
-    shouldInitialLoad,
-    taskDetailCountCacheKey,
-  ]);
-
-  const loadRows = useCallback(async (loadOptions: LoadRowsOptions = {}) => {
-    if (!module.listPath) return;
-    const nextPage = Number.isFinite(Number(loadOptions.page))
-      ? Math.max(1, Math.floor(Number(loadOptions.page)))
-      : page;
-    const nextSize = Number.isFinite(Number(loadOptions.size))
-      ? Math.max(1, Math.floor(Number(loadOptions.size)))
-      : size;
-    const nextOrder = typeof loadOptions.order === 'string' ? loadOptions.order : order;
-    const filters = loadOptions.filters || buildFilters();
-    const requestId = latestLoadRowsRequestIdRef.current + 1;
-    latestLoadRowsRequestIdRef.current = requestId;
-    const requestModuleCacheKey = moduleCacheKey;
-
-    setManualLoading(true);
-    setError('');
-    setSuccess('');
-    try {
-      const orderValue = String(nextOrder || '').trim();
-      // react-query 只作读侧去重与短期缓存（docs/04 数据层规则）：
-      // key 含 [token, 模块, page, size, order, 全量筛选签名]；forceRefresh/状态类模块 staleTime=0。
-      const listQueryKey = buildModuleListQueryKey(nextPage, nextSize, orderValue, filters);
-      if (loadOptions.forceRefresh) {
-        queryClient.invalidateQueries({ queryKey: listQueryKey, refetchType: 'none' });
-        queryClient.invalidateQueries({
-          queryKey: ['module-task-detail-counts', token],
-          refetchType: 'none',
-        });
-      }
-      const normalized = await queryClient.fetchQuery({
-        queryKey: listQueryKey,
-        staleTime: loadOptions.forceRefresh || LIVE_STATUS_MODULE_IDS.has(module.id) ? 0 : 30_000,
-        queryFn: () => fetchModuleList({
-          nextPage,
-          nextSize,
-          nextOrder,
-          filters,
-          forceRefresh: Boolean(loadOptions.forceRefresh),
-        }),
-      });
-      if (
-        requestId !== latestLoadRowsRequestIdRef.current
-        || requestModuleCacheKey !== activeModuleCacheKeyRef.current
-      ) {
-        // 忽略旧模块/旧筛选条件/旧请求的迟到响应，避免列表串数据。
-        return;
-      }
-      if (isTaskDetailModule) {
-        const currentTotal = Number(normalized.total || 0);
-        // 本模块精确 total 覆盖 size=1 探测值（按筛选签名分键，与原 cacheRef 语义一致）。
-        taskDetailCountOverridesRef.current[taskDetailCountCacheKey] = {
-          ...(taskDetailCountOverridesRef.current[taskDetailCountCacheKey] || {}),
-          [module.id]: currentTotal,
-        };
-        queryClient.invalidateQueries({
-          queryKey: ['module-task-detail-counts', token],
-          refetchType: 'none',
-        });
-      }
-    } catch (err: any) {
-      if (
-        requestId !== latestLoadRowsRequestIdRef.current
-        || requestModuleCacheKey !== activeModuleCacheKeyRef.current
-      ) {
-        return;
-      }
-      setError(err?.message || '加载失败');
-    } finally {
-      if (
-        requestId === latestLoadRowsRequestIdRef.current
-        && requestModuleCacheKey === activeModuleCacheKeyRef.current
-      ) {
-        setManualLoading(false);
-      }
-    }
-  }, [
-    buildFilters,
-    buildModuleListQueryKey,
-    fetchModuleList,
-    isTaskDetailModule,
-    queryClient,
-    module.defaultOrder,
-    module.id,
-    module.listPath,
-    moduleCacheKey,
-    order,
-    page,
-    size,
-    taskDetailCountCacheKey,
-    token,
-  ]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pageOptions = useMemo(
@@ -3264,37 +3118,10 @@ export function TableModuleView({
   const canUseTaskNameForReportExport = module.id === 'task' && selectedIds.length === 0 && Boolean(taskNameSearchText);
   const taskReportExportDisabled =
     module.id === 'task' && (taskReportExportBusy || (selectedIds.length === 0 && !canUseTaskNameForReportExport));
-  const showTaskRowOperate = module.id === 'task';
-  const showAssetScopeRowOperate = module.id === 'asset_scope';
-  const showPolicyRowOperate = module.id === 'policy';
-  const showTaskScheduleRowOperate = module.id === 'task_schedule';
-  const showGithubTaskRowOperate = module.id === 'github_task';
-  const showGithubSchedulerRowOperate = module.id === 'github_scheduler';
-  const hasRowOperate =
-    showTaskRowOperate ||
-    showAssetScopeRowOperate ||
-    showPolicyRowOperate ||
-    showTaskScheduleRowOperate ||
-    showGithubTaskRowOperate ||
-    showGithubSchedulerRowOperate;
-  const rowOperateGroupClass = 'inline-flex flex-nowrap items-center justify-center gap-2 min-w-max';
-  const rowOperateButtonClass = `${CONSOLE_SECONDARY_BUTTON_CLASS} text-sm font-medium shrink-0`;
-  const rowOperateButtonDisabledClass = `${rowOperateButtonClass} disabled:opacity-40 disabled:cursor-not-allowed`;
+  const hasRowOperate = hasModuleRowOperations(module.id);
+  const rowOperateColumnWidthClass = getModuleRowOperationColumnWidthClass(module.id);
   const taskReportMenuItemClass =
     'block w-full text-left px-3 py-2 text-sm font-medium text-base-content hover:bg-base-300/60 hover:text-base-content focus-visible:bg-base-300/60 focus-visible:text-base-content transition-colors';
-  const rowOperateColumnWidthClass = showAssetScopeRowOperate
-    ? 'min-w-[760px]'
-    : showTaskRowOperate
-      ? 'min-w-[520px]'
-      : showPolicyRowOperate
-        ? 'min-w-[300px]'
-        : showTaskScheduleRowOperate
-          ? 'min-w-[220px]'
-          : showGithubTaskRowOperate
-            ? 'min-w-[220px]'
-            : showGithubSchedulerRowOperate
-              ? 'min-w-[300px]'
-              : '';
 
   return (
     <div ref={tableRootRef} className={CONSOLE_PAGE_CLASS}>
@@ -3317,59 +3144,14 @@ export function TableModuleView({
         }
       />
 
-      {['scheduler', 'asset_scope', 'asset_site', 'asset_domain', 'asset_ip', 'asset_wih'].includes(module.id) ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {[
-            { id: 'scheduler', label: '资产监控' },
-            { id: 'asset_scope', label: '资产分组' },
-            { id: 'asset_site', label: '组站点' },
-            { id: 'asset_domain', label: '组子域名' },
-            { id: 'asset_ip', label: '组IP' },
-            { id: 'asset_wih', label: '组WIH' },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onOpenModule(item.id)}
-              className={module.id === item.id
-                ? CONSOLE_PRIMARY_BUTTON_CLASS
-                : CONSOLE_SECONDARY_BUTTON_CLASS}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      {['site', 'domain', 'ip', 'cert', 'service', 'fileleak', 'url', 'vuln', 'nuclei_result', 'stat_finger', 'wih', 'wih_endpoint', 'waf_host'].includes(module.id) ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {hasExternalFilters ? (
-            <button
-              onClick={() => onOpenModule('task', undefined, { resetScroll: true })}
-              className={`${CONSOLE_PRIMARY_BUTTON_CLASS} gap-1.5`}
-              title="返回任务管理"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              返回任务管理
-            </button>
-          ) : null}
-          {TASK_DETAIL_TABS.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onOpenModule(item.id, hasExternalFilters ? activeExternalFilters : undefined)}
-              className={module.id === item.id
-                ? CONSOLE_PRIMARY_BUTTON_CLASS
-                : CONSOLE_SECONDARY_BUTTON_CLASS}
-            >
-              {`${item.label} - ${
-                typeof taskDetailCounts[item.id] === 'number'
-                  ? taskDetailCounts[item.id]
-                  : taskDetailCountLoading
-                    ? '...'
-                    : 0
-              }`}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <ModuleNavigation
+        moduleId={module.id}
+        hasExternalFilters={hasExternalFilters}
+        externalFilters={activeExternalFilters}
+        taskDetailCounts={taskDetailCounts}
+        taskDetailCountLoading={taskDetailCountLoading}
+        onOpenModule={onOpenModule}
+      />
 
       <div className="bg-base-200 border border-base-300 rounded-box p-4 space-y-4 shadow-sm">
         {hasExternalFilters ? (
@@ -3396,70 +3178,18 @@ export function TableModuleView({
         ) : null}
         {hasAdvancedSearch ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {(module.searchFields || []).map((field) => (
-                <div key={field.key} className="space-y-1">
-                  <label className="text-xs font-bold text-base-content">{field.label}：</label>
-                  {field.inputType === 'select' ? (
-                    <div className="relative">
-                      <select
-                        value={String(searchForm?.[field.key] ?? '')}
-                        className={UNIFIED_SELECT_CLASS}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setSearchForm((prev) => ({ ...prev, [field.key]: value }));
-                        }}
-                      >
-                        {getSearchFieldOptions(field).map((option) => (
-                          <option key={`${field.key}-${option.value}`} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-base-content pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-                    </div>
-                  ) : (
-                    (() => {
-                      const suggestionOptions = getSearchFieldSuggestionOptions(field);
-                      const datalistId =
-                        suggestionOptions.length > 0 ? `search-suggestions-${module.id}-${field.key}` : undefined;
-
-                      return (
-                        <>
-                          <input
-                            list={datalistId}
-                            type={field.inputType === 'number' ? 'number' : 'text'}
-                            value={String(searchForm?.[field.key] ?? '')}
-                            placeholder={field.placeholder}
-                            className={`${CONSOLE_INPUT_CLASS} placeholder:text-content-muted`}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setSearchForm((prev) => ({ ...prev, [field.key]: value }));
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault();
-                                setPage(1);
-                                void loadRows({ page: 1, forceRefresh: true });
-                              }
-                            }}
-                          />
-                          {datalistId ? (
-                            <datalist id={datalistId}>
-                              {suggestionOptions.map((option) => (
-                                <option key={`${field.key}-${option.value}`} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </datalist>
-                          ) : null}
-                        </>
-                      );
-                    })()
-                  )}
-                </div>
-              ))}
-            </div>
+            <ModuleSearchFields
+              moduleId={module.id}
+              fields={module.searchFields || []}
+              values={searchForm || {}}
+              getOptions={getSearchFieldOptions}
+              getSuggestions={getSearchFieldSuggestionOptions}
+              onChange={(key, value) => setSearchForm((prev) => ({ ...prev, [key]: value }))}
+              onEnter={() => {
+                setPage(1);
+                void loadRows({ page: 1, forceRefresh: true });
+              }}
+            />
 
             <div className="flex flex-wrap gap-2">
               {hasList ? (
@@ -3797,7 +3527,6 @@ export function TableModuleView({
                   const scopeExpandKey = id || `scope-row-${page}-${rowIndex}`;
                   const scheduleTargetExpandKey = id || `task-schedule-row-${page}-${rowIndex}`;
                   const taskOptionExpandKey = id || `task-option-row-${page}-${rowIndex}`;
-                  const siteFingerExpandKey = id || `site-finger-row-${page}-${rowIndex}`;
 
                   return (
                     <tr key={id || `row-${page}-${rowIndex}`} className="border-b border-base-300/60 hover:bg-base-200/60 transition">
@@ -4371,95 +4100,14 @@ export function TableModuleView({
                         }
 
                         if (module.id === 'task' && column === 'status') {
-                          const rawStatus = String(row?.status || '').trim().toLowerCase();
-                          const statusText = formatModuleCellValue(module.id, column, row);
-                          const durationDetail = buildTaskExecutionDurationInfo(row, Date.now());
-                          const taskServiceDuration = buildTaskServiceDurationSummary(row);
-                          const taskAccountingSummary = buildTaskExecutionAccountingSummary(row, Date.now());
-                          const currentDurationLabel = durationDetail.durationLabel || '-';
-                          const currentStartText = durationDetail.startText || '-';
-                          const currentEndText = durationDetail.endText || '-';
-                          const visibleStatusText = rawStatus === 'done' && currentDurationLabel !== '-'
-                            ? `${statusText}（${currentDurationLabel}）`
-                            : statusText;
-                          const statusNode = rawStatus === 'error' ? (
-                            <button
-                              type="button"
-                              onClick={() => openTaskErrorDialog(row)}
-                              className={`${CONSOLE_TEXT_BUTTON_CLASS} inline-flex min-w-0 max-w-full items-center gap-1 text-error hover:underline font-semibold`}
-                              title="点击查看异常详情"
-                            >
-                              <AlertTriangle className="w-4 h-4" />
-                              <span className="block min-w-0 max-w-full truncate">{visibleStatusText}</span>
-                            </button>
-                          ) : (
-                            <span className="block min-w-0 max-w-full truncate">{visibleStatusText}</span>
-                          );
-
                           return (
-                            <td key={column} className="px-4 py-3 align-middle text-sm whitespace-nowrap text-center min-w-0 max-w-full overflow-hidden arl-table-popover-cell" style={columnStyle}>
-                              <div className="group relative flex min-w-0 max-w-full items-center justify-center">
-                                {statusNode}
-                                <div className="pointer-events-none invisible absolute left-1/2 top-full z-30 w-[420px] max-w-[82vw] -translate-x-1/2 pt-2 opacity-0 transition duration-150 delay-300 group-hover:pointer-events-auto group-hover:visible group-hover:opacity-100">
-                                  <div className="rounded-box border border-base-300 bg-base-200 p-3 text-left shadow-lg">
-                                    <div className="text-xs font-black tracking-wide text-base-content">任务执行时间概览</div>
-                                    <div className="mt-2 rounded-box border border-base-300 bg-base-100 px-2.5 py-2">
-                                      <div className="text-[11px] text-content-muted">当前任务执行时长</div>
-                                      <div className="mt-1 text-sm font-semibold text-base-content">{currentDurationLabel}</div>
-                                      <div className="mt-1 text-[11px] text-content-muted">开始：{currentStartText}</div>
-                                      <div className="text-[11px] text-content-muted">结束：{currentEndText}</div>
-                                    </div>
-                                    <div className="mt-2 text-[11px] text-content-muted">
-                                      已记录子任务阶段 {taskServiceDuration.totalStageCount} 个，可统计耗时 {taskServiceDuration.countedStageCount} 个
-                                    </div>
-                                    <div className="text-[11px] text-content-muted">
-                                      子任务累计耗时：{taskServiceDuration.totalDurationLabel}
-                                    </div>
-                                    {taskServiceDuration.dedupApplied ? (
-                                      <div className="whitespace-pre-line text-[11px] text-content-muted">
-                                        已自动排除父阶段重复统计
-                                        {taskServiceDuration.skippedParentStageNames.length
-                                          ? `：\n${taskServiceDuration.skippedParentStageNames.join('\n')}`
-                                          : ''}
-                                      </div>
-                                    ) : null}
-                                    {taskAccountingSummary.currentStageVisible ? (
-                                      <div className="text-[11px] text-content-muted">
-                                        当前进行阶段：{taskAccountingSummary.currentStageName}
-                                      </div>
-                                    ) : null}
-                                    {taskAccountingSummary.hasUncountedDuration ? (
-                                      <div className="text-[11px] font-semibold text-warning">
-                                        进行中阶段耗时（暂未计入累计）：{taskAccountingSummary.uncountedStageName} · {taskAccountingSummary.uncountedDurationLabel}
-                                      </div>
-                                    ) : null}
-                                    {taskAccountingSummary.note ? (
-                                      <div className="mt-1 text-[11px] text-content-muted">
-                                        {taskAccountingSummary.note}
-                                      </div>
-                                    ) : null}
-                                    <div className="mt-2 max-h-44 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 text-[11px] leading-relaxed text-base-content">
-                                      {taskServiceDuration.entries.length > 0 ? (
-                                        taskServiceDuration.entries.map((entry, lineIndex) => (
-                                          <React.Fragment key={`${lineIndex}-${entry.stageName}`}>
-                                            <div className="font-mono break-all">
-                                              {`${lineIndex + 1}. ${entry.stageName}：${entry.elapsedLabel}${entry.countedInTotal ? '' : '（汇总阶段，未计入累计耗时）'}`}
-                                            </div>
-                                            {entry.detail ? (
-                                              <div className="pl-4 text-content-muted break-all">
-                                                {entry.detail}
-                                              </div>
-                                            ) : null}
-                                          </React.Fragment>
-                                        ))
-                                      ) : (
-                                        <div className="text-content-muted">暂无该任务子任务执行时间数据</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
+                            <TaskExecutionStatusCell
+                              key={column}
+                              row={row}
+                              statusText={formatModuleCellValue(module.id, column, row)}
+                              columnStyle={columnStyle}
+                              onOpenError={openTaskErrorDialog}
+                            />
                           );
                         }
 
@@ -4499,94 +4147,40 @@ export function TableModuleView({
                         }
 
                         if ((module.id === 'asset_site' || module.id === 'site') && column === 'headers') {
-                          const headerText = formatModuleCellValue(module.id, column, row);
-                          const headerLines = String(headerText || '')
-                            .split(/\r?\n/)
-                            .map((item) => item.trim())
-                            .filter((item) => item && item !== '-');
-                          const collapseThreshold = 3;
-                          const shouldCollapse = headerLines.length > collapseThreshold;
-                          const siteHeaderExpandKey = id || `site-header-row-${page}-${rowIndex}`;
-                          const isExpanded = Boolean(expandedSiteHeaderRows[siteHeaderExpandKey]);
-                          const renderedText = shouldCollapse && !isExpanded
-                            ? `${headerLines.slice(0, collapseThreshold).join('\n')}\n...`
-                            : (headerLines.length > 0 ? headerLines.join('\n') : '-');
-                          const headerCopyText = normalizeValueNoTruncate(row?.headers);
-
+                          const expandKey = id || `site-header-row-${page}-${rowIndex}`;
                           return (
-                            <td
+                            <ExpandableMetadataCell
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-0 max-w-full"
-                              style={columnStyle}
-                            >
-                              <HoverCellValue
-                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
-                                fullText={headerCopyText !== '-' ? headerCopyText : headerText}
-                                label="响应头"
-                                onCopy={copyTextToClipboard}
-                                showHover={headerCopyText !== '-' || headerText !== '-'}
-                                forceHover={shouldCollapse && !isExpanded}
-                              />
-                              {shouldCollapse ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedSiteHeaderRows((prev) => ({
-                                      ...prev,
-                                      [siteHeaderExpandKey]: !isExpanded,
-                                    }))
-                                  }
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
-                                >
-                                  {isExpanded ? '收起' : '展开'}
-                                </button>
-                              ) : null}
-                            </td>
+                              text={formatModuleCellValue(module.id, column, row)}
+                              copyText={normalizeValueNoTruncate(row?.headers)}
+                              label="响应头"
+                              expanded={Boolean(expandedSiteHeaderRows[expandKey])}
+                              onToggle={() => setExpandedSiteHeaderRows((previous) => ({
+                                ...previous,
+                                [expandKey]: !previous[expandKey],
+                              }))}
+                              onCopy={copyTextToClipboard}
+                              columnStyle={columnStyle}
+                            />
                           );
                         }
 
                         if ((module.id === 'asset_site' || module.id === 'site') && column === 'finger') {
-                          const fingerText = formatModuleCellValue(module.id, column, row);
-                          const fingerLines = fingerText
-                            .split(/\r?\n/)
-                            .map((item) => item.trim())
-                            .filter((item) => item && item !== '-');
-                          const collapseThreshold = 3;
-                          const shouldCollapse = fingerLines.length > collapseThreshold;
-                          const isExpanded = Boolean(expandedSiteFingerRows[siteFingerExpandKey]);
-                          const renderedText = shouldCollapse && !isExpanded
-                            ? `${fingerLines.slice(0, collapseThreshold).join('\n')}\n...`
-                            : (fingerLines.length > 0 ? fingerLines.join('\n') : '-');
-                          const fingerCopyText = normalizeValueNoTruncate(row?.finger);
+                          const expandKey = id || `site-finger-row-${page}-${rowIndex}`;
                           return (
-                            <td
+                            <ExpandableMetadataCell
                               key={column}
-                              className="px-4 py-3 align-middle text-sm text-left whitespace-pre-wrap break-all leading-relaxed min-w-0 max-w-full"
-                              style={columnStyle}
-                            >
-                              <HoverCellValue
-                                display={<div className={`whitespace-pre-wrap break-all leading-relaxed ${shouldCollapse && !isExpanded ? 'max-h-24 overflow-hidden' : ''}`}>{renderedText}</div>}
-                                fullText={fingerCopyText !== '-' ? fingerCopyText : fingerText}
-                                label="指纹信息"
-                                onCopy={copyTextToClipboard}
-                                showHover={fingerCopyText !== '-' || fingerText !== '-'}
-                                forceHover={shouldCollapse && !isExpanded}
-                              />
-                              {shouldCollapse ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedSiteFingerRows((prev) => ({
-                                      ...prev,
-                                      [siteFingerExpandKey]: !isExpanded,
-                                    }))
-                                  }
-                                  className={`${CONSOLE_TEXT_BUTTON_CLASS} mt-2 text-left text-xs font-semibold text-accent hover:underline`}
-                                >
-                                  {isExpanded ? '收起' : '展开'}
-                                </button>
-                              ) : null}
-                            </td>
+                              text={formatModuleCellValue(module.id, column, row)}
+                              copyText={normalizeValueNoTruncate(row?.finger)}
+                              label="指纹信息"
+                              expanded={Boolean(expandedSiteFingerRows[expandKey])}
+                              onToggle={() => setExpandedSiteFingerRows((previous) => ({
+                                ...previous,
+                                [expandKey]: !previous[expandKey],
+                              }))}
+                              onCopy={copyTextToClipboard}
+                              columnStyle={columnStyle}
+                            />
                           );
                         }
 
@@ -4774,244 +4368,44 @@ export function TableModuleView({
                       })}
                       {hasRowOperate ? (
                         <td className={`px-4 py-3 align-middle whitespace-nowrap text-center arl-table-popover-cell ${rowOperateColumnWidthClass}`} style={getTableColumnStyle('__operate')}>
-                          {showTaskRowOperate ? (
-                            (() => {
-                              const taskRowDone = isTaskTerminalStatus(row?.status);
-                              const taskRowPendingAction = String(taskRowPendingActionMap[id] || '');
-                              const taskRowPending = Boolean(taskRowPendingAction);
-                              return (
-                                <div className={rowOperateGroupClass}>
-                                  <button
-                                    onClick={() => void syncTaskRow(id, row)}
-                                    disabled={taskRowPending || !taskRowDone}
-                                    className={rowOperateButtonDisabledClass}
-                                  >
-                                    {taskRowPendingAction === 'sync' ? '同步中...' : '同步'}
-                                  </button>
-                                  <div className="relative" data-task-report-export-menu="true">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleTaskReportExportMenu(`row:${id}`)}
-                                      disabled={taskRowPending || taskReportExportBusy}
-                                      className={`${rowOperateButtonDisabledClass} flex items-center gap-1`}
-                                    >
-                                      {taskRowPendingAction === 'export' || taskReportExportBusy ? '导出中...' : '导出'}
-                                      <ChevronDown className={`w-4 h-4 transition ${taskReportExportMenu === `row:${id}` ? 'rotate-180' : ''}`} />
-                                    </button>
-                                    {taskReportExportMenu === `row:${id}` && !taskRowPending && !taskReportExportBusy ? (
-                                      <div className="absolute right-0 top-full z-20 mt-2 min-w-[140px] overflow-hidden rounded-box border border-base-300 bg-base-200 shadow-lg">
-                                        {TASK_REPORT_EXPORT_OPTIONS.map((option) => (
-                                          <button
-                                            key={option.value}
-                                            type="button"
-                                            onClick={() => void exportTaskRow(id, option.value)}
-                                            className={taskReportMenuItemClass}
-                                          >
-                                            {option.label}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                  <button
-                                    onClick={() => void stopTaskRow(id)}
-                                    disabled={taskRowPending || taskRowDone}
-                                    className={rowOperateButtonDisabledClass}
-                                  >
-                                    {taskRowPendingAction === 'stop' ? '停止中...' : '停止'}
-                                  </button>
-                                  <button
-                                    onClick={() => void deleteTaskRow(id)}
-                                    disabled={taskRowPending}
-                                    className={rowOperateButtonDisabledClass}
-                                  >
-                                    {taskRowPendingAction === 'delete' ? '删除中...' : '删除'}
-                                  </button>
-                                  <button
-                                    onClick={() => void restartTaskRow(id)}
-                                    disabled={taskRowPending || !taskRowDone}
-                                    className={rowOperateButtonDisabledClass}
-                                  >
-                                    {taskRowPendingAction === 'restart' ? '重启中...' : '重启'}
-                                  </button>
-                                </div>
-                              );
-                            })()
-                          ) : null}
-                          {showAssetScopeRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              {assetScopeUpdateAction ? (
-                                <button
-                                  onClick={() => openAssetScopeRowActionDialog(assetScopeUpdateAction, id, row)}
-                                  className={rowOperateButtonClass}
-                                >
-                                  编辑资产
-                                </button>
-                              ) : null}
-                              {assetScopeAddScopeAction ? (
-                                <button
-                                  onClick={() => openAssetScopeRowActionDialog(assetScopeAddScopeAction, id, row, { scope: '' })}
-                                  className={rowOperateButtonClass}
-                                >
-                                  添加资产分组范围
-                                </button>
-                              ) : null}
-                              {assetScopeAddSchedulerAction ? (
-                                <button
-                                  onClick={() =>
-                                    openAssetScopeRowActionDialog(assetScopeAddSchedulerAction, id, row, {
-                                      domain: String(row?.scope || '').replace(/,/g, '\n'),
-                                      name: `监控-${String(row?.name || '').trim() || id.slice(-6)}`,
-                                    })
-                                  }
-                                  className={rowOperateButtonClass}
-                                >
-                                  添加监控任务
-                                </button>
-                              ) : null}
-                              {assetScopeAddSiteMonitorAction ? (
-                                <button
-                                  onClick={() =>
-                                    openAssetScopeRowActionDialog(assetScopeAddSiteMonitorAction, id, row, {
-                                      name: `站点监控-${String(row?.name || '').trim() || id.slice(-6)}`,
-                                    })
-                                  }
-                                  className={rowOperateButtonClass}
-                                >
-                                  添加站点监控任务
-                                </button>
-                              ) : null}
-                              {assetScopeAddWihMonitorAction ? (
-                                <button
-                                  onClick={() =>
-                                    openAssetScopeRowActionDialog(assetScopeAddWihMonitorAction, id, row, {
-                                      name: `WIH监控-${String(row?.name || '').trim() || id.slice(-6)}`,
-                                    })
-                                  }
-                                  className={rowOperateButtonClass}
-                                >
-                                  添加WIH监控任务
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {showPolicyRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              <button
-                                onClick={() => openPolicyTaskDialog(row)}
-                                className={rowOperateButtonClass}
-                              >
-                                任务下发
-                              </button>
-                              {policyEditAction ? (
-                                <button
-                                  onClick={() =>
-                                    openActionDialog(policyEditAction, {
-                                      policy_id: id,
-                                      policy_data: {
-                                        name: row?.name || '',
-                                        desc: row?.desc || '',
-                                        policy: row?.policy || {},
-                                      },
-                                    })
-                                  }
-                                  className={rowOperateButtonClass}
-                                >
-                                  编辑
-                                </button>
-                              ) : null}
-                              <button
-                                onClick={() => void deletePolicyRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
-                          {showTaskScheduleRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              {String(row?.status || '').toLowerCase() === 'stop' ? (
-                                <button
-                                  onClick={() => void recoverTaskScheduleRow(id)}
-                                  className={rowOperateButtonClass}
-                                >
-                                  恢复
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => void stopTaskScheduleRow(id)}
-                                  className={rowOperateButtonClass}
-                                >
-                                  停止
-                                </button>
-                              )}
-                              <button
-                                onClick={() => void deleteTaskScheduleRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
-                          {showGithubTaskRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              <button
-                                onClick={() => void stopGithubTaskRow(id)}
-                                disabled={['done', 'stop', 'error'].includes(String(row?.status || '').toLowerCase())}
-                                className={rowOperateButtonDisabledClass}
-                              >
-                                停止
-                              </button>
-                              <button
-                                onClick={() => void deleteGithubTaskRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
-                          {showGithubSchedulerRowOperate ? (
-                            <div className={rowOperateGroupClass}>
-                              {githubSchedulerUpdateAction ? (
-                                <button
-                                  onClick={() =>
-                                    openActionDialog(githubSchedulerUpdateAction, {
-                                      _id: id,
-                                      name: row?.name || '',
-                                      keyword: row?.keyword || '',
-                                      cron: row?.cron || '',
-                                      dingding_notify: row?.dingding_notify !== false,
-                                      kb_notify_enable: Boolean(row?.kb_notify_enable),
-                                    })
-                                  }
-                                  className={rowOperateButtonClass}
-                                >
-                                  修改
-                                </button>
-                              ) : null}
-                              {String(row?.status || '').toLowerCase() === 'stop' ? (
-                                <button
-                                  onClick={() => void recoverGithubSchedulerRow(id)}
-                                  className={rowOperateButtonClass}
-                                >
-                                  恢复
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => void stopGithubSchedulerRow(id)}
-                                  className={rowOperateButtonClass}
-                                >
-                                  停止
-                                </button>
-                              )}
-                              <button
-                                onClick={() => void deleteGithubSchedulerRow(id)}
-                                className={rowOperateButtonClass}
-                              >
-                                删除
-                              </button>
-                            </div>
-                          ) : null}
+                          <ModuleRowOperations
+                            moduleId={module.id}
+                            row={row}
+                            id={id}
+                            taskDone={isTaskTerminalStatus(row?.status)}
+                            pendingAction={String(taskRowPendingActionMap[id] || '')}
+                            taskReportExportBusy={taskReportExportBusy}
+                            taskReportExportMenu={taskReportExportMenu}
+                            config={{
+                              assetScopeUpdateAction,
+                              assetScopeAddScopeAction,
+                              assetScopeAddSchedulerAction,
+                              assetScopeAddSiteMonitorAction,
+                              assetScopeAddWihMonitorAction,
+                              policyEditAction,
+                              githubSchedulerUpdateAction,
+                            }}
+                            actions={{
+                              syncTaskRow,
+                              toggleTaskReportExportMenu,
+                              exportTaskRow,
+                              stopTaskRow,
+                              deleteTaskRow,
+                              restartTaskRow,
+                              openAssetScopeRowActionDialog,
+                              openPolicyTaskDialog,
+                              openActionDialog,
+                              deletePolicyRow,
+                              recoverTaskScheduleRow,
+                              stopTaskScheduleRow,
+                              deleteTaskScheduleRow,
+                              stopGithubTaskRow,
+                              deleteGithubTaskRow,
+                              recoverGithubSchedulerRow,
+                              stopGithubSchedulerRow,
+                              deleteGithubSchedulerRow,
+                            }}
+                          />
                         </td>
                       ) : null}
                     </tr>
@@ -5019,82 +4413,25 @@ export function TableModuleView({
                 }}
           />
 
-          <div className="px-4 py-3 border-t border-base-300 bg-base-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="text-xs text-content-muted font-semibold">
-              共 {total} 条，当前第 {page}/{totalPages} 页
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const nextPage = Math.max(1, page - 1);
-                  if (nextPage === page) return;
-                  setPage(nextPage);
-                  void loadRows({ page: nextPage });
-                }}
-                disabled={page <= 1}
-                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <div className="relative">
-                <select
-                  value={String(page)}
-                  onChange={(event) => {
-                    const nextPage = Number(event.target.value || 1);
-                    if (!Number.isFinite(nextPage)) return;
-                    const normalized = Math.max(1, Math.min(totalPages, Math.floor(nextPage)));
-                    setPage(normalized);
-                    void loadRows({ page: normalized });
-                  }}
-                  className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[118px] py-2`}
-                  title={`当前第 ${page} 页，共 ${totalPages} 页`}
-                >
-                  {pageOptions.map((option) => (
-                    <option key={option} value={option}>
-                      第 {option} 页
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-              </div>
-              <div className="relative">
-                <select
-                  value={size}
-                  onChange={(event) => {
-                    const nextSize = Number(event.target.value);
-                    if (!Number.isFinite(nextSize) || nextSize <= 0) return;
-                    // 切换每页条数前记录滚动锚点：若当前在底部，刷新后继续贴底。
-                    rememberBottomAnchorBeforeSizeChange();
-                    setSize(nextSize);
-                    setPage(1);
-                    void loadRows({ page: 1, size: nextSize });
-                  }}
-                  className={`${UNIFIED_SELECT_CLASS} w-auto min-w-[108px] py-2`}
-                >
-                  {[10, 20, 50, 100, 200, 500].map((option) => (
-                    <option key={option} value={option}>
-                      {option} / 页
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-4 h-4 text-content-muted pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" />
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextPage = Math.min(totalPages, page + 1);
-                  if (nextPage === page) return;
-                  setPage(nextPage);
-                  void loadRows({ page: nextPage });
-                }}
-                disabled={page >= totalPages}
-                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <ModulePagination
+            total={total}
+            page={page}
+            totalPages={totalPages}
+            pageOptions={pageOptions}
+            size={size}
+            onPageChange={(nextPage) => {
+              if (nextPage === page) return;
+              setPage(nextPage);
+              void loadRows({ page: nextPage });
+            }}
+            onPageSizeChange={(nextSize) => {
+              // 切换每页条数前记录滚动锚点：若当前在底部，刷新后继续贴底。
+              rememberBottomAnchorBeforeSizeChange();
+              setSize(nextSize);
+              setPage(1);
+              void loadRows({ page: 1, size: nextSize });
+            }}
+          />
         </div>
       ) : (
         <div className="bg-base-200 border border-base-300 rounded-box p-10 text-center text-content-muted text-sm shadow-sm">
@@ -5115,117 +4452,11 @@ export function TableModuleView({
       ) : null}
 
       {taskReportExportFeedback ? (
-        <Modal open onClose={() => {
-            if (!taskReportExportBusy) {
-              closeTaskReportExportFeedback();
-            }
-          }} boxClass="w-full max-w-lg!">
-            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h4 className="text-lg font-black">{taskReportExportFeedback.title}</h4>
-                <p className="text-xs text-content-muted mt-1 break-all">
-                  {taskReportExportFeedback.jobId
-                    ? `导出任务 ID: ${taskReportExportFeedback.jobId}`
-                    : '正在初始化导出任务'}
-                </p>
-              </div>
-              <button
-                onClick={closeTaskReportExportFeedback}
-                disabled={taskReportExportBusy}
-                className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
-                title={taskReportExportBusy ? '导出进行中，暂不可关闭' : '关闭'}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar p-6 space-y-4">
-              <div
-                role={taskReportExportFeedback.phase === 'error' ? 'alert' : 'status'}
-                className={`${
-                  taskReportExportFeedback.phase === 'error'
-                    ? CONSOLE_ALERT_ERROR_CLASS
-                    : taskReportExportFeedback.phase === 'success'
-                      ? CONSOLE_ALERT_SUCCESS_CLASS
-                      : CONSOLE_ALERT_INFO_CLASS
-                } px-4 py-3`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 shrink-0">
-                    {taskReportExportFeedback.phase === 'success' ? (
-                      <CheckCircle2 className="w-5 h-5 text-success" />
-                    ) : taskReportExportFeedback.phase === 'error' ? (
-                      <AlertTriangle className="w-5 h-5 text-error" />
-                    ) : (
-                      <RefreshCw className="w-5 h-5 text-accent animate-spin" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-black break-all">{taskReportExportFeedback.summary}</p>
-                    <p className="text-xs mt-1 break-all opacity-90">{taskReportExportFeedback.detail}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs font-semibold text-content-muted">
-                  <span>导出进度</span>
-                  <span>{taskReportExportFeedback.progress}%</span>
-                </div>
-                <progress
-                  className={`progress w-full ${
-                    taskReportExportFeedback.phase === 'error'
-                      ? 'progress-error'
-                      : taskReportExportFeedback.phase === 'success'
-                        ? 'progress-success'
-                        : 'progress-primary'
-                  }`}
-                  value={Math.max(0, Math.min(100, taskReportExportFeedback.progress))}
-                  max="100"
-                  aria-label="导出进度"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
-                  <div className="text-content-muted">任务数量</div>
-                  <div className="mt-1 font-semibold text-sm">{taskReportExportFeedback.taskCount}</div>
-                </div>
-                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
-                  <div className="text-content-muted">导出格式</div>
-                  <div className="mt-1 font-semibold text-sm break-all">{taskReportExportFeedback.formatLabel}</div>
-                </div>
-              </div>
-
-              {taskReportExportFeedback.fileName ? (
-                <div className="rounded-box border border-base-300 bg-base-100 px-3 py-2">
-                  <div className="text-xs text-content-muted">导出文件</div>
-                  <div className="mt-1 text-sm font-semibold break-all">{taskReportExportFeedback.fileName}</div>
-                </div>
-              ) : null}
-
-              {taskReportExportFeedback.error ? (
-                <div role="alert" className={`${CONSOLE_ALERT_ERROR_CLASS} whitespace-pre-wrap break-all`}>
-                  {taskReportExportFeedback.error}
-                </div>
-              ) : null}
-
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs text-content-muted">
-                  {taskReportExportBusy ? '导出进行中，请稍候...' : '导出流程已结束'}
-                </p>
-              </div>
-            </div>
-            <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
-              <button
-                onClick={closeTaskReportExportFeedback}
-                disabled={taskReportExportBusy}
-                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full disabled:opacity-40 sm:w-auto`}
-              >
-                {taskReportExportFeedback.phase === 'error' ? '关闭' : '知道了'}
-              </button>
-            </div>
-        </Modal>
+        <TaskReportExportDialog
+          feedback={taskReportExportFeedback}
+          busy={taskReportExportBusy}
+          onClose={closeTaskReportExportFeedback}
+        />
       ) : null}
 
       {riskDialogOpen ? (
@@ -5411,81 +4642,13 @@ export function TableModuleView({
         </Modal>
       ) : null}
 
-      {riskRecordDetail ? (() => {
-        const detailRow = riskRecordDetail.row || {};
-        const isNuclei = riskRecordDetail.moduleId === 'nuclei_result';
-        const knownKeys = isNuclei
-          ? ['scanner_type', 'rule_id', 'vuln_name', 'vuln_severity', 'severity', 'target', 'vuln_url', 'matched', 'extracted_results', 'save_date']
-          : ['vul_name', 'plg_type', 'app_name', 'target', 'credential', 'save_date', 'source'];
-        const usedKeys = new Set<string>([
-          ...knownKeys,
-          '_id', 'task_id', 'task_cid', 'time',
-          'ai_analysis', 'ai_analysis_reason', 'ai_fill',
-          'verify_data', 'request', 'headers',
-        ]);
-        const fields: Array<[string, string]> = [];
-        knownKeys.forEach((key) => {
-          const text = normalizeValueNoTruncate(detailRow[key]);
-          if (text && text !== '-' && text !== '[]' && text !== '{}') {
-            fields.push([humanizeField(key), text]);
-          }
-        });
-        Object.keys(detailRow).forEach((key) => {
-          if (usedKeys.has(key)) return;
-          const value = detailRow[key];
-          if (value === null || value === undefined || value === '') return;
-          if (typeof value === 'object') return;
-          const text = String(value);
-          if (!text || text === '-') return;
-          fields.push([humanizeField(key), text]);
-        });
-        const verifyRaw = normalizeValueNoTruncate(detailRow.verify_data);
-        const verifyScanner = String(detailRow?.scanner_type || '').trim().toLowerCase();
-        const verifyLabel = verifyScanner === 'afrog' ? 'afrog curl命令' : '验证报文';
-        return (
-          <Modal open onClose={closeRiskRecordDetail} boxClass="w-full max-w-5xl!">
-              <div className="px-6 py-4 border-b border-base-300 flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <h4 className="text-lg font-black">{isNuclei ? 'PoC风险详情' : '风险详情'}</h4>
-                  <p className="text-sm font-semibold break-all">{riskRecordDetail.rowTitle || '-'}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={closeRiskRecordDetail}
-                  className={CONSOLE_ICON_BUTTON_CLASS}
-                  title="关闭"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-6 space-y-4 max-h-[72vh] overflow-y-auto overflow-x-hidden custom-scrollbar">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {fields.map(([label, text]) => (
-                    <div key={label} className="rounded-box border border-base-300 bg-base-100 px-4 py-3">
-                      <div className="text-xs font-semibold text-content-muted mb-1">{label}</div>
-                      <div className="text-sm break-all whitespace-pre-wrap">{text}</div>
-                    </div>
-                  ))}
-                </div>
-                {verifyRaw && verifyRaw !== '-' ? (
-                  <div className="rounded-box border border-base-300 bg-base-100 px-4 py-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-content-muted">{verifyLabel}</span>
-                      <button
-                        type="button"
-                        onClick={() => void copyTextToClipboard(verifyRaw, verifyLabel)}
-                        className={`${CONSOLE_TEXT_BUTTON_CLASS} text-xs font-semibold text-accent hover:underline`}
-                      >
-                        复制
-                      </button>
-                    </div>
-                    <pre className="whitespace-pre-wrap break-all leading-relaxed font-mono text-sm max-h-[40vh] overflow-auto">{verifyRaw}</pre>
-                  </div>
-                ) : null}
-              </div>
-          </Modal>
-        );
-      })() : null}
+      {riskRecordDetail ? (
+        <RiskRecordDetailModal
+          detail={riskRecordDetail}
+          onClose={closeRiskRecordDetail}
+          onCopy={copyTextToClipboard}
+        />
+      ) : null}
 
       {wihEndpointDetail ? (() => {
         const detailRow = wihEndpointDetail.row || {};
@@ -5862,61 +5025,7 @@ export function TableModuleView({
 
 
       {taskErrorDialog ? (
-        <Modal open onClose={() => setTaskErrorDialog(null)} boxClass="w-full max-w-5xl!">
-            <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-error" />
-                <h4 className="text-lg font-black">任务异常详情</h4>
-              </div>
-              <button
-                onClick={() => setTaskErrorDialog(null)}
-                className={CONSOLE_ICON_BUTTON_CLASS}
-                title="关闭"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="shrink-0 min-w-0 px-6 py-4 border-b border-base-300 bg-base-100 text-sm space-y-1">
-              <div><span className="text-content-muted">任务名：</span>{taskErrorDialog.taskName}</div>
-              <div><span className="text-content-muted">目标：</span><span className="font-mono break-all">{taskErrorDialog.target}</span></div>
-              <div><span className="text-content-muted">Task_ID：</span><span className="font-mono">{taskErrorDialog.taskId || '-'}</span></div>
-            </div>
-
-            <div className="min-h-0 min-w-0 flex-1 p-6 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
-              {taskErrorDialog.logs.length > 0 ? taskErrorDialog.logs.map((log, index) => (
-                <div key={`${log.time}-${log.stage}-${index}`} className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-content-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
-                    <div><span className="text-content-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-content-muted">异常说明：</span>
-                    <div className="mt-1 whitespace-pre-wrap break-all leading-relaxed">{log.message || '-'}</div>
-                  </div>
-                  {log.traceback ? (
-                    <div className="text-sm">
-                      <span className="text-content-muted">日志信息：</span>
-                      <pre className="mt-1 whitespace-pre-wrap break-all leading-relaxed font-mono text-xs bg-base-100 border border-base-300 rounded-box p-3 overflow-auto">{log.traceback}</pre>
-                    </div>
-                  ) : null}
-                </div>
-              )) : (
-                <div className="text-sm text-content-muted">
-                  当前任务没有记录到详细异常日志（可能是历史任务或异常详情落库前的任务）。
-                </div>
-              )}
-            </div>
-            <div className="shrink-0 min-w-0 flex justify-end border-t border-base-300 bg-base-100 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => setTaskErrorDialog(null)}
-                className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
-              >
-                关闭
-              </button>
-            </div>
-        </Modal>
+        <TaskErrorDialog detail={taskErrorDialog} onClose={() => setTaskErrorDialog(null)} />
       ) : null}
 
       {deleteConfirmDialog ? (
