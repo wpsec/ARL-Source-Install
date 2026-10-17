@@ -1391,6 +1391,10 @@ export function TableModuleView({
       const taskFallback = normalizeRowIdValue(row?.task_id) || normalizeRowIdValue(row?.id);
       if (taskFallback) return taskFallback;
     }
+    if (module.id === 'policy') {
+      const policyFallback = normalizeRowIdValue(row?.policy_id);
+      if (policyFallback) return policyFallback;
+    }
     return '';
   }, [module.id, rowIdKey]);
   const normalizeAiDenoiseResultLevel = useCallback((value: any): AiDenoiseResultItem['result_level'] => {
@@ -3576,8 +3580,10 @@ export function TableModuleView({
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={!id}
                           aria-label={`选择记录 ${id || rowIndex + 1}`}
-                          className="checkbox checkbox-primary checkbox-sm cursor-pointer"
+                          title={id ? '选择记录' : '记录缺少唯一标识，无法选择'}
+                          className="checkbox checkbox-primary checkbox-sm cursor-pointer disabled:cursor-not-allowed"
                           onChange={(event) => {
                             if (!id) return;
                             if (event.target.checked) {
@@ -4072,14 +4078,20 @@ export function TableModuleView({
                               <div className="group relative flex items-start justify-start w-full gap-2">
                                 <HoverCellValue
                                   display={(
-                                    <button
-                                      type="button"
-                                      onClick={() => openTaskLocalView(id)}
-                                      className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full max-h-24 overflow-hidden text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left leading-relaxed`}
-                                      title="点击查看该任务详情"
-                                    >
-                                      {targetText}
-                                    </button>
+                                    id ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openTaskLocalView(id)}
+                                        className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full max-h-24 overflow-hidden text-accent hover:underline font-mono whitespace-pre-wrap break-all text-left leading-relaxed`}
+                                        title="点击查看该任务详情"
+                                      >
+                                        {targetText}
+                                      </button>
+                                    ) : (
+                                      <span className="block min-w-0 max-w-full max-h-24 overflow-hidden text-content-muted font-mono whitespace-pre-wrap break-all text-left leading-relaxed" title="记录缺少唯一标识，无法查看任务详情">
+                                        {targetText}
+                                      </span>
+                                    )
                                   )}
                                   fullText={copyPayload}
                                   label="目标"
@@ -4160,13 +4172,19 @@ export function TableModuleView({
                             <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
                               <HoverCellValue
                                 display={(
-                                  <button
-                                    onClick={() => openTaskLocalView(id)}
-                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
-                                    title="点击查看该任务详情"
-                                  >
-                                    {taskNameText}
-                                  </button>
+                                  id ? (
+                                    <button
+                                      onClick={() => openTaskLocalView(id)}
+                                      className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                      title="点击查看该任务详情"
+                                    >
+                                      {taskNameText}
+                                    </button>
+                                  ) : (
+                                    <span className="block min-w-0 max-w-full truncate text-content-muted text-left" title="记录缺少唯一标识，无法查看任务详情">
+                                      {taskNameText}
+                                    </span>
+                                  )
                                 )}
                                 fullText={taskNameRawText !== '-' ? taskNameRawText : taskNameText}
                                 label="任务名称"
@@ -4331,13 +4349,19 @@ export function TableModuleView({
                             <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
                               <HoverCellValue
                                 display={(
-                                  <button
-                                    onClick={() => openGithubSchedulerDetail(id)}
-                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
-                                    title="查看该监控任务结果"
-                                  >
-                                    {schedulerNameText}
-                                  </button>
+                                  id ? (
+                                    <button
+                                      onClick={() => openGithubSchedulerDetail(id)}
+                                      className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                      title="查看该监控任务结果"
+                                    >
+                                      {schedulerNameText}
+                                    </button>
+                                  ) : (
+                                    <span className="block min-w-0 max-w-full truncate text-content-muted text-left" title="记录缺少唯一标识，无法查看监控结果">
+                                      {schedulerNameText}
+                                    </span>
+                                  )
                                 )}
                                 fullText={schedulerNameRawText !== '-' ? schedulerNameRawText : schedulerNameText}
                                 label="监控任务名称"
@@ -4356,13 +4380,19 @@ export function TableModuleView({
                             <td key={column} className={`${baseClassName} overflow-hidden`} style={columnStyle}>
                               <HoverCellValue
                                 display={(
-                                  <button
-                                    onClick={() => openGithubTaskDetail(id)}
-                                    className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
-                                    title="查看该任务结果"
-                                  >
-                                    {githubTaskNameText}
-                                  </button>
+                                  id ? (
+                                    <button
+                                      onClick={() => openGithubTaskDetail(id)}
+                                      className={`${CONSOLE_TEXT_BUTTON_CLASS} block min-w-0 max-w-full truncate text-accent hover:underline text-left w-full`}
+                                      title="查看该任务结果"
+                                    >
+                                      {githubTaskNameText}
+                                    </button>
+                                  ) : (
+                                    <span className="block min-w-0 max-w-full truncate text-content-muted text-left" title="记录缺少唯一标识，无法查看任务结果">
+                                      {githubTaskNameText}
+                                    </span>
+                                  )
                                 )}
                                 fullText={githubTaskNameRawText !== '-' ? githubTaskNameRawText : githubTaskNameText}
                                 label="Github任务名称"

@@ -91,6 +91,18 @@ export function ModuleRowOperations({
 }) {
   const taskPending = Boolean(pendingAction);
 
+  if (!id) {
+    return (
+      <span
+        role="status"
+        className="text-xs text-content-muted"
+        title="记录缺少唯一标识，无法执行行操作"
+      >
+        无法操作
+      </span>
+    );
+  }
+
   if (moduleId === 'task') {
     return (
       <div className={ROW_OPERATION_GROUP_CLASS}>
