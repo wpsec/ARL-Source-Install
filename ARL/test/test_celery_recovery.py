@@ -393,6 +393,39 @@ recover_orphan_waiting_tasks_on_worker_start = celerytask_module.recover_orphan_
 
 
 class TestCeleryRecovery(unittest.TestCase):
+    def test_manual_recovery_uses_guarded_recovery_without_purging(self):
+        waiting_recovery = MagicMock(return_value={"task": 1, "github_task": 0})
+        deep_scan_recovery = MagicMock(return_value={"requeued": 1, "skipped": 0, "failed": 0})
+        purge = MagicMock()
+        fake_celerytask = types.SimpleNamespace(
+            requeue_orphan_waiting_tasks_on_worker_start=waiting_recovery,
+            recover_orphan_domain_deep_tasks_on_worker_start=deep_scan_recovery,
+            celery=types.SimpleNamespace(control=types.SimpleNamespace(purge=purge)),
+        )
+        fake_app = types.ModuleType("app")
+        fake_app.__path__ = []
+        fake_app.celerytask = fake_celerytask
+        fake_utils = types.ModuleType("app.utils")
+        fake_utils.get_logger = _build_logger
+
+        tool_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "tools" / "requeue_all_waiting.py"
+        spec = importlib.util.spec_from_file_location("test_requeue_all_waiting_tool", tool_path)
+        tool = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+
+        with patch.dict(sys.modules, {"app": fake_app, "app.utils": fake_utils}):
+            spec.loader.exec_module(tool)
+            result = tool.recover()
+
+        waiting_recovery.assert_called_once_with(reason="manual queue recovery")
+        deep_scan_recovery.assert_called_once_with()
+        purge.assert_not_called()
+        self.assertEqual(
+            {"waiting": {"task": 1, "github_task": 0}, "deep_scan": {"requeued": 1, "skipped": 0, "failed": 0}},
+            result,
+        )
+
     def test_celery_uses_early_ack_for_long_running_tasks(self):
         self.assertFalse(celery.conf.task_acks_late)
 
@@ -535,6 +568,46 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertTrue(health["ok"])
         self.assertTrue(health["checks"]["arlheavy"]["healthy"])
         self.assertEqual("arlheavy@worker-a", health["checks"]["arlheavy"]["worker"])
+
+    @patch.object(celerytask_module.celery.control, "inspect")
+    def test_shared_worker_pool_health_requires_every_shared_queue(self, mock_inspect):
+        mock_inspect.return_value.active_queues.return_value = {
+            "arlheavy@worker-a": [
+                {"name": "arlheavy"},
+                {"name": "arltask"},
+                {"name": "arlweb"},
+                {"name": "arlgithub"},
+            ],
+            "arlip@worker-a": [{"name": "arlip"}],
+        }
+
+        health = celerytask_module._inspect_worker_queue_health(
+            {
+                "arlheavy": ["arlheavy", "arltask", "arlweb", "arlgithub"],
+                "arlip": "arlip",
+            },
+            hostname="worker-a",
+        )
+
+        self.assertTrue(health["ok"])
+        self.assertTrue(health["checks"]["arlheavy"]["healthy"])
+        self.assertEqual(
+            {"arlheavy", "arltask", "arlweb", "arlgithub"},
+            set(health["checks"]["arlheavy"]["expected_queues"]),
+        )
+
+        mock_inspect.return_value.active_queues.return_value["arlheavy@worker-a"].pop()
+        unhealthy = celerytask_module._inspect_worker_queue_health(
+            {"arlheavy": ["arlheavy", "arltask", "arlweb", "arlgithub"]},
+            hostname="worker-a",
+        )
+        self.assertFalse(unhealthy["checks"]["arlheavy"]["healthy"])
+
+    def test_waiting_recovery_maps_arlip_to_dedicated_task_entry(self):
+        self.assertIn("arlip", celerytask_module._WAITING_ORPHAN_QUEUE_SET)
+        queue_task, queue_name = celerytask_module._resolve_waiting_requeue_queue_task("arlip", "task")
+        self.assertIs(queue_task, celerytask_module.arl_task_ip)
+        self.assertEqual("arlip", queue_name)
 
     @patch.object(celerytask_module.celery.control, "inspect")
     def test_worker_queue_health_detects_live_pid_without_consumer(self, mock_inspect):

@@ -3,7 +3,8 @@ import pathlib
 import sys
 import types
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 
 def _build_logger():
@@ -107,6 +108,116 @@ console = _load_console_module()
 
 
 class TestConsoleDashboardTrend(unittest.TestCase):
+    def test_queue_metrics_include_broker_worker_and_wait_data(self):
+        worker_name = "arlheavy@worker-a"
+
+        class _Inspector:
+            def active_queues(self):
+                return {worker_name: [{"name": "arlheavy"}, {"name": "arltask"}]}
+
+            def active(self):
+                return {worker_name: [{"delivery_info": {"routing_key": "arlheavy"}}]}
+
+            def reserved(self):
+                return {worker_name: [{"delivery_info": {"routing_key": "arlheavy"}}]}
+
+        fake_celerytask = types.SimpleNamespace(
+            _get_broker_queue_metrics=lambda names: (
+                {"message_count_map": {name: 0 for name in names}},
+                True,
+            ),
+            celery=types.SimpleNamespace(
+                control=types.SimpleNamespace(inspect=lambda timeout: _Inspector())
+            ),
+        )
+        fake_app = types.ModuleType("app")
+        fake_app.__path__ = []
+        fake_app.celerytask = fake_celerytask
+
+        with patch.dict(sys.modules, {"app": fake_app}), \
+                patch.object(
+                    console,
+                    "_collect_oldest_queued_at_by_queue",
+                    return_value={
+                        name: "2026-10-18 01:00:00" if name == "arlheavy" else ""
+                        for name in console.TASK_QUEUE_NAMES
+                    },
+                ), \
+                patch.object(
+                    console,
+                    "_queue_wait_seconds",
+                    side_effect=lambda value: 3600 if value else None,
+                ):
+            result = console._build_task_queue_metrics()
+
+        heavy_queue = next(item for item in result["queues"] if item["name"] == "arlheavy")
+        self.assertTrue(result["broker_ok"])
+        self.assertTrue(result["inspect_ok"])
+        self.assertEqual(0, heavy_queue["ready"])
+        self.assertEqual(1, heavy_queue["reserved"])
+        self.assertEqual(1, heavy_queue["active"])
+        self.assertEqual("2026-10-18 01:00:00", heavy_queue["earliest_queued_at"])
+        self.assertEqual(3600, heavy_queue["earliest_wait_seconds"])
+
+    def test_queue_wait_lookup_batches_reads_and_includes_github_collection(self):
+        task_documents = [
+            {
+                "status": "waiting",
+                "dispatch_queue": "arlip",
+                "dispatch_time": "2026-10-18 01:00:00",
+            },
+            {
+                "status": "waiting",
+                "dispatch_time": "2026-10-18 02:00:00",
+            },
+            {
+                "status": "deep_scan_pending",
+                "dispatch_queue": "arlheavy",
+                "deep_scan": {
+                    "status": "queued",
+                    "queue": "arlheavy",
+                    "queued_at": "2026-10-18 00:30:00",
+                },
+            },
+        ]
+        github_documents = [{
+            "status": "waiting",
+            "dispatch_time": "2026-10-17 23:00:00",
+        }]
+        icp_created_at = datetime(2026, 10, 18, 0, 0, 0, tzinfo=timezone.utc)
+        icp_documents = [{
+            "status": "queued",
+            "created_at": icp_created_at,
+        }]
+        find_calls = []
+
+        class _Collection:
+            def __init__(self, name):
+                self.name = name
+
+            def find(self, query, projection):
+                find_calls.append((self.name, query, projection))
+                if self.name == "github_task":
+                    return github_documents
+                if self.name == "icp_query_task":
+                    return icp_documents
+                if query.get("status") == "deep_scan_pending":
+                    return [item for item in task_documents if item["status"] == "deep_scan_pending"]
+                return [item for item in task_documents if item["status"] == "waiting"]
+
+        with patch.object(console, "conn", side_effect=lambda name: _Collection(name)):
+            result = console._collect_oldest_queued_at_by_queue()
+
+        self.assertEqual(4, len(find_calls))
+        self.assertEqual("2026-10-18 00:30:00", result["arlheavy"])
+        self.assertEqual("2026-10-18 01:00:00", result["arlip"])
+        self.assertEqual("2026-10-18 02:00:00", result["arltask"])
+        self.assertEqual("2026-10-17 23:00:00", result["arlgithub"])
+        self.assertEqual(
+            datetime.fromtimestamp(icp_created_at.timestamp()).strftime("%Y-%m-%d %H:%M:%S"),
+            result["arlweb"],
+        )
+
     def test_task_schedule_dashboard_counts_pending_future_and_active_recurrent(self):
         original_count_documents = console._count_documents
         try:

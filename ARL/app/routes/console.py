@@ -37,6 +37,8 @@ LAST_NET_IO_SAMPLE = {
 LOG_LINE_MAX_LENGTH = 320
 DEFAULT_RECENT_LOG_LIMIT = 80
 MAX_RECENT_LOG_LIMIT = 300
+TASK_QUEUE_NAMES = ("arltask", "arlheavy", "arlip", "arlweb", "arlgithub")
+DEEP_SCAN_QUEUE_NAMES = ("arltask", "arlheavy")
 
 # 仪表盘扫描日志默认读取 worker 日志文件，可通过环境变量覆盖。
 RECENT_SCAN_LOG_PATH = str(
@@ -130,6 +132,186 @@ def _count_active_tasks() -> int:
             }
         },
     )
+
+
+def _queue_time_candidate(timestamp, time_text):
+    parsed_time = None
+    if isinstance(time_text, datetime):
+        try:
+            parsed_time = time_text.timestamp()
+            time_text = datetime.fromtimestamp(parsed_time).strftime("%Y-%m-%d %H:%M:%S")
+        except (OverflowError, OSError, TypeError, ValueError):
+            time_text = ""
+    else:
+        time_text = str(time_text or "").strip()
+        if time_text:
+            try:
+                parsed_time = datetime.strptime(time_text, "%Y-%m-%d %H:%M:%S").timestamp()
+            except (OverflowError, OSError, TypeError, ValueError):
+                time_text = ""
+    if timestamp is not None:
+        try:
+            numeric_ts = float(timestamp)
+            display_time = datetime.fromtimestamp(numeric_ts).strftime("%Y-%m-%d %H:%M:%S")
+            return numeric_ts, display_time
+        except (OverflowError, OSError, TypeError, ValueError):
+            pass
+    if parsed_time is not None:
+        return parsed_time, time_text
+    return None
+
+
+def _deep_scan_queue_name(item):
+    deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
+    queue_name = str(deep_scan.get("queue") or item.get("dispatch_queue") or "arlheavy").strip()
+    return queue_name if queue_name in DEEP_SCAN_QUEUE_NAMES else "arlheavy"
+
+
+def _collect_oldest_queued_at_by_queue():
+    """批量读取各队列的等待时间，限制数据库往返次数并包含 GitHub 任务。"""
+    candidates = {queue_name: None for queue_name in TASK_QUEUE_NAMES}
+    queue_names = list(TASK_QUEUE_NAMES)
+    deep_queue_names = list(DEEP_SCAN_QUEUE_NAMES)
+    queries = (
+        (
+            "task",
+            {
+                "status": "waiting",
+                "$or": [
+                    {"dispatch_queue": {"$in": queue_names}},
+                    {"dispatch_queue": {"$exists": False}},
+                    {"dispatch_queue": None},
+                    {"dispatch_queue": ""},
+                ],
+            },
+            {"_id": 0, "dispatch_queue": 1, "dispatch_ts": 1, "dispatch_time": 1},
+            lambda item: str(item.get("dispatch_queue") or "arltask").strip(),
+            lambda item: (item.get("dispatch_ts"), item.get("dispatch_time")),
+        ),
+        (
+            "task",
+            {
+                "status": "deep_scan_pending",
+                "deep_scan.status": "queued",
+                "$or": [
+                    {"deep_scan.queue": {"$in": deep_queue_names}},
+                    {"deep_scan.queue": {"$exists": False}},
+                    {"deep_scan.queue": None},
+                    {"deep_scan.queue": ""},
+                ],
+            },
+            {"_id": 0, "dispatch_queue": 1, "deep_scan.queue": 1,
+             "deep_scan.dispatch_ts": 1, "deep_scan.queued_at": 1},
+            _deep_scan_queue_name,
+            lambda item: (
+                (item.get("deep_scan") or {}).get("dispatch_ts"),
+                (item.get("deep_scan") or {}).get("queued_at"),
+            ),
+        ),
+        (
+            "github_task",
+            {"status": "waiting"},
+            {"_id": 0, "dispatch_ts": 1, "dispatch_time": 1},
+            lambda _item: "arlgithub",
+            lambda item: (item.get("dispatch_ts"), item.get("dispatch_time")),
+        ),
+        (
+            "icp_query_task",
+            {"status": "queued"},
+            {"_id": 0, "dispatch_ts": 1, "dispatch_time": 1, "created_at": 1},
+            lambda _item: "arlweb",
+            lambda item: (item.get("dispatch_ts"), item.get("dispatch_time") or item.get("created_at")),
+        ),
+    )
+
+    for collection_name, query, projection, get_queue_name, get_time in queries:
+        try:
+            documents = conn(collection_name).find(query, projection)
+            for item in documents:
+                queue_name = get_queue_name(item)
+                if queue_name not in candidates:
+                    continue
+                candidate = _queue_time_candidate(*get_time(item))
+                if candidate and (candidates[queue_name] is None or candidate[0] < candidates[queue_name][0]):
+                    candidates[queue_name] = candidate
+        except Exception as exc:
+            logger.warning("queue wait timestamp lookup failed collection=%s error=%s", collection_name, exc)
+
+    return {
+        queue_name: candidate[1] if candidate else ""
+        for queue_name, candidate in candidates.items()
+    }
+
+
+def _queue_wait_seconds(queued_at):
+    if not queued_at:
+        return None
+    try:
+        queued_ts = datetime.strptime(str(queued_at), "%Y-%m-%d %H:%M:%S").timestamp()
+    except (TypeError, ValueError):
+        return None
+    return max(int(time.time() - queued_ts), 0)
+
+
+def _build_task_queue_metrics():
+    """汇总 Broker ready 与 Celery reserved/active 数量。"""
+    from app import celerytask
+
+    broker_metrics, broker_ok = celerytask._get_broker_queue_metrics(TASK_QUEUE_NAMES)
+    inspect_ok = False
+    active_by_queue = {name: 0 for name in TASK_QUEUE_NAMES}
+    reserved_by_queue = {name: 0 for name in TASK_QUEUE_NAMES}
+    worker_queue_map = {}
+
+    try:
+        inspector = celerytask.celery.control.inspect(timeout=1.5)
+        active_queues = inspector.active_queues()
+        active_tasks = inspector.active()
+        reserved_tasks = inspector.reserved()
+        inspect_ok = all(isinstance(value, dict) for value in (active_queues, active_tasks, reserved_tasks))
+        if inspect_ok:
+            for worker_name, queue_items in active_queues.items():
+                worker_queue_map[worker_name] = {
+                    str(item.get("name") or "").strip()
+                    for item in (queue_items or [])
+                    if isinstance(item, dict) and str(item.get("name") or "").strip()
+                }
+
+            def count_tasks_by_queue(task_map, counts):
+                for worker_name, tasks in task_map.items():
+                    worker_queues = worker_queue_map.get(worker_name, set())
+                    for task in tasks or []:
+                        delivery_info = task.get("delivery_info") if isinstance(task, dict) else {}
+                        routing_key = str((delivery_info or {}).get("routing_key") or "").strip()
+                        if routing_key not in counts and len(worker_queues) == 1:
+                            routing_key = next(iter(worker_queues))
+                        if routing_key in counts:
+                            counts[routing_key] += 1
+
+            count_tasks_by_queue(active_tasks, active_by_queue)
+            count_tasks_by_queue(reserved_tasks, reserved_by_queue)
+    except Exception:
+        logger.warning("queue worker inspection failed")
+
+    oldest_queued_at_by_queue = _collect_oldest_queued_at_by_queue()
+    queues = []
+    for queue_name in TASK_QUEUE_NAMES:
+        earliest_queued_at = oldest_queued_at_by_queue[queue_name]
+        queues.append({
+            "name": queue_name,
+            "ready": (broker_metrics.get("message_count_map") or {}).get(queue_name)
+            if broker_ok else None,
+            "reserved": reserved_by_queue.get(queue_name) if inspect_ok else None,
+            "active": active_by_queue.get(queue_name) if inspect_ok else None,
+            "earliest_queued_at": earliest_queued_at,
+            "earliest_wait_seconds": _queue_wait_seconds(earliest_queued_at),
+        })
+
+    return {
+        "broker_ok": bool(broker_ok),
+        "inspect_ok": bool(inspect_ok),
+        "queues": queues,
+    }
 
 
 def _build_task_schedule_dashboard_counts() -> dict:
@@ -893,6 +1075,15 @@ class ARLConsoleDashboard(ARLResource):
             "last_updated": str(datetime.now())
         }
         return utils.build_ret(ErrorMsg.Success, data)
+
+
+@ns.route('/queue_metrics')
+class ARLConsoleQueueMetrics(ARLResource):
+    """Celery 与 RabbitMQ 各任务队列的实时积压指标。"""
+
+    @auth
+    def get(self):
+        return utils.build_ret(ErrorMsg.Success, _build_task_queue_metrics())
 
 
 @ns.route('/recent_logs')

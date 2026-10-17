@@ -29,6 +29,7 @@ import { normalizeListData, requestApi } from '../api/client';
 import { HoverCellValue } from '../components/ui/HoverCellValue';
 import { StatusPill } from '../components/ui/StatusPill';
 import {
+  formatDurationSecondsLabel,
   formatPercent,
   normalizeValue,
   normalizeValueNoTruncate,
@@ -253,6 +254,20 @@ export function DashboardView({
     refetchInterval: isLogPaused ? false : 10000,
     retry: 0,
   });
+  const queueMetricsQuery = useQuery({
+    queryKey: ['dashboard-queue-metrics', token],
+    queryFn: async () => {
+      const response = await requestApi(token, '/console/queue_metrics', { method: 'GET' });
+      const data = response?.data || {};
+      return {
+        brokerOk: Boolean(data.broker_ok),
+        inspectOk: Boolean(data.inspect_ok),
+        queues: Array.isArray(data.queues) ? data.queues : [],
+      };
+    },
+    refetchInterval: 10000,
+    retry: 0,
+  });
 
   const loading = dashboardQuery.isFetching;
 
@@ -349,6 +364,23 @@ export function DashboardView({
     return parsed.toLocaleString('zh-CN', { hour12: false });
   };
 
+  const formatQueueWait = (queue: any): string => {
+    const queuedAt = String(queue?.earliest_queued_at || '').trim();
+    if (!queuedAt) return '-';
+    const elapsed = Number(queue?.earliest_wait_seconds);
+    const age = Number.isFinite(elapsed) ? formatDurationSecondsLabel(Math.max(0, elapsed)) : '时长未知';
+    return `${age} · ${queuedAt}`;
+  };
+
+  const queueLabelMap: Record<string, string> = {
+    arltask: '普通任务',
+    arlheavy: '域名深扫',
+    arlip: '重 IP 扫描',
+    arlweb: 'Web 重任务',
+    arlgithub: 'GitHub 任务',
+  };
+  const queueMetrics = queueMetricsQuery.data;
+
   const renderUsageBar = (title: string, percent: number, detail: string) => (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-[10px] font-black text-content-muted uppercase tracking-widest">
@@ -417,6 +449,57 @@ export function DashboardView({
           </div>
         ))}
       </div>
+
+      <section className={CONSOLE_PANEL_CLASS} aria-label="Celery 队列状态">
+        <div className="card-body p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+            <div>
+              <h3 className="card-title text-xl font-black tracking-tight">扫描队列</h3>
+              <p className="mt-1 text-sm text-content-muted">每 10 秒更新；ready 为待消费，reserved 为已预取，active 为正在执行。等待时间按任务账本记录统计。</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void queueMetricsQuery.refetch()}
+              className={CONSOLE_COMPACT_SECONDARY_BUTTON_CLASS}
+              aria-label="刷新队列状态"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${queueMetricsQuery.isFetching ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+          </div>
+          {queueMetricsQuery.isError || (!queueMetrics?.brokerOk && !queueMetrics?.inspectOk) ? (
+            <p role="status" className="text-sm text-content-muted">队列指标暂不可用。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table table-sm min-w-[760px]">
+                <thead>
+                  <tr>
+                    <th>队列</th>
+                    <th className="text-right">Ready</th>
+                    <th className="text-right">Reserved</th>
+                    <th className="text-right">Active</th>
+                    <th>最早可观测等待</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(queueMetrics?.queues || []).map((queue: any) => (
+                    <tr key={queue.name}>
+                      <td className="font-semibold">{queueLabelMap[String(queue.name)] || queue.name}</td>
+                      <td className="text-right tabular-nums">{queue.ready ?? '-'}</td>
+                      <td className="text-right tabular-nums">{queue.reserved ?? '-'}</td>
+                      <td className="text-right tabular-nums">{queue.active ?? '-'}</td>
+                      <td className="text-xs text-content-muted">{formatQueueWait(queue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {queueMetrics && (!queueMetrics.brokerOk || !queueMetrics.inspectOk) ? (
+                <p className="mt-2 text-xs text-warning">部分数据源暂不可用；“-”表示本次无法统计。</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={`lg:col-span-2 ${CONSOLE_PANEL_CLASS}`}>

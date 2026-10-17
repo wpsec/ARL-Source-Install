@@ -94,7 +94,7 @@ def _estimate_monitor_target_count(domain):
     return max(len(target_items), 1)
 
 
-def _should_dispatch_monitor_heavy_queue(domain, monitor_options):
+def _should_dispatch_monitor_heavy_queue(domain, monitor_options, scope_type=AssetScopeType.DOMAIN):
     if not isinstance(monitor_options, dict):
         return False, ""
 
@@ -139,8 +139,9 @@ def _should_dispatch_monitor_heavy_queue(domain, monitor_options):
     if not bool(getattr(Config, "TASK_HEAVY_QUEUE_ENABLE", True)):
         return False, "heavy_queue_disabled"
 
-    if not is_dispatch_queue_available("arlheavy"):
-        return False, "heavy_queue_unavailable"
+    queue_name = "arlip" if scope_type == AssetScopeType.IP else "arlheavy"
+    if not is_dispatch_queue_available(queue_name):
+        return False, "ip_queue_unavailable" if queue_name == "arlip" else "heavy_queue_unavailable"
 
     return True, heavy_reason
 
@@ -414,7 +415,9 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
         queue_task = celerytask.arl_task
         queue_name = "arltask"
         queue_reason = ""
-        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(domain, monitor_options)
+        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(
+            domain, monitor_options, scope_type=scope_type
+        )
         if is_heavy:
             queue_task = celerytask.arl_task_heavy
             queue_name = "arlheavy"
@@ -447,10 +450,12 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
         queue_task = celerytask.arl_task
         queue_name = "arltask"
         queue_reason = ""
-        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(domain, monitor_options)
+        is_heavy, heavy_reason = _should_dispatch_monitor_heavy_queue(
+            domain, monitor_options, scope_type=scope_type
+        )
         if is_heavy:
-            queue_task = celerytask.arl_task_heavy
-            queue_name = "arlheavy"
+            queue_task = celerytask.arl_task_ip
+            queue_name = "arlip"
             queue_reason = heavy_reason
         elif heavy_reason:
             queue_reason = "fallback:{}".format(heavy_reason)

@@ -417,6 +417,7 @@ def refresh_runtime_config_best_effort(force=False):
             "CELERY_TASK_WORKER_CONCURRENCY",
             "CELERY_GITHUB_WORKER_CONCURRENCY",
             "CELERY_HEAVY_WORKER_CONCURRENCY",
+            "CELERY_IP_WORKER_CONCURRENCY",
             "CELERY_WEB_WORKER_CONCURRENCY",
             "CELERY_PREFETCH_MULTIPLIER",
             "CELERY_MAX_TASKS_PER_CHILD",
@@ -850,6 +851,8 @@ class Config(object):
     CELERY_GITHUB_WORKER_CONCURRENCY = 2
     # Celery 重任务队列并发（全端口/深度识别等高负载任务）
     CELERY_HEAVY_WORKER_CONCURRENCY = 3
+    # Celery 重 IP 队列并发；部署环境可按 worker 槽位覆盖。
+    CELERY_IP_WORKER_CONCURRENCY = 1
     # Celery Web 重任务队列并发（目录扫描/PoC/截图/站点爬虫等）
     CELERY_WEB_WORKER_CONCURRENCY = 3
     # Celery 预取倍率（1 表示每 worker 仅预取 1 个任务）
@@ -1540,6 +1543,12 @@ try:
     if celery_heavy_worker_concurrency is not None:
         Config.CELERY_HEAVY_WORKER_CONCURRENCY = safe_positive_int(
             celery_heavy_worker_concurrency, Config.CELERY_HEAVY_WORKER_CONCURRENCY
+        )
+
+    celery_ip_worker_concurrency = y["ARL"].get("CELERY_IP_WORKER_CONCURRENCY")
+    if celery_ip_worker_concurrency is not None:
+        Config.CELERY_IP_WORKER_CONCURRENCY = safe_positive_int(
+            celery_ip_worker_concurrency, Config.CELERY_IP_WORKER_CONCURRENCY
         )
 
     celery_web_worker_concurrency = y["ARL"].get("CELERY_WEB_WORKER_CONCURRENCY")
@@ -2342,6 +2351,7 @@ try:
         "ASSET_SITE_MONITOR_CONCURRENCY",
         "ASSET_SITE_DISCOVERY_CONCURRENCY",
         "CELERY_HEAVY_WORKER_CONCURRENCY",
+        "CELERY_IP_WORKER_CONCURRENCY",
         "CELERY_WEB_WORKER_CONCURRENCY",
         "FILE_LEAK_CONCURRENCY",
         "FILE_LEAK_TARGET_CONCURRENCY",
@@ -2956,6 +2966,10 @@ try:
     Config.CELERY_HEAVY_WORKER_CONCURRENCY = safe_positive_int(
         env_int("ARL_CELERY_HEAVY_WORKER_CONCURRENCY", Config.CELERY_HEAVY_WORKER_CONCURRENCY),
         Config.CELERY_HEAVY_WORKER_CONCURRENCY
+    )
+    Config.CELERY_IP_WORKER_CONCURRENCY = safe_positive_int(
+        env_int("ARL_CELERY_IP_WORKER_CONCURRENCY", Config.CELERY_IP_WORKER_CONCURRENCY),
+        Config.CELERY_IP_WORKER_CONCURRENCY
     )
     Config.CELERY_WEB_WORKER_CONCURRENCY = safe_positive_int(
         env_int("ARL_CELERY_WEB_WORKER_CONCURRENCY", Config.CELERY_WEB_WORKER_CONCURRENCY),

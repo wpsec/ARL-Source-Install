@@ -50,6 +50,39 @@ describe('TableModuleView(task) 页面级', () => {
     expect(listCall!.url).toContain('page=1');
   });
 
+  it('任务表格区分深度扫描排队状态并保留发现进度', async () => {
+    const options = Object.fromEntries(
+      Array.from({ length: 14 }, (_, index) => [`option_${index}`, true]),
+    );
+    installFetchMock({
+      routes: {
+        '/task/': [200, {
+          code: 200,
+          data: {
+            items: [{
+              _id: 'task-queue-state-1',
+              name: 'queued-stage',
+              target: '',
+              type: 'domain',
+              status: 'deep_scan_pending',
+              options,
+              service: [{ name: 'discovery' }],
+              deep_scan: { status: 'queued', queued_at: '2026-10-17 13:00:00' },
+            }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+
+    renderTaskView();
+    expect(await screen.findByText('深度扫描排队中')).toBeTruthy();
+    expect(screen.getByText(/已等待/)).toBeTruthy();
+    expect(screen.getByText('6%')).toBeTruthy();
+  });
+
   it('列表接口 5xx：页头错误条呈现且不白屏', async () => {
     installFetchMock({
       routes: {

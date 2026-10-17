@@ -67,6 +67,7 @@ import {
   extractTaskStatisticCounts,
   getAiPrioritySortWeight,
   getTaskProgressPercent,
+  getTaskQueueStatusInfo,
   getTaskSortTimeByStatus,
   getTaskStatusSortWeight,
   normalizeTaskStatus,
@@ -4260,6 +4261,18 @@ export function TableModuleView({
                               </div>
                             </td>
                           );
+                        }
+
+                        if (module.id === 'task' && column === 'status') {
+                          const queueStatus = getTaskQueueStatusInfo(row);
+                          if (queueStatus) {
+                            return (
+                              <td key={column} className="px-4 py-3 align-middle text-sm text-center" style={columnStyle}>
+                                <div className="font-semibold text-base-content">{queueStatus.label}</div>
+                                {queueStatus.detail ? <div className="mt-1 text-xs text-content-muted">{queueStatus.detail}</div> : null}
+                              </td>
+                            );
+                          }
                         }
 
                         if (module.id === 'task' && column === 'target') {

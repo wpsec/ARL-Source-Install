@@ -567,5 +567,58 @@ class TestComposeRequiresCredentials(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, (proc.stdout + proc.stderr)[-400:])
 
 
+class TestCeleryQueueWorkerLayout(unittest.TestCase):
+    """Compose 配额与启动脚本共同限定全局 Celery active 槽位。"""
+
+    def test_compose_preserves_queue_pools_and_adds_one_ip_slot(self):
+        import yaml
+
+        compose = yaml.safe_load(read(COMPOSE_FILE))
+
+        def env_map(service_name):
+            result = {}
+            for item in compose["services"][service_name]["environment"]:
+                key, value = item.split("=", 1)
+                result[key] = value
+            return result
+
+        worker_1 = env_map("worker_1")
+        worker_2 = env_map("worker_2")
+        self.assertEqual("0", worker_1["ARL_CELERY_SHARED_POOL_ENABLE"])
+        self.assertEqual("0", worker_2["ARL_CELERY_SHARED_POOL_ENABLE"])
+        self.assertEqual("2", worker_1["ARL_CELERY_HEAVY_WORKER_CONCURRENCY"])
+        self.assertEqual("2", worker_2["ARL_CELERY_HEAVY_WORKER_CONCURRENCY"])
+        self.assertEqual("1", worker_1["ARL_CELERY_IP_WORKER_CONCURRENCY"])
+        self.assertEqual("1", worker_1["ARL_CELERY_IP_WORKER_ENABLE"])
+        self.assertEqual("0", worker_2["ARL_CELERY_IP_WORKER_ENABLE"])
+
+        total_slots = 0
+        for worker in (worker_1, worker_2):
+            for key in (
+                "ARL_CELERY_TASK_WORKER_CONCURRENCY",
+                "ARL_CELERY_HEAVY_WORKER_CONCURRENCY",
+                "ARL_CELERY_WEB_WORKER_CONCURRENCY",
+                "ARL_CELERY_GITHUB_WORKER_CONCURRENCY",
+            ):
+                total_slots += int(worker[key])
+        total_slots += int(worker_1["ARL_CELERY_IP_WORKER_CONCURRENCY"])
+        self.assertEqual(15, total_slots)
+
+    def test_worker_script_uses_shared_pool_and_has_valid_bash_syntax(self):
+        script = DOCKER_DIR / "worker" / "start_worker.sh"
+        content = read(script)
+        self.assertIn('HEAVY_QUEUE_LIST="arlheavy,arltask,arlweb,arlgithub"', content)
+        self.assertIn('WORKER_INFOS=("arlheavy:${HEAVY_PID}")', content)
+        self.assertIn('expected = {"arlheavy": ["arlheavy", "arltask", "arlweb", "arlgithub"]}', content)
+
+        proc = subprocess.run(
+            ["bash", "-n", str(script)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

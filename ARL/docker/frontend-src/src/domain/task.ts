@@ -129,6 +129,26 @@ export function getTaskStatusLabel(rawStatus: any, options: { showRunningStage?:
   return '运行中';
 }
 
+export function getTaskQueueStatusInfo(row: any, nowMs = Date.now()): { label: string; detail: string } | null {
+  const status = String(row?.status || '').trim().toLowerCase();
+  if (['done', 'done_pending', 'done_degraded', 'stop', 'error'].includes(status)) return null;
+  const deepScan = row?.deep_scan && typeof row.deep_scan === 'object' ? row.deep_scan : {};
+  const deepStatus = String(deepScan?.status || '').trim().toLowerCase();
+  const queued = deepStatus === 'queued' || (
+    status === 'deep_scan_pending' && !['running', 'done', 'failed'].includes(deepStatus)
+  );
+  const running = deepStatus === 'running' || status === 'deep_scan_running';
+  if (!queued && !running) return null;
+
+  const label = queued ? '深度扫描排队中' : '深度扫描运行中';
+  const timestamp = queued ? deepScan?.queued_at : deepScan?.started_at;
+  const timestampMs = parseDateTimeToTimestamp(timestamp);
+  const detail = timestampMs === null
+    ? ''
+    : `${queued ? '已等待' : '已运行'} ${formatDurationSecondsLabel(Math.max(0, Math.floor((nowMs - timestampMs) / 1000)))} · ${queued ? '排队于' : '开始于'} ${formatDateTimeCell(timestamp)}`;
+  return { label, detail };
+}
+
 export function getTaskTypeLabel(rawType: any): string {
   const mapping: Record<string, string> = {
     domain: '域名任务',

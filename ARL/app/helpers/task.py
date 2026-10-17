@@ -145,7 +145,7 @@ def _refresh_dispatch_queue_cache(timeout_sec=1.5):
     except Exception as e:
         logger.warning("inspect active_queues failed error:{}".format(e))
 
-    for queue_name in ["arltask", "arlheavy", "arlweb", "arlgithub"]:
+    for queue_name in ["arltask", "arlheavy", "arlip", "arlweb", "arlgithub"]:
         _QUEUE_AVAILABILITY_CACHE[queue_name] = {
             "available": queue_name in available,
             "check_time": now,
@@ -434,6 +434,8 @@ def _resolve_queue_task(queue_name):
     queue_name = str(queue_name or "").strip().lower()
     if queue_name == "arlheavy":
         return celerytask.arl_task_heavy
+    if queue_name == "arlip":
+        return celerytask.arl_task_ip
     if queue_name == "arlweb":
         return celerytask.arl_task_web
     if queue_name == "arlgithub":
@@ -472,7 +474,7 @@ def should_dispatch_web_queue_by_options(options):
 
 def _should_dispatch_heavy_queue(task_data, celery_action):
     """
-    判断任务是否应分流到重任务队列 arlheavy。
+    重 IP 与域名深扫分池运行，避免高负载 IP 扫描占满域名深扫槽位。
     """
     if celery_action not in [CeleryAction.DOMAIN_TASK, CeleryAction.IP_TASK]:
         return False, ""
@@ -514,8 +516,9 @@ def _should_dispatch_heavy_queue(task_data, celery_action):
     if not bool(getattr(Config, "TASK_HEAVY_QUEUE_ENABLE", True)):
         return False, "heavy_queue_disabled"
 
-    if not is_dispatch_queue_available("arlheavy"):
-        return False, "heavy_queue_unavailable"
+    queue_name = "arlip" if task_data.get("type") == TaskType.IP else "arlheavy"
+    if not is_dispatch_queue_available(queue_name):
+        return False, "ip_queue_unavailable" if queue_name == "arlip" else "heavy_queue_unavailable"
 
     return True, heavy_reason
 
@@ -598,10 +601,14 @@ def submit_task(task_data):
         queue_reason = ""
         queue_task = celerytask.arl_task
 
-        # 重启任务允许显式指定回主队列，兼容仅监听 arltask 的历史 worker 部署。
+        # 调用方显式固定队列时优先遵循该路由，避免自动分类改变派发语义。
         if force_queue_name == "arlheavy":
             queue_name = "arlheavy"
             queue_reason = force_queue_reason or "force_queue=arlheavy"
+            queue_task = _resolve_queue_task(queue_name)
+        elif force_queue_name == "arlip":
+            queue_name = "arlip"
+            queue_reason = force_queue_reason or "force_queue=arlip"
             queue_task = _resolve_queue_task(queue_name)
         elif force_queue_name == "arlweb":
             queue_name = "arlweb"
@@ -615,7 +622,7 @@ def submit_task(task_data):
             # 将重任务分流到独立队列，避免阻塞普通任务。
             is_heavy, heavy_reason = _should_dispatch_heavy_queue(task_data, celery_action)
             if is_heavy:
-                queue_name = "arlheavy"
+                queue_name = "arlip" if task_type == TaskType.IP else "arlheavy"
                 queue_reason = heavy_reason
                 queue_task = _resolve_queue_task(queue_name)
             elif heavy_reason:
@@ -820,17 +827,13 @@ def restart_task(task_id):
     elif task_type == TaskType.IP and task_data["options"].get("scope_id"):
         raise Exception("task_id : {}, 不支持该任务重新运行".format(task_id))
 
-    # 历史部署可能仅监听 arltask，重启任务优先回主队列，避免落到 arlheavy 后长期 waiting。
-    task_data["_dispatch_queue"] = "arltask"
-    task_data["_dispatch_queue_reason"] = "restart_force_main_queue"
     logger.info(
-        "restart task old_task_id:{} old_status:{} old_name:{} new_name:{} target:{} queue:{}".format(
+        "restart task old_task_id:{} old_status:{} old_name:{} new_name:{} target:{} queue:auto".format(
             task_id,
             old_status or "-",
             old_name or "-",
             task_data.get("name", "-"),
             task_data.get("target", "-"),
-            task_data["_dispatch_queue"],
         )
     )
 

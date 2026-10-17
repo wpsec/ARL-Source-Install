@@ -2,7 +2,7 @@
 #
 # Worker 容器启动脚本
 # - 读取 ARL 配置中的 Celery 队列并发参数
-# - 启动 github、heavy、web 与主任务四个队列 worker
+# - 可将普通队列共享到 heavy pool，并单独启动可选 IP worker
 set -e
 
 get_cfg_int() {
@@ -51,6 +51,18 @@ ensure_python_runtime() {
     echo "[ERROR] pkg_resources still missing, abort startup."
     exit 1
   fi
+}
+
+declare_ip_queue() {
+  PYTHONPATH=/code python3 - <<'PY'
+from kombu import Queue
+from app.celerytask import celery
+
+with celery.connection_or_acquire() as connection:
+    channel = connection.channel()
+    Queue("arlip", durable=True).queue_declare(channel=channel)
+    channel.close()
+PY
 }
 
 log_wih_binary_runtime() {
@@ -207,7 +219,7 @@ assign_spawned_worker_pid() {
 
   # 不能使用 PID="$(spawn_worker ...)" 这种命令替换来捕获后台 celery PID。
   # 在 bash 中，命令替换会等待子进程持有的管道关闭；而 celery 是长生命周期进程，
-  # 会导致脚本卡在第一个 worker 上，后续 arlheavy/arlweb/arltask 根本不会启动。
+  # 会导致脚本卡在第一个 worker 上，后续队列 worker 根本不会启动。
   spawn_worker "$@"
 
   if [ -z "${LAST_SPAWNED_WORKER_PID:-}" ]; then
@@ -243,17 +255,25 @@ check_worker_consumer_health() {
   local status
 
   if output="$(PYTHONPATH=/code python3 - <<'PY'
+import os
 import socket
 
 from app import celerytask
 
-health = celerytask._inspect_worker_queue_health(
-    {
+if str(os.environ.get("ARL_CELERY_SHARED_POOL_ENABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+    expected = {"arlheavy": ["arlheavy", "arltask", "arlweb", "arlgithub"]}
+else:
+    expected = {
         "arlgithub": "arlgithub",
         "arlheavy": "arlheavy",
         "arlweb": "arlweb",
         "arltask": "arltask",
-    },
+    }
+if str(os.environ.get("ARL_CELERY_IP_WORKER_ENABLE", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+    expected["arlip"] = "arlip"
+
+health = celerytask._inspect_worker_queue_health(
+    expected,
     hostname=socket.gethostname(),
     timeout_sec=1.5,
 )
@@ -275,9 +295,10 @@ PY
   )"; then
     [ -n "${output}" ] && echo "${output}"
     return 0
+  else
+    status="$?"
   fi
 
-  status="$?"
   [ -n "${output}" ] && echo "${output}"
   return "${status}"
 }
@@ -326,6 +347,7 @@ fi
 wait-for-it.sh -t 0 mongodb:27017
 wait-for-it.sh -t 0 rabbitmq:5672
 wait-for-it.sh -t 0 redis:6379
+declare_ip_queue
 mkdir -p /code/app/tmp
 LOG_FILE_PATH="${ARL_SCAN_LOG_FILE:-/code/logs/arl_worker.log}"
 mkdir -p "$(dirname "${LOG_FILE_PATH}")"
@@ -341,35 +363,70 @@ fi
 
 GITHUB_CONCURRENCY="$(get_cfg_int CELERY_GITHUB_WORKER_CONCURRENCY 1)"
 HEAVY_CONCURRENCY="$(get_cfg_int CELERY_HEAVY_WORKER_CONCURRENCY 1)"
+IP_CONCURRENCY="$(get_cfg_int CELERY_IP_WORKER_CONCURRENCY 1)"
 WEB_CONCURRENCY="$(get_cfg_int CELERY_WEB_WORKER_CONCURRENCY 1)"
 TASK_CONCURRENCY="$(get_cfg_int CELERY_TASK_WORKER_CONCURRENCY 2)"
+SHARED_POOL_ENABLED="$(echo "${ARL_CELERY_SHARED_POOL_ENABLE:-0}" | tr '[:upper:]' '[:lower:]')"
+case "${SHARED_POOL_ENABLED}" in
+  1|true|yes|on) SHARED_POOL_ENABLED=1 ;;
+  *) SHARED_POOL_ENABLED=0 ;;
+esac
+IP_WORKER_ENABLED="$(echo "${ARL_CELERY_IP_WORKER_ENABLE:-0}" | tr '[:upper:]' '[:lower:]')"
+case "${IP_WORKER_ENABLED}" in
+  1|true|yes|on) IP_WORKER_ENABLED=1 ;;
+  *) IP_WORKER_ENABLED=0 ;;
+esac
 
-echo "start celery github=${GITHUB_CONCURRENCY} heavy=${HEAVY_CONCURRENCY} web=${WEB_CONCURRENCY} task=${TASK_CONCURRENCY} log=${LOG_FILE_PATH}"
+HEAVY_QUEUE_LIST="arlheavy"
+if [ "${SHARED_POOL_ENABLED}" -eq 1 ]; then
+  HEAVY_QUEUE_LIST="arlheavy,arltask,arlweb,arlgithub"
+fi
+echo "start celery shared_pool=${SHARED_POOL_ENABLED} heavy=${HEAVY_CONCURRENCY} queues=${HEAVY_QUEUE_LIST} ip=${IP_WORKER_ENABLED}:${IP_CONCURRENCY} log=${LOG_FILE_PATH}"
 
-assign_spawned_worker_pid GITHUB_PID "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}"
-assign_spawned_worker_pid HEAVY_PID "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}"
-assign_spawned_worker_pid WEB_PID "arlweb" "arlweb" "${WEB_CONCURRENCY}"
-assign_spawned_worker_pid TASK_PID "arltask" "arltask" "${TASK_CONCURRENCY}"
-assert_worker_stable "arlgithub" "${GITHUB_PID}"
+GITHUB_PID=""
+HEAVY_PID=""
+IP_PID=""
+WEB_PID=""
+TASK_PID=""
+if [ "${SHARED_POOL_ENABLED}" -eq 1 ]; then
+  assign_spawned_worker_pid HEAVY_PID "arlheavy" "${HEAVY_QUEUE_LIST}" "${HEAVY_CONCURRENCY}"
+else
+  assign_spawned_worker_pid GITHUB_PID "arlgithub" "arlgithub" "${GITHUB_CONCURRENCY}"
+  assign_spawned_worker_pid HEAVY_PID "arlheavy" "${HEAVY_QUEUE_LIST}" "${HEAVY_CONCURRENCY}"
+  assign_spawned_worker_pid WEB_PID "arlweb" "arlweb" "${WEB_CONCURRENCY}"
+  assign_spawned_worker_pid TASK_PID "arltask" "arltask" "${TASK_CONCURRENCY}"
+fi
+if [ "${IP_WORKER_ENABLED}" -eq 1 ]; then
+  assign_spawned_worker_pid IP_PID "arlip" "arlip" "${IP_CONCURRENCY}"
+fi
 assert_worker_stable "arlheavy" "${HEAVY_PID}"
-assert_worker_stable "arlweb" "${WEB_PID}"
-assert_worker_stable "arltask" "${TASK_PID}"
+if [ "${SHARED_POOL_ENABLED}" -eq 0 ]; then
+  assert_worker_stable "arlgithub" "${GITHUB_PID}"
+  assert_worker_stable "arlweb" "${WEB_PID}"
+  assert_worker_stable "arltask" "${TASK_PID}"
+fi
+if [ "${IP_WORKER_ENABLED}" -eq 1 ]; then
+  assert_worker_stable "arlip" "${IP_PID}"
+fi
 if ! wait_for_worker_consumers; then
-  terminate_children "${PROCESS_MONITOR_PID}" "${GITHUB_PID}" "${HEAVY_PID}" "${WEB_PID}" "${TASK_PID}"
+  terminate_children "${PROCESS_MONITOR_PID}" "${GITHUB_PID}" "${HEAVY_PID}" "${IP_PID}" "${WEB_PID}" "${TASK_PID}"
   exit 1
 fi
 
-trap 'terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
+trap 'terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$IP_PID" "$WEB_PID" "$TASK_PID"; exit 143' TERM INT
 
 HEALTH_CHECK_TICKS=0
 HEALTH_FAILURES=0
 
 while true; do
-  for worker_info in \
-    "arlgithub:${GITHUB_PID}" \
-    "arlheavy:${HEAVY_PID}" \
-    "arlweb:${WEB_PID}" \
-    "arltask:${TASK_PID}"; do
+  WORKER_INFOS=("arlheavy:${HEAVY_PID}")
+  if [ "${SHARED_POOL_ENABLED}" -eq 0 ]; then
+    WORKER_INFOS+=("arlgithub:${GITHUB_PID}" "arlweb:${WEB_PID}" "arltask:${TASK_PID}")
+  fi
+  if [ "${IP_WORKER_ENABLED}" -eq 1 ]; then
+    WORKER_INFOS+=("arlip:${IP_PID}")
+  fi
+  for worker_info in "${WORKER_INFOS[@]}"; do
     WORKER_NAME="${worker_info%%:*}"
     WORKER_PID="${worker_info##*:}"
 
@@ -390,8 +447,12 @@ while true; do
           assert_worker_stable "arlgithub" "${GITHUB_PID}"
           ;;
         arlheavy)
-          assign_spawned_worker_pid HEAVY_PID "arlheavy" "arlheavy" "${HEAVY_CONCURRENCY}"
+          assign_spawned_worker_pid HEAVY_PID "arlheavy" "${HEAVY_QUEUE_LIST}" "${HEAVY_CONCURRENCY}"
           assert_worker_stable "arlheavy" "${HEAVY_PID}"
+          ;;
+        arlip)
+          assign_spawned_worker_pid IP_PID "arlip" "arlip" "${IP_CONCURRENCY}"
+          assert_worker_stable "arlip" "${IP_PID}"
           ;;
         arlweb)
           assign_spawned_worker_pid WEB_PID "arlweb" "arlweb" "${WEB_CONCURRENCY}"
@@ -405,7 +466,7 @@ while true; do
       continue
     fi
 
-    terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
+    terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$IP_PID" "$WEB_PID" "$TASK_PID"
     exit "${EXIT_CODE}"
   done
 
@@ -419,7 +480,7 @@ while true; do
       echo "[WARN] celery consumer health check failed consecutive=${HEALTH_FAILURES}/3"
       if [ "${HEALTH_FAILURES}" -ge 3 ]; then
         echo "[ERROR] celery consumer health stayed unhealthy, stopping container for broker re-registration"
-        terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$WEB_PID" "$TASK_PID"
+        terminate_children "$PROCESS_MONITOR_PID" "$GITHUB_PID" "$HEAVY_PID" "$IP_PID" "$WEB_PID" "$TASK_PID"
         exit 1
       fi
     fi

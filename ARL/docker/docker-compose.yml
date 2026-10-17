@@ -140,11 +140,14 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
-      # 双 worker 横向扩展首版：采用保守并发，避免总并发翻倍过猛压垮基础组件
+      # 保留原有队列隔离与并发，再为重 IP 任务增加独立 worker 槽。
+      - ARL_CELERY_SHARED_POOL_ENABLE=0
       - ARL_CELERY_TASK_WORKER_CONCURRENCY=2
       - ARL_CELERY_HEAVY_WORKER_CONCURRENCY=2
       - ARL_CELERY_WEB_WORKER_CONCURRENCY=2
       - ARL_CELERY_GITHUB_WORKER_CONCURRENCY=1
+      - ARL_CELERY_IP_WORKER_CONCURRENCY=1
+      - ARL_CELERY_IP_WORKER_ENABLE=1
       # 保持主日志文件路径不变，兼容历史仪表盘默认读取路径
       - ARL_SCAN_LOG_FILE=/code/logs/arl_worker.log
       # 启动恢复仅由主 worker 执行，减少多副本同时恢复带来的抖动
@@ -224,11 +227,14 @@ services:
     environment:
       - LANG=en_US.UTF-8
       - TZ=Asia/Shanghai
-      # 双 worker 横向扩展首版：采用保守并发，避免总并发翻倍过猛压垮基础组件
+      # 保留原有独立队列池，不重复启动 IP worker。
+      - ARL_CELERY_SHARED_POOL_ENABLE=0
       - ARL_CELERY_TASK_WORKER_CONCURRENCY=2
       - ARL_CELERY_HEAVY_WORKER_CONCURRENCY=2
       - ARL_CELERY_WEB_WORKER_CONCURRENCY=2
       - ARL_CELERY_GITHUB_WORKER_CONCURRENCY=1
+      - ARL_CELERY_IP_WORKER_CONCURRENCY=1
+      - ARL_CELERY_IP_WORKER_ENABLE=0
       - ARL_SCAN_LOG_FILE=/code/logs/arl_worker_2.log
       # 第二个 worker 默认跳过启动恢复，仅消费新消息
       - ARL_WORKER_RECOVER_ON_BOOT=0

@@ -80,6 +80,36 @@ describe('DashboardView（React Query）', () => {
     expect(calls.some((c) => c.url.includes('/domain/'))).toBe(false);
   });
 
+  it('展示每个队列的 ready/reserved/active 与最早等待时间', async () => {
+    installFetchMock({
+      routes: {
+        '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+        '/console/queue_metrics': [200, {
+          code: 200,
+          data: {
+            broker_ok: true,
+            inspect_ok: true,
+            queues: [{
+              name: 'arlheavy',
+              ready: 37,
+              reserved: 5,
+              active: 2,
+              earliest_queued_at: '2026-10-18 01:00:00',
+              earliest_wait_seconds: 3600,
+            }],
+          },
+        }],
+      },
+    });
+
+    renderView();
+    await vi.waitFor(() => expect(screen.getByText('域名深扫')).toBeTruthy());
+    expect(screen.getByText('37')).toBeTruthy();
+    expect(screen.getByText('5')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+    expect(screen.getByText(/1小时 · 2026-10-18 01:00:00/)).toBeTruthy();
+  });
+
   it('最近任务名称和目标按实际布局溢出提供完整悬浮内容', async () => {
     const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
     const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');

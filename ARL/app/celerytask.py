@@ -104,7 +104,7 @@ celery.conf.update(
 # 允许 root 用户运行 Celery（容器环境需要）
 platforms.C_FORCE_ROOT = True
 
-_WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlweb", "arlgithub")
+_WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlip", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 _ICP_RECOVERY_CLAIM_SEC = 300
 
@@ -268,11 +268,17 @@ def _inspect_worker_queue_health(expected_queue_map, hostname="", timeout_sec=1.
     仅检查主进程 PID 无法发现 AMQP channel 已关闭但 OS 进程仍存活的情况；
     这里使用 control inspect 的 active_queues 作为控制面/consumer 联合信号。
     """
-    expected = {
-        str(worker_name or "").strip(): str(queue_name or "").strip()
-        for worker_name, queue_name in dict(expected_queue_map or {}).items()
-        if str(worker_name or "").strip() and str(queue_name or "").strip()
-    }
+    expected = {}
+    for worker_name, queue_names in dict(expected_queue_map or {}).items():
+        normalized_worker = str(worker_name or "").strip()
+        raw_queue_names = queue_names if isinstance(queue_names, (list, tuple, set)) else [queue_names]
+        normalized_queues = sorted({
+            str(queue_name or "").strip()
+            for queue_name in raw_queue_names
+            if str(queue_name or "").strip()
+        })
+        if normalized_worker and normalized_queues:
+            expected[normalized_worker] = normalized_queues
     if not expected:
         return {
             "ok": False,
@@ -304,7 +310,7 @@ def _inspect_worker_queue_health(expected_queue_map, hostname="", timeout_sec=1.
 
     hostname_text = str(hostname or "").strip()
     checks = {}
-    for worker_name, expected_queue in expected.items():
+    for worker_name, expected_queues in expected.items():
         exact_worker_name = "{}@{}".format(worker_name, hostname_text) if hostname_text else ""
         candidate_names = []
         if exact_worker_name and exact_worker_name in active_queues:
@@ -329,8 +335,9 @@ def _inspect_worker_queue_health(expected_queue_map, hostname="", timeout_sec=1.
                         observed_queues.add(queue_name)
 
         checks[worker_name] = {
-            "healthy": expected_queue in observed_queues,
-            "expected_queue": expected_queue,
+            "healthy": set(expected_queues).issubset(observed_queues),
+            "expected_queue": expected_queues[0] if len(expected_queues) == 1 else expected_queues,
+            "expected_queues": expected_queues,
             "worker": candidate_names[0] if candidate_names else exact_worker_name,
             "observed_queues": sorted(observed_queues),
         }
@@ -569,6 +576,8 @@ def _resolve_waiting_requeue_queue_task(queue_name, collection):
     normalized = str(queue_name or "").strip().lower()
     if normalized == "arlheavy":
         return arl_task_heavy, "arlheavy"
+    if normalized == "arlip":
+        return arl_task_ip, "arlip"
     if normalized == "arlweb":
         return arl_task_web, "arlweb"
     return arl_task, "arltask"
@@ -1283,6 +1292,12 @@ def arl_task_heavy(options):
     参数：
         options: 任务选项字典
     """
+    run_task(options)
+
+
+@celery.task(queue='arlip')
+def arl_task_ip(options):
+    """IP 重扫描入口，与域名深扫队列隔离。"""
     run_task(options)
 
 

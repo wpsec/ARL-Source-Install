@@ -132,6 +132,12 @@ def create_index():
         ],
         "task": [
             [("status", 1), ("task_tag", 1)],
+            [("status", 1), ("dispatch_queue", 1), ("dispatch_ts", 1)],
+            [("status", 1), ("deep_scan.status", 1), ("deep_scan.queue", 1),
+             ("deep_scan.dispatch_ts", 1)],
+        ],
+        "github_task": [
+            [("status", 1), ("dispatch_ts", 1)],
         ],
     }
     for table, indexes in compound_indexes.items():

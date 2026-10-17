@@ -661,6 +661,8 @@ ARL:
   CELERY_GITHUB_WORKER_CONCURRENCY: 2
   # Celery 重任务队列并发（全端口/深度识别）
   CELERY_HEAVY_WORKER_CONCURRENCY: 3
+  # Celery 重 IP 队列并发
+  CELERY_IP_WORKER_CONCURRENCY: 1
   # Celery Web 重任务队列并发（目录扫描/PoC/截图/站点爬虫）
   CELERY_WEB_WORKER_CONCURRENCY: 3
   # Celery 预取倍率（建议保持 1）
