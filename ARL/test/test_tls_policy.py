@@ -158,7 +158,7 @@ class TestTLSPolicy(unittest.TestCase):
         rows = _extract_cert_rows(["task-1"])
 
         self.assertEqual(1, len(rows))
-        self.assertEqual(15, len(rows[0]))
+        self.assertEqual(16, len(rows[0]))
         self.assertIn("TLS_RSA_WITH_AES_128_GCM_SHA256", rows[0][11])
         self.assertIn("Nginx", rows[0][12])
         self.assertIn("ingress-nginx", rows[0][12])

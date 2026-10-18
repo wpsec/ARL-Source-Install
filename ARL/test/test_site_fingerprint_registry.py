@@ -17,6 +17,7 @@ import re
 import sys
 import types
 import unittest
+from unittest.mock import patch
 try:
     from test._layout import PROJECT_ROOT
 except ImportError:
@@ -50,27 +51,6 @@ class _DummyCollection:
 
 
 
-# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
-# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
-# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
-# 理念保留。
-_HYGIENE_SHARED_SLOTS = (
-    "app", "app.utils", "app.config", "app.modules",
-    "app.services", "app.services.fingerprints", "app.tools",
-)
-_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
-_HYGIENE_OWNED = {}
-
-
-def tearDownModule():
-    for _name, _original in _HYGIENE_PRE.items():
-        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
-            continue
-        if _original is None:
-            sys.modules.pop(_name, None)
-        else:
-            sys.modules[_name] = _original
-
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
     module = importlib.util.module_from_spec(spec)
@@ -79,7 +59,7 @@ def _load(name, path):
     return module
 
 
-def bootstrap():
+def _bootstrap_with_fake_packages():
     app_pkg = types.ModuleType("app")
     app_pkg.__path__ = [str(ROOT_DIR / "app")]
     sys.modules["app"] = app_pkg
@@ -106,7 +86,7 @@ def bootstrap():
         web_app_rule = str(ROOT_DIR / "app" / "dicts" / "webapp.json")
         FINGERPRINT = str(PROJECT_ROOT / "tools" / "finger.json")
         KSCAN_FINGERPRINT_ENABLE = True
-        KSCAN_FINGERPRINT_FILE = str(ROOT_DIR / "app" / "dicts" / "kscan_fingerprint.local.json")
+        KSCAN_FINGERPRINT_FILE = str(ROOT_DIR / "test" / "fixtures" / "fingerprints" / "kscan-local.json")
         KSCAN_FINGERPRINT_NAME_PREFIX = ""
         KSCAN_FINGERPRINT_REGEX_FALLBACK = "literal"
         KSCAN_FINGERPRINT_MIN_LITERAL_LEN = 5
@@ -130,15 +110,47 @@ def bootstrap():
     svc.fingerprint_cache = cache
     registry_mod = _load("app.services.site_fingerprint_registry", ROOT_DIR / "app" / "services" / "site_fingerprint_registry.py")
     svc.site_fingerprint_registry = registry_mod
-    _HYGIENE_OWNED.update({
-        name: sys.modules.get(name)
-        for name in _HYGIENE_SHARED_SLOTS
-        if sys.modules.get(name) is not None
-    })
     return registry_mod, config_module.Config
 
 
+def bootstrap():
+    previous_app_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "app" or name.startswith("app.")
+    }
+    try:
+        return _bootstrap_with_fake_packages()
+    finally:
+        # Registry tests keep module objects directly; cached fake app.* modules
+        # must not leak into collection of unrelated tests.
+        for name in tuple(sys.modules):
+            if name == "app" or name.startswith("app."):
+                sys.modules.pop(name, None)
+        sys.modules.update(previous_app_modules)
+
+
 REGISTRY, CFG = bootstrap()
+FP_COMMON_GLOBALS = REGISTRY.parse_human_rule.__globals__
+
+_APP_MODULE_PATCH = None
+
+
+def setUpModule():
+    global _APP_MODULE_PATCH
+    fake_utils = types.ModuleType("app.utils")
+    fake_utils.get_logger = lambda *a, **k: _DummyLogger()
+    fake_utils.conn_db = lambda *a, **k: _DummyCollection()
+    fake_app = types.ModuleType("app")
+    fake_app.__path__ = [str(ROOT_DIR / "app")]
+    fake_app.utils = fake_utils
+    _APP_MODULE_PATCH = patch.dict(sys.modules, {"app": fake_app, "app.utils": fake_utils})
+    _APP_MODULE_PATCH.start()
+
+
+def tearDownModule():
+    if _APP_MODULE_PATCH is not None:
+        _APP_MODULE_PATCH.stop()
 
 
 def cond_hits(cond, variables):
@@ -341,13 +353,15 @@ class RuntimeBuildDecouplingTest(unittest.TestCase):
         )
 
     def test_parse_functions_single_implementation(self):
-        fp = sys.modules.get("app.fp_common")
-        if fp is None:
-            fp = _load("app.fp_common", ROOT_DIR / "app" / "fp_common.py")
+        fp = types.SimpleNamespace(
+            parse_human_rule=FP_COMMON_GLOBALS["parse_human_rule"],
+            to_human_rule=FP_COMMON_GLOBALS["to_human_rule"],
+            merge_key=FP_COMMON_GLOBALS["merge_key"],
+        )
         # 零新轮子：registry 与 fp_common 必须是同一函数对象（单一实现钉）。
-        self.assertIs(REGISTRY.parse_human_rule, fp.parse_human_rule)
-        self.assertIs(REGISTRY.to_human_rule, fp.to_human_rule)
-        self.assertIs(REGISTRY.merge_key, fp.merge_key)
+        self.assertIs(REGISTRY.parse_human_rule, FP_COMMON_GLOBALS["parse_human_rule"])
+        self.assertIs(REGISTRY.to_human_rule, FP_COMMON_GLOBALS["to_human_rule"])
+        self.assertIs(REGISTRY.merge_key, FP_COMMON_GLOBALS["merge_key"])
         match, problems = fp.parse_human_rule('body="decouple-marker-x" && title="T"')
         self.assertEqual([], problems)
         self.assertEqual('body="decouple-marker-x" && title="T"', fp.to_human_rule(match))

@@ -81,6 +81,7 @@ import {
 } from '../domain/wih';
 import { PageHeader } from '../layout/PageHeader';
 import { buildModuleListSearch, hasModuleListUrlState, parseModuleListUrlState } from '../routing/listState';
+import { resolveModuleRoute } from '../routing/routes';
 import {
   CONSOLE_ALERT_ERROR_CLASS,
   CONSOLE_ALERT_INFO_CLASS,
@@ -411,6 +412,8 @@ export function TableModuleView({
   const location = useLocation();
   const navigationType = useNavigationType();
   const [, setSearchParams] = useSearchParams();
+  const routeModuleId = resolveModuleRoute(location.pathname, location.search)?.moduleId;
+  const isCurrentModuleRoute = routeModuleId === module.id;
   const defaultPageSize = getDefaultModulePageSize(module.id, externalFilters);
   const initialUrlState = parseModuleListUrlState(location.search, module, defaultPageSize);
   const [error, setError] = useState('');
@@ -489,6 +492,7 @@ export function TableModuleView({
     [module.id, activeExternalFilterSignature]
   );
   useEffect(() => {
+    if (!isCurrentModuleRoute) return;
     if (lastUrlSearchRef.current === location.search) return;
     lastUrlSearchRef.current = location.search;
     if (navigationType !== 'POP') return;
@@ -500,9 +504,10 @@ export function TableModuleView({
     setOrder(restored.order);
     setQuickFilter(restored.quickFilter);
     setSearchForm(restored.searchForm);
-  }, [defaultPageSize, location.search, module, navigationType]);
+  }, [defaultPageSize, isCurrentModuleRoute, location.search, module, navigationType]);
 
   useEffect(() => {
+    if (!isCurrentModuleRoute) return;
     if (skipUrlStateWriteRef.current) {
       skipUrlStateWriteRef.current = false;
       return;
@@ -516,7 +521,7 @@ export function TableModuleView({
     if (nextSearch !== location.search) {
       setSearchParams(new URLSearchParams(nextSearch), { replace: true });
     }
-  }, [defaultPageSize, location.search, module, order, page, quickFilter, searchForm, setSearchParams, size]);
+  }, [defaultPageSize, isCurrentModuleRoute, location.search, module, order, page, quickFilter, searchForm, setSearchParams, size]);
   const selectionContextKey = useMemo(
     () => `${moduleCacheKey}::${quickFilter}::${buildFilterSignature(searchForm)}`,
     [moduleCacheKey, quickFilter, searchForm]

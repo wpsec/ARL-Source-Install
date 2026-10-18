@@ -1,38 +1,32 @@
-import unittest
+"""资产站点更新任务只校验阶段顺序，不连接 Mongo 或触发网络请求。"""
 
-from app import utils
-from app.modules import TaskStatus, TaskType
+import unittest
+from unittest.mock import patch
+
+from app.modules import TaskStatus
 from app.tasks.asset_site import AssetSiteUpdateTask
 
 
-class TestAssetSiteMonitor(unittest.TestCase):
+class TestAssetSiteUpdateTask(unittest.TestCase):
+    def test_run_orders_lifecycle_stages(self):
+        calls = []
+        base_task = AssetSiteUpdateTask.__bases__[0]
+        with patch.object(base_task, "__init__", return_value=None):
+            task = AssetSiteUpdateTask("fixture-task", "fixture-scope")
 
-    def test_monitor(self):
-        task_id = insert_task_data()
-        scope_id = "63ac0a67d05e51e81a2d7577"
-        task = AssetSiteUpdateTask(task_id=task_id, scope_id=scope_id)
+        task.set_start_time = lambda: calls.append("start")
+        task.monitor = lambda: calls.append("monitor")
+        task.insert_task_stat = lambda: calls.append("stats")
+        task.update_status = lambda status: calls.append(("status", status))
+        task.set_end_time = lambda: calls.append("end")
+
         task.run()
 
-
-def insert_task_data():
-    task_data = {
-        'name': "测试资产分组更新",
-        'target': "资产站点更新",
-        'start_time': '-',
-        'status': TaskStatus.WAITING,
-        'type': TaskType.ASSET_SITE_UPDATE,
-        "task_tag": TaskType.ASSET_SITE_UPDATE,
-        'options': {
-        },
-        "end_time": "-",
-        "service": [],
-        "celery_id": "fake"
-    }
-    utils.conn_db('task').insert_one(task_data)
-    task_id = str(task_data.pop("_id"))
-
-    return task_id
+        self.assertEqual(
+            ["start", "monitor", "stats", ("status", TaskStatus.DONE), "end"],
+            calls,
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

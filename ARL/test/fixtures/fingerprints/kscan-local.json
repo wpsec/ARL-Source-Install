@@ -1,0 +1,16 @@
+{
+  "fingerprint": [
+    {
+      "name": "GROWATT 系统",
+      "human_rule": "body=\"v3/js/odm/odm.js\" || body=\"login\""
+    },
+    {
+      "name": "HUAWEI-S5730",
+      "human_rule": "header=\"server\""
+    },
+    {
+      "name": "HUAWEI-S7700",
+      "human_rule": "header=\"server\""
+    }
+  ]
+}

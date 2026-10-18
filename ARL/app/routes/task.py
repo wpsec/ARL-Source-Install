@@ -49,7 +49,7 @@ from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, Task
 from app.repositories import ResultSetRepository, TaskRepository
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
-from app.helpers.task import get_task_data, restart_task
+from app.helpers.task import restart_task
 
 # 创建任务信息命名空间
 ns = Namespace('task', description="资产发现任务信息")
@@ -198,7 +198,8 @@ class ARLTask(ARLResource):
         - 查找特定目标的任务
         - 按选项筛选任务
         """
-        args = self.parser.parse_args()
+        args = dict(self.parser.parse_args())
+        _apply_task_owner_filter(args)
         # 从 task 集合查询数据
         data = self.build_data(args=args, collection='task')
 
@@ -309,6 +310,43 @@ class ARLTask(ARLResource):
             ret["warnings"] = compat_warnings
 
         return ret
+
+
+def _apply_task_owner_filter(args):
+    """限制登录用户的任务列表，并兼容可安全归属的历史任务。"""
+    principal = utils.current_principal()
+    if not isinstance(principal, dict) or principal.get("type") == "api":
+        return
+
+    username = str(principal.get("username") or "").strip()
+    if username:
+        owner_filter = {"owner_username": username}
+    else:
+        owner_filter = {"owner_username": {"$in": []}}
+    if username and utils.can_access_owned_resource("", principal=principal):
+        owner_filter = {
+            "$or": [
+                {"owner_username": username},
+                {"owner_username": {"$exists": False}},
+                {"owner_username": None},
+                {"owner_username": ""},
+            ]
+        }
+
+    # 使用 $and 保留用户的关键词查询，同时确保归属条件不能被客户端参数覆盖。
+    args["$and"] = [owner_filter]
+
+
+def _find_accessible_task(task_id):
+    """将不存在、无权访问和格式错误的任务 ID 统一视为未找到。"""
+    if not ObjectId.is_valid(task_id):
+        return None
+
+    task_data = TaskRepository.find_by_id(task_id)
+    if not task_data or not utils.can_access_owned_resource(
+            task_data.get("owner_username")):
+        return None
+    return task_data
 
 
 # 批量停止任务请求模型
@@ -422,7 +460,7 @@ def stop_task(task_id):
     done_status = list(TaskStatus.TERMINAL)
 
     # 查询任务信息
-    task_data = TaskRepository.find_by_id(task_id)
+    task_data = _find_accessible_task(task_id)
     if not task_data:
         return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
@@ -491,7 +529,7 @@ class DeleteTask(ARLResource):
 
         # 第一步：验证所有任务是否可以删除
         for task_id in task_id_list:
-            task_data = TaskRepository.find_by_id(task_id)
+            task_data = _find_accessible_task(task_id)
             if not task_data:
                 return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
@@ -555,7 +593,7 @@ class SyncTask(ARLResource):
         scope_id = args.pop('scope_id')
 
         # 查询任务信息
-        task_data = TaskRepository.find_by_id(task_id)
+        task_data = _find_accessible_task(task_id)
         if not task_data:
             return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 
@@ -841,7 +879,7 @@ class TaskRestart(ARLResource):
         try:
             # 验证所有任务是否可以重启
             for task_id in task_id_list:
-                task_data = get_task_data(task_id)
+                task_data = _find_accessible_task(task_id)
                 if not task_data:
                     return utils.build_ret(ErrorMsg.NotFoundTask, {"task_id": task_id})
 

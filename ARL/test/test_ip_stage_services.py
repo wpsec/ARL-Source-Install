@@ -68,7 +68,11 @@ class TestIPStageServices(unittest.TestCase):
         self.assertEqual({"port_scan": None, "ssl_cert": None, "find_site": None}, result)
 
     def test_post_process_service_keeps_optional_risk_stages(self):
-        task = _Task({"port_scan": True, "poc_config": True, "brute_config": True})
+        task = _Task({
+            "port_scan": True,
+            "poc_config": [{"plugin_name": "fixture-poc", "enable": True}],
+            "brute_config": True,
+        })
         web_site_fetch = _WebSiteFetch()
 
         IPPostProcessStageService(task, web_site_fetch).run()

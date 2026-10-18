@@ -24,6 +24,19 @@ class _FakeCollection:
             None,
         )
 
+    def find(self, query, _projection=None):
+        matches = []
+        for item in self.plugins:
+            for key, value in query.items():
+                if isinstance(value, dict) and "$in" in value:
+                    if item.get(key) not in value["$in"]:
+                        break
+                elif item.get(key) != value:
+                    break
+            else:
+                matches.append(item)
+        return matches
+
 
 class NpocYamlOptionsTest(unittest.TestCase):
     def test_explicit_switch_overrides_legacy_selected_items(self):

@@ -1,11 +1,31 @@
+"""资产 WIH Celery 任务 wrapper 的生命周期状态写入。"""
+
 import unittest
-from app.tasks.asset_wih import AssetWihUpdateTask
+from unittest.mock import Mock, patch
+
+import app.tasks.asset_wih as asset_wih_task
+from app.modules import TaskStatus
 
 
-class TestWebInfoHunter(unittest.TestCase):
-    def test_run_wih_monitor(self):
-        scope_id = "64b7d6f47344289cd8abf800"
-        task_id = "64bf9a59eff2fe8c8a6172e2"
-        task = AssetWihUpdateTask(task_id, scope_id)
-        task.run()
+class TestAssetWihTask(unittest.TestCase):
+    def test_wrapper_updates_scheduler_and_task_lifecycle(self):
+        task = Mock()
+        dates = iter(["fixture-start", "fixture-end"])
+        with patch.object(asset_wih_task, "AssetWihUpdateTask", return_value=task), \
+                patch("app.scheduler.update_job_run") as update_job_run, \
+                patch.object(asset_wih_task.utils, "curr_date", side_effect=lambda: next(dates)):
+            asset_wih_task.asset_wih_update_task(
+                task_id="fixture-task",
+                scope_id="fixture-scope",
+                scheduler_id="fixture-scheduler",
+            )
 
+        update_job_run.assert_called_once_with(job_id="fixture-scheduler")
+        task.run.assert_called_once_with()
+        task.base_update_task.update_task_field.assert_any_call("start_time", "fixture-start")
+        task.base_update_task.update_task_field.assert_any_call("status", TaskStatus.DONE)
+        task.base_update_task.update_task_field.assert_any_call("end_time", "fixture-end")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -19,7 +19,7 @@ try:
     from openpyxl import Workbook
     from app.routes.export import export_merge_tasks, export_merge_tasks_html, SaveTask, build_task_export_summary
     from app.routes.export import _build_wih_endpoint_sheet
-    from app import create_app
+    from app.main import arl_app as test_app
 except Exception as exc:
     load_workbook = None
     Workbook = None
@@ -28,7 +28,7 @@ except Exception as exc:
     SaveTask = None
     build_task_export_summary = None
     _build_wih_endpoint_sheet = None
-    create_app = None
+    test_app = None
     IMPORT_ERROR = exc
 
 
@@ -38,9 +38,21 @@ class TestBatchExport(unittest.TestCase):
 
     def setUp(self):
         """测试前准备"""
-        self.app = create_app()
+        self.app = test_app
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
+        self.auth_patch = patch('app.utils.user.user_login_header', return_value=True)
+        self.principal_patch = patch(
+            'app.routes.export.utils.current_principal',
+            return_value={'type': 'api'},
+        )
+        self.ai_denoise_patch = patch(
+            'app.routes.export.ExportRepository.find_ai_denoise_by_task_ids',
+            return_value=[],
+        )
+        self.auth_patch.start()
+        self.principal_patch.start()
+        self.ai_denoise_patch.start()
 
         # 模拟任务数据
         self.mock_task_data = {
@@ -59,16 +71,20 @@ class TestBatchExport(unittest.TestCase):
 
     def tearDown(self):
         """测试后清理"""
-        pass
+        self.ai_denoise_patch.stop()
+        self.principal_patch.stop()
+        self.auth_patch.stop()
 
+    @patch('app.routes.export.export_merge_tasks')
     @patch('app.routes.export.get_task_data')
-    def test_batch_export_api_success(self, mock_get_task_data):
+    def test_batch_export_api_success(self, mock_get_task_data, mock_export_merge_tasks):
         """测试批量导出API成功情况"""
         # 模拟获取任务数据
         mock_get_task_data.side_effect = lambda task_id: {
             "test_task_1": self.mock_task_data,
             "test_task_2": self.mock_task_data_2
         }.get(task_id)
+        mock_export_merge_tasks.return_value = b"fake-xlsx-content"
 
         # 测试数据
         test_data = {
@@ -276,7 +292,10 @@ class TestBatchExport(unittest.TestCase):
             )
             ws = wb["WIH接口提取"]
             header_row = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
-            self.assertEqual(["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文"], header_row)
+            self.assertEqual(
+                ["序号", "目标", "页面URL", "方法", "状态码", "响应大小", "请求url", "请求报文", "AI填充参数", "回复报文", "AI分析"],
+                header_row,
+            )
             data_row = [cell.value for cell in next(ws.iter_rows(min_row=2, max_row=2))]
             self.assertEqual(1, data_row[0])
             self.assertEqual("-", data_row[4])
@@ -434,9 +453,9 @@ class TestBatchExport(unittest.TestCase):
 
             self.assertEqual(1, len(service_rows))
             self.assertEqual("1.1.1.1", service_rows[0][0])
-            self.assertEqual(80, service_rows[0][1])
+            self.assertEqual("80", service_rows[0][1])
 
-            self.assertEqual(1, len(cert_rows))
+            self.assertEqual(1, len(cert_rows), cert_rows)
             self.assertEqual("cert.example.com", cert_rows[0][0])
             self.assertEqual("1.1.1.1:443", cert_rows[0][1])
         finally:
@@ -641,27 +660,28 @@ class TestBatchExport(unittest.TestCase):
 
 @unittest.skipIf(IMPORT_ERROR is not None, "requires export test dependencies: {}".format(IMPORT_ERROR))
 class TestBatchExportIntegration(unittest.TestCase):
-    """批量导出集成测试"""
+    """批量导出 API 的真实 Flask 客户端契约测试。"""
 
     def setUp(self):
         """集成测试准备"""
-        self.app = create_app()
+        self.app = test_app
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
+        self.auth_patch = patch('app.utils.user.user_login_header', return_value=True)
+        self.principal_patch = patch(
+            'app.routes.export.utils.current_principal',
+            return_value={'type': 'api'},
+        )
+        self.auth_patch.start()
+        self.principal_patch.start()
 
-    def test_batch_export_workflow(self):
-        """测试完整的批量导出工作流程"""
-        # 1. 准备测试数据（在实际环境中需要真实的已完成任务）
-        # 2. 调用批量导出API
-        # 3. 验证响应格式
-        # 4. 验证Excel文件内容
+    def tearDown(self):
+        self.principal_patch.stop()
+        self.auth_patch.stop()
 
-        # 注意：这个测试需要在有真实数据的环境中运行
-        # 这里只验证API接口的基本可用性
-
-        test_data = {
-            "task_ids": ["dummy_task_id"]  # 使用虚拟ID进行基本验证
-        }
+    def test_missing_task_returns_not_found(self):
+        """不存在的任务 ID 应返回 404，不应尝试导出数据。"""
+        test_data = {"task_ids": ["dummy_task_id"]}
 
         response = self.client.post(
             '/api/export/batch',
@@ -670,7 +690,6 @@ class TestBatchExportIntegration(unittest.TestCase):
             headers={'Token': 'test_token'}
         )
 
-        # 验证API基本可用性（即使数据不存在，也应该返回适当的错误响应）
-        self.assertIn(response.status_code, [200, 400, 404, 500])
+        self.assertEqual(response.status_code, 404)
 if __name__ == '__main__':
     unittest.main()

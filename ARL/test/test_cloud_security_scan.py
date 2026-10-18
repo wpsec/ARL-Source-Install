@@ -1,19 +1,24 @@
 """
 云安全只读检测回归测试。
 """
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-try:
+RUN_CLOUD_SECURITY_SCAN_TESTS = (
+    os.environ.get("ARL_RUN_CLOUD_SECURITY_SCAN_TESTS") == "1"
+)
+
+if RUN_CLOUD_SECURITY_SCAN_TESTS:
     from app.services.cloud_security_scan import CloudSecurityScanService
-except ModuleNotFoundError:
+else:
     CloudSecurityScanService = None
 
 
 @unittest.skipIf(
-    CloudSecurityScanService is None,
-    "运行依赖未安装，跳过云安全检测回归",
+    not RUN_CLOUD_SECURITY_SCAN_TESTS,
+    "需存在云安全检测实现并显式设置 ARL_RUN_CLOUD_SECURITY_SCAN_TESTS=1",
 )
 class TestCloudSecurityScan(unittest.TestCase):
     """

@@ -5,8 +5,6 @@
 2. registry 不可用（文件缺失）→ 返回 False，调用方继续 legacy（显式降级）；
 3. SOURCE=legacy → 直接不接管（现网默认行为零变化的证明）。
 """
-import importlib.util
-import os
 import pathlib
 import unittest
 
@@ -42,7 +40,7 @@ class FingerprintWiringFetchSiteTest(unittest.TestCase):
 
     def _call(self, item):
         content = "<html><head><title>Welcome to nginx!</title></head><body>hello</body></html>".encode("utf-8")
-        return fetchSite.WebSiteFetch._try_unified_fingerprint(None, item, content, 0)
+        return fetchSite.FetchSite._try_unified_fingerprint(None, item, content, 0)
 
     def test_unified_takes_over_with_real_artifact(self):
         Config.SITE_FINGERPRINT_SOURCE = "unified"

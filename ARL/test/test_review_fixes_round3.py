@@ -17,9 +17,10 @@ class TestProbeWrapperPassthrough(unittest.TestCase):
     def test_run_wih_endpoint_probe_forwards_context(self):
         captured = {}
 
-        def fake_enrich(items, waf_guard=None, discovery_context=None):
+        def fake_enrich(items, waf_guard=None, discovery_context=None, url_in_scope=None):
             captured["waf_guard"] = waf_guard
             captured["context"] = discovery_context
+            captured["url_in_scope"] = url_in_scope
             return [dict(i) for i in items]
 
         sentinel = object()

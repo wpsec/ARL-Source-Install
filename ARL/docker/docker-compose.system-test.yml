@@ -1,0 +1,132 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    command: ["mongod", "--bind_ip_all"]
+    tmpfs:
+      - /data/db
+    networks:
+      - isolated
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'quit(db.adminCommand(\"ping\").ok ? 0 : 1)'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    networks:
+      - isolated
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${ARL_TEST_RABBIT_USER:?generated test user is required}
+      RABBITMQ_DEFAULT_PASS: ${ARL_TEST_RABBIT_PASSWORD:?generated test password is required}
+      RABBITMQ_DEFAULT_VHOST: arl-system-test
+    networks:
+      - isolated
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  web:
+    image: ${ARL_TEST_RUNNER_IMAGE:-arl:local}
+    working_dir: /workspace/ARL
+    command: ["gunicorn", "--bind", "0.0.0.0:5018", "--workers", "1", "--timeout", "30", "test.system_test_web:arl_app"]
+    volumes:
+      - ${ARL_TEST_SOURCE_DIR:?test snapshot path is required}:/workspace:rw
+    environment:
+      PYTHONPATH: /workspace/ARL:/workspace
+      PYTHONDONTWRITEBYTECODE: "1"
+      ARL_MONGO_URL: mongodb://mongodb:27017/arl_system_test
+      ARL_CELERY_BROKER_URL: amqp://${ARL_TEST_RABBIT_USER}:${ARL_TEST_RABBIT_PASSWORD}@rabbitmq:5672/arl-system-test
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - isolated
+    ports:
+      - "127.0.0.1:${ARL_SYSTEM_TEST_WEB_PORT:-55018}:5018"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5018/api/task/', timeout=2).read()"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  system-worker:
+    image: ${ARL_TEST_RUNNER_IMAGE:-arl:local}
+    working_dir: /workspace/ARL
+    command: ["celery", "-A", "app.celerytask.celery", "worker", "--loglevel=INFO", "--pool=solo", "--concurrency=1", "--queues=arl-system-test", "--include=test.system_test_tasks", "--hostname=arl-system-e2e@%h"]
+    volumes:
+      - ${ARL_TEST_SOURCE_DIR:?test snapshot path is required}:/workspace:rw
+    environment:
+      PYTHONPATH: /workspace/ARL:/workspace
+      PYTHONDONTWRITEBYTECODE: "1"
+      ARL_MONGO_URL: mongodb://mongodb:27017/arl_system_test
+      ARL_CELERY_BROKER_URL: amqp://${ARL_TEST_RABBIT_USER}:${ARL_TEST_RABBIT_PASSWORD}@rabbitmq:5672/arl-system-test
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - isolated
+
+  target:
+    image: ${ARL_TEST_RUNNER_IMAGE:-arl:local}
+    working_dir: /workspace/ARL
+    command: ["python3", "-m", "http.server", "8080", "--bind", "0.0.0.0", "--directory", "/workspace/ARL/test/fixtures/system_target"]
+    volumes:
+      - ${ARL_TEST_SOURCE_DIR:?test snapshot path is required}:/workspace:ro
+    networks:
+      isolated:
+        aliases:
+          - arl-test-target
+
+  test-runner:
+    image: ${ARL_TEST_RUNNER_IMAGE:-arl:local}
+    working_dir: /workspace/ARL
+    command: ["python3", "-m", "unittest", "test.test_system_stack", "-v"]
+    volumes:
+      - ${ARL_TEST_SOURCE_DIR:?test snapshot path is required}:/workspace:rw
+    environment:
+      PYTHONPATH: /workspace/ARL:/workspace
+      PYTHONDONTWRITEBYTECODE: "1"
+      ARL_RUN_SYSTEM_TESTS: "1"
+      ARL_RUN_LEGACY_NETWORK_TESTS: "0"
+      ARL_RUN_CLOUD_SECURITY_SCAN_TESTS: "0"
+      ARL_SKIP_DOCKER_COMPOSE_TESTS: "1"
+      ARL_MONGO_URL: mongodb://mongodb:27017/arl_system_test
+      ARL_CELERY_BROKER_URL: amqp://${ARL_TEST_RABBIT_USER}:${ARL_TEST_RABBIT_PASSWORD}@rabbitmq:5672/arl-system-test
+      ARL_SYSTEM_TEST_REDIS_URL: redis://redis:6379/13
+      ARL_SYSTEM_TEST_API_URL: http://web:5018
+      ARL_SYSTEM_TEST_TARGET_URL: http://arl-test-target:8080
+      ARL_SYSTEM_TEST_UI_USERNAME: ${ARL_SYSTEM_TEST_UI_USERNAME:-}
+      ARL_SYSTEM_TEST_UI_PASSWORD: ${ARL_SYSTEM_TEST_UI_PASSWORD:-}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      target:
+        condition: service_started
+    networks:
+      - isolated
+
+networks:
+  isolated:
+    internal: true

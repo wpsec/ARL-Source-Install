@@ -521,7 +521,15 @@ class TestInitDeployEnv(unittest.TestCase):
             self.assertNotIn("RABBITMQ_DEFAULT", proc.stderr)
 
 
-@unittest.skipUnless(shutil.which("docker"), "docker CLI 不可用，跳过 compose 渲染级检查")
+SKIP_DOCKER_COMPOSE_TESTS = (
+    os.environ.get("ARL_SKIP_DOCKER_COMPOSE_TESTS") == "1"
+)
+
+
+@unittest.skipIf(
+    SKIP_DOCKER_COMPOSE_TESTS,
+    "测试容器显式设置 ARL_SKIP_DOCKER_COMPOSE_TESTS=1，跳过 compose CLI 渲染检查",
+)
 class TestComposeRequiresCredentials(unittest.TestCase):
     """docker compose config 级别的启动前失败证据（无需 daemon）。"""
 

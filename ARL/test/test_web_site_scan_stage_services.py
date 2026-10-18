@@ -50,7 +50,7 @@ class _Services(object):
 
     def web_analyze(self, sites):
         self.analyze_call = sites
-        return {"https://example.com": [{"name": "demo"}]}
+        return {site: [{"name": "demo"}] for site in sites}
 
 
 class _URL(object):
@@ -98,20 +98,21 @@ class TestWebSiteScanStageServices(unittest.TestCase):
             task_id="task-1",
             options={},
             web_analyze_map={},
-            _build_site_identify_targets=lambda: [
-                "https://example.com",
-                "https://blocked.example.com",
-            ],
             _filter_waf_blocked_targets=lambda targets, stage_name: [
                 target for target in targets if "blocked" not in target
             ],
         )
         service_api = _Services()
+        service = WebSiteIdentifyStageService(task, services_module=service_api)
+        service._build_site_identify_targets = lambda: [
+            "https://example.invalid",
+            "https://blocked.example.invalid",
+        ]
 
-        result = WebSiteIdentifyStageService(task, services_module=service_api).run()
+        result = service.run()
 
-        self.assertEqual({"https://example.com": [{"name": "demo"}]}, result)
-        self.assertEqual(["https://example.com"], service_api.analyze_call)
+        self.assertEqual({"https://example.invalid": [{"name": "demo"}]}, result)
+        self.assertEqual(["https://example.invalid"], service_api.analyze_call)
 
     def test_fetch_stage_updates_site_info_and_available_sites(self):
         task = SimpleNamespace(
@@ -141,6 +142,7 @@ class TestWebSiteScanStageServices(unittest.TestCase):
             waf_guard="guard",
             options={WebSiteFetchOption.Info_Hunter: True},
             _result_writer=writer,
+            _url_in_task_scope=lambda _url: True,
         )
         service_api = _Services()
 
@@ -156,7 +158,11 @@ class TestWebSiteScanStageServices(unittest.TestCase):
 
         self.assertEqual(["https://example.com/new.js"], result)
         self.assertEqual(
-            [("insert_one", "url", {
+            [("upsert_one", "url", {
+                "task_id": "task-1",
+                "source": "site_spider",
+                "url": "https://example.com/new.js",
+            }, {
                 "url": "https://example.com/new.js",
                 "task_id": "task-1",
                 "source": "site_spider",

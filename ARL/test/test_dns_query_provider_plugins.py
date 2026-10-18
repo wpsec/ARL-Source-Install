@@ -57,7 +57,7 @@ class TestHunterHowQuery(unittest.TestCase):
 
 
 class TestShodanQuery(unittest.TestCase):
-    @patch("app.services.dns_query_plugin.shodan.time.sleep", return_value=None)
+    @patch("app.services.dns_query_plugin.shodan.provider_sleep", return_value=None)
     def test_sub_domains_combines_dns_and_search_queries(self, _sleep):
         plugin = ShodanQuery()
         plugin.init_key(api_key="test-key", max_page=1)
@@ -84,7 +84,7 @@ class TestShodanQuery(unittest.TestCase):
         self.assertIn("hostname:test.com", search_queries)
         self.assertEqual(set(results), {"api.test.com", "mail.test.com", "vpn.test.com"})
 
-    @patch("app.services.dns_query_plugin.shodan.time.sleep", return_value=None)
+    @patch("app.services.dns_query_plugin.shodan.provider_sleep", return_value=None)
     def test_sub_domains_by_ip_uses_ip_filter(self, _sleep):
         plugin = ShodanQuery()
         plugin.init_key(api_key="test-key", max_page=1)
@@ -110,7 +110,7 @@ class TestShodanQuery(unittest.TestCase):
         self.assertEqual(search_queries, ["ip:1.1.1.1"])
         self.assertEqual(set(results), {"a.example.com", "b.example.com", "c.example.com"})
 
-    @patch("app.services.dns_query_plugin.shodan.time.sleep", return_value=None)
+    @patch("app.services.dns_query_plugin.shodan.provider_sleep", return_value=None)
     def test_sub_domains_by_cert_builds_subject_fingerprint_and_serial_queries(self, _sleep):
         plugin = ShodanQuery()
         plugin.init_key(api_key="test-key", max_page=1)

@@ -33,7 +33,7 @@ class Page(object):
             if abs(self.body_length - other.body_length) > 20:
                 return False
 
-            if abs(len(self.title) - len(self.title)) >= 3:
+            if abs(len(self.title) - len(other.title)) >= 3:
                 return False
 
             if self.status_code == 200 and abs(self.body_length - other.body_length) <= 3:

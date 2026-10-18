@@ -303,13 +303,14 @@ def _extract_shodan_ips(data):
 
 def _extract_zoomeye_ips(data):
     ip_set = set()
-    items = data.get("matches", []) if isinstance(data, dict) else []
-    if not isinstance(items, list):
-        items = data.get("list", []) if isinstance(data, dict) else []
-    if not isinstance(items, list):
-        items = data.get("data", []) if isinstance(data, dict) else []
-    if not isinstance(items, list):
-        items = []
+    items = []
+    if isinstance(data, dict):
+        for key in ("matches", "list", "data"):
+            candidate = data.get(key)
+            if isinstance(candidate, list):
+                items = candidate
+                if items:
+                    break
 
     for item in items:
         if not isinstance(item, dict):

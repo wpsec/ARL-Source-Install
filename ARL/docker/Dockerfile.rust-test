@@ -1,0 +1,19 @@
+ARG ARL_TEST_RUNNER_IMAGE=arl:system-test-runner
+FROM ${ARL_TEST_RUNNER_IMAGE} AS rust_test
+
+WORKDIR /workspace/arl_accel
+
+COPY --from=cargo_cache /registry/ /root/.cargo/registry/
+COPY Cargo.toml Cargo.lock ./
+COPY src/ ./src/
+
+RUN set -eu; \
+    export CARGO_HOME=/root/.cargo; \
+    export RUSTUP_HOME=/root/.rustup; \
+    export PATH="${CARGO_HOME}/bin:${PATH}"; \
+    cargo --version; \
+    CARGO_TARGET_DIR=/tmp/arl-rust-test-target cargo test --locked --offline; \
+    printf 'Rust tests passed\n' >/tmp/arl-rust-test-result
+
+FROM scratch AS rust_test_result
+COPY --from=rust_test /tmp/arl-rust-test-result /rust-test-result

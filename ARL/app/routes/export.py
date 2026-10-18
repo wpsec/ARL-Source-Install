@@ -2142,9 +2142,9 @@ def _build_service_rows(task_ids, fallback_ip_items=None):
     if expected_task_ids:
         missing_task_ids = expected_task_ids - service_hit_task_ids
         if rows and not missing_task_ids:
-            return rows
+            return _deduplicate_service_rows(rows)
     elif rows:
-        return rows
+        return _deduplicate_service_rows(rows)
 
     for item in fallback_ip_items or []:
         if not isinstance(item, dict):
@@ -3703,7 +3703,7 @@ def _extract_cert_rows(task_ids):
                 ]
             )
 
-    return rows
+    return _deduplicate_cert_rows(rows)
 
 
 def _build_cert_sheet(wb, task_ids, apply_style=True):

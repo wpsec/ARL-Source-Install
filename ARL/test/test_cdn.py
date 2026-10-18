@@ -1,28 +1,32 @@
 import unittest
-from app.utils import get_cdn_name_by_ip, get_cdn_name_by_cname
+from unittest.mock import patch
+
+from app.utils.cdn import get_cdn_name_by_ip, get_cdn_name_by_cname
+import app.utils.cdn as cdn
 
 
 class TestCDNName(unittest.TestCase):
+    def setUp(self):
+        self._patched = patch.multiple(
+            cdn,
+            cdn_info=[{
+                "name": "Fixture CDN",
+                "ip_cidr": ["203.0.113.0/24"],
+                "cname_domain": ["edge.fixture.invalid"],
+            }],
+            cdn_ip_cidr_list=["203.0.113.0/24"],
+            cdn_cname_list=["edge.fixture.invalid"],
+        )
+        self._patched.start()
+        self.addCleanup(self._patched.stop)
+
     def test_cdn_ip(self):
-        name = get_cdn_name_by_ip("1.1.1.1")
-
-        self.assertTrue(name == "")
-
-        name = get_cdn_name_by_ip("164.88.98.2")
-        self.assertTrue(name == "云盾CDN")
+        self.assertEqual("", get_cdn_name_by_ip("198.51.100.2"))
+        self.assertEqual("Fixture CDN", get_cdn_name_by_ip("203.0.113.2"))
 
     def test_cdn_cname(self):
-        name = get_cdn_name_by_cname("example.com")
-        self.assertTrue(name == "")
-
-        name = get_cdn_name_by_cname("zff.qaxwzws.com")
-        self.assertTrue(name == "网神CDN")
-
-        name = get_cdn_name_by_cname("zff.xxgslb.com")
-        self.assertTrue(name == "CDN")
-
-        name = get_cdn_name_by_cname("zff.akamaized.net")
-        self.assertTrue(name == "AkamaiCDN")
+        self.assertEqual("", get_cdn_name_by_cname("origin.fixture.invalid"))
+        self.assertEqual("Fixture CDN", get_cdn_name_by_cname("www.edge.fixture.invalid"))
 
 if __name__ == '__main__':
     unittest.main()

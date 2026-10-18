@@ -1,4 +1,4 @@
-FROM node:20.20.1-bookworm AS frontend_builder
+FROM node:24.21.0-bookworm AS frontend_builder
 
 WORKDIR /frontend
 ARG NPM_REGISTRY=https://registry.npmmirror.com

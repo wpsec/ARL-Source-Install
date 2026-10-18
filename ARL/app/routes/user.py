@@ -99,7 +99,7 @@ class LogoutARL(ARLResource):
         token = request.headers.get("Token")
         utils.user_logout(token)
 
-        return build_data({})
+        return {"message": "success", "code": 200, "data": {}}
 
 
 # 修改密码请求模型

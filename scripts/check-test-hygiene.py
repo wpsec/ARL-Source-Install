@@ -4,7 +4,7 @@
 每个 test_*.py 在独立子进程加载并完整执行，结束后检查 `app`/`app.services`/
 `app.utils`/`app.config`/`app.modules` 槽位是否残留 fake/空壳（注入不还原）。
 空壳判据与 `ARL/test/_api_unified_bootstrap.assert_no_shell_pollution` 同口径，
-额外检出 fake utils/config/modules。
+额外检出 fake utils/config/modules；逐模块统计失败与报错，不把失败当作干净通过。
 
 判定口径（Review P0 教训）：
 - 模块名必须带 `test.` 前缀——裸 stem 在 test/ 为包的环境被解析为
@@ -20,7 +20,9 @@
 
 默认不会启用历史外网测试；授权目标扫描应由独立扫描服务器执行。
 """
+import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -35,12 +37,14 @@ if not (ARL_ROOT / "test").is_dir() and (REPO_ROOT / "test").is_dir():
     ARL_ROOT = REPO_ROOT
 
 CHECKER = r'''
-import sys, unittest, io, contextlib
+import json, sys, unittest, io, contextlib
 name = sys.argv[1]
 sys.path.insert(0, ".")
 buf = io.StringIO()
 ran = "ran=?"
 load_fail = ""
+test_status = "tests-ok"
+skip_details = []
 try:
     with contextlib.redirect_stderr(buf):
         suite = unittest.defaultTestLoader.loadTestsFromName(name)
@@ -61,9 +65,26 @@ try:
                 load_fail = "load-fail(%s)" % (detail or getattr(child, "_testMethodName", "?"))
         if not load_fail:
             result = unittest.TextTestRunner(stream=buf, verbosity=0).run(suite)
+            skip_details = [
+                (case.id(), str(reason).strip())
+                for case, reason in result.skipped
+            ]
             ran = "ran=%d fail=%d err=%d skip=%d" % (
                 result.testsRun, len(result.failures),
                 len(result.errors), len(result.skipped))
+            if result.failures or result.errors:
+                failure_details = []
+                for case, traceback_text in result.failures + result.errors:
+                    error_name = "Failure"
+                    for line in reversed(traceback_text.splitlines()):
+                        candidate = line.strip().split(":", 1)[0]
+                        if candidate.endswith(("Error", "Exception")) or candidate == "AssertionError":
+                            error_name = candidate
+                            break
+                    failure_details.append("{}:{}".format(case.id(), error_name))
+                test_status = "test-failed:" + ";".join(failure_details)
+            elif any(not reason for _, reason in skip_details):
+                test_status = "skip-missing-reason"
             if result.testsRun == 0:
                 load_fail = "ran-zero"
 except Exception as exc:
@@ -90,7 +111,10 @@ if mods is not None and not hasattr(mods, "WihRecord"):
     bad.append("app.modules=fake")
 if load_fail:
     bad.append(load_fail)
-print("%s\t%s\t%s" % (name, ran, ",".join(bad) if bad else "clean"))
+print("%s\t%s\t%s\t%s\t%s" % (
+    name, ran, ",".join(bad) if bad else "clean", test_status,
+    json.dumps(skip_details, ensure_ascii=False),
+))
 '''
 
 
@@ -186,6 +210,10 @@ def main(argv):
     timeout_sec = float(os.environ.get("HYGIENE_TIMEOUT", "600"))
     dirty = []
     load_fails = []
+    test_failures = []
+    skip_failures = []
+    skip_details = []
+    test_totals = {"ran": 0, "fail": 0, "err": 0, "skip": 0}
     pending = []
     queue = list(names)
 
@@ -207,7 +235,23 @@ def main(argv):
                 still.append((name, proc, started))
                 continue
             record = collect_output(name, proc)
-            if record.endswith("\tclean"):
+            fields = record.split("\t", 4)
+            if len(fields) >= 4:
+                counts = fields[1]
+                for item in counts.split():
+                    key, separator, value = item.partition("=")
+                    if separator and key in test_totals:
+                        test_totals[key] += int(value)
+                if fields[3].startswith("test-failed"):
+                    test_failures.append(record)
+                    print(record)
+                if len(fields) == 5:
+                    module_skips = json.loads(fields[4])
+                    skip_details.extend((name, case, reason) for case, reason in module_skips)
+                if fields[3] == "skip-missing-reason":
+                    skip_failures.append(record)
+                    print(record)
+            if len(fields) >= 3 and fields[2] == "clean" and len(fields) >= 4:
                 continue
             dirty.append(record)
             if "load-fail(" in record or "collect-error" in record or "no-output" in record or "timeout" in record:
@@ -220,10 +264,17 @@ def main(argv):
     print("--- load-fails(环境不可执行，不计污染): %d" % len(load_fails))
     for record in load_fails:
         print("  " + record)
+    print("--- skipped-tests=%d missing-reasons=%d" % (
+        len(skip_details), len(skip_failures)))
+    for module, case, reason in skip_details:
+        print("  skip %s: %s — %s" % (module, case, reason or "<无原因>"))
     print("--- scanned=%d polluted=%d load_fails=%d clean=%d" % (
         len(names), len(polluted), len(load_fails),
         len(names) - len(polluted) - len(load_fails)))
-    return 1 if polluted or load_fails else 0
+    print("--- test-totals ran=%d fail=%d err=%d skip=%d failed_modules=%d" % (
+        test_totals["ran"], test_totals["fail"], test_totals["err"],
+        test_totals["skip"], len(test_failures)))
+    return 1 if polluted or load_fails or test_failures or skip_failures else 0
 
 
 if __name__ == "__main__":

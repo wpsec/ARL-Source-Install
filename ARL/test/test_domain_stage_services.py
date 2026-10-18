@@ -643,7 +643,8 @@ class TestDomainStageServices(unittest.TestCase):
         class _FakeSiteFetch(object):
             instances = []
 
-            def __init__(self, task_id=None, sites=None, options=None, scope_domain=None):
+            def __init__(self, task_id=None, sites=None, options=None, scope_domain=None,
+                         discovery_context=None):
                 self.scope_domain = scope_domain
                 self.wih_domain_set = set()
                 self.flag_at_run = None

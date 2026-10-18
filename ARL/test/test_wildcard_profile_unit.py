@@ -74,21 +74,34 @@ def _bootstrap_test_module():
 
 
 wildcard_module = None
+_SHARED_MODULE_SLOTS = (
+    "app",
+    "app.services",
+    "app.config",
+    "app.utils",
+    "app.services.wildcardDomain",
+)
+_ORIGINAL_SYS_MODULES = {}
 
 
 def setUpModule():
     global wildcard_module, _ORIGINAL_SYS_MODULES
-    _ORIGINAL_SYS_MODULES = dict(sys.modules)
+    _ORIGINAL_SYS_MODULES = {
+        name: sys.modules.get(name) for name in _SHARED_MODULE_SLOTS
+    }
     wildcard_module = _bootstrap_test_module()
 
 
 def tearDownModule():
-    # 替身环境只服务本文件的字符串 patch；退出时全量还原 sys.modules，
-    # 避免合跑进程中污染其它测试对真实 app 包的解析。
+    # 替身环境只服务本文件；只还原被替换的包槽位，避免删除其它测试
+    # 在运行期间正常导入的模块。
     original_modules = globals().get("_ORIGINAL_SYS_MODULES")
     if original_modules is not None:
-        sys.modules.clear()
-        sys.modules.update(original_modules)
+        for name, module in original_modules.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
 
 
 

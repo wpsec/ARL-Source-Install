@@ -17,29 +17,7 @@ SERVICE_GZ = ROOT_DIR / "app" / "dicts" / "service_fingerprints.json.gz"
 
 
 
-# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
-# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
-# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
-# 理念保留。
-_HYGIENE_SHARED_SLOTS = (
-    # 本测试只临时覆盖 app/app.config；不要恢复 app.utils，避免在同进程
-    # 运行 site registry 测试时覆盖其 Mongo fake。
-    "app", "app.config", "app.services", "app.services.fingerprints", "app.tools",
-)
-_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
-_HYGIENE_OWNED = {}
-
-
-def tearDownModule():
-    for _name, _original in _HYGIENE_PRE.items():
-        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
-            continue
-        if _original is None:
-            sys.modules.pop(_name, None)
-        else:
-            sys.modules[_name] = _original
-
-def bootstrap():
+def _bootstrap_with_fake_packages():
     app_pkg = types.ModuleType("app")
     app_pkg.__path__ = [str(ROOT_DIR / "app")]
     sys.modules.setdefault("app", app_pkg)
@@ -58,12 +36,22 @@ def bootstrap():
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    _HYGIENE_OWNED.update({
-        name: sys.modules.get(name)
-        for name in _HYGIENE_SHARED_SLOTS
-        if sys.modules.get(name) is not None
-    })
     return module, config_module.Config
+
+
+def bootstrap():
+    previous_app_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "app" or name.startswith("app.")
+    }
+    try:
+        return _bootstrap_with_fake_packages()
+    finally:
+        for name in tuple(sys.modules):
+            if name == "app" or name.startswith("app."):
+                sys.modules.pop(name, None)
+        sys.modules.update(previous_app_modules)
 
 
 MOD, CFG = bootstrap()

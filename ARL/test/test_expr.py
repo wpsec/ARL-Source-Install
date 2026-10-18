@@ -1,6 +1,5 @@
 import unittest
 from unittest import TestCase
-import timeit
 
 IMPORT_ERROR = None
 try:
@@ -56,17 +55,15 @@ class TestExpression(TestCase):
             with self.subTest(expression=expression):
                 self.assertEqual(expr.evaluate(expression, variables), expected_result)
 
-    def test_eval_bench(self):
+    def test_evaluate_parsed_conjunction(self):
         expression = 'body = "body_test" && status_code == "200" && header = "header" && title = "title \\""'
         variables = {
-            'body': "body" * 1024 * 100 + "_test",
-            'header': "header test2",
-            'title': "title \" test3",
-            'icon_hash': "116323821",
-            'url': "https://demo.local/test",
+            'body': "body_test",
+            'status_code': "200",
+            'header': "header",
+            'title': 'title "',
         }
 
-        print(timeit.timeit(lambda: expr.evaluate(expression, variables), number=1000))
-
         parsed = expr.parse_expression(expression)
-        print(timeit.timeit(lambda: expr.evaluate_expression(parsed, variables), number=1000))
+        self.assertTrue(expr.evaluate(expression, variables))
+        self.assertTrue(expr.evaluate_expression(parsed, variables))

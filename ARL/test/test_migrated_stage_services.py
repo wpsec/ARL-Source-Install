@@ -130,7 +130,7 @@ class TestIPServiceSummaryStageService(unittest.TestCase):
         def delete_many(self, query):
             self.ops.append(("delete_many", query))
 
-        def insert_many(self, items):
+        def insert_many(self, items, ordered=True):
             self.ops.append(("insert_many", items))
 
     class _FakeUtils(object):
@@ -171,10 +171,22 @@ class TestIPServiceSummaryStageService(unittest.TestCase):
         by_service = {item["service_name"]: item["service_info"] for item in task.service_info_list}
         http_items = by_service["http"]
         # 1.1.1.1:80 两条 http 记录按 (service, ip, port) 去重，先进带 product 为空的回退值
-        self.assertIn({"ip": "1.1.1.1", "port_id": 80, "product": "http", "version": ""}, http_items)
+        self.assertTrue(any(
+            item.get("ip") == "1.1.1.1"
+            and item.get("port_id") == 80
+            and item.get("product") == "http"
+            and item.get("version") == ""
+            for item in http_items
+        ))
         self.assertEqual(1, len([i for i in http_items if i["ip"] == "1.1.1.1" and i["port_id"] == 80]))
         # npoc 兜底来源并入
-        self.assertIn({"ip": "2.2.2.2", "port_id": 8080, "product": "http", "version": ""}, http_items)
+        self.assertTrue(any(
+            item.get("ip") == "2.2.2.2"
+            and item.get("port_id") == 8080
+            and item.get("product") == "http"
+            and item.get("version") == ""
+            for item in http_items
+        ))
         # ssl/http 归一为 https
         self.assertIn("https", by_service)
         ops = [op[0] for op in utils.service_db.ops]

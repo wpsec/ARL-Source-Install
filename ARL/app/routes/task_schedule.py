@@ -226,6 +226,7 @@ class ARLTaskScheduleResult(ARLResource):
 
         data["policy_name"] = item["name"]
 
+        data["_id"] = ObjectId()
         utils.conn_db('task_schedule').insert_one(data)
 
         data["_id"] = str(data["_id"])

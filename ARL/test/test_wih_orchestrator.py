@@ -92,11 +92,15 @@ class _Task(object):
     def _wih_record_in_task_scope(self, _record):
         return True
 
+    def _url_in_task_scope(self, _url):
+        return True
+
     def add_wih_domain_set(self, _record):
         return None
 
     def _save_wih_record(self, record):
         self.saved_records.append(record.fnv_hash)
+        self.wih_record_set.add(record.fnv_hash)
 
 
 _saved_modules = {

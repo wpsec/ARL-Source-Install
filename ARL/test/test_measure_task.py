@@ -32,6 +32,18 @@ class FakeResponse:
 
 
 class TestMeasureTaskService(unittest.TestCase):
+    def setUp(self):
+        self.config_refresh = patch.object(
+            measure_task_module, "refresh_runtime_config_best_effort", return_value=None
+        )
+        self.credential_check = patch.object(
+            measure_task_module, "_ensure_query_plugin_credentials", return_value=None
+        )
+        self.config_refresh.start()
+        self.credential_check.start()
+        self.addCleanup(self.config_refresh.stop)
+        self.addCleanup(self.credential_check.stop)
+
     def test_normalize_measure_provider_supports_alias(self):
         self.assertEqual(normalize_measure_provider("fofa"), "fofa")
         self.assertEqual(normalize_measure_provider("hunter"), "hunter_qax")
@@ -68,7 +80,7 @@ class TestMeasureTaskService(unittest.TestCase):
         self.assertEqual(measure_task_module._resolve_zoomeye_sub_type('domain="example.com"'), "web")
         self.assertEqual(measure_task_module._resolve_zoomeye_sub_type('ip:"203.0.113.10"'), "v4")
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_run_measure_query_test_aggregates_multi_lines(self, mock_request_query):
         mock_request_query.side_effect = [
             {"total": 2, "matches": [{"ip_str": "203.0.113.11"}]},
@@ -83,7 +95,7 @@ class TestMeasureTaskService(unittest.TestCase):
         self.assertEqual(result["items"][0]["size"], 2)
         self.assertEqual(result["items"][1]["size"], 3)
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_fofa_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "size": 3,
@@ -99,7 +111,7 @@ class TestMeasureTaskService(unittest.TestCase):
         self.assertEqual(result["size"], 3)
         self.assertEqual(result["ips"], ["192.0.2.11", "198.51.100.13", "203.0.113.14"])
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_hunter_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "code": 200,
@@ -116,7 +128,7 @@ class TestMeasureTaskService(unittest.TestCase):
 
         self.assertEqual(result["ips"], ["192.0.2.15", "198.51.100.16"])
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_shodan_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "total": 2,
@@ -130,7 +142,7 @@ class TestMeasureTaskService(unittest.TestCase):
 
         self.assertEqual(result["ips"], ["192.0.2.17"])
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_zoomeye_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "total": 2,
@@ -144,7 +156,7 @@ class TestMeasureTaskService(unittest.TestCase):
 
         self.assertEqual(result["ips"], ["192.0.2.18", "203.0.113.18"])
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_zoomeye_v2_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "total": 2,
@@ -158,7 +170,7 @@ class TestMeasureTaskService(unittest.TestCase):
 
         self.assertEqual(result["ips"], ["192.0.2.26", "203.0.113.26"])
 
-    @patch("app.services.measure_task._request_query")
+    @patch.object(measure_task_module, "_request_query")
     def test_fetch_measure_query_ips_extracts_quake_ips(self, mock_request_query):
         mock_request_query.return_value = {
             "code": 0,

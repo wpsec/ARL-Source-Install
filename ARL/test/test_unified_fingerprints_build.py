@@ -45,28 +45,12 @@ class _DummyCollection:
 
 
 
-# 测试卫生（计划 1 收敛项）：本文件在模块顶层向 sys.modules 注入 fake 包槽位且
-# 旧版无还原，单文件独立运行后会把 fake 留给同进程后续用例（合跑顺序敏感）。
-# 统一在守卫/钩子处快照并还原共享父槽位；子模块缓存（真实实现）按 bootstrap
-# 理念保留。
+# 测试卫生（计划 1 收敛项）：本文件在模块顶层用 fake 依赖加载指纹实现，必须在
+# 导入完成时立即恢复 app.* 槽位，避免 unittest 收集后续模块时命中这些替身。
 _HYGIENE_SHARED_SLOTS = (
     "app", "app.utils", "app.config", "app.modules",
     "app.services", "app.services.fingerprints", "app.tools",
 )
-_HYGIENE_PRE = {n: sys.modules.get(n) for n in _HYGIENE_SHARED_SLOTS}
-_HYGIENE_OWNED = {}
-
-
-def tearDownModule():
-    for _name, _original in _HYGIENE_PRE.items():
-        # 多个计划 5 测试模块可能在收集期先后安装不同 fake；只恢复仍由
-        # 本模块持有的对象，避免覆盖后加载模块的隔离环境。
-        if _name in _HYGIENE_OWNED and sys.modules.get(_name) is not _HYGIENE_OWNED[_name]:
-            continue
-        if _original is None:
-            sys.modules.pop(_name, None)
-        else:
-            sys.modules[_name] = _original
 
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, str(path))
@@ -77,73 +61,81 @@ def _load(name, path):
 
 
 def bootstrap():
-    app_pkg = types.ModuleType("app")
-    app_pkg.__path__ = [str(ROOT_DIR / "app")]
-    sys.modules["app"] = app_pkg
-    svc = types.ModuleType("app.services")
-    svc.__path__ = [str(ROOT_DIR / "app" / "services")]
-    sys.modules["app.services"] = svc
-    app_pkg.services = svc
-    tools = types.ModuleType("app.tools")
-    tools.__path__ = [str(ROOT_DIR / "app" / "tools")]
-    sys.modules["app.tools"] = tools
-    app_pkg.tools = tools
-    utils = types.ModuleType("app.utils")
-    utils.__path__ = [str(ROOT_DIR / "app" / "utils")]
-    utils.get_logger = lambda *a, **k: _DummyLogger()
-    utils.conn_db = lambda *a, **k: _DummyCollection()
-    utils.load_file = lambda p: open(p, encoding="utf-8").readlines()
-    sys.modules["app.utils"] = utils
-    app_pkg.utils = utils
-    config_module = types.ModuleType("app.config")
+    previous_app_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "app" or name.startswith("app.")
+    }
+    try:
+        app_pkg = types.ModuleType("app")
+        app_pkg.__path__ = [str(ROOT_DIR / "app")]
+        sys.modules["app"] = app_pkg
+        svc = types.ModuleType("app.services")
+        svc.__path__ = [str(ROOT_DIR / "app" / "services")]
+        sys.modules["app.services"] = svc
+        app_pkg.services = svc
+        tools = types.ModuleType("app.tools")
+        tools.__path__ = [str(ROOT_DIR / "app" / "tools")]
+        sys.modules["app.tools"] = tools
+        app_pkg.tools = tools
+        utils = types.ModuleType("app.utils")
+        utils.__path__ = [str(ROOT_DIR / "app" / "utils")]
+        utils.get_logger = lambda *a, **k: _DummyLogger()
+        utils.conn_db = lambda *a, **k: _DummyCollection()
+        utils.load_file = lambda p: open(p, encoding="utf-8").readlines()
+        sys.modules["app.utils"] = utils
+        app_pkg.utils = utils
+        config_module = types.ModuleType("app.config")
 
-    class Config:
-        REDIS_ENABLE = False
-        REDIS_HOST = "127.0.0.1"
-        REDIS_PORT = 6379
-        REDIS_DB = 0
-        REDIS_PASSWORD = ""
-        REDIS_CACHE_EXPIRE = 0
-        web_app_rule = str(ROOT_DIR / "app" / "dicts" / "webapp.json")
-        FINGERPRINT = str(PROJECT_ROOT / "tools" / "finger.json")
-        KSCAN_FINGERPRINT_ENABLE = True
-        KSCAN_FINGERPRINT_FILE = str(ROOT_DIR / "app" / "dicts" / "kscan_fingerprint.local.json")
-        KSCAN_FINGERPRINT_NAME_PREFIX = ""
-        KSCAN_FINGERPRINT_REGEX_FALLBACK = "literal"
-        KSCAN_FINGERPRINT_MIN_LITERAL_LEN = 5
-        KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = 30
-        KSCAN_FINGERPRINT_MAX_TOTAL_RULES = 12000
-        FINGER_CONFIDENCE_MIN = 85
-        FINGER_CANDIDATE_CONFIDENCE_MIN = 70
-        FINGER_LEGACY_RULE_CONFIDENCE = 72
-        WAPPALYZER_CONFIDENCE_MIN = 70
-        FINGER_CANDIDATE_MAX_ITEMS = 8
+        class Config:
+            REDIS_ENABLE = False
+            REDIS_HOST = "127.0.0.1"
+            REDIS_PORT = 6379
+            REDIS_DB = 0
+            REDIS_PASSWORD = ""
+            REDIS_CACHE_EXPIRE = 0
+            web_app_rule = str(ROOT_DIR / "app" / "dicts" / "webapp.json")
+            FINGERPRINT = str(PROJECT_ROOT / "tools" / "finger.json")
+            KSCAN_FINGERPRINT_ENABLE = True
+            KSCAN_FINGERPRINT_FILE = str(ROOT_DIR / "test" / "fixtures" / "fingerprints" / "kscan-local.json")
+            KSCAN_FINGERPRINT_NAME_PREFIX = ""
+            KSCAN_FINGERPRINT_REGEX_FALLBACK = "literal"
+            KSCAN_FINGERPRINT_MIN_LITERAL_LEN = 5
+            KSCAN_FINGERPRINT_MAX_RULES_PER_NAME = 30
+            KSCAN_FINGERPRINT_MAX_TOTAL_RULES = 12000
+            FINGER_CONFIDENCE_MIN = 85
+            FINGER_CANDIDATE_CONFIDENCE_MIN = 70
+            FINGER_LEGACY_RULE_CONFIDENCE = 72
+            WAPPALYZER_CONFIDENCE_MIN = 70
+            FINGER_CANDIDATE_MAX_ITEMS = 8
 
-    config_module.Config = Config
-    sys.modules["app.config"] = config_module
-    app_pkg.config = config_module
-    _HYGIENE_OWNED.update({
-        name: sys.modules.get(name)
-        for name in _HYGIENE_SHARED_SLOTS
-        if sys.modules.get(name) is not None
-    })
-    svc.expr = _load("app.services.expr", ROOT_DIR / "app" / "services" / "expr.py")
-    svc.fingerprint = _load("app.services.fingerprint", ROOT_DIR / "app" / "services" / "fingerprint.py")
-    svc.kscan_fingerprint = _load("app.services.kscan_fingerprint", ROOT_DIR / "app" / "services" / "kscan_fingerprint.py")
-    cache = _load("app.services.fingerprint_cache", ROOT_DIR / "app" / "services" / "fingerprint_cache.py")
-    svc.fingerprint_cache = cache
-    build = _load("app.tools.build_unified_fingerprints", ROOT_DIR / "app" / "tools" / "build_unified_fingerprints.py")
-    return cache, build, config_module.Config
+        config_module.Config = Config
+        sys.modules["app.config"] = config_module
+        app_pkg.config = config_module
+        svc.expr = _load("app.services.expr", ROOT_DIR / "app" / "services" / "expr.py")
+        svc.fingerprint = _load("app.services.fingerprint", ROOT_DIR / "app" / "services" / "fingerprint.py")
+        svc.kscan_fingerprint = _load("app.services.kscan_fingerprint", ROOT_DIR / "app" / "services" / "kscan_fingerprint.py")
+        cache = _load("app.services.fingerprint_cache", ROOT_DIR / "app" / "services" / "fingerprint_cache.py")
+        svc.fingerprint_cache = cache
+        build = _load("app.tools.build_unified_fingerprints", ROOT_DIR / "app" / "tools" / "build_unified_fingerprints.py")
+        return cache, build, config_module.Config
+    finally:
+        # 本文件在 unittest 收集期加载；恢复所有 app.* 槽位，防止后续模块的
+        # 顶层 import 命中这里用 fake 依赖载入的服务子模块。
+        for name in tuple(sys.modules):
+            if name == "app" or name.startswith("app."):
+                sys.modules.pop(name, None)
+        sys.modules.update(previous_app_modules)
 
 
 CACHE, BUILD, CFG = bootstrap()
 SAMPLES = json.loads((ROOT_DIR / "test" / "fixtures" / "fingerprints" / "responses.json").read_text(encoding="utf-8"))["samples"]
-KSCAN_LOCAL = str(ROOT_DIR / "app" / "dicts" / "kscan_fingerprint.local.json")
+KSCAN_FIXTURE = str(ROOT_DIR / "test" / "fixtures" / "fingerprints" / "kscan-local.json")
 
 
 def build_kscan_only():
     merger = BUILD.Merger()
-    n = BUILD._load_human_rule_source(KSCAN_LOCAL, "kscan_local", merger)
+    n = BUILD._load_human_rule_source(KSCAN_FIXTURE, "kscan_local", merger)
     return merger.finalize(), n, merger
 
 
@@ -187,7 +179,7 @@ def main_argv(site_out, service_out):
     return [
         "--webapp", str(ROOT_DIR / "app/dicts/webapp.json"),
         "--finger", str(PROJECT_ROOT / "tools/finger.json"),
-        "--kscan-file", KSCAN_LOCAL,
+        "--kscan-file", KSCAN_FIXTURE,
         "--site-out", site_out,
         "--service-out", service_out,
     ]
@@ -210,7 +202,7 @@ class UnifiedFingerprintsBuildTest(unittest.TestCase):
     def test_strict_subset_semantics_vs_runtime(self):
         for sample in SAMPLES:
             variables = sample_vars(sample)
-            CFG.KSCAN_FINGERPRINT_FILE = KSCAN_LOCAL
+            CFG.KSCAN_FINGERPRINT_FILE = KSCAN_FIXTURE
             CACHE.finger_db_cache.cache = None
             runtime_names = {str(i.get("name", "")).lower() for i in CACHE.finger_db_identify_detail(variables)}
             compiled_names = {r["name"].lower() for r in self.rules if evaluate_rule(r, variables)}
