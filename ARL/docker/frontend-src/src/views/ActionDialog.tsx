@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, Play, X } from 'lucide-react';
 import { normalizeListData, requestApi } from '../api/client';
@@ -62,6 +62,9 @@ export function ActionDialog({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const closeWhenIdle = useCallback(() => {
+    if (!loading) onClose();
+  }, [loading, onClose]);
 
   const editable = action.allowPayloadEdit !== false;
   const isTaskCreate = action.id === 'create_task';
@@ -784,16 +787,17 @@ export function ActionDialog({
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      onClose();
+      closeWhenIdle();
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [onClose]);
+  }, [closeWhenIdle]);
 
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={closeWhenIdle}
+      dismissable={!loading}
       boxClass={`w-full ${isLongFormAction ? 'arl-modal-tall max-w-5xl!' : 'max-w-3xl!'}`}
     >
         <div className="shrink-0 px-4 py-4 border-b border-base-300 bg-base-200 flex items-center justify-between sm:px-6">
@@ -803,7 +807,12 @@ export function ActionDialog({
               {action.method} {action.path}
             </p>
           </div>
-          <button onClick={onClose} className={CONSOLE_ICON_BUTTON_CLASS}>
+          <button
+            onClick={closeWhenIdle}
+            className={CONSOLE_ICON_BUTTON_CLASS}
+            disabled={loading}
+            aria-label="关闭弹窗"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -1873,8 +1882,9 @@ export function ActionDialog({
           className="arl-modal-footer shrink-0 min-w-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-6"
         >
             <button
-              onClick={onClose}
+              onClick={closeWhenIdle}
               className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
+              disabled={loading}
             >
               取消
             </button>

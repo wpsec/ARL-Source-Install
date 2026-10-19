@@ -55,6 +55,9 @@ export function Modal({
         // Esc/外部关闭统一走父级状态收敛（open 仍为 true 时说明是原生路径触发）
         if (open) onClose();
       }}
+      onCancel={(event) => {
+        if (!dismissable) event.preventDefault();
+      }}
       onClick={(event) => {
         if (dismissable && event.target === ref.current) onClose();
       }}

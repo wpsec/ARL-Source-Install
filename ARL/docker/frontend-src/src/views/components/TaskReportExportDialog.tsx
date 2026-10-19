@@ -33,7 +33,7 @@ export function TaskReportExportDialog({
       : 'progress-primary';
 
   return (
-    <Modal open onClose={closeWhenIdle} boxClass="w-full max-w-lg!">
+    <Modal open onClose={closeWhenIdle} dismissable={!busy} boxClass="w-full max-w-lg!">
       <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-lg font-black">{feedback.title}</h4>
@@ -42,7 +42,7 @@ export function TaskReportExportDialog({
           </p>
         </div>
         <button
-          onClick={onClose}
+          onClick={closeWhenIdle}
           disabled={busy}
           className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
           title={busy ? '导出进行中，暂不可关闭' : '关闭'}

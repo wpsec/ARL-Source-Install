@@ -2,10 +2,10 @@
 // 主区视图（Dashboard lazy）用通用 mock 兜住，断言只钉壳层稳定元素，
 // 不与各视图数据形状强耦合。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { installFetchMock, setViteDefineGlobals } from './test/fetchMock';
+import { installFetchMock, makeHttpResponse, setViteDefineGlobals } from './test/fetchMock';
 
 beforeAll(() => {
   setViteDefineGlobals();
@@ -115,6 +115,86 @@ describe('App 鉴权流转', () => {
     await waitFor(() => expect(document.querySelector('dialog[open]')).toBeNull());
   });
 
+  it('修改密码提交期间阻止关闭按钮和 Escape，失败后恢复关闭', async () => {
+    localStorage.setItem('arl-token', 'tk-existing');
+    installFetchMock();
+    const defaultFetch = globalThis.fetch;
+    let resolveChangeRequest!: (response: ReturnType<typeof makeHttpResponse>) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes('/user/change_pass')) {
+        return new Promise<ReturnType<typeof makeHttpResponse>>((resolve) => {
+          resolveChangeRequest = resolve;
+        });
+      }
+      return defaultFetch(url, init);
+    }));
+    renderApp();
+    await waitFor(() => expect(screen.getByTitle('修改密码')).toBeTruthy());
+
+    fireEvent.click(screen.getByTitle('修改密码'));
+    fireEvent.click(screen.getByRole('button', { name: '提交并重新登录' }));
+    await waitFor(() => expect(resolveChangeRequest).toBeTruthy());
+
+    const closeButton = screen.getByRole('button', { name: '关闭弹窗' }) as HTMLButtonElement;
+    const dialog = document.querySelector('dialog[open]') as HTMLDialogElement;
+    expect(closeButton.disabled).toBe(true);
+    fireEvent.click(closeButton);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    const cancelEvent = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancelEvent);
+    expect(cancelEvent.defaultPrevented).toBe(true);
+    expect(dialog.open).toBe(true);
+
+    await act(async () => {
+      resolveChangeRequest(makeHttpResponse(200, { code: 400, message: '修改密码失败' }));
+    });
+    await screen.findByText('修改密码失败');
+    expect(closeButton.disabled).toBe(false);
+    fireEvent.click(closeButton);
+    await waitFor(() => expect(document.querySelector('dialog[open]')).toBeNull());
+  });
+
+  it('全局新建任务提交期间 Escape 不会绕过弹窗 loading guard', async () => {
+    localStorage.setItem('arl-token', 'tk-existing');
+    installFetchMock({
+      routes: {
+        '/api_console/scan_config/': [200, {
+          code: 200,
+          data: {
+            scan_config: { domain_dict: '/dict/domain.txt', file_leak_dict: '/dict/file.txt' },
+            available_domain_dicts: [{ label: 'domain', path: '/dict/domain.txt', source: 'custom', exists: true }],
+            available_file_leak_dicts: [{ label: 'file', path: '/dict/file.txt', source: 'custom', exists: true }],
+          },
+        }],
+      },
+    });
+    const defaultFetch = globalThis.fetch;
+    let resolveTaskRequest!: (response: ReturnType<typeof makeHttpResponse>) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && url.includes('/task/')) {
+        return new Promise<ReturnType<typeof makeHttpResponse>>((resolve) => {
+          resolveTaskRequest = resolve;
+        });
+      }
+      return defaultFetch(url, init);
+    }));
+    renderApp();
+    await screen.findByRole('heading', { name: '我的仪表盘' });
+
+    fireEvent.click(screen.getAllByRole('button', { name: '新建任务' }).at(-1)!);
+    await waitFor(() => expect(document.querySelector('dialog[open]')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(resolveTaskRequest).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.querySelector('dialog[open]')).toBeTruthy();
+
+    await act(async () => {
+      resolveTaskRequest(makeHttpResponse(200, { code: 200, data: {} }));
+    });
+    await waitFor(() => expect(document.querySelector('dialog[open]')).toBeNull());
+  });
+
   it('侧边栏切换视图会写入激活模块（localStorage 持久化）', async () => {
     localStorage.setItem('arl-token', 'tk-existing');
     installFetchMock();
@@ -152,6 +232,39 @@ describe('App 鉴权流转', () => {
       expect(siteCall?.url).toContain('task_id=task-direct');
     });
     expect(window.location.pathname).toBe('/tasks/task-direct/site');
+  });
+
+  it('同名任务查看后清除筛选会退出同名任务结果视图', async () => {
+    window.history.replaceState({}, '', '/modules/task');
+    localStorage.setItem('arl-token', 'tk-existing');
+    const calls = installFetchMock();
+    renderApp();
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: '任务管理' })).toBeTruthy());
+    fireEvent.change(
+      screen.getByPlaceholderText('请输入或选择任务名（用于搜索/同名查看/批量操作）'),
+      { target: { value: 'same-name-task' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: '同名任务查看' }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/modules/site');
+      expect(window.location.search).toContain('x.task_name=same-name-task');
+    });
+    await waitFor(() => expect(calls.some((call) => (
+      call.url.includes('/api/site/') && call.url.includes('task_name=same-name-task')
+    ))).toBe(true));
+    const callsBeforeClear = calls.length;
+    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: '清除筛选' })).toBeNull();
+      expect(window.location.pathname).toBe('/modules/site');
+      expect(window.location.search).toBe('');
+    });
+    await waitFor(() => expect(calls.slice(callsBeforeClear).some((call) => (
+      call.url.includes('/api/site/') && !call.url.includes('task_name=same-name-task')
+    ))).toBe(true));
   });
 
   it('列表筛选、页码和分页大小在 URL 中恢复', async () => {

@@ -1332,6 +1332,7 @@ export function TableModuleView({
   };
 
   const clearSearchFilters = useCallback(() => {
+    const resetFilters = { ...activeExternalFilters };
     if (hasAdvancedSearch) {
       const resetForm: JsonValue = {};
       (module.searchFields || []).forEach((field) => {
@@ -1342,7 +1343,8 @@ export function TableModuleView({
       setQuickFilter('');
     }
     setPage(1);
-  }, [hasAdvancedSearch, module.searchFields]);
+    void loadRows({ page: 1, filters: resetFilters, forceRefresh: true });
+  }, [activeExternalFilters, hasAdvancedSearch, loadRows, module.searchFields]);
 
   const totalPages = Math.max(1, Math.ceil(total / size));
   const pageOptions = useMemo(
@@ -2180,9 +2182,14 @@ export function TableModuleView({
         textarea.style.position = 'fixed';
         textarea.style.opacity = '0';
         document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
+        try {
+          textarea.select();
+          if (typeof document.execCommand !== 'function' || !document.execCommand('copy')) {
+            throw new Error(`${label}复制失败`);
+          }
+        } finally {
+          document.body.removeChild(textarea);
+        }
       }
       setSuccess(`${label}已复制`);
     } catch (err: any) {
@@ -3182,7 +3189,11 @@ export function TableModuleView({
             ))}
             {onClearExternalFilters ? (
               <button
-                onClick={onClearExternalFilters}
+                type="button"
+                onClick={() => {
+                  skipUrlStateWriteRef.current = true;
+                  onClearExternalFilters?.();
+                }}
                 className={`${CONSOLE_SECONDARY_BUTTON_CLASS} !h-8 !min-h-8 !px-2.5 text-xs`}
               >
                 清除筛选
@@ -4537,7 +4548,12 @@ export function TableModuleView({
       ) : null}
 
       {riskDialogOpen ? (
-        <Modal open onClose={closeRiskDialog} boxClass="w-full max-w-xl!">
+        <Modal
+          open
+          onClose={closeRiskDialog}
+          dismissable={!riskDialogSubmitting}
+          boxClass="w-full max-w-xl!"
+        >
             <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between">
               <div>
                 <h4 className="text-lg font-black">添加风险巡航任务</h4>
@@ -4620,7 +4636,12 @@ export function TableModuleView({
       ) : null}
 
       {policyTaskDialogOpen ? (
-        <Modal open onClose={closePolicyTaskDialog} boxClass="w-full max-w-2xl!">
+        <Modal
+          open
+          onClose={closePolicyTaskDialog}
+          dismissable={!policyTaskSubmitting}
+          boxClass="w-full max-w-2xl!"
+        >
             <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between">
               <div>
                 <h4 className="text-lg font-black">任务下发</h4>

@@ -308,6 +308,12 @@ export function MainShell() {
     }
   };
 
+  const closePasswdDialog = useCallback(() => {
+    if (passwdLoading) return;
+    setPasswdDialogOpen(false);
+    setPasswdError('');
+  }, [passwdLoading]);
+
   const openQuickCreateTask = () => {
     // 全局入口复用任务模块的“新建任务”动作模板
     const taskModule = getModuleById('task');
@@ -386,23 +392,16 @@ export function MainShell() {
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
 
-      if (globalAction) {
-        event.preventDefault();
-        setGlobalAction(null);
-        return;
-      }
-
       if (passwdDialogOpen) {
         event.preventDefault();
-        setPasswdDialogOpen(false);
-        setPasswdError('');
+        closePasswdDialog();
         return;
       }
     };
 
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, [token, globalAction, passwdDialogOpen]);
+  }, [token, passwdDialogOpen, closePasswdDialog]);
 
   if (!token) {
     return <LoginView onLogin={doLogin} loading={loginLoading} error={loginError} />;
@@ -508,10 +507,15 @@ export function MainShell() {
       ) : null}
 
       {passwdDialogOpen ? (
-        <Modal open onClose={() => setPasswdDialogOpen(false)} boxClass="w-full max-w-md!">
+        <Modal open onClose={closePasswdDialog} dismissable={!passwdLoading} boxClass="w-full max-w-md!">
             <div className="flex items-center justify-between border-b border-base-300 px-6 py-4">
               <h4 className="text-lg font-semibold">修改密码</h4>
-              <button onClick={() => setPasswdDialogOpen(false)} className={CONSOLE_ICON_BUTTON_CLASS}>
+              <button
+                onClick={closePasswdDialog}
+                disabled={passwdLoading}
+                className={CONSOLE_ICON_BUTTON_CLASS}
+                aria-label="关闭弹窗"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -522,6 +526,7 @@ export function MainShell() {
                 value={passwdForm.old_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, old_password: event.target.value }))}
                 className={CONSOLE_INPUT_CLASS}
+                disabled={passwdLoading}
               />
               <input
                 type="password"
@@ -529,6 +534,7 @@ export function MainShell() {
                 value={passwdForm.new_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, new_password: event.target.value }))}
                 className={CONSOLE_INPUT_CLASS}
+                disabled={passwdLoading}
               />
               <input
                 type="password"
@@ -536,6 +542,7 @@ export function MainShell() {
                 value={passwdForm.check_password}
                 onChange={(event) => setPasswdForm((prev) => ({ ...prev, check_password: event.target.value }))}
                 className={CONSOLE_INPUT_CLASS}
+                disabled={passwdLoading}
               />
 
               {passwdError ? <div role="alert" className={CONSOLE_ALERT_ERROR_CLASS}>{passwdError}</div> : null}

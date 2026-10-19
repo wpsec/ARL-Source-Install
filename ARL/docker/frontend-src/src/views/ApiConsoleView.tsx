@@ -959,6 +959,11 @@ export function ApiConsoleView({ token }: { token: string }) {
     }
   };
 
+  const closeBatchTestDialog = () => {
+    if (batchTesting) return;
+    setBatchTestDialogOpen(false);
+  };
+
   return (
     <div className={CONSOLE_PAGE_CLASS}>
       <PageHeader title="API 管理" description="统一维护 FOFA、Hunter、hunter.how、Shodan、Quake、Zoomeye 等第三方 API 配置并同步保存。" />
@@ -1141,7 +1146,12 @@ export function ApiConsoleView({ token }: { token: string }) {
       </div>
 
       {batchTestDialogOpen ? (
-        <Modal open onClose={() => setBatchTestDialogOpen(false)} boxClass="w-full max-w-4xl!">
+        <Modal
+          open
+          onClose={closeBatchTestDialog}
+          dismissable={!batchTesting}
+          boxClass="w-full max-w-4xl!"
+        >
             <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
               <div>
                 <h4 className="text-lg font-black">API 一键验证</h4>
@@ -1149,7 +1159,8 @@ export function ApiConsoleView({ token }: { token: string }) {
               </div>
               <button
                 type="button"
-                onClick={() => setBatchTestDialogOpen(false)}
+                onClick={closeBatchTestDialog}
+                disabled={batchTesting}
                 className={CONSOLE_ICON_BUTTON_CLASS}
                 title="关闭"
               >
@@ -1246,7 +1257,8 @@ export function ApiConsoleView({ token }: { token: string }) {
             <div className="shrink-0 flex flex-col gap-2 border-t border-base-300 bg-base-100 px-6 py-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => setBatchTestDialogOpen(false)}
+                  onClick={closeBatchTestDialog}
+                  disabled={batchTesting}
                   className={`${CONSOLE_SECONDARY_BUTTON_CLASS} w-full sm:w-auto`}
                 >
                   关闭

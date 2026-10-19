@@ -2,7 +2,7 @@
 // React Query 后的行为证据——水合、payload 默认补齐、缓存复用、失败呈现。
 // 提交/文件上传等 mutation 通道不在本批改动范围，仅做存在性冒烟。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installFetchMock } from '../test/fetchMock';
 import { ActionDialog } from './ActionDialog';
@@ -104,6 +104,50 @@ afterEach(() => {
 });
 
 describe('ActionDialog 字典选项读取（React Query）', () => {
+  it('提交期间阻止取消、标题栏、遮罩和 Escape 关闭，完成后恢复关闭', async () => {
+    let resolveSubmit!: () => void;
+    const onClose = vi.fn();
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+
+    render(
+      <QueryClientProvider client={newClient()}>
+        <ActionDialog
+          token="tk-action"
+          action={GENERIC_ARRAY_ACTION}
+          initialPayload={{ targets: ['alpha.example'] }}
+          onClose={onClose}
+          onSubmit={onSubmit}
+        />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    const cancelButton = screen.getByRole('button', { name: '取消' });
+    const closeButton = screen.getByRole('button', { name: '关闭弹窗' });
+    const dialog = screen.getByRole('dialog');
+    expect((cancelButton as HTMLButtonElement).disabled).toBe(true);
+    expect((closeButton as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(cancelButton);
+    fireEvent.click(closeButton);
+    fireEvent.click(dialog);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent(dialog, new Event('close'));
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => resolveSubmit());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect((closeButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(closeButton);
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
   it('新建任务底部操作栏保持可见结构', async () => {
     installFetchMock({
       routes: { '/api_console/scan_config/': [200, SCAN_CONFIG_PAYLOAD] },

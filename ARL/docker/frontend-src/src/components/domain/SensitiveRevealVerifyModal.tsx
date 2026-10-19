@@ -23,9 +23,12 @@ export type SensitiveRevealVerifyModalProps = {
 
 export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProps) {
   if (!props.open) return null;
+  const closeWhenIdle = () => {
+    if (!props.loading) props.onClose();
+  };
 
   return (
-    <Modal open onClose={props.onClose} boxClass="w-full max-w-md!">
+    <Modal open onClose={closeWhenIdle} dismissable={!props.loading} boxClass="w-full max-w-md!">
         <div className="px-6 py-4 border-b border-base-300 flex items-center justify-between gap-3">
           <div>
             <h4 className="text-lg font-black">{props.title}</h4>
@@ -33,8 +36,9 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
           </div>
           <button
             type="button"
-            onClick={props.onClose}
-            className={CONSOLE_ICON_BUTTON_CLASS}
+            onClick={closeWhenIdle}
+            disabled={props.loading}
+            className={`${CONSOLE_ICON_BUTTON_CLASS} disabled:opacity-40`}
             title="关闭"
           >
             <X className="w-5 h-5" />
@@ -77,7 +81,7 @@ export function SensitiveRevealVerifyModal(props: SensitiveRevealVerifyModalProp
         <div className="px-6 py-4 border-t border-base-300 flex justify-end gap-2 bg-base-100">
           <button
             type="button"
-            onClick={props.onClose}
+            onClick={closeWhenIdle}
             className={CONSOLE_SECONDARY_BUTTON_CLASS}
             disabled={props.loading}
           >

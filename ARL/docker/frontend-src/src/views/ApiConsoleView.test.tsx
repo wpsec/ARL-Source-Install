@@ -1,9 +1,9 @@
 // API 管理页级测试（计划 4 控制台批次）：初始化水合、错误呈现、
 // 重新加载 refetch、保存成功后 query invalidation（写后取权威快照）。
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installFetchMock } from '../test/fetchMock';
+import { installFetchMock, makeHttpResponse } from '../test/fetchMock';
 import { ApiConsoleView } from './ApiConsoleView';
 
 const SERVICE_API_PAYLOAD = {
@@ -119,6 +119,41 @@ describe('ApiConsoleView mutation 失效与查询 key 覆盖', () => {
     fireEvent.click(screen.getByRole('button', { name: /一键验证/ }));
     await vi.waitFor(() => expect(countBy(calls, 'POST', '/service_api/test_batch/')).toBe(1));
     await vi.waitFor(() => expect(countBy(calls, 'GET', '/api_console/service_api/')).toBe(2));
+  });
+
+  it('一键验证期间阻止关闭弹窗，完成后恢复关闭', async () => {
+    installFetchMock({ routes: ROUTES });
+    const defaultFetch = globalThis.fetch;
+    let resolveBatchTest!: (response: ReturnType<typeof makeHttpResponse>) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes('/service_api/test_batch/')) {
+        return new Promise((resolve) => {
+          resolveBatchTest = resolve;
+        });
+      }
+      return defaultFetch(url, init);
+    }));
+
+    renderView();
+    await screen.findByDisplayValue('https://fofa.test');
+    fireEvent.click(screen.getByRole('button', { name: /一键验证/ }));
+    await vi.waitFor(() => expect(resolveBatchTest).toBeTruthy());
+
+    const closeButtons = screen.getAllByRole('button', { name: '关闭' }) as HTMLButtonElement[];
+    const dialog = document.querySelector('dialog[open]') as HTMLDialogElement;
+    expect(closeButtons.every((button) => button.disabled)).toBe(true);
+    fireEvent.click(dialog);
+    const cancelEvent = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancelEvent);
+    expect(cancelEvent.defaultPrevented).toBe(true);
+    expect(dialog.open).toBe(true);
+
+    await act(async () => {
+      resolveBatchTest(makeHttpResponse(200, { code: 200, data: { items: [], message: '验证完成' } }));
+    });
+    await vi.waitFor(() => expect((closeButtons[0]).disabled).toBe(false));
+    fireEvent.click(closeButtons[0]);
+    await vi.waitFor(() => expect(document.querySelector('dialog[open]')).toBeNull());
   });
 
   it('查询 key 含 token：双实例隔离拉取，保存只失效自身 key', async () => {

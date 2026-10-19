@@ -66,6 +66,21 @@ describe('Modal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('dismissable=false 时阻止原生 dialog cancel 事件', () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <Modal open onClose={onClose} dismissable={false}>
+        <span>x</span>
+      </Modal>,
+    );
+    const cancelEvent = new Event('cancel', { cancelable: true });
+
+    fireEvent(getDialog(container), cancelEvent);
+
+    expect(cancelEvent.defaultPrevented).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('原生 close 事件（Esc/外部关闭的结果）在 open 仍为 true 时收敛到 onClose', () => {
     const onClose = vi.fn();
     const { container } = render(

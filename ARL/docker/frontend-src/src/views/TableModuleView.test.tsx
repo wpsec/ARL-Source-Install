@@ -53,6 +53,76 @@ describe('TableModuleView(task) 页面级', () => {
     expect(listCall!.url).toContain('page=1');
   });
 
+  it('站点筛选重置后重新请求未筛选结果', async () => {
+    const calls = installFetchMock();
+    renderViewWithClient(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+      'site',
+      { task_name: 'n1' },
+    );
+
+    const siteInput = await screen.findByPlaceholderText('请输入站点进行搜索');
+    fireEvent.change(siteInput, { target: { value: 'filtered.example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }));
+
+    await waitFor(() => {
+      expect(calls.some((call) => (
+        call.url.includes('/api/site/') && call.url.includes('site=filtered.example.com')
+      ))).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '重置' }));
+
+    await waitFor(() => {
+      const siteCalls = calls.filter((call) => call.url.includes('/api/site/'));
+      expect(siteCalls.length).toBeGreaterThanOrEqual(3);
+      expect(siteCalls[siteCalls.length - 1].url).not.toContain('site=filtered.example.com');
+      expect(siteCalls[siteCalls.length - 1].url).toContain('task_name=n1');
+    });
+  });
+
+  it('复制回退失败时显示错误并清理临时输入框', async () => {
+    installFetchMock({
+      routes: {
+        '/nuclei_result/': [200, {
+          code: 200,
+          data: {
+            items: [{
+              _id: 'risk-copy-1',
+              scanner_type: 'nuclei',
+              rule_id: 'copy-fallback-test',
+              target: 'https://example.com/test',
+              vuln_name: '复制回退测试',
+              verify_data: 'curl https://example.com/test',
+            }],
+            total: 1,
+            page: 1,
+            size: 50,
+          },
+        }],
+      },
+    });
+
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand');
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) });
+    try {
+      renderViewWithClient(new QueryClient({ defaultOptions: { queries: { retry: false } } }), 'nuclei_result');
+      await screen.findByText('copy-fallback-test');
+      fireEvent.click(screen.getByRole('button', { name: '查看详情' }));
+      fireEvent.click(screen.getByRole('button', { name: '复制' }));
+
+      expect(await screen.findByText('验证报文复制失败')).toBeTruthy();
+      expect(document.querySelector('textarea')).toBeNull();
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+      else delete (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand);
+      else delete (document as Document & { execCommand?: (command: string) => boolean }).execCommand;
+    }
+  });
+
   it('任务表格区分深度扫描排队状态并保留发现进度', async () => {
     const options = Object.fromEntries(
       Array.from({ length: 14 }, (_, index) => [`option_${index}`, true]),
