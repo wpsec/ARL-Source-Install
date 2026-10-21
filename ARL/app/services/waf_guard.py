@@ -1677,7 +1677,8 @@ class WAFSmartSkipGuard(object):
         if not data.get("enabled"):
             return "未启用"
 
-        detected_count = int(data.get("detected_host_count", 0) or 0)
+        observed_host_count = int(data.get("detected_host_count", 0) or 0)
+        waf_detected_host_count = int(data.get("waf_detected_host_count", 0) or 0)
         blocked_count = int(data.get("blocked_host_count", 0) or 0)
         skipped = int(data.get("skip_request_count", 0) or 0)
         observed_sites = int(data.get("observed_site_count", 0) or 0)
@@ -1689,8 +1690,8 @@ class WAFSmartSkipGuard(object):
         wafw00f_checked = int(data.get("wafw00f_checked_total", 0) or 0)
         wafw00f_detected = int(data.get("wafw00f_detected_total", 0) or 0)
 
-        if detected_count <= 0:
-            return "已启用，未识别WAF，站点:{}，请求:{}，补充检查:{}/{}，检测耗时:{:.3f}s".format(
+        if observed_host_count <= 0:
+            return "已启用，暂无观测主机，站点:{}，请求:{}，补充检查:{}/{}，检测耗时:{:.3f}s".format(
                 observed_sites,
                 int(data.get("request_count", 0) or 0),
                 wafw00f_detected,
@@ -1699,7 +1700,8 @@ class WAFSmartSkipGuard(object):
             )
 
         parts = [
-            "已识别主机:{}".format(detected_count),
+            "观测主机:{}".format(observed_host_count),
+            "识别到WAF主机:{}".format(waf_detected_host_count),
             "观测站点:{}".format(observed_sites),
             "检测耗时:{:.3f}s".format(observation_elapsed),
         ]
@@ -1729,8 +1731,25 @@ class WAFSmartSkipGuard(object):
         for item in data.get("detected_hosts", [])[:3]:
             host = str(item.get("host", "") or "").strip()
             waf_name = str(item.get("waf_name", "") or "").strip()
+            wafw00f_status = str(item.get("wafw00f_status", "") or "").strip().lower()
+            if not waf_name:
+                wafw00f_labels = {
+                    "detected": "已检测到WAF",
+                    "generic": "检测到防护特征",
+                    "not_detected": "未检测到WAF",
+                    "timeout": "检测超时",
+                    "error": "检测失败",
+                }
+                has_waf_edge = str(item.get("edge_kind", "") or "").strip().lower() in {
+                    "waf",
+                    "mixed",
+                }
+                if wafw00f_status == "not_detected":
+                    waf_name = "厂商未识别" if has_waf_edge else "未检测到WAF"
+                else:
+                    waf_name = wafw00f_labels.get(wafw00f_status, "厂商未识别")
             if host:
-                host_preview.append("{}({})".format(host, waf_name or "unknown"))
+                host_preview.append("{}({})".format(host, waf_name))
         if host_preview:
             parts.append("主机:{}".format(",".join(host_preview)))
 

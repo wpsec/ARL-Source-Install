@@ -116,12 +116,13 @@ def _fallback_service_rows(args=None):
             info = dict(raw_info)
             info_ip = info.get("ip") or ip
             service_name = info.get("service_name") or info.get("name") or ""
+            if str(info.get("nmap_service_method", "") or "").strip().lower() == "table":
+                service_name = ""
             product = info.get("product") or info.get("service_product") or ""
             version = info.get("version") or ""
             port_id = info.get("port_id")
 
-            # 没有端口、服务、产品或版本的空结构不是可展示的服务记录。
-            if not any(_has_value(value) for value in (info_ip, port_id, service_name, product, version)):
+            if not any(_has_value(value) for value in (service_name, product, version)):
                 continue
             if not _matches_text(service_name, args.get("service_name")):
                 continue

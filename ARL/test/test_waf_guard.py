@@ -67,6 +67,24 @@ class TestWAFSmartSkipGuard(unittest.TestCase):
         self.assertNotIn("review-marker", last_url)
         self.assertIn("access_token=[REDACTED]", last_url)
 
+    def test_summary_text_distinguishes_observed_from_detected_waf_hosts(self):
+        guard = WAFSmartSkipGuard(
+            enabled=True,
+            smart_skip_enabled=True,
+            task_id="task-demo",
+            scope_sites=["https://example.com"],
+        )
+        guard.record_wafw00f_result(
+            "https://example.com",
+            {"status": "not_detected", "names": [], "evidence": []},
+        )
+
+        summary = guard.summary_text()
+
+        self.assertIn("观测主机:1", summary)
+        self.assertIn("识别到WAF主机:0", summary)
+        self.assertIn("example.com(未检测到WAF)", summary)
+
     def test_penetration_bypass_semantics_removed(self):
         """计划 1 收口：penetration_test 试探绕过语义删除后的行为钉。
 

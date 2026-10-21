@@ -43,6 +43,54 @@ class ServiceDetectionRegistryTest(unittest.TestCase):
         self.assertEqual(0, result["confidence"])
         self.assertEqual([], result["sources"])
 
+    def test_nmap_port_table_name_is_not_treated_as_service_identification(self):
+        port_info = {
+            "service_name": "rads",
+            "nmap_service_method": "table",
+        }
+
+        self.assertTrue(DETECTION.is_low_conf_service(port_info))
+        result = DETECTION.resolve_service_result(
+            service_name="rads",
+            nmap_service_method="table",
+        )
+
+        self.assertEqual("", result["service"])
+        self.assertFalse(result["confirmed"])
+
+    def test_npoc_service_replaces_a_port_table_hint(self):
+        task = type("Task", (), {
+            "ip_info_list": [{
+                "ip": "192.0.2.10",
+                "port_info": [{
+                    "port_id": 12302,
+                    "service_name": "",
+                    "nmap_service_method": "table",
+                    "product": "",
+                }],
+            }],
+        })()
+
+        updated = DETECTION.apply_npoc_service_result(
+            task,
+            [{"host": "192.0.2.10", "port": "12302", "scheme": "custom-proto"}],
+            use_registry=False,
+        )
+        port_info = task.ip_info_list[0]["port_info"][0]
+        resolved = DETECTION.resolve_service_result(
+            service_name=port_info["service_name"],
+            nmap_service_method=port_info["nmap_service_method"],
+            npoc_scheme=port_info["service_name"],
+            use_registry=False,
+        )
+
+        self.assertEqual(1, updated)
+        self.assertEqual("custom-proto", port_info["service_name"])
+        self.assertEqual(["npoc_scheme"], port_info["service_sources"])
+        self.assertFalse(DETECTION.is_low_conf_service(port_info))
+        self.assertEqual("custom-proto", resolved["service"])
+        self.assertEqual(100, resolved["confidence"])
+
     def test_low_confidence_npoc_result_is_not_written_back(self):
         task = type("Task", (), {
             "ip_info_list": [{

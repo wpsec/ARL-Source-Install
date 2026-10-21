@@ -2,11 +2,22 @@
 // TaskFinalizer 终态映射同一契约（计划 2 终态修复轮的 UI 侧对账）。
 import { describe, expect, it } from 'vitest';
 import {
+  buildTaskStatisticSummary,
   getTaskProgressPercent,
   getTaskQueueStatusInfo,
   getTaskStatusSortWeight,
   normalizeTaskStatus,
 } from './task';
+
+it('WAF汇总将检测尝试数标为观测主机', () => {
+  const summary = buildTaskStatisticSummary({
+    statistic: {},
+    waf_skip_summary: { detected_host_count: 2, waf_detected_host_count: 0 },
+  });
+
+  expect(summary).toContain('观测主机2');
+  expect(summary).toContain('识别到WAF主机0');
+});
 
 describe('normalizeTaskStatus done family', () => {
   it.each(['done', 'done_pending', 'done_degraded', 'DONE'])(

@@ -213,7 +213,8 @@ class IPServiceSummaryStageService(object):
         npoc_merged = 0
 
         def _append_item(service_name, ip, port_id, product="", version="", source="",
-                         confidence=None, sources=None, conflict=None, npoc_scheme="", proto="tcp"):
+                         confidence=None, sources=None, conflict=None, npoc_scheme="", proto="tcp",
+                         nmap_service_method=""):
             nonlocal merged_total, nmap_merged, npoc_merged
             service_result = resolve_service_result(
                 service_name=service_name,
@@ -221,6 +222,7 @@ class IPServiceSummaryStageService(object):
                 npoc_scheme=npoc_scheme,
                 port=port_id,
                 proto=proto,
+                nmap_service_method=nmap_service_method,
                 use_registry=True,
             )
             service = str(service_result.get("service") or "").strip()
@@ -287,6 +289,11 @@ class IPServiceSummaryStageService(object):
                     sources=port_item.get("service_sources"),
                     conflict=port_item.get("service_conflict"),
                     proto=port_item.get("protocol", "tcp"),
+                    nmap_service_method=port_item.get("nmap_service_method", ""),
+                    npoc_scheme=(
+                        port_item.get("service_name", "")
+                        if "npoc_scheme" in (port_item.get("service_sources") or []) else ""
+                    ),
                 )
 
         # 2) npoc 明细补充（用于兜底合并来源）

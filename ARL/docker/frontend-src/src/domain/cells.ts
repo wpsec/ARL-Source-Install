@@ -35,6 +35,46 @@ export function formatCellArrayValue(value: any[]): string {
 export function formatModuleCellValue(moduleId: string, column: string, row: any): string {
   const value = getValueByPath(row, column);
 
+  if (moduleId === 'waf_host') {
+    const wafw00fStatus = String(row?.wafw00f_status || '').trim().toLowerCase();
+    if (column === 'waf_name') {
+      const wafName = String(value ?? '').trim();
+      const edgeKind = String(row?.edge_kind || '').trim().toLowerCase();
+      const hasWafEdge = edgeKind === 'waf' || edgeKind === 'mixed';
+      if (wafw00fStatus === 'not_detected' && !hasWafEdge && (!wafName || wafName.toLowerCase() === 'unknown')) {
+        return '未检测到 WAF';
+      }
+      if (!wafName || wafName.toLowerCase() === 'unknown') return '厂商未识别';
+    }
+    if (column === 'wafw00f_status') {
+      const statusLabels: Record<string, string> = {
+        detected: '已检测到',
+        generic: '检测到防护特征',
+        not_detected: '未检测到',
+        timeout: '检测超时',
+        error: '检测失败',
+      };
+      return statusLabels[wafw00fStatus] || normalizeValue(value);
+    }
+    if (column === 'waf_confidence') {
+      const confidenceLabels: Record<string, string> = {
+        high: '高',
+        medium: '中',
+        low: '低',
+      };
+      return confidenceLabels[String(value || '').trim().toLowerCase()] || normalizeValue(value);
+    }
+    if (column === 'edge_kind') {
+      const edgeKindLabels: Record<string, string> = {
+        waf: 'WAF',
+        cdn: 'CDN',
+        mixed: '混合边界',
+      };
+      return edgeKindLabels[String(value || '').trim().toLowerCase()] || normalizeValue(value);
+    }
+    if (column === 'skipped' && typeof value === 'boolean') return value ? '是' : '否';
+  }
+
   if (moduleId === 'task') {
     if (column === 'target') {
       return formatTokenListText(value);

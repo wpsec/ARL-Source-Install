@@ -93,7 +93,7 @@ def _parse_host_port(host: str, last_url: str):
     return ip, domain, port
 
 
-def _format_hit_rule(rule: str, reason: str, wafw00f_status="", wafw00f_evidence=None) -> str:
+def _format_hit_rule(rule: str, reason: str, wafw00f_evidence=None) -> str:
     rule_text = str(rule or "").strip()
     reason_text = str(reason or "").strip()
     if rule_text and reason_text:
@@ -101,9 +101,18 @@ def _format_hit_rule(rule: str, reason: str, wafw00f_status="", wafw00f_evidence
     if rule_text or reason_text:
         return rule_text or reason_text
     evidence = [str(item).strip() for item in (wafw00f_evidence or []) if str(item).strip()]
-    return ",".join(evidence) if evidence else (
-        "wafw00f:{}".format(wafw00f_status) if wafw00f_status else "-"
-    )
+    # 检测状态由独立列展示，不能伪装成命中规则。
+    return ",".join(evidence) if evidence else "-"
+
+
+def _display_waf_name(waf_name: str, wafw00f_status: str, edge_kind: str = "") -> str:
+    name = str(waf_name or "").strip() or "unknown"
+    if name.lower() != "unknown":
+        return name
+    has_waf_edge = str(edge_kind or "").strip().lower() in {"waf", "mixed"}
+    if str(wafw00f_status or "").strip().lower() == "not_detected" and not has_waf_edge:
+        return "未检测到 WAF"
+    return "厂商未识别"
 
 
 def _summary_host_items(summary):
@@ -138,6 +147,13 @@ class ARLWafHost(ARLResource):
         hit_rule_kw = str(args.get("hit_rule") or "").strip().lower()
         source_kw = str(args.get("detection_source") or "").strip().lower()
         wafw00f_status_kw = str(args.get("wafw00f_status") or "").strip().lower()
+        wafw00f_status_kw = {
+            "已检测到": "detected",
+            "检测到防护特征": "generic",
+            "未检测到": "not_detected",
+            "检测超时": "timeout",
+            "检测失败": "error",
+        }.get(wafw00f_status_kw, wafw00f_status_kw)
         port_kw = _safe_int(args.get("port"), 0)
 
         task_query = {
@@ -197,7 +213,7 @@ class ARLWafHost(ARLResource):
                 reason = str(host_data.get("reason", "") or "").strip()
                 wafw00f_status = str(host_data.get("wafw00f_status", "") or "").strip()
                 wafw00f_evidence = host_data.get("wafw00f_evidence") or []
-                hit_rule = _format_hit_rule(rule, reason, wafw00f_status, wafw00f_evidence)
+                hit_rule = _format_hit_rule(rule, reason, wafw00f_evidence)
                 detection_sources = [
                     str(item).strip()
                     for item in (host_data.get("detection_sources") or [])
@@ -209,7 +225,15 @@ class ARLWafHost(ARLResource):
                     continue
                 if domain_kw and domain_kw not in domain:
                     continue
-                if waf_name_kw and waf_name_kw not in waf_name.lower():
+                display_waf_name = _display_waf_name(
+                    waf_name,
+                    wafw00f_status,
+                    str(host_data.get("edge_kind", "") or ""),
+                )
+                if waf_name_kw and not any(
+                    waf_name_kw in candidate.lower()
+                    for candidate in (waf_name, display_waf_name)
+                ):
                     continue
                 if hit_rule_kw and hit_rule_kw not in hit_rule.lower():
                     continue

@@ -71,11 +71,16 @@ class TestWafHostRouteUtils(unittest.TestCase):
         hit_rule = _format_hit_rule(
             "",
             "",
-            wafw00f_status="detected",
-            wafw00f_evidence=["wafw00f:Cloudflare"],
+            ["wafw00f:Cloudflare"],
         )
         self.assertEqual("wafw00f:Cloudflare", hit_rule)
         self.assertNotIn("http", hit_rule)
+
+    def test_empty_hit_rule_does_not_synthesize_detection_status(self):
+        self.assertEqual(
+            "-",
+            _format_hit_rule("", ""),
+        )
 
 
 if __name__ == "__main__":

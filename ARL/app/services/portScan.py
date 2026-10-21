@@ -2,6 +2,7 @@
 端口扫描执行
 """
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+import math
 import threading
 import time
 from app import utils
@@ -15,9 +16,10 @@ logger = utils.get_logger()
 class PortScanResult(list):
     """保持 list 兼容，同时携带本次扫描的独立批次指标。"""
 
-    def __init__(self, values=None, metrics=None):
+    def __init__(self, values=None, metrics=None, scan_coverage=None):
         super().__init__(values or [])
         self.metrics = dict(metrics or {})
+        self.scan_coverage = dict(scan_coverage or {})
 
 
 class PortScanBatchResult(list):
@@ -77,6 +79,7 @@ class PortScan:
             min_value=0,
         )
         self.last_scan_metrics = {}
+        self._last_completed_scan_methods = {}
 
         # 二阶段精扫端口分段大小：
         # 说明：这里不做“裁剪”，仅做“分段”，确保结果完整不缩水。
@@ -225,12 +228,8 @@ class PortScan:
 
         return total
 
-    def _is_suspected_all_open(self, open_port_count):
-        """
-        识别疑似“伪全开端口”主机：
-        - 全端口扫描时，开放端口数量非常大
-        - 或在大范围端口扫描中开放率异常高
-        """
+    def _is_suspected_all_open(self, open_port_count, port_info_list=None):
+        """识别需要独立 TCP connect 复核的异常开放结果。"""
         if open_port_count <= 0:
             return False
 
@@ -238,37 +237,40 @@ class PortScan:
             return True
 
         if self.requested_port_count <= 0:
-            return False
+            return self._has_suspicious_port_run(port_info_list)
 
         open_ratio = float(open_port_count) / float(self.requested_port_count)
-        if self.requested_port_count >= 1000 and open_port_count >= 500 and open_ratio >= 0.80:
+        if self.requested_port_count <= 64 and open_port_count >= 4 and open_ratio >= 0.75:
             return True
 
-        if self.requested_port_count >= 100 and open_port_count >= 90 and open_ratio >= 0.95:
+        if self.requested_port_count > 64 and open_port_count >= max(
+            25, int(math.ceil(self.requested_port_count * 0.80))
+        ):
             return True
 
-        return False
-
-    def _is_high_confidence_fake_all_open(self, open_port_count):
-        """只在全端口扫描几乎每个端口都开放时裁剪疑似伪结果。"""
-        if self.ports != "0-65535" or self.requested_port_count < 65535:
-            return False
-        if open_port_count < 65000:
-            return False
-        return float(open_port_count) / float(self.requested_port_count) >= 0.99
+        return self._has_suspicious_port_run(port_info_list)
 
     @staticmethod
-    def _filter_confirmed_fake_all_open_ports(port_info_list):
-        """
-        高置信伪全开结果只保留常用端口，避免把扫描器的通用响应写成资产。
-        """
-        keep_ports = {80, 443, 8080, 8443, 22, 3389}
-        filtered = []
-        for item in port_info_list:
-            port_id = item.get("port_id")
-            if port_id in keep_ports:
-                filtered.append(item)
-        return filtered
+    def _has_suspicious_port_run(port_info_list, minimum_run=8):
+        ports_by_protocol = {}
+        for item in port_info_list or []:
+            try:
+                port_id = int(item.get("port_id"))
+            except (TypeError, ValueError):
+                continue
+            protocol = str(item.get("protocol", "tcp") or "tcp").lower()
+            ports_by_protocol.setdefault(protocol, set()).add(port_id)
+
+        for ports in ports_by_protocol.values():
+            ordered_ports = sorted(ports)
+            run_length = 0
+            previous_port = None
+            for port_id in ordered_ports:
+                run_length = run_length + 1 if previous_port is not None and port_id == previous_port + 1 else 1
+                if run_length >= minimum_run:
+                    return True
+                previous_port = port_id
+        return False
 
     @staticmethod
     def _build_targets_preview(targets, sample_size=6):
@@ -290,6 +292,16 @@ class PortScan:
             "version": str(item.get("version", "") or ""),
             "product": str(item.get("product", "") or ""),
             "protocol": str(item.get("protocol", "tcp") or "tcp"),
+            "state": str(item.get("state", "") or ""),
+            "reason": str(item.get("reason", "") or ""),
+            "scan_method": str(item.get("scan_method", "") or ""),
+            "verified": bool(item.get("verified", False)),
+            "nmap_service_method": str(item.get("nmap_service_method", "") or ""),
+            "nmap_service_confidence": str(item.get("nmap_service_confidence", "") or ""),
+            "nmap_service_table_name": str(item.get("nmap_service_table_name", "") or ""),
+            "service_confidence": item.get("service_confidence", 0),
+            "service_sources": list(item.get("service_sources", []) or []),
+            "service_conflict": item.get("service_conflict"),
         }
 
     @staticmethod
@@ -359,35 +371,95 @@ class PortScan:
 
         return self.port_scan_target_batch_size
 
-    def _extract_scan_result(self, nm):
+    @staticmethod
+    def _port_key(port_info):
+        return "{}:{}".format(
+            str(port_info.get("protocol", "tcp") or "tcp").lower(),
+            int(port_info.get("port_id", 0) or 0),
+        )
+
+    @staticmethod
+    def _nmap_scan_errors(scan_result):
+        if not isinstance(scan_result, dict):
+            return []
+        nmap_result = scan_result.get("nmap") or {}
+        if not isinstance(nmap_result, dict):
+            return []
+        scaninfo = nmap_result.get("scaninfo") or {}
+        if not isinstance(scaninfo, dict):
+            scaninfo = {}
+        errors = scaninfo.get("error") or []
+        if isinstance(errors, str):
+            errors = [errors]
+        elif not isinstance(errors, (list, tuple, set)):
+            errors = [errors]
+        normalized_errors = [
+            str(error).strip() for error in errors if str(error or "").strip()
+        ]
+
+        scanstats = nmap_result.get("scanstats") or {}
+        if isinstance(scanstats, dict):
+            scan_exit = str(scanstats.get("exit", "") or "").strip().lower()
+            if scan_exit and scan_exit != "success":
+                normalized_errors.append("Nmap scan exited with status {}".format(scan_exit))
+            error_message = str(scanstats.get("errormsg", "") or "").strip()
+            if error_message:
+                normalized_errors.append("Nmap scan reported an error message")
+        return normalized_errors
+
+    @staticmethod
+    def _extract_host_open_ports(nm, host, scan_method):
+        if host not in nm.all_hosts():
+            return []
+
+        port_info_list = []
+        host_data = nm[host]
+        for proto in host_data.all_protocols():
+            for port, port_info in host_data[proto].items():
+                state = str(port_info.get("state", "") or "").lower()
+                if state != "open":
+                    continue
+                service_method = str(port_info.get("method", "") or "").lower()
+                service_name = str(port_info.get("name", "") or "")
+                port_info_list.append({
+                    "port_id": int(port),
+                    # Nmap 的 table 名称来自端口号映射，不代表已探测到服务。
+                    "service_name": "" if service_method == "table" else service_name,
+                    "version": str(port_info.get("version", "") or ""),
+                    "product": str(port_info.get("product", "") or ""),
+                    "protocol": str(proto or "tcp"),
+                    "state": state,
+                    "reason": str(port_info.get("reason", "") or ""),
+                    "scan_method": str(scan_method or ""),
+                    "verified": str(scan_method or "") != "syn",
+                    "nmap_service_method": service_method,
+                    "nmap_service_confidence": str(port_info.get("conf", "") or ""),
+                    "nmap_service_table_name": service_name if service_method == "table" else "",
+                    "service_confidence": 90 if service_method == "probed" and service_name else 0,
+                    "service_sources": ["nmap_service_name"] if service_method == "probed" and service_name else [],
+                })
+        return port_info_list
+
+    def _extract_scan_result(self, nm, scan_method="syn"):
         ip_info_list = []
         for host in nm.all_hosts():
-            port_info_list = []
-            for proto in nm[host].all_protocols():
-                proto_ports = nm[host][proto]
-                for port in proto_ports:
-                    port_info = proto_ports[port]
-                    item = {
-                        "port_id": port,
-                        "service_name": str(port_info.get("name", "") or ""),
-                        "version": str(port_info.get("version", "") or ""),
-                        "product": str(port_info.get("product", "") or ""),
-                        "protocol": proto
-                    }
-                    port_info_list.append(item)
+            port_info_list = self._extract_host_open_ports(nm, host, scan_method)
 
             total_open_count = len(port_info_list)
-            suspected_all_open = self._is_suspected_all_open(total_open_count)
-            confirmed_fake_all_open = self._is_high_confidence_fake_all_open(
-                total_open_count
+            tcp_port_info = [
+                port for port in port_info_list
+                if str(port.get("protocol", "tcp")).lower() == "tcp"
+            ]
+            suspected_all_open = self._is_suspected_all_open(
+                len(tcp_port_info),
+                tcp_port_info,
             )
             if suspected_all_open:
                 logger.warning(
-                    "suspected fake all-open host:{} open_ports:{} requested_ports:{} high_confidence:{}".format(
+                    "suspected fake all-open host:{} open_ports:{} requested_ports:{}".format(
                         host,
                         total_open_count,
                         self.requested_port_count,
-                        confirmed_fake_all_open,
                     )
                 )
 
@@ -397,9 +469,8 @@ class PortScan:
                 "ip": host,
                 "port_info": port_info_list,
                 "os_info": os_info,
-                # 仅作为当前扫描链路的内部标记，IPInfo 落库时不会改变既有文档字段。
+                # 仅作为当前扫描链路的内部标记。
                 "_suspected_all_open": suspected_all_open,
-                "_confirmed_fake_all_open": confirmed_fake_all_open,
             })
 
         return ip_info_list
@@ -418,7 +489,7 @@ class PortScan:
                     "port_info": [PortScan._normalize_port_info_item(x) for x in item.get("port_info", [])],
                     "os_info": item.get("os_info", {}) or {},
                     "_suspected_all_open": bool(item.get("_suspected_all_open")),
-                    "_confirmed_fake_all_open": bool(item.get("_confirmed_fake_all_open")),
+                    "_scan_coverage": dict(item.get("_scan_coverage", {}) or {}),
                 }
                 continue
 
@@ -437,9 +508,25 @@ class PortScan:
                     continue
 
                 origin = port_map[key]
-                for field in ["service_name", "version", "product"]:
+                for field in [
+                    "service_name",
+                    "version",
+                    "product",
+                    "nmap_service_method",
+                    "nmap_service_confidence",
+                    "nmap_service_table_name",
+                    "service_confidence",
+                    "service_sources",
+                    "service_conflict",
+                ]:
                     if norm.get(field):
                         origin[field] = norm[field]
+                if norm.get("nmap_service_method"):
+                    origin["nmap_service_table_name"] = norm.get("nmap_service_table_name", "")
+                if norm.get("verified") or not origin.get("verified"):
+                    for field in ("state", "reason", "scan_method", "verified"):
+                        if norm.get(field) not in (None, ""):
+                            origin[field] = norm[field]
 
             old["port_info"] = list(port_map.values())
             if item.get("os_info"):
@@ -447,10 +534,194 @@ class PortScan:
             old["_suspected_all_open"] = bool(
                 old.get("_suspected_all_open") or item.get("_suspected_all_open")
             )
-            old["_confirmed_fake_all_open"] = bool(
-                old.get("_confirmed_fake_all_open")
-                or item.get("_confirmed_fake_all_open")
+            if not old.get("_scan_coverage") and item.get("_scan_coverage"):
+                old["_scan_coverage"] = dict(item["_scan_coverage"])
+
+    @staticmethod
+    def _build_connect_validation_arguments(arguments):
+        scan_flags = {"-sS", "-sT", "-sV", "-O"}
+        tokens = [token for token in str(arguments or "").split() if token not in scan_flags]
+        return " ".join(["-sT"] + tokens)
+
+    def _validate_suspected_hosts(self, ip_info_map, arguments):
+        metrics = {
+            "connect_validation_host_count": 0,
+            "connect_validation_candidate_count": 0,
+            "connect_validation_verified_count": 0,
+            "connect_validation_not_open_count": 0,
+            "connect_validation_unverified_count": 0,
+            "connect_validation_error_count": 0,
+            "connect_validation_pending_count": 0,
+            "connect_validation_elapsed_sec": 0.0,
+        }
+        suspects = [
+            item for item in (ip_info_map or {}).values()
+            if item.get("_suspected_all_open")
+            and any(
+                port.get("scan_method") == "syn"
+                and str(port.get("protocol", "tcp")).lower() == "tcp"
+                for port in item.get("port_info", [])
             )
+        ]
+        if not suspects:
+            return metrics
+
+        candidate_total = sum(
+            sum(
+                1 for port in item.get("port_info", [])
+                if port.get("scan_method") == "syn"
+                and str(port.get("protocol", "tcp")).lower() == "tcp"
+            )
+            for item in suspects
+        )
+        timeout_budget = self._calc_stage_timeout(
+            target_count=len(suspects),
+            port_count=candidate_total,
+        )
+        validation_started_at = time.time()
+        deadline_ts = validation_started_at + timeout_budget if timeout_budget > 0 else None
+        connect_arguments = self._build_connect_validation_arguments(arguments)
+
+        for host_item in suspects:
+            host = str(host_item.get("ip", "")).strip()
+            original_ports = list(host_item.get("port_info", []) or [])
+            candidates = [
+                port for port in original_ports
+                if port.get("scan_method") == "syn" and str(port.get("protocol", "tcp")).lower() == "tcp"
+            ]
+            candidate_keys = {self._port_key(port) for port in candidates}
+            candidate_ids = sorted({int(port.get("port_id", 0) or 0) for port in candidates})
+            verified_by_key = {}
+            checked_keys = set()
+            metrics["connect_validation_host_count"] += 1
+            metrics["connect_validation_candidate_count"] += len(candidate_keys)
+
+            chunks = list(self._chunk_list(candidate_ids, self.stage2_port_chunk_size))
+            host_pending_count = 0
+            for chunk_index, chunk in enumerate(chunks):
+                if deadline_ts is not None and time.time() >= deadline_ts:
+                    host_pending_count += sum(len(item) for item in chunks[chunk_index:])
+                    break
+
+                scan_kwargs = {
+                    "hosts": host,
+                    "ports": ",".join(str(port_id) for port_id in chunk),
+                    "arguments": connect_arguments,
+                }
+                if self.batch_timeout_sec > 0:
+                    batch_timeout = self.batch_timeout_sec
+                    if deadline_ts is not None:
+                        remaining = int(deadline_ts - time.time())
+                        if remaining <= 0:
+                            host_pending_count += sum(len(item) for item in chunks[chunk_index:])
+                            break
+                        batch_timeout = min(batch_timeout, max(1, remaining))
+                    scan_kwargs["timeout"] = batch_timeout
+
+                try:
+                    scanner = nmap.PortScanner()
+                    scan_result = scanner.scan(**scan_kwargs)
+                    scan_errors = self._nmap_scan_errors(scan_result)
+                    if scan_errors:
+                        metrics["connect_validation_error_count"] += 1
+                        logger.warning(
+                            "port_scan connect_validation_reported_error host:{} ports:{} error_count:{}".format(
+                                host,
+                                scan_kwargs["ports"],
+                                len(scan_errors),
+                            )
+                        )
+                        continue
+                    open_ports = self._extract_host_open_ports(
+                        scanner,
+                        host,
+                        "connect_validation",
+                    )
+                    chunk_ports = {int(port_id) for port_id in chunk}
+                    checked_keys.update(
+                        self._port_key(port)
+                        for port in candidates
+                        if int(port.get("port_id", 0) or 0) in chunk_ports
+                    )
+                    for port in open_ports:
+                        key = self._port_key(port)
+                        if key in candidate_keys:
+                            verified_by_key[key] = port
+                except Exception as error:
+                    metrics["connect_validation_error_count"] += 1
+                    logger.warning(
+                        "port_scan connect_validation_failed host:{} ports:{} err:{}".format(
+                            host,
+                            scan_kwargs["ports"],
+                            safe_error_text(error),
+                        )
+                    )
+            metrics["connect_validation_pending_count"] += host_pending_count
+
+            validated_ports = []
+            for candidate in candidates:
+                verified = verified_by_key.get(self._port_key(candidate))
+                if not verified:
+                    continue
+                confirmed = dict(candidate)
+                confirmed.update({
+                    "state": verified.get("state", "open"),
+                    "reason": verified.get("reason", ""),
+                    "scan_method": "connect_validation",
+                    "verified": True,
+                })
+                validated_ports.append(confirmed)
+
+            metrics["connect_validation_verified_count"] += len(validated_ports)
+            verified_keys = set(verified_by_key).intersection(checked_keys)
+            not_open_keys = checked_keys - verified_keys
+            metrics["connect_validation_not_open_count"] += len(not_open_keys)
+            metrics["connect_validation_unverified_count"] += len(candidate_keys - checked_keys)
+            host_item["_connect_validation"] = {
+                "not_open_ports": [
+                    {
+                        "port_id": int(candidate.get("port_id", 0) or 0),
+                        "protocol": str(candidate.get("protocol", "tcp") or "tcp").lower(),
+                    }
+                    for candidate in candidates
+                    if self._port_key(candidate) in not_open_keys
+                ],
+            }
+            host_item["port_info"] = validated_ports + [
+                port for port in original_ports if self._port_key(port) not in candidate_keys
+            ]
+            logger.warning(
+                "port_scan connect_validation host:{} candidate:{} verified:{} not_open:{} unverified:{}".format(
+                    host,
+                    len(candidate_keys),
+                    len(validated_ports),
+                    len(checked_keys - verified_keys),
+                    len(candidate_keys - checked_keys),
+                )
+            )
+
+        metrics["connect_validation_elapsed_sec"] = round(
+            max(0.0, time.time() - validation_started_at),
+            3,
+        )
+        stage_metrics = dict(self.last_scan_metrics or {})
+        stage_metrics.update(metrics)
+        validation_degraded = (
+            metrics["connect_validation_error_count"]
+            + metrics["connect_validation_pending_count"]
+        )
+        if validation_degraded:
+            stage_metrics["degraded_count"] = int(stage_metrics.get("degraded_count", 0) or 0) + validation_degraded
+            stage_metrics["failed_count"] = int(stage_metrics.get("failed_count", 0) or 0) + metrics[
+                "connect_validation_error_count"
+            ]
+            stage_metrics["pending_count"] = int(stage_metrics.get("pending_count", 0) or 0) + metrics[
+                "connect_validation_pending_count"
+            ]
+            stage_metrics["status"] = "partial"
+            stage_metrics["end_reason"] = "connect_validation_incomplete"
+        self.last_scan_metrics = stage_metrics
+        return metrics
 
     def _run_batch_scan(
         self,
@@ -503,9 +774,10 @@ class PortScan:
 
         fallback_count = 0
         fallback_reason = ""
+        scan_result = None
         nm = nmap.PortScanner()
         try:
-            nm.scan(**scan_kwargs)
+            scan_result = nm.scan(**scan_kwargs)
         except Exception as error:
             if not (
                 scan_type == "syn"
@@ -547,7 +819,7 @@ class PortScan:
             )
             try:
                 nm = nmap.PortScanner()
-                nm.scan(**scan_kwargs)
+                scan_result = nm.scan(**scan_kwargs)
                 scan_type = "connect_fallback"
             except Exception as fallback_error:
                 logger.error(
@@ -570,8 +842,32 @@ class PortScan:
                     },
                 )
 
+        scan_errors = self._nmap_scan_errors(scan_result)
+        if scan_errors:
+            logger.error(
+                "nmap stage:{} batch:{}/{} reported_error targets:{} scan_type:{} error_count:{}".format(
+                    stage_name,
+                    batch_index,
+                    batch_total,
+                    len(target_batch),
+                    scan_type,
+                    len(scan_errors),
+                )
+            )
+            return PortScanBatchResult(
+                [],
+                metrics={
+                    "status": "failed",
+                    "scan_type": scan_type,
+                    "fallback_count": fallback_count,
+                    "fallback_reason": fallback_reason,
+                    "error_type": "NmapScanError",
+                    "scan_error_count": len(scan_errors),
+                },
+            )
+
         try:
-            result = self._extract_scan_result(nm)
+            result = self._extract_scan_result(nm, scan_method=scan_type)
         except Exception as e:
             logger.error(
                 "nmap stage:{} batch:{}/{} result_parse_failed targets:{} err:{}".format(
@@ -588,6 +884,14 @@ class PortScan:
                     "error_type": type(e).__name__,
                 },
             )
+        if stage_name in ("single", "fast") and str(ports or "") == self.ports:
+            coverage = {
+                "complete": True,
+                "ports": self.ports,
+                "scan_method": scan_type,
+            }
+            for item in result:
+                item["_scan_coverage"] = coverage
         logger.info(
             "nmap stage:{} batch:{}/{} host_result:{}".format(
                 stage_name, batch_index, batch_total, len(result)
@@ -609,6 +913,7 @@ class PortScan:
     def _scan_with_batches(self, targets, ports, arguments, stage_name, force_batch_size=None, stage_timeout_sec=0):
         target_list = [str(x or "").strip() for x in (targets or []) if str(x or "").strip()]
         if not target_list:
+            self._last_completed_scan_methods = {}
             return {}, False
 
         batch_size = force_batch_size if force_batch_size else self._resolve_target_batch_size()
@@ -629,6 +934,7 @@ class PortScan:
         fallback_reasons = {}
         failed_reasons = {}
         suspected_all_open_count = 0
+        completed_scan_methods = {}
 
         def submit_next_batch():
             nonlocal next_batch_index
@@ -709,6 +1015,13 @@ class PortScan:
                         if not timeout_hit:
                             submit_next_batch()
                         continue
+                    if stage_name in ("single", "fast") and str(ports or "") == self.ports:
+                        scan_method = str(
+                            batch_metrics.get("scan_type")
+                            or ("syn" if self.syn_scan_enabled else "connect")
+                        )
+                        for target in batches[batch_index - 1]:
+                            completed_scan_methods[target] = scan_method
                     successful_batches += 1
                     self._merge_ip_info(result_map, batch_result)
 
@@ -762,6 +1075,7 @@ class PortScan:
             ),
             "elapsed_sec": round(max(0.0, time.time() - stage_start_ts), 3),
         }
+        self._last_completed_scan_methods = completed_scan_methods
 
         logger.info(
             "nmap stage:{} done targets:{} batches:{} processed:{} failed:{} pending:{} host_result:{} timeout_hit:{} timeout_budget:{}".format(
@@ -783,15 +1097,14 @@ class PortScan:
         基于快扫结果构建精扫计划：
         - 覆盖所有发现开放端口的主机
         - 覆盖该主机全部开放端口
-        - 通过端口分段控制单次命令长度，不裁剪结果
+        - 通过端口分段控制单次命令长度
         """
         plan = []
         for host, item in fast_map.items():
-            if item.get("_suspected_all_open"):
-                # 原始开放端口已经完整保留；对疑似 WAF/蜜罐全开主机不再为数千端口
-                # 逐段执行 -sV，避免深度识别把整个任务重新放大。
+            if item.get("_suspected_all_open") and len(item.get("port_info", [])) > self.stage2_port_chunk_size:
+                # 大量端口经 TCP connect 复核后仍开放时，限制昂贵的版本探测规模。
                 logger.warning(
-                    "skip precise service scan for suspected all-open host:{} ports:{}".format(
+                    "skip precise service scan for verified high-port-count host:{} ports:{}".format(
                         host, len(item.get("port_info", []))
                     )
                 )
@@ -844,6 +1157,27 @@ class PortScan:
         metrics["suspected_all_open_count"] = int(
             fast.get("suspected_all_open_count", 0) or 0
         ) + int(precise.get("suspected_all_open_count", 0) or 0)
+        for key in (
+            "connect_validation_host_count",
+            "connect_validation_candidate_count",
+            "connect_validation_verified_count",
+            "connect_validation_not_open_count",
+            "connect_validation_unverified_count",
+            "connect_validation_error_count",
+            "connect_validation_pending_count",
+        ):
+            metrics[key] = int(fast.get(key, 0) or 0) + int(precise.get(key, 0) or 0)
+        metrics["connect_validation_elapsed_sec"] = round(
+            float(fast.get("connect_validation_elapsed_sec", 0) or 0)
+            + float(precise.get("connect_validation_elapsed_sec", 0) or 0),
+            3,
+        )
+        metrics["degraded_count"] += (
+            metrics["connect_validation_error_count"]
+            + metrics["connect_validation_pending_count"]
+        )
+        metrics["failed_count"] += metrics["connect_validation_error_count"]
+        metrics["pending_count"] += metrics["connect_validation_pending_count"]
         fallback_reasons = {}
         for source in (fast, precise):
             for reason, count in (source.get("fallback_reasons", {}) or {}).items():
@@ -864,7 +1198,11 @@ class PortScan:
             metrics["end_reason"] = "budget_exhausted"
         elif metrics["degraded_count"] > 0:
             metrics["status"] = "partial"
-            metrics["end_reason"] = "batch_failed"
+            metrics["end_reason"] = (
+                "connect_validation_incomplete"
+                if metrics["connect_validation_error_count"] or metrics["connect_validation_pending_count"]
+                else "batch_failed"
+            )
         else:
             metrics["status"] = "success"
             metrics["end_reason"] = "completed"
@@ -896,6 +1234,11 @@ class PortScan:
             stage_name="fast",
             stage_timeout_sec=fast_stage_timeout_sec,
         )
+        fast_completed_scan_methods = dict(self._last_completed_scan_methods)
+        scan_coverage = {
+            "ports": self.ports,
+            "completed_targets": fast_completed_scan_methods,
+        }
         fast_metrics = dict(self.last_scan_metrics)
         if not fast_map:
             metrics = self._build_two_stage_metrics(
@@ -904,7 +1247,8 @@ class PortScan:
                 timeout_hit=fast_timeout_hit,
             )
             self.last_scan_metrics = metrics
-            return PortScanResult([], metrics=metrics)
+            return PortScanResult([], metrics=metrics, scan_coverage=scan_coverage)
+        fast_metrics.update(self._validate_suspected_hosts(fast_map, fast_args))
         if fast_timeout_hit:
             logger.warning(
                 "port_scan skip precise stage because fast stage timeout host_result:{}".format(
@@ -918,7 +1262,7 @@ class PortScan:
                 timeout_hit=True,
             )
             self.last_scan_metrics = metrics
-            return PortScanResult(result, metrics=metrics)
+            return PortScanResult(result, metrics=metrics, scan_coverage=scan_coverage)
 
         precise_plan = self._build_precise_plan(fast_map)
         if not precise_plan:
@@ -929,7 +1273,7 @@ class PortScan:
                 timeout_hit=False,
             )
             self.last_scan_metrics = metrics
-            return PortScanResult(result, metrics=metrics)
+            return PortScanResult(result, metrics=metrics, scan_coverage=scan_coverage)
 
         precise_args = self._build_nmap_arguments(
             enable_service=self.service_detect,
@@ -1049,7 +1393,7 @@ class PortScan:
             output_count=len(result),
             timeout_hit=bool(fast_timeout_hit or precise_timeout_hit),
         )
-        return PortScanResult(result, metrics=self.last_scan_metrics)
+        return PortScanResult(result, metrics=self.last_scan_metrics, scan_coverage=scan_coverage)
 
     def run(self):
         if not self.target_list:
@@ -1059,7 +1403,10 @@ class PortScan:
                 "target_count": 0,
                 "output_count": 0,
             }
-            return PortScanResult([], metrics=self.last_scan_metrics)
+            return PortScanResult([], metrics=self.last_scan_metrics, scan_coverage={
+                "ports": self.ports,
+                "completed_targets": {},
+            })
 
         if self.service_detect or self.os_detect:
             return self._run_two_stage_scan()
@@ -1091,10 +1438,16 @@ class PortScan:
             stage_name="single",
             stage_timeout_sec=single_stage_timeout_sec,
         )
+        scan_coverage = {
+            "ports": self.ports,
+            "completed_targets": dict(self._last_completed_scan_methods),
+        }
+        validation_metrics = self._validate_suspected_hosts(single_map, single_args)
         result = self._sort_ip_info_list(single_map)
         metrics = dict(self.last_scan_metrics)
+        metrics.update(validation_metrics)
         metrics["output_count"] = len(result)
-        return PortScanResult(result, metrics=metrics)
+        return PortScanResult(result, metrics=metrics, scan_coverage=scan_coverage)
 
     def os_match_by_accuracy(self, os_match_list):
         for os_match in os_match_list:
@@ -1140,7 +1493,7 @@ def port_scan(targets, ports=Config.TOP_10, service_detect=False, os_detect=Fals
             "stage": "empty",
             "target_count": 0,
             "output_count": 0,
-        })
+        }, scan_coverage={"ports": str(ports or ""), "completed_targets": {}})
 
     ps = PortScan(targets=targets, ports=ports, service_detect=service_detect, os_detect=os_detect,
                   port_parallelism=port_parallelism, port_min_rate=port_min_rate,

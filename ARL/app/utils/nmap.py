@@ -339,11 +339,14 @@ class PortScanner(object):
                 raise PortScannerError(self._nmap_last_output)
 
         # nmap command line
+        finished = dom.find("runstats/finished")
         scan_result['nmap'] = {
             'command_line': dom.get('args'),
             'scaninfo': {},
-            'scanstats': {'timestr': dom.find("runstats/finished").get('timestr'),
-                          'elapsed': dom.find("runstats/finished").get('elapsed'),
+            'scanstats': {'timestr': finished.get('timestr'),
+                          'elapsed': finished.get('elapsed'),
+                          'exit': finished.get('exit', ''),
+                          'errormsg': finished.get('errormsg', ''),
                           'uphosts': dom.find("runstats/hosts").get('up'),
                           'downhosts': dom.find("runstats/hosts").get('down'),
                           'totalhosts': dom.find("runstats/hosts").get('total')}
@@ -418,9 +421,10 @@ class PortScanner(object):
                 # reason
                 reason = dport.find('state').get('reason')
                 # name, product, version, extra info and conf if any
-                name = product = version = extrainfo = conf = cpe = ''
+                name = product = version = extrainfo = conf = cpe = method = ''
                 for dname in dport.findall('service'):
                     name = dname.get('name')
+                    method = dname.get('method', '')
                     if dname.get('product'):
                         product = dname.get('product')
                     if dname.get('version'):
@@ -442,6 +446,7 @@ class PortScanner(object):
                                                           'product': product,
                                                           'version': version,
                                                           'extrainfo': extrainfo,
+                                                          'method': method,
                                                           'conf': conf,
                                                           'cpe': cpe}
                 script_id = ''

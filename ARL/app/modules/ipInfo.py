@@ -79,12 +79,39 @@ class IPInfo(BaseInfo):
 
 
 class PortInfo(BaseInfo):
-    def __init__(self, port_id, service_name = "", version = "", protocol = "tcp", product=""):
+    def __init__(
+        self,
+        port_id,
+        service_name="",
+        version="",
+        protocol="tcp",
+        product="",
+        state="",
+        reason="",
+        scan_method="",
+        verified=False,
+        nmap_service_method="",
+        nmap_service_confidence="",
+        service_confidence=0,
+        service_sources=None,
+        service_conflict=None,
+        nmap_service_table_name="",
+    ):
         self.port_id = port_id
         self.service_name = service_name
         self.version = version
         self.protocol = protocol
         self.product = product
+        self.state = state
+        self.reason = reason
+        self.scan_method = scan_method
+        self.verified = bool(verified)
+        self.nmap_service_method = nmap_service_method
+        self.nmap_service_confidence = nmap_service_confidence
+        self.nmap_service_table_name = nmap_service_table_name
+        self.service_confidence = service_confidence
+        self.service_sources = list(service_sources or [])
+        self.service_conflict = service_conflict
 
     def __eq__(self, other):
         if isinstance(other, PortInfo):
@@ -101,7 +128,17 @@ class PortInfo(BaseInfo):
             "service_name": self.service_name,
             "version": self.version,
             "protocol": self.protocol,
-            "product": self.product
+            "product": self.product,
+            "state": self.state,
+            "reason": self.reason,
+            "scan_method": self.scan_method,
+            "verified": self.verified,
+            "nmap_service_method": self.nmap_service_method,
+            "nmap_service_confidence": self.nmap_service_confidence,
+            "nmap_service_table_name": self.nmap_service_table_name,
+            "service_confidence": self.service_confidence,
+            "service_sources": self.service_sources,
+            "service_conflict": self.service_conflict,
         }
         return item
 

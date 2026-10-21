@@ -1169,6 +1169,16 @@ class DomainNetworkStageService(object):
                         version=port.get("version", ""),
                         protocol=port.get("protocol", "tcp"),
                         product=port.get("product", ""),
+                        state=port.get("state", ""),
+                        reason=port.get("reason", ""),
+                        scan_method=port.get("scan_method", ""),
+                        verified=port.get("verified", False),
+                        nmap_service_method=port.get("nmap_service_method", ""),
+                        nmap_service_confidence=port.get("nmap_service_confidence", ""),
+                        nmap_service_table_name=port.get("nmap_service_table_name", ""),
+                        service_confidence=port.get("service_confidence", 0),
+                        service_sources=port.get("service_sources", []),
+                        service_conflict=port.get("service_conflict"),
                     ))
                 except (TypeError, ValueError):
                     continue
@@ -1416,7 +1426,7 @@ class DomainNetworkStageService(object):
         npoc_merged = 0
 
         def _append_item(service_name, ip, port_id, product="", version="", source="",
-                         npoc_scheme="", proto="tcp"):
+                         npoc_scheme="", proto="tcp", nmap_service_method=""):
             nonlocal merged_total, nmap_merged, npoc_merged
             service_result = resolve_service_result(
                 service_name=service_name,
@@ -1424,6 +1434,7 @@ class DomainNetworkStageService(object):
                 npoc_scheme=npoc_scheme,
                 port=port_id,
                 proto=proto,
+                nmap_service_method=nmap_service_method,
                 use_registry=True,
             )
             service = str(service_result.get("service") or "").strip()
@@ -1480,6 +1491,11 @@ class DomainNetworkStageService(object):
                     version=getattr(port_item, "version", ""),
                     source="nmap",
                     proto=getattr(port_item, "protocol", "tcp"),
+                    nmap_service_method=getattr(port_item, "nmap_service_method", ""),
+                    npoc_scheme=(
+                        getattr(port_item, "service_name", "")
+                        if "npoc_scheme" in getattr(port_item, "service_sources", []) else ""
+                    ),
                 )
 
         for item in utils.conn_db("npoc_service").find({"task_id": task.task_id}):

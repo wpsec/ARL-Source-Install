@@ -30,6 +30,11 @@ def _set_field(value, name, field_value):
 
 def is_low_conf_service(port_info):
     """判断端口服务是否需要协议识别补充。"""
+    sources = _get_field(port_info, "service_sources", []) or []
+    if "npoc_scheme" in sources:
+        return False
+    if str(_get_field(port_info, "nmap_service_method", "") or "").strip().lower() == "table":
+        return True
     service_name = str(_get_field(port_info, "service_name", "") or "").strip().lower()
     return not service_name or service_name in LOW_CONF_SERVICE_NAMES
 
@@ -73,6 +78,7 @@ def resolve_service_result(
     npoc_scheme="",
     port=None,
     proto="tcp",
+    nmap_service_method="",
     use_registry=True,
 ):
     """把 Nmap/NPoC 观测统一为服务识别结果。
@@ -81,12 +87,15 @@ def resolve_service_result(
     规范文件故障把整个端口结果吞掉。
     """
 
+    service_method = str(nmap_service_method or "").strip().lower()
+    detected_service_name = "" if service_method == "table" else service_name
+
     if use_registry:
         try:
             from app.services.service_fingerprint_registry import get_service_registry
 
             result = get_service_registry().normalize_result(
-                nmap_service=service_name,
+                nmap_service=detected_service_name,
                 nmap_product=product,
                 npoc_scheme=npoc_scheme,
                 port=port,
@@ -102,15 +111,23 @@ def resolve_service_result(
     else:
         fallback_reason = "registry_disabled"
 
-    raw_name = extract_detected_service(service_name=service_name, product=product)
+    npoc_name = str(npoc_scheme or "").strip().lower()
+    raw_name = npoc_name or extract_detected_service(
+        service_name=detected_service_name,
+        product=product,
+    )
     service = normalize_scheme(raw_name, use_registry=False)
     if service in LOW_CONF_SERVICE_NAMES:
         service = ""
-    source = "nmap_service_name" if str(service_name or "").strip() else "legacy_passthrough"
+    source = (
+        "npoc_scheme" if npoc_name else
+        "nmap_service_name" if str(detected_service_name or "").strip() else
+        "legacy_passthrough"
+    )
     return {
         "service": service,
         "confirmed": bool(service),
-        "confidence": 90 if service else 0,
+        "confidence": (100 if npoc_name else 90) if service else 0,
         "sources": [source] if service else [],
         "fallback_reason": fallback_reason,
         "conflict": None,
@@ -207,7 +224,10 @@ def apply_npoc_service_result(task, sniffer_items, use_registry=True):
                 from app.services.service_fingerprint_registry import get_service_registry
 
                 result = get_service_registry().normalize_result(
-                    nmap_service=curr_service,
+                    nmap_service=(
+                        "" if str(_get_field(port_info, "nmap_service_method", "") or "").strip().lower() == "table"
+                        else curr_service
+                    ),
                     npoc_scheme=scheme,
                 )
                 new_service = result["service"] or scheme
@@ -222,6 +242,8 @@ def apply_npoc_service_result(task, sniffer_items, use_registry=True):
                 if curr_service != scheme:
                     updated += 1
                 _set_field(port_info, "service_name", scheme)
+                _set_field(port_info, "service_confidence", 100)
+                _set_field(port_info, "service_sources", ["npoc_scheme"])
 
             if not str(_get_field(port_info, "product", "") or "").strip() or is_low_conf_service(port_info):
                 _set_field(port_info, "product", scheme)

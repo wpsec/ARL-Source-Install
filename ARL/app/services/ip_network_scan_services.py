@@ -4,10 +4,11 @@
 任务上下文能力；IPTask 仅保留兼容入口，避免外部任务调用方发生变化。
 """
 
+import ipaddress
+
 from app import services, utils
 from app.config import Config
 from app.modules import ScanPortType
-from app.services.portScan import PortScan
 from app.services.task_result_write_service import TaskResultWriteService
 from app.services.probe_policy import normalize_port_id, select_probe_port_infos
 
@@ -57,43 +58,189 @@ class IPPortScanStageService(object):
             )
         return scan_port_option
 
+    @staticmethod
+    def _port_key(port_info):
+        if not isinstance(port_info, dict):
+            return None
+        try:
+            port_id = int(port_info.get("port_id"))
+        except (TypeError, ValueError):
+            return None
+        protocol = str(port_info.get("protocol", "tcp") or "tcp").strip().lower()
+        return (protocol or "tcp", port_id)
+
+    @staticmethod
+    def _port_in_scan_scope(port_id, protocol, ports):
+        protocol = str(protocol or "tcp").strip().lower()
+        for raw_token in str(ports or "").split(","):
+            token = raw_token.strip()
+            if not token:
+                continue
+            token_protocol = "tcp"
+            if ":" in token:
+                prefix, token = token.split(":", 1)
+                prefix = prefix.strip().lower()
+                if prefix in ("t", "tcp"):
+                    token_protocol = "tcp"
+                elif prefix in ("u", "udp"):
+                    token_protocol = "udp"
+                else:
+                    continue
+            if token_protocol != protocol:
+                continue
+            try:
+                if "-" in token:
+                    start, end = token.split("-", 1)
+                    start_port, end_port = int(start), int(end)
+                else:
+                    start_port = end_port = int(token)
+            except (TypeError, ValueError):
+                continue
+            if start_port <= int(port_id) <= end_port:
+                return True
+        return False
+
+    @classmethod
+    def _attach_complete_connect_scan_evidence(cls, ip_port_result, ports, asset_ip_info_map):
+        scan_coverage = getattr(ip_port_result, "scan_coverage", {}) or {}
+        if not isinstance(scan_coverage, dict):
+            scan_coverage = {}
+        completed_targets = scan_coverage.get("completed_targets", {}) or {}
+        if not isinstance(completed_targets, dict):
+            completed_targets = {}
+        scan_ports = scan_coverage.get("ports") or ports
+
+        result_by_ip = {
+            str(ip_info.get("ip", "")).strip(): ip_info
+            for ip_info in (ip_port_result or [])
+            if isinstance(ip_info, dict) and str(ip_info.get("ip", "")).strip()
+        }
+        for ip, asset_info in (asset_ip_info_map or {}).items():
+            if ip in result_by_ip or not isinstance(asset_info, dict):
+                continue
+            scan_method = cls._scan_method_for_ip(ip, completed_targets)
+            if scan_method not in ("connect", "connect_fallback"):
+                continue
+            ip_info = {
+                "ip": ip,
+                "port_info": [],
+                "os_info": {},
+                "_scan_coverage": {
+                    "complete": True,
+                    "ports": scan_ports,
+                    "scan_method": scan_method,
+                },
+            }
+            ip_port_result.append(ip_info)
+            result_by_ip[ip] = ip_info
+
+        for ip_info in ip_port_result or []:
+            coverage = ip_info.get("_scan_coverage")
+            if not isinstance(coverage, dict) or not coverage.get("complete"):
+                scan_method = cls._scan_method_for_ip(ip_info.get("ip", ""), completed_targets)
+                if scan_method in ("connect", "connect_fallback"):
+                    coverage = {
+                        "complete": True,
+                        "ports": scan_ports,
+                        "scan_method": scan_method,
+                    }
+                    ip_info["_scan_coverage"] = coverage
+            if not isinstance(coverage, dict) or not coverage.get("complete"):
+                continue
+            if str(coverage.get("scan_method", "")).lower() not in ("connect", "connect_fallback"):
+                continue
+
+            asset_info = (asset_ip_info_map or {}).get(ip_info.get("ip"))
+            if not isinstance(asset_info, dict):
+                continue
+            open_keys = {
+                key for key in (
+                    cls._port_key(port_info)
+                    for port_info in (ip_info.get("port_info", []) or [])
+                )
+                if key
+            }
+            validation = ip_info.get("_connect_validation")
+            if not isinstance(validation, dict):
+                validation = {}
+                ip_info["_connect_validation"] = validation
+
+            not_open = {
+                key for key in (
+                    cls._port_key(port_info)
+                    for port_info in (validation.get("not_open_ports", []) or [])
+                )
+                if key
+            }
+            for port_info in asset_info.get("port_info", []) or []:
+                key = cls._port_key(port_info)
+                if (
+                    key
+                    and key[0] == "tcp"
+                    and key not in open_keys
+                    and cls._port_in_scan_scope(key[1], key[0], coverage.get("ports") or ports)
+                ):
+                    not_open.add(key)
+
+            validation["not_open_ports"] = [
+                {"protocol": protocol, "port_id": port_id}
+                for protocol, port_id in sorted(not_open)
+            ]
+
+    @staticmethod
+    def _scan_method_for_ip(ip, completed_targets):
+        try:
+            ip_address = ipaddress.ip_address(str(ip or "").strip())
+        except ValueError:
+            return ""
+        matching_methods = []
+        for target, scan_method in (completed_targets or {}).items():
+            matched = False
+            range_parts = str(target).strip().rsplit("-", 1)
+            if len(range_parts) == 2 and "." in range_parts[0] and range_parts[1].isdigit():
+                try:
+                    start_address = ipaddress.IPv4Address(range_parts[0])
+                    end_octet = int(range_parts[1])
+                except ipaddress.AddressValueError:
+                    start_address = None
+                    end_octet = -1
+                if (
+                    start_address is not None
+                    and isinstance(ip_address, ipaddress.IPv4Address)
+                    and start_address.packed[:3] == ip_address.packed[:3]
+                    and start_address.packed[3] <= ip_address.packed[3] <= end_octet <= 255
+                ):
+                    matched = True
+            if not matched:
+                try:
+                    network = ipaddress.ip_network(str(target).strip(), strict=False)
+                except ValueError:
+                    continue
+                matched = ip_address in network
+            if matched:
+                matching_methods.append(str(scan_method or "").strip().lower())
+
+        # 重叠目标可能由不同扫描方式完成；完整 connect 覆盖可以校正资产。
+        for preferred_method in ("connect_fallback", "connect"):
+            if preferred_method in matching_methods:
+                return preferred_method
+        return matching_methods[0] if matching_methods else ""
+
     def run(self):
         task = self.task
         scan_port_option = self._build_scan_options()
         targets = str(task.ip_target or "").split()
         ip_port_result = self.services.port_scan(targets, **scan_port_option)
 
-        confirmed_fake_all_open_host_count = 0
-        confirmed_fake_all_open_filtered_port_count = 0
-        for ip_info in ip_port_result:
-            if not isinstance(ip_info, dict) or not ip_info.get("_confirmed_fake_all_open"):
-                continue
-            original_ports = list(ip_info.get("port_info", []) or [])
-            filtered_ports = PortScan._filter_confirmed_fake_all_open_ports(original_ports)
-            confirmed_fake_all_open_host_count += 1
-            confirmed_fake_all_open_filtered_port_count += max(
-                0, len(original_ports) - len(filtered_ports)
-            )
-            ip_info["port_info"] = filtered_ports
-
-        metrics = getattr(ip_port_result, "metrics", None)
-        if isinstance(metrics, dict):
-            metrics.update({
-                "confirmed_fake_all_open_host_count": confirmed_fake_all_open_host_count,
-                "confirmed_fake_all_open_filtered_port_count": confirmed_fake_all_open_filtered_port_count,
-            })
-        if confirmed_fake_all_open_host_count:
-            logger.warning(
-                "port_scan high-confidence fake all-open results filtered hosts:{} dropped_ports:{} kept_ports_per_host:6".format(
-                    confirmed_fake_all_open_host_count,
-                    confirmed_fake_all_open_filtered_port_count,
-                )
+        if task.task_tag == "monitor":
+            task.set_asset_ip()
+            self._attach_complete_connect_scan_evidence(
+                ip_port_result,
+                scan_port_option.get("ports"),
+                getattr(task, "asset_ip_info_map", {}),
             )
 
         task.ip_info_list.extend(ip_port_result)
-
-        if task.task_tag == "monitor":
-            task.set_asset_ip()
 
         for ip_info in ip_port_result:
             curr_ip = ip_info["ip"]
@@ -114,7 +261,11 @@ class IPPortScanStageService(object):
                     task.task_id,
                     utils_module=self.utils,
                 )
-                writer.insert_one("ip", ip_info)
+                persisted_ip_info = dict(ip_info)
+                persisted_ip_info.pop("_suspected_all_open", None)
+                persisted_ip_info.pop("_connect_validation", None)
+                persisted_ip_info.pop("_scan_coverage", None)
+                writer.insert_one("ip", persisted_ip_info)
 
         if task.task_tag == "monitor":
             task.async_ip_info()

@@ -327,7 +327,7 @@ const FIXED_TABLE_COLUMN_WIDTHS_BY_MODULE: Record<string, Record<string, number>
     detection_sources: 150,
     edge_kind: 120,
     skipped: 100,
-    wafw00f_status: 150,
+    wafw00f_status: 180,
     hit_rule: 340,
   },
   vuln: {
@@ -4076,14 +4076,16 @@ export function TableModuleView({
                           const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object'
                             ? row.waf_skip_summary
                             : {};
-                          const wafDetectedHostCount = Number(wafSummary?.detected_host_count || 0);
+                          const wafObservedHostCount = Number(wafSummary?.detected_host_count || 0);
+                          const wafIdentifiedHostCount = Number(wafSummary?.waf_detected_host_count || 0);
                           const wafBlockedHostCount = Number(wafSummary?.blocked_host_count || 0);
                           const wafBypassHostCount = Number(wafSummary?.bypass_success_host_count || 0);
                           const wafSkipRequestCount = Number(wafSummary?.skip_request_count || 0);
                           const wafObservedSiteCount = Number(wafSummary?.observed_site_count || 0);
                           const wafSkipSiteCount = Number(wafSummary?.skip_site_count || 0);
                           const hasWafSummary = (
-                            wafDetectedHostCount > 0
+                            wafObservedHostCount > 0
+                            || wafIdentifiedHostCount > 0
                             || wafBlockedHostCount > 0
                             || wafBypassHostCount > 0
                             || wafSkipRequestCount > 0
@@ -4157,7 +4159,7 @@ export function TableModuleView({
                                         <div className="mt-2 rounded-box border border-base-300 bg-base-100 px-2.5 py-2 text-[11px]">
                                           <div className="text-content-muted">WAF识别概览</div>
                                           <div className="mt-1 text-base-content break-all">
-                                            主机 {wafDetectedHostCount} / 站点 {wafObservedSiteCount} / 跳过主机 {wafBlockedHostCount} / 跳过站点 {wafSkipSiteCount} / 绕过 {wafBypassHostCount} / 请求 {wafSkipRequestCount}
+                                            观测主机 {wafObservedHostCount} / 识别到WAF主机 {wafIdentifiedHostCount} / 站点 {wafObservedSiteCount} / 跳过主机 {wafBlockedHostCount} / 跳过站点 {wafSkipSiteCount} / 绕过 {wafBypassHostCount} / 请求 {wafSkipRequestCount}
                                           </div>
                                         </div>
                                       ) : null}

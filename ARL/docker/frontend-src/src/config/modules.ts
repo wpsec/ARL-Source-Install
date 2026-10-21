@@ -1567,7 +1567,7 @@ export const modules: ModuleConfig[] = [
       detection_sources: '识别来源',
       edge_kind: '边界类型',
       skipped: '是否跳过',
-      wafw00f_status: 'wafw00f状态',
+      wafw00f_status: 'wafw00f检测状态',
       hit_rule: '命中规则',
     },
     searchFields: [
@@ -1576,7 +1576,7 @@ export const modules: ModuleConfig[] = [
       { key: 'port', label: '端口', placeholder: '请输入端口进行搜索', inputType: 'number' },
       { key: 'waf_name', label: 'WAF厂家', placeholder: '请输入WAF厂家进行搜索' },
       { key: 'detection_source', label: '识别来源', placeholder: '请输入识别来源进行搜索' },
-      { key: 'wafw00f_status', label: 'wafw00f状态', placeholder: '请输入补充识别状态进行搜索' },
+      { key: 'wafw00f_status', label: 'wafw00f检测状态', placeholder: '请输入wafw00f检测状态进行搜索' },
       { key: 'hit_rule', label: '命中规则', placeholder: '请输入命中规则或命中理由进行搜索' },
     ],
   },

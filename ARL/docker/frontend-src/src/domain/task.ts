@@ -203,7 +203,8 @@ export function extractTaskStatisticCounts(row: any): {
 export function buildTaskStatisticSummary(row: any): string {
   const stat = row?.statistic;
   const wafSummary = row?.waf_skip_summary && typeof row.waf_skip_summary === 'object' ? row.waf_skip_summary : {};
-  const wafDetectedHostCount = Number(wafSummary?.detected_host_count || 0);
+  const wafObservedHostCount = Number(wafSummary?.detected_host_count || 0);
+  const wafIdentifiedHostCount = Number(wafSummary?.waf_detected_host_count || 0);
   const wafBlockedHostCount = Number(wafSummary?.blocked_host_count || 0);
   const wafBypassHostCount = Number(wafSummary?.bypass_success_host_count || 0);
   const wafSkipRequestCount = Number(wafSummary?.skip_request_count || 0);
@@ -211,15 +212,15 @@ export function buildTaskStatisticSummary(row: any): string {
   const wafSkipSiteCount = Number(wafSummary?.skip_site_count || 0);
 
   if (!stat || typeof stat !== 'object' || Array.isArray(stat)) {
-    if (wafDetectedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
-      return `WAF识别:主机${wafDetectedHostCount} 站点${wafObservedSiteCount} 跳过主机${wafBlockedHostCount} 跳过站点${wafSkipSiteCount} 绕过${wafBypassHostCount} 请求${wafSkipRequestCount}`;
+    if (wafObservedHostCount > 0 || wafIdentifiedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
+      return `WAF识别:观测主机${wafObservedHostCount} 识别到WAF主机${wafIdentifiedHostCount} 站点${wafObservedSiteCount} 跳过主机${wafBlockedHostCount} 跳过站点${wafSkipSiteCount} 绕过${wafBypassHostCount} 请求${wafSkipRequestCount}`;
     }
     return '-';
   }
   const { siteCnt, domainCnt, ipCnt, vulnCnt } = extractTaskStatisticCounts(row);
   let summary = `站点:${siteCnt} 域名:${domainCnt} IP:${ipCnt} 风险:${vulnCnt}`;
-  if (wafDetectedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
-    summary += ` WAF识别:主机${wafDetectedHostCount}/站点${wafObservedSiteCount}/跳过主机${wafBlockedHostCount}/跳过站点${wafSkipSiteCount}/绕过${wafBypassHostCount}/请求${wafSkipRequestCount}`;
+  if (wafObservedHostCount > 0 || wafIdentifiedHostCount > 0 || wafBlockedHostCount > 0 || wafSkipRequestCount > 0 || wafBypassHostCount > 0) {
+    summary += ` WAF识别:观测主机${wafObservedHostCount}/识别到WAF主机${wafIdentifiedHostCount}/站点${wafObservedSiteCount}/跳过主机${wafBlockedHostCount}/跳过站点${wafSkipSiteCount}/绕过${wafBypassHostCount}/请求${wafSkipRequestCount}`;
   }
   return summary;
 }

@@ -358,7 +358,7 @@ class IPExecutor(IPTask):
     
     功能说明：
     - 继承IPTask，复用IP扫描功能
-    - 增量处理，只保存新发现的端口
+    - 增量收录新端口，并用明确的连接复核纠正资产端口
     - 与资产组对比，发现新开放端口
     
     继承自：
@@ -374,7 +374,7 @@ class IPExecutor(IPTask):
     主要方法：
     - insert_task_data(): 插入任务记录
     - set_asset_ip(): 获取资产组IP信息
-    - async_ip_info(): 同步新端口到资产组
+    - async_ip_info(): 同步新端口并校正复核过的资产端口
     - run(): 执行监控流程
     """
     
@@ -451,56 +451,188 @@ class IPExecutor(IPTask):
         items = list(utils.conn_db('asset_ip').find(query, {"ip": 1, "port_info": 1}))
         for item in items:
             self.asset_ip_info_map[item["ip"]] = item
-            for port_info in item["port_info"]:
-                ip_port = "{}:{}".format(item["ip"], port_info["port_id"])
-                self.asset_ip_port_set.add(ip_port)
+            for port_info in item.get("port_info", []) or []:
+                port_key = self._asset_port_key(port_info)
+                if port_key:
+                    self.asset_ip_port_set.add((item["ip"],) + port_key)
+
+    @staticmethod
+    def _asset_port_key(port_info):
+        if not isinstance(port_info, dict):
+            return None
+        try:
+            port_id = int(port_info.get("port_id"))
+        except (TypeError, ValueError):
+            return None
+        protocol = str(port_info.get("protocol", "tcp") or "tcp").strip().lower()
+        if not protocol:
+            protocol = "tcp"
+        return protocol, port_id
+
+    @staticmethod
+    def _merge_asset_port_info(stored, observed):
+        merged = dict(stored or {})
+        observed = dict(observed or {})
+        stored_sources = merged.get("service_sources") or []
+        has_npoc_service = "npoc_scheme" in stored_sources
+        stored_service_method = str(merged.get("nmap_service_method", "") or "").strip().lower()
+        stored_service_name = str(merged.get("service_name", "") or "").strip().lower()
+        table_service_name = str(observed.get("nmap_service_table_name", "") or "").strip().lower()
+
+        observed_verified = bool(observed.get("verified"))
+        stored_verified = bool(merged.get("verified"))
+        if observed_verified or not stored_verified:
+            for field in ("state", "reason", "scan_method"):
+                if observed.get(field) not in (None, ""):
+                    merged[field] = observed[field]
+
+        if observed.get("nmap_service_method"):
+            for field in (
+                "nmap_service_method",
+                "nmap_service_confidence",
+                "nmap_service_table_name",
+            ):
+                merged[field] = observed.get(field, "")
+
+        for field in (
+            "nmap_service_confidence",
+            "nmap_service_table_name",
+        ):
+            if observed.get(field) not in (None, ""):
+                merged[field] = observed[field]
+
+        if "verified" in observed and (observed_verified or not stored_verified):
+            merged["verified"] = observed_verified
+
+        for field in ("product", "version"):
+            if observed.get(field) not in (None, ""):
+                merged[field] = observed[field]
+
+        if not has_npoc_service:
+            if observed.get("service_name"):
+                merged["service_name"] = observed["service_name"]
+                for field in ("service_confidence", "service_sources", "service_conflict"):
+                    if field in observed:
+                        merged[field] = observed[field]
+                if "service_conflict" not in observed:
+                    merged.pop("service_conflict", None)
+            elif (
+                str(observed.get("nmap_service_method", "") or "").strip().lower() == "table"
+                and table_service_name
+                and stored_service_name == table_service_name
+                and stored_service_method in ("", "table")
+            ):
+                merged["service_name"] = ""
+                merged["service_confidence"] = 0
+                merged["service_sources"] = []
+                merged.pop("service_conflict", None)
+
+        return merged
 
     def async_ip_info(self):
         new_ip_info_list = []
+        removed_port_count = 0
+        refreshed_port_count = 0
         for ip_info in self.ip_info_list:
             curr_ip = ip_info["ip"]
             curr_date_obj = utils.curr_date_obj()
+            persisted_ip_info = dict(ip_info)
+            persisted_ip_info.pop("_suspected_all_open", None)
+            validation_info = persisted_ip_info.pop("_connect_validation", {})
+            persisted_ip_info.pop("_scan_coverage", None)
+            if not isinstance(validation_info, dict):
+                validation_info = {}
+            not_open_keys = {
+                self._asset_port_key(port_info)
+                for port_info in (validation_info.get("not_open_ports", []) or [])
+            }
+            not_open_keys.discard(None)
 
             # 新发现的IP ，直接入资产集合
             if curr_ip not in self.asset_ip_info_map:
-                asset_ip_info = ip_info.copy()
+                asset_ip_info = dict(persisted_ip_info)
                 asset_ip_info["scope_id"] = self.scope_id
                 asset_ip_info["domain"] = []
                 asset_ip_info["save_date"] = curr_date_obj
                 asset_ip_info["update_date"] = curr_date_obj
                 utils.conn_db('asset_ip').insert_one(asset_ip_info)
-                utils.conn_db('ip').insert_one(ip_info)
+                utils.conn_db('ip').insert_one(persisted_ip_info)
+                self.asset_ip_info_map[curr_ip] = asset_ip_info
+                for port_info in asset_ip_info.get("port_info", []) or []:
+                    port_key = self._asset_port_key(port_info)
+                    if port_key:
+                        self.asset_ip_port_set.add((curr_ip,) + port_key)
                 new_ip_info_list.append(ip_info)
                 continue
 
-            # 保存新发现的端口
+            asset_ip_info = self.asset_ip_info_map[curr_ip]
+            stored_port_info = list(asset_ip_info.get("port_info", []) or [])
+            observed_port_map = {}
+            for port_info in ip_info.get("port_info", []) or []:
+                port_key = self._asset_port_key(port_info)
+                if port_key:
+                    observed_port_map[port_key] = port_info
+
+            updated_port_info = []
+            existing_port_keys = set()
+            asset_changed = False
+            for port_info in stored_port_info:
+                port_key = self._asset_port_key(port_info)
+                if port_key and port_key in not_open_keys:
+                    removed_port_count += 1
+                    asset_changed = True
+                    continue
+                if port_key:
+                    existing_port_keys.add(port_key)
+                observed = observed_port_map.get(port_key)
+                if observed is not None:
+                    merged_port_info = self._merge_asset_port_info(port_info, observed)
+                    if merged_port_info != port_info:
+                        refreshed_port_count += 1
+                        asset_changed = True
+                    updated_port_info.append(merged_port_info)
+                else:
+                    updated_port_info.append(port_info)
+
+            # 只把本次新开放的端口加入发现结果；旧端口的字段按本次证据校正。
             new_port_info_list = []
             for port_info in ip_info["port_info"]:
-                ip_port = "{}:{}".format(curr_ip, port_info["port_id"])
-                if ip_port in self.asset_ip_port_set:
+                port_key = self._asset_port_key(port_info)
+                if not port_key or port_key in not_open_keys:
                     continue
-
+                if port_key in existing_port_keys:
+                    continue
+                existing_port_keys.add(port_key)
+                updated_port_info.append(port_info)
                 new_port_info_list.append(port_info)
+                asset_changed = True
+                self.asset_ip_port_set.add((curr_ip,) + port_key)
 
-            if new_port_info_list:
-                asset_ip_info = self.asset_ip_info_map[curr_ip]
-                asset_ip_info["port_info"].extend(new_port_info_list)
+            for port_key in not_open_keys:
+                self.asset_ip_port_set.discard((curr_ip,) + port_key)
 
+            if asset_changed:
+                asset_ip_info["port_info"] = updated_port_info
                 update_info = dict()
                 update_info["update_date"] = utils.curr_date_obj()
-                update_info["port_info"] = asset_ip_info["port_info"]
+                update_info["port_info"] = updated_port_info
                 query = {"_id": asset_ip_info["_id"]}
                 utils.conn_db('asset_ip').update_one(query, {"$set": update_info})
 
+            if new_port_info_list:
                 # 只是保存新发现的端口
-                ip_info["port_info"] = new_port_info_list
-                utils.conn_db('ip').insert_one(ip_info)
+                persisted_ip_info["port_info"] = new_port_info_list
+                utils.conn_db('ip').insert_one(persisted_ip_info)
 
                 new_ip_info_list.append(ip_info)
                 continue
 
         self.ip_info_list = new_ip_info_list
-        logger.info("found new ip_info {}".format(len(self.ip_info_list)))
+        logger.info(
+            "monitor ip sync new_ip_info:{} removed_verified_closed_ports:{} refreshed_ports:{}".format(
+                len(self.ip_info_list), removed_port_count, refreshed_port_count
+            )
+        )
 
     # 同步SITE 和 web_info_hunter 信息
     def sync_asset_site_wih(self):

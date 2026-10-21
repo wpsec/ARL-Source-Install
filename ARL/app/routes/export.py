@@ -2992,8 +2992,19 @@ def _extract_waf_rows(task_ids):
 
             host = sanitize_excel_value(host_data.get("host", "")).strip().lower()
             last_url = sanitize_excel_value(host_data.get("last_url", "")).strip()
-            waf_name = sanitize_excel_value(host_data.get("waf_name", "")).strip() or "unknown"
+            raw_waf_name = sanitize_excel_value(host_data.get("waf_name", "")).strip()
+            raw_wafw00f_status = sanitize_excel_value(host_data.get("wafw00f_status", "")).strip()
+            raw_edge_kind = sanitize_excel_value(host_data.get("edge_kind", "")).strip().lower()
+            waf_name = raw_waf_name or "unknown"
+            if waf_name.lower() == "unknown":
+                waf_name = (
+                    "未检测到 WAF"
+                    if raw_wafw00f_status.lower() == "not_detected" and raw_edge_kind not in {"waf", "mixed"}
+                    else "厂商未识别"
+                )
+            confidence_labels = {"high": "高", "medium": "中", "low": "低"}
             waf_confidence = sanitize_excel_value(host_data.get("waf_confidence", "")).strip()
+            waf_confidence = confidence_labels.get(waf_confidence.lower(), waf_confidence)
             module = sanitize_excel_value(host_data.get("module", "")).strip()
             rule = sanitize_excel_value(host_data.get("rule", "")).strip()
             reason = sanitize_excel_value(host_data.get("reason", "")).strip()
@@ -3006,12 +3017,23 @@ def _extract_waf_rows(task_ids):
                 if sanitize_excel_value(item).strip()
             )
             edge_kind = sanitize_excel_value(host_data.get("edge_kind", "")).strip()
+            edge_kind = {
+                "waf": "WAF",
+                "cdn": "CDN",
+                "mixed": "混合边界",
+            }.get(edge_kind.lower(), edge_kind)
             skipped = "是" if (
                 host_data.get("blocked")
                 or host_data.get("blocked_classes")
                 or host_data.get("wafw00f_active_risk_blocked")
             ) else "否"
-            wafw00f_status = sanitize_excel_value(host_data.get("wafw00f_status", "")).strip()
+            wafw00f_status = {
+                "detected": "已检测到",
+                "generic": "检测到防护特征",
+                "not_detected": "未检测到",
+                "timeout": "检测超时",
+                "error": "检测失败",
+            }.get(raw_wafw00f_status.lower(), raw_wafw00f_status)
             waf_evidence = " \r\n".join(
                 [
                     sanitize_excel_value(item).strip()
@@ -3022,7 +3044,7 @@ def _extract_waf_rows(task_ids):
 
             ip, domain, port = _parse_waf_host_port(host, last_url)
             port_text = str(port) if int(port or 0) > 0 else ""
-            dedup_key = (task_id, host, port_text, waf_name, wafw00f_status)
+            dedup_key = (task_id, host, port_text, raw_waf_name or "unknown", raw_wafw00f_status)
             if dedup_key in dedup_keys:
                 continue
             dedup_keys.add(dedup_key)
@@ -3113,7 +3135,7 @@ def _build_waf_sheet(wb, task_ids, apply_style=True):
             "识别来源",
             "边界类型",
             "是否跳过",
-            "wafw00f状态",
+            "wafw00f检测状态",
         ]
     )
 
@@ -4638,7 +4660,7 @@ def _build_ai_markdown_report(task_ids, ai_settings):
     lines.append("")
     lines.append("1. 优先处理 `critical/high` 风险项，先修复可被外网直接访问且存在认证缺失的入口。")
     lines.append("2. 对同一来源的重复风险按“单漏洞多目标”方式集中修复，降低修复切换成本。")
-    lines.append("3. 若命中 `WAF识别` 且厂商为 `unknown`，建议补做人工指纹确认后再决定绕过策略。")
+    lines.append("3. 若 WAF 已检测到但厂商未识别，建议补做人工指纹确认后再决定绕过策略。")
     lines.append("")
     lines.append("## 复测建议")
     lines.append("")
