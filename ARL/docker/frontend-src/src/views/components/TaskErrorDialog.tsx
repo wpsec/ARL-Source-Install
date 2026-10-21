@@ -28,17 +28,17 @@ export function TaskErrorDialog({ detail, onClose }: { detail: TaskErrorDetail; 
       </div>
 
       <div className="shrink-0 min-w-0 px-6 py-4 border-b border-base-300 bg-base-100 text-sm space-y-1">
-        <div><span className="text-content-muted">任务名：</span>{detail.taskName}</div>
+        <div><span className="text-content-muted">任务名：</span><span className="break-all">{detail.taskName}</span></div>
         <div><span className="text-content-muted">目标：</span><span className="font-mono break-all">{detail.target}</span></div>
-        <div><span className="text-content-muted">Task_ID：</span><span className="font-mono">{detail.taskId || '-'}</span></div>
+        <div><span className="text-content-muted">Task_ID：</span><span className="font-mono break-all">{detail.taskId || '-'}</span></div>
       </div>
 
       <div className="min-h-0 min-w-0 flex-1 p-6 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-4">
         {detail.logs.length > 0 ? detail.logs.map((log, index) => (
           <div key={`${log.time}-${log.stage}-${index}`} className="rounded-box border border-base-300 bg-base-100 p-4 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-              <div><span className="text-content-muted">时间：</span><span className="font-mono">{log.time || '-'}</span></div>
-              <div><span className="text-content-muted">阶段：</span><span className="font-mono">{log.stage || '-'}</span></div>
+              <div><span className="text-content-muted">时间：</span><span className="font-mono break-all">{log.time || '-'}</span></div>
+              <div><span className="text-content-muted">阶段：</span><span className="font-mono break-all">{log.stage || '-'}</span></div>
             </div>
             <div className="text-sm">
               <span className="text-content-muted">异常说明：</span>

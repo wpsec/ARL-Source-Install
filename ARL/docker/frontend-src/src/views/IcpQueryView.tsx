@@ -182,13 +182,21 @@ function hasExtraFields(record: IcpRecord) {
   return typeof extra === 'object' && extra !== null && Object.keys(extra).length > 0;
 }
 
+function CompactBadge({ text, className }: { text: string; className: string }) {
+  return (
+    <span title={text} className={`badge badge-sm min-w-0 max-w-full overflow-hidden whitespace-nowrap ${className}`}>
+      <span className="block min-w-0 max-w-full truncate">{text}</span>
+    </span>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge badge-sm ${STATUS_CLASS[status] || 'badge-outline'}`}>{STATUS_LABELS[status] || status || '-'}</span>;
+  return <CompactBadge text={STATUS_LABELS[status] || status || '-'} className={STATUS_CLASS[status] || 'badge-outline'} />;
 }
 
 function LogLevelBadge({ level }: { level?: string }) {
   const normalized = String(level || 'INFO').trim().toUpperCase();
-  return <span className={`badge badge-sm ${LOG_LEVEL_CLASS[normalized] || 'badge-ghost'}`}>{normalized}</span>;
+  return <CompactBadge text={normalized} className={LOG_LEVEL_CLASS[normalized] || 'badge-ghost'} />;
 }
 
 function EmptyState({ text = '暂无数据' }: { text?: string }) {
@@ -724,7 +732,7 @@ export function IcpQueryView({ token }: { token: string }) {
             </div>
           </section>
           <QueryError error={historyDetailQuery.error} text="历史详情加载失败" />
-          {selectedHistoryId && historyDetailQuery.data?.data ? <section className={CONSOLE_PANEL_CLASS}><div className="card-body gap-4"><div className="flex items-center justify-between gap-3"><h2 className="card-title text-lg">历史详情</h2><button className="btn btn-ghost btn-sm" onClick={() => setSelectedHistoryId('')}>关闭</button></div><div className="grid gap-2 text-sm sm:grid-cols-3"><span>类型：{TYPE_LABELS[historyDetailQuery.data.data.history?.query_type] || historyDetailQuery.data.data.history?.query_type}</span><span>关键词：{historyDetailQuery.data.data.history?.keyword}</span><span>状态：<StatusBadge status={historyDetailQuery.data.data.history?.status} /></span></div><ResultTable records={(historyDetailQuery.data.data.results?.items || []) as IcpRecord[]} /><Pagination page={Number(historyDetailQuery.data.data.results?.page || historyResultPage)} size={Number(historyDetailQuery.data.data.results?.size || 26)} total={Number(historyDetailQuery.data.data.results?.total || 0)} onChange={setHistoryResultPage} /></div></section> : null}
+          {selectedHistoryId && historyDetailQuery.data?.data ? <section className={CONSOLE_PANEL_CLASS}><div className="card-body gap-4"><div className="flex items-center justify-between gap-3"><h2 className="card-title text-lg">历史详情</h2><button className="btn btn-ghost btn-sm" onClick={() => setSelectedHistoryId('')}>关闭</button></div><div className="grid gap-2 text-sm sm:grid-cols-3"><span>类型：{TYPE_LABELS[historyDetailQuery.data.data.history?.query_type] || historyDetailQuery.data.data.history?.query_type}</span><span className="min-w-0 break-all">关键词：{historyDetailQuery.data.data.history?.keyword}</span><span>状态：<StatusBadge status={historyDetailQuery.data.data.history?.status} /></span></div><ResultTable records={(historyDetailQuery.data.data.results?.items || []) as IcpRecord[]} /><Pagination page={Number(historyDetailQuery.data.data.results?.page || historyResultPage)} size={Number(historyDetailQuery.data.data.results?.size || 26)} total={Number(historyDetailQuery.data.data.results?.total || 0)} onChange={setHistoryResultPage} /></div></section> : null}
         </div>
       ) : null}
 

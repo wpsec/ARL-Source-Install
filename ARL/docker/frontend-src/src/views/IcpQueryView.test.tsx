@@ -108,6 +108,30 @@ describe('IcpQueryView', () => {
     expect(calls.some((call) => call.url.includes('/icp/query/task-1/results'))).toBe(true);
   });
 
+  it('未知任务状态限制在徽标内并保留完整悬浮文本', async () => {
+    const statusText = 'wih_urlfinder_sensitive_scan_task_processing_stage';
+    const task = {
+      ...COMPLETED_TASK,
+      data: { ...COMPLETED_TASK.data, status: statusText },
+    };
+    installFetchMock({
+      routes: {
+        '/icp/meta': [200, META_PAYLOAD],
+        '/icp/query/task-1/results': [200, { code: 200, data: { items: [], total: 0, page: 1, size: 26 } }],
+        '/icp/query/task-1': [200, task],
+        '/icp/query': [200, { code: 200, data: { task_id: 'task-1' } }],
+      },
+    });
+    renderView();
+
+    fireEvent.change(screen.getByPlaceholderText('请输入域名、主体名称或应用名称'), { target: { value: 'example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+
+    const status = await screen.findByTitle(statusText);
+    expect(status.className).toContain('max-w-full');
+    expect(status.querySelector('span')?.className).toContain('truncate');
+  });
+
   it('ICP 结果字段按实际布局溢出提供完整悬浮内容', async () => {
     const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
     const originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
@@ -210,8 +234,11 @@ describe('IcpQueryView', () => {
         '/icp/logs': [200, {
           code: 200,
           data: {
-            items: [{ created_at: '2026-09-17T15:00:00Z', level: 'INFO', event: 'task_created', message: '创建 ICP 查询任务' }],
-            total: 1,
+            items: [
+              { created_at: '2026-09-17T15:00:00Z', level: 'INFO', event: 'task_created', message: '创建 ICP 查询任务' },
+              { created_at: '2026-09-17T15:00:01Z', level: 'wih_urlfinder_sensitive_scan_task_processing_stage', event: 'task_updated', message: '更新 ICP 查询任务' },
+            ],
+            total: 2,
             page: 1,
             size: 50,
           },
@@ -222,8 +249,12 @@ describe('IcpQueryView', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '系统日志' }));
 
-    expect(await screen.findByText('INFO')).toBeTruthy();
+    expect(await screen.findByText('创建 ICP 查询任务')).toBeTruthy();
+    expect(screen.getByTitle('INFO')).toBeTruthy();
     expect(screen.queryByText('已完成')).toBeNull();
+    const unknownLevel = screen.getByTitle('WIH_URLFINDER_SENSITIVE_SCAN_TASK_PROCESSING_STAGE');
+    expect(unknownLevel.className).toContain('max-w-full');
+    expect(unknownLevel.querySelector('span')?.className).toContain('truncate');
   });
 
   it('关于页不展示部署状态信息', async () => {

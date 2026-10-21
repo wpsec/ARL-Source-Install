@@ -11,4 +11,15 @@ describe('StatusPill', () => {
     expect(pill.className).not.toContain('truncate');
     expect(pill.closest('[title="done_degraded"]')).toBeTruthy();
   });
+
+  it('紧凑模式限制宽度并通过 title 保留完整文本', () => {
+    const status = 'wih_urlfinder_sensitive_scan_task_processing_stage';
+    render(<StatusPill text={status} type="info" compact />);
+    const text = screen.getByText(status);
+    const pill = text.closest('[title]');
+
+    expect(pill?.getAttribute('title')).toBe(status);
+    expect(pill?.className).toContain('max-w-full');
+    expect(text.className).toContain('truncate');
+  });
 });

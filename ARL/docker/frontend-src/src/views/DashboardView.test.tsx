@@ -126,7 +126,7 @@ describe('DashboardView（React Query）', () => {
                 _id: 'dashboard-task-1',
                 name: '生产环境站点资产长期扫描任务',
                 target: 'https://dashboard.example.com/very/long/target/path',
-                status: 'running',
+                status: 'wih_urlfinder_sensitive_scan_task_processing_stage',
               }],
               total: 1,
               page: 1,
@@ -138,6 +138,12 @@ describe('DashboardView（React Query）', () => {
       renderView();
       await vi.waitFor(() => expect(screen.getByLabelText('查看任务名称完整内容')).toBeTruthy());
       expect(screen.getByLabelText('查看任务目标完整内容')).toBeTruthy();
+      const statuses = screen.getAllByTitle('wih_urlfinder_sensitive_scan_task_processing_stage');
+      expect(statuses).toHaveLength(2);
+      statuses.forEach((status) => {
+        expect(status.className).toContain('max-w-full');
+        expect(status.querySelector('span')?.className).toContain('truncate');
+      });
     } finally {
       if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
       else delete (HTMLElement.prototype as HTMLElement & {clientWidth?: number}).clientWidth;
@@ -164,6 +170,25 @@ describe('DashboardView（React Query）', () => {
     await vi.waitFor(() => expect(logsCount(calls)).toBe(1));
     await vi.advanceTimersByTimeAsync(10000);
     await vi.waitFor(() => expect(logsCount(calls)).toBe(2));
+  });
+
+  it('最近日志长来源名收缩显示并保留完整提示', async () => {
+    const source = 'WIH_URLFINDER_SENSITIVE_SCAN_TASK_PROCESSING_STAGE';
+    const calls = installFetchMock({
+      routes: {
+        '/console/dashboard': [200, DASHBOARD_PAYLOAD],
+        '/console/recent_logs': [200, {
+          code: 200,
+          data: { recent_logs: [{ level: 'INFO', source, msg: '测试日志', time: '' }] },
+        }],
+      },
+    });
+    renderView();
+
+    await vi.waitFor(() => expect(logsCount(calls)).toBe(1));
+    await vi.waitFor(() => expect(screen.getByTitle(source)).toBeTruthy());
+    const sourceText = screen.getByTitle(source);
+    expect(sourceText.className).toContain('truncate');
   });
 
   it('暂停停止轮询；继续立即补一帧', async () => {

@@ -103,20 +103,25 @@ describe('模块详情弹窗', () => {
   });
 
   it('任务异常详情显示阶段和 traceback', () => {
+    const taskName = 'wih_urlfinder_sensitive_scan_task_processing_stage';
+    const taskId = 'task_identifier_with_an_unusually_long_value_for_modal_layout';
+    const stage = 'domain_stage_services_ip_cert_service_stage';
     render(
       <TaskErrorDialog
         detail={{
-          taskId: 'task-9',
-          taskName: '深度扫描',
+          taskId,
+          taskName,
           target: 'example.test',
-          logs: [{ time: '13:05', stage: 'deep_scan', message: '请求超时', traceback: 'TimeoutError' }],
+          logs: [{ time: '13:05', stage, message: '请求超时', traceback: 'TimeoutError' }],
         }}
         onClose={vi.fn()}
       />,
     );
 
     expect(screen.getByText('任务异常详情')).toBeTruthy();
-    expect(screen.getByText('deep_scan')).toBeTruthy();
+    expect(screen.getByText(taskName).className).toContain('break-all');
+    expect(screen.getByText(taskId).className).toContain('break-all');
+    expect(screen.getByText(stage).className).toContain('break-all');
     expect(screen.getByText('TimeoutError')).toBeTruthy();
   });
 });

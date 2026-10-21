@@ -566,6 +566,12 @@
     background: var(--brand-accent);
   }
 
+  /* 无空格的接口错误会抬高 alert 网格的最小宽度，需要允许任意位置断行。 */
+  .arl-app .alert {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   /* Modal 组件的 box 壳（components/ui/Modal.tsx）：覆盖 daisy modal-box 默认
      padding/max-width/滚动，头部-滚动体-底部三段结构由内容自带。 */
   .arl-modal-box {

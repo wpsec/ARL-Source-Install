@@ -492,7 +492,7 @@ export function DashboardView({
                         ) : <h3 className="truncate font-semibold">{taskName}</h3>}
                         <p className="mt-1 truncate font-mono text-xs text-content-muted" title={target}>{target}</p>
                       </div>
-                      <StatusPill text={resolveTaskStatus(task?.status).text} type="info" />
+                      <StatusPill text={resolveTaskStatus(task?.status).text} type="info" compact />
                     </div>
                     <div className="mt-4 flex min-w-0 items-center justify-between gap-3 text-xs">
                       <span className="truncate font-medium text-base-content">{stageName}</span>
@@ -705,10 +705,10 @@ export function DashboardView({
                 const source = String(log?.source || 'SYSTEM').toUpperCase();
                 return (
                   <div key={`${source}-${level}-${index}`} className="py-2 border-b border-base-300 last:border-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex min-w-0 items-center gap-2 mb-1">
                       <span className={`font-black shrink-0 w-12 ${levelClassMap[level] || 'text-content-muted'}`}>{level}</span>
-                      <span className="text-content-muted">{source}</span>
-                      <span className="ml-auto text-content-muted">{formatLogTime(log?.time)}</span>
+                      <span className="min-w-0 flex-1 truncate text-content-muted" title={source}>{source}</span>
+                      <span className="shrink-0 whitespace-nowrap text-content-muted">{formatLogTime(log?.time)}</span>
                     </div>
                     <p className="text-base-content break-all whitespace-pre-wrap leading-relaxed">{normalizeValueNoTruncate(log?.msg)}</p>
                   </div>
@@ -782,7 +782,7 @@ export function DashboardView({
                           />
                         </td>
                         <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4">
-                          <StatusPill text={statusInfo.text} type={statusInfo.type} />
+                          <StatusPill text={statusInfo.text} type={statusInfo.type} compact />
                         </td>
                         <td className="min-w-0 max-w-full overflow-hidden py-3 pr-4 font-mono leading-relaxed">
                           <HoverCellValue
