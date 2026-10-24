@@ -638,6 +638,11 @@ def run_forever():
         except Exception as e:
             logger.exception("task_schedule.task_scheduler failed: {}".format(e))
 
+        try:
+            celerytask.recover_orphan_domain_deep_tasks_on_worker_start()
+        except Exception as e:
+            logger.exception("orphan domain deep recovery failed: {}".format(e))
+
         # logger.debug(time.time())
         # sleep 时间不能超过60S，Github 里的任务可能运行不了。
         # 休眠58秒后继续下一轮调度检查

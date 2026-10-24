@@ -451,10 +451,9 @@ def stop_task(task_id):
     流程：
         1. 查询任务是否存在
         2. 检查任务状态（只能停止运行中的任务）
-        3. 获取Celery任务ID
-        4. 向Worker发送终止信号
-        5. 更新任务状态为stop
-        6. 记录结束时间
+        3. 获取当前深度阶段的Celery任务ID
+        4. 先写入stop状态和结束时间
+        5. 向Worker发送终止信号，防止中断处理器将任务恢复为pending
     """
     # 终态状态列表（这些状态的任务无法停止）
     done_status = list(TaskStatus.TERMINAL)
@@ -468,20 +467,33 @@ def stop_task(task_id):
     if task_data["status"] in done_status:
         return utils.build_ret(ErrorMsg.TaskIsDone, {"task_id": task_id})
 
-    # 获取Celery任务ID
-    celery_id = task_data.get("celery_id")
-    if not celery_id:
+    deep_scan = task_data.get("deep_scan")
+    if not isinstance(deep_scan, dict):
+        deep_scan = {}
+    deep_status = str(deep_scan.get("status", "") or "").strip().lower()
+    deep_celery_id = str(deep_scan.get("celery_id", "") or "").strip()
+    celery_id = (
+        deep_celery_id
+        if deep_status in {"pending", "queued", "running"} and deep_celery_id
+        else str(task_data.get("celery_id", "") or "").strip()
+    )
+    can_stop_without_celery_id = deep_status in {"pending", "queued", "running"}
+    if not celery_id and not can_stop_without_celery_id:
         return utils.build_ret(ErrorMsg.CeleryIdNotFound, {"task_id": task_id})
 
-    # 向Celery Worker发送终止信号
-    control = celerytask.celery.control
-    control.revoke(celery_id, signal='SIGTERM', terminate=True)
+    stop_result = utils.conn_db("task").update_one(
+        {
+            "_id": ObjectId(task_id),
+            "status": {"$nin": done_status},
+        },
+        {"$set": {"status": TaskStatus.STOP, "end_time": utils.curr_date()}},
+    )
+    if int(getattr(stop_result, "modified_count", 0) or 0) <= 0:
+        return utils.build_ret(ErrorMsg.TaskIsDone, {"task_id": task_id})
 
-    # 更新任务状态为停止
-    TaskRepository.update_by_id(task_id, {"$set": {"status": TaskStatus.STOP}})
-
-    # 记录任务结束时间
-    TaskRepository.update_by_id(task_id, {"$set": {"end_time": utils.curr_date()}})
+    if celery_id:
+        control = celerytask.celery.control
+        control.revoke(celery_id, signal='SIGTERM', terminate=True)
 
     return utils.build_ret(ErrorMsg.Success, {"task_id": task_id})
 

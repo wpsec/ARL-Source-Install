@@ -83,11 +83,11 @@ class TestProgressiveDomainQueue(unittest.TestCase):
 
         self.assertGreaterEqual(len(collection.update_calls), 2)
         ready_update = collection.update_calls[0][1]
-        self.assertEqual("queued", ready_update["$set"]["deep_scan"]["status"])
-        self.assertEqual("arlheavy", ready_update["$set"]["deep_scan"]["queue"])
+        self.assertEqual("queued", ready_update["$set"]["deep_scan.status"])
+        self.assertEqual("arlheavy", ready_update["$set"]["deep_scan.queue"])
         self.assertEqual(
             2,
-            ready_update["$set"]["deep_scan"]["stage_order_version"],
+            ready_update["$set"]["deep_scan.stage_order_version"],
         )
         id_update = collection.update_calls[-1][1]
         self.assertEqual("celery-deep-1", id_update["$set"]["deep_scan.celery_id"])
@@ -125,7 +125,7 @@ class TestProgressiveDomainQueue(unittest.TestCase):
         ready_update = collection.update_calls[0][1]
         self.assertEqual(
             1,
-            ready_update["$set"]["deep_scan"]["stage_order_version"],
+            ready_update["$set"]["deep_scan.stage_order_version"],
         )
 
     def test_enqueue_falls_back_to_main_queue_when_heavy_consumer_unavailable(self):
@@ -157,7 +157,7 @@ class TestProgressiveDomainQueue(unittest.TestCase):
                     )
 
         ready_update = collection.update_calls[0][1]
-        self.assertEqual("arltask", ready_update["$set"]["deep_scan"]["queue"])
+        self.assertEqual("arltask", ready_update["$set"]["deep_scan.queue"])
         self.assertEqual("arltask", ready_update["$set"]["dispatch_queue"])
         self.assertEqual(
             "progressive_domain_deep:fallback=arlheavy_unavailable",
@@ -173,11 +173,12 @@ class TestProgressiveDomainQueue(unittest.TestCase):
             documents=[
                 {
                     "_id": self.TASK_ID,
-                    "status": "deep_scan_pending",
+                    "status": "wih_urlfinder_sensitive",
                     "target": "example.com",
                     "options": {"port_scan": True},
                     "deep_scan": {
                         "status": "queued",
+                        "stage": "site",
                         "dispatch_ts": stale_ts,
                         "celery_id": "missing-celery-id",
                     },
@@ -206,11 +207,264 @@ class TestProgressiveDomainQueue(unittest.TestCase):
                         )
 
         self.assertEqual(1, result["requeued"])
+        recovery_query, recovery_update = collection.update_calls[0]
+        self.assertNotIn("wih_urlfinder_sensitive", recovery_query["status"]["$nin"])
+        self.assertIn("stop", recovery_query["status"]["$nin"])
+        self.assertEqual("queued", recovery_query["deep_scan.status"])
+        self.assertEqual("site", recovery_query["deep_scan.stage"])
+        self.assertEqual(1, recovery_update["$inc"]["deep_scan.recovery_attempts"])
         enqueue.assert_called_once_with(
             self.TASK_ID,
             "example.com",
             {"port_scan": True},
         )
+
+    def test_recovery_skips_when_worker_inspection_is_untrusted(self):
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "deep_scan": {"status": "running", "stage": "site"},
+                }
+            ]
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": False, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+            ) as queue_counts:
+                with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+                    result = celerytask_module.recover_orphan_domain_deep_tasks_on_worker_start()
+
+        self.assertEqual({"requeued": 0, "skipped": 0, "failed": 0}, result)
+        self.assertEqual([], collection.update_calls)
+        queue_counts.assert_not_called()
+
+    def test_recovery_skips_when_broker_inspection_fails(self):
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "deep_scan": {"status": "running", "stage": "site"},
+                }
+            ]
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({}, False),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+                    result = celerytask_module.recover_orphan_domain_deep_tasks_on_worker_start()
+
+        self.assertEqual({"requeued": 0, "skipped": 0, "failed": 0}, result)
+        self.assertEqual([], collection.update_calls)
+
+    def test_recovery_skips_live_celery_task_and_queued_broker_message(self):
+        stale_ts = int(time.time()) - 120
+        live_collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "deep_scan": {
+                        "status": "running",
+                        "stage": "site",
+                        "dispatch_ts": stale_ts,
+                        "celery_id": "active-deep-celery-id",
+                    },
+                }
+            ]
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": {"active-deep-celery-id"}},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({"arlheavy": 0}, True),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=live_collection):
+                    result = celerytask_module.recover_orphan_domain_deep_tasks_on_worker_start(
+                        grace_sec=30
+                    )
+
+        self.assertEqual(1, result["skipped"])
+        self.assertEqual([], live_collection.update_calls)
+
+        queued_collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "deep_scan": {
+                        "status": "queued",
+                        "stage": "site",
+                        "dispatch_ts": stale_ts,
+                        "celery_id": "missing-deep-celery-id",
+                        "queue": "arlheavy",
+                    },
+                }
+            ]
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({"arlheavy": 1}, True),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=queued_collection):
+                    result = celerytask_module.recover_orphan_domain_deep_tasks_on_worker_start(
+                        grace_sec=30
+                    )
+
+        self.assertEqual(1, result["skipped"])
+        self.assertEqual([], queued_collection.update_calls)
+
+    def test_recovery_marks_task_failed_after_three_lost_retries(self):
+        stale_ts = int(time.time()) - 120
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "target": "example.com",
+                    "options": {"port_scan": True},
+                    "deep_scan": {
+                        "status": "running",
+                        "stage": "site",
+                        "dispatch_ts": stale_ts,
+                        "celery_id": "missing-celery-id",
+                        "recovery_attempts": 3,
+                    },
+                }
+            ],
+            modified_count=1,
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({"arlheavy": 0}, True),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+                    with patch.object(
+                        celerytask_module,
+                        "enqueue_domain_deep_task",
+                    ) as enqueue:
+                        result = celerytask_module.recover_orphan_domain_deep_tasks_on_worker_start(
+                            grace_sec=30
+                        )
+
+        self.assertEqual(1, result["failed"])
+        self.assertEqual("error", collection.update_calls[0][1]["$set"]["status"])
+        self.assertEqual(
+            "recovery_attempts_exhausted",
+            collection.update_calls[0][1]["$set"]["deep_scan.end_reason"],
+        )
+        enqueue.assert_not_called()
+
+    def test_manual_reconciliation_dry_run_does_not_write(self):
+        stale_ts = int(time.time()) - 120
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "celery_id": "old-root-celery-id",
+                    "deep_scan": {
+                        "status": "running",
+                        "stage": "site",
+                        "dispatch_ts": stale_ts,
+                        "celery_id": "old-deep-celery-id",
+                        "queue": "arlheavy",
+                    },
+                }
+            ]
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({"arlheavy": 0}, True),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+                    result = celerytask_module.reconcile_stale_domain_deep_tasks(
+                        [self.TASK_ID],
+                        apply=False,
+                    )
+
+        self.assertTrue(result["dry_run"])
+        self.assertEqual("would_mark_interrupted", result["items"][0]["status"])
+        self.assertEqual([], collection.update_calls)
+
+    def test_manual_reconciliation_apply_preserves_results_and_terminalizes_only_target(self):
+        stale_ts = int(time.time()) - 120
+        collection = _FakeCollection(
+            documents=[
+                {
+                    "_id": self.TASK_ID,
+                    "status": "wih_primary_scan",
+                    "deep_scan": {
+                        "status": "running",
+                        "stage": "site",
+                        "dispatch_ts": stale_ts,
+                        "celery_id": "old-deep-celery-id",
+                        "queue": "arlheavy",
+                    },
+                }
+            ],
+            modified_count=1,
+        )
+        with patch.object(
+            celerytask_module,
+            "_collect_live_task_recovery_guard",
+            return_value={"trusted": True, "task_id_set": set()},
+        ):
+            with patch.object(
+                celerytask_module,
+                "_get_broker_queue_message_counts",
+                return_value=({"arlheavy": 0}, True),
+            ):
+                with patch.object(celerytask_module.utils, "conn_db", return_value=collection):
+                    result = celerytask_module.reconcile_stale_domain_deep_tasks(
+                        [self.TASK_ID],
+                        apply=True,
+                    )
+
+        self.assertFalse(result["dry_run"])
+        self.assertEqual("marked_interrupted", result["items"][0]["status"])
+        query, update = collection.update_calls[0]
+        self.assertEqual(self.TASK_ID, str(query["_id"]))
+        self.assertIn("stop", query["status"]["$nin"])
+        self.assertEqual("error", update["$set"]["status"])
+        self.assertEqual("failed", update["$set"]["deep_scan.status"])
+        self.assertNotIn("$unset", update)
 
     def test_enqueue_does_not_publish_duplicate_queued_message(self):
         collection = _FakeCollection(

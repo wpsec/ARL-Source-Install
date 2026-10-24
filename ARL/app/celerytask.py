@@ -107,6 +107,7 @@ platforms.C_FORCE_ROOT = True
 _WAITING_ORPHAN_QUEUE_SET = ("arltask", "arlheavy", "arlip", "arlweb", "arlgithub")
 _WAITING_ORPHAN_GRACE_SEC = 90
 _ICP_RECOVERY_CLAIM_SEC = 300
+_DOMAIN_DEEP_MAX_RECOVERIES = 3
 
 _DOMAIN_DEEP_STAGE_ORDER_VERSION = 2
 _LEGACY_DOMAIN_DEEP_STAGE_ORDER = (
@@ -219,11 +220,11 @@ def _collect_live_celery_task_snapshot(timeout_sec=1.5):
     - reply_worker_set: 有响应的 worker 名称集合
     - ok: inspect 调用是否成功
     """
-    inspect = celery.control.inspect(timeout=timeout_sec)
     live_task_id_set = set()
     reply_worker_set = set()
 
     try:
+        inspect = celery.control.inspect(timeout=timeout_sec)
         result_list = [
             inspect.active() or {},
             inspect.reserved() or {},
@@ -714,16 +715,15 @@ def _mark_domain_deep_dispatch_ready(
     update = {
         "$set": {
             "status": "deep_scan_pending",
-            "deep_scan": {
-                "stage": safe_stage,
-                "stage_order_version": stage_order_version,
-                "status": "queued",
-                "target": str(target or "").strip(),
-                "queue": safe_queue_name,
-                "queued_at": now_text,
-                "dispatch_ts": now_ts,
-                "celery_id": "",
-            },
+            "deep_scan.stage": safe_stage,
+            "deep_scan.stage_order_version": stage_order_version,
+            "deep_scan.status": "queued",
+            "deep_scan.target": str(target or "").strip(),
+            "deep_scan.queue": safe_queue_name,
+            "deep_scan.queued_at": now_text,
+            "deep_scan.dispatch_ts": now_ts,
+            "deep_scan.celery_id": "",
+            "deep_scan.error": "",
             "dispatch_queue": safe_queue_name,
             "dispatch_queue_reason": safe_queue_reason,
             "dispatch_ts": now_ts,
@@ -751,18 +751,24 @@ def _mark_domain_deep_dispatch_ready(
     return False, False
 
 
-def _mark_domain_deep_dispatch_failed(task_id, reason):
+def _mark_domain_deep_dispatch_failed(task_id, reason, end_reason="dispatch_failed"):
     query_id = _task_query_id(task_id)
     safe_reason = str(reason or "dispatch_failed").strip()[:240] or "dispatch_failed"
+    finished_at = utils.curr_date()
     try:
         utils.conn_db("task").update_one(
-            {"_id": query_id, "deep_scan.status": {"$in": ["pending", "queued", "running"]}},
+            {
+                "_id": query_id,
+                "status": {"$nin": list(TaskStatus.TERMINAL)},
+                "deep_scan.status": {"$in": ["pending", "queued", "running"]},
+            },
             {
                 "$set": {
                     "status": TaskStatus.ERROR,
-                    "end_time": utils.curr_date(),
+                    "end_time": finished_at,
                     "deep_scan.status": "failed",
-                    "deep_scan.end_reason": "dispatch_failed",
+                    "deep_scan.end_reason": str(end_reason or "dispatch_failed")[:120],
+                    "deep_scan.finished_at": finished_at,
                     "deep_scan.error": safe_reason,
                 }
             },
@@ -896,6 +902,7 @@ def _complete_domain_deep_stage(task_id, current_stage, next_stage=None):
         result = utils.conn_db("task").update_one(
             {
                 "_id": query_id,
+                "status": {"$nin": list(TaskStatus.TERMINAL)},
                 "deep_scan.status": "running",
                 "deep_scan.stage": current,
             },
@@ -916,16 +923,30 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
     grace_sec=_WAITING_ORPHAN_GRACE_SEC,
     inspect_timeout_sec=1.5,
 ):
-    """恢复已持久化但未完成投递或 worker 中断的深度阶段。"""
-    live_guard = _collect_live_task_recovery_guard(
-        timeout_sec=inspect_timeout_sec,
-        queue_names=("arltask", "arlheavy"),
-    )
+    """周期恢复已持久化但未完成投递或 worker 中断的深度阶段。"""
+    try:
+        live_guard = _collect_live_task_recovery_guard(
+            timeout_sec=inspect_timeout_sec,
+            queue_names=("arltask", "arlheavy"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "skip orphan domain deep recovery because live inspection failed error:%s",
+            safe_error_text(exc),
+        )
+        return {"requeued": 0, "skipped": 0, "failed": 0}
     if not live_guard.get("trusted"):
         logger.warning("skip orphan domain deep recovery because live inspection is untrusted")
         return {"requeued": 0, "skipped": 0, "failed": 0}
 
-    queue_count_map, queue_ok = _get_broker_queue_message_counts(("arltask", "arlheavy"))
+    try:
+        queue_count_map, queue_ok = _get_broker_queue_message_counts(("arltask", "arlheavy"))
+    except Exception as exc:
+        logger.warning(
+            "skip orphan domain deep recovery because broker inspection failed error:%s",
+            safe_error_text(exc),
+        )
+        return {"requeued": 0, "skipped": 0, "failed": 0}
     if not queue_ok:
         logger.warning("skip orphan domain deep recovery because broker inspection failed")
         return {"requeued": 0, "skipped": 0, "failed": 0}
@@ -937,12 +958,13 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
         "options": 1,
         "deep_scan": 1,
         "dispatch_queue": 1,
+        "celery_id": 1,
         "status": 1,
     }
     try:
         items = list(utils.conn_db("task").find(
             {
-                "status": {"$in": ["deep_scan_pending", "deep_scan_running"]},
+                "status": {"$nin": list(TaskStatus.TERMINAL)},
                 "deep_scan.status": {"$in": ["pending", "queued", "running"]},
             },
             projection,
@@ -964,7 +986,8 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
             continue
 
         celery_id = str(deep_scan.get("celery_id") or "").strip()
-        if celery_id and celery_id in live_task_id_set:
+        root_celery_id = str(item.get("celery_id") or "").strip()
+        if any(task_id and task_id in live_task_id_set for task_id in (celery_id, root_celery_id)):
             result["skipped"] += 1
             continue
         dispatch_queue = str(
@@ -979,19 +1002,57 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
             continue
 
         query_id = item.get("_id")
+        current_status = str(deep_scan.get("status") or "").strip().lower()
+        state_query = {
+            "_id": query_id,
+            "status": {"$nin": list(TaskStatus.TERMINAL)},
+            "deep_scan.status": current_status,
+            "deep_scan.dispatch_ts": dispatch_ts,
+        }
+        stage = deep_scan.get("stage")
+        if stage is not None:
+            state_query["deep_scan.stage"] = stage
+        if "celery_id" in deep_scan:
+            state_query["deep_scan.celery_id"] = deep_scan.get("celery_id")
+
+        try:
+            recovery_attempts = max(int(deep_scan.get("recovery_attempts", 0) or 0), 0)
+        except (TypeError, ValueError):
+            recovery_attempts = _DOMAIN_DEEP_MAX_RECOVERIES
+
+        if recovery_attempts >= _DOMAIN_DEEP_MAX_RECOVERIES:
+            failed_at = utils.curr_date()
+            failed = utils.conn_db("task").update_one(
+                state_query,
+                {
+                    "$set": {
+                        "status": TaskStatus.ERROR,
+                        "end_time": failed_at,
+                        "interrupted": True,
+                        "stop_reason": "deep scan recovery attempts exhausted",
+                        "deep_scan.status": "failed",
+                        "deep_scan.end_reason": "recovery_attempts_exhausted",
+                        "deep_scan.finished_at": failed_at,
+                        "deep_scan.error": "recovery_attempts_exhausted",
+                    }
+                },
+            )
+            if int(getattr(failed, "modified_count", 0) or 0) > 0:
+                result["failed"] += 1
+            else:
+                result["skipped"] += 1
+            continue
+
         reset = utils.conn_db("task").update_one(
-            {
-                "_id": query_id,
-                "status": {"$in": ["deep_scan_pending", "deep_scan_running"]},
-                "deep_scan.status": {"$in": ["pending", "queued", "running"]},
-            },
+            state_query,
             {
                 "$set": {
                     "status": "deep_scan_pending",
                     "deep_scan.status": "pending",
                     "deep_scan.celery_id": "",
                     "deep_scan.recovery_at": utils.curr_date(),
-                }
+                },
+                "$inc": {"deep_scan.recovery_attempts": 1},
             },
         )
         if int(getattr(reset, "modified_count", 0) or 0) <= 0:
@@ -1012,6 +1073,195 @@ def recover_orphan_domain_deep_tasks_on_worker_start(
 
     if any(result.values()):
         logger.warning("recover orphan domain deep tasks result:%s", result)
+    return result
+
+
+def reconcile_stale_domain_deep_tasks(
+    task_ids,
+    apply=False,
+    grace_sec=_WAITING_ORPHAN_GRACE_SEC,
+    inspect_timeout_sec=1.5,
+):
+    """按指定 ID 收口确认失联的深度任务；默认只生成 dry-run 结果。"""
+    result = {"dry_run": not bool(apply), "items": []}
+    valid_ids = []
+    seen_ids = set()
+    for raw_task_id in task_ids or []:
+        task_id = str(raw_task_id or "").strip()
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        if not ObjectId.is_valid(task_id):
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "invalid_task_id"})
+            continue
+        valid_ids.append(task_id)
+
+    if not valid_ids:
+        return result
+
+    try:
+        live_guard = _collect_live_task_recovery_guard(
+            timeout_sec=inspect_timeout_sec,
+            queue_names=("arltask", "arlheavy"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "skip manual deep task reconciliation because live inspection failed error:%s",
+            safe_error_text(exc),
+        )
+        result["items"].extend(
+            {"task_id": task_id, "status": "skipped", "reason": "live_inspection_untrusted"}
+            for task_id in valid_ids
+        )
+        return result
+    if not live_guard.get("trusted"):
+        result["items"].extend(
+            {"task_id": task_id, "status": "skipped", "reason": "live_inspection_untrusted"}
+            for task_id in valid_ids
+        )
+        return result
+
+    try:
+        queue_count_map, queue_ok = _get_broker_queue_message_counts(("arltask", "arlheavy"))
+    except Exception as exc:
+        logger.warning(
+            "skip manual deep task reconciliation because broker inspection failed error:%s",
+            safe_error_text(exc),
+        )
+        result["items"].extend(
+            {"task_id": task_id, "status": "skipped", "reason": "broker_inspection_failed"}
+            for task_id in valid_ids
+        )
+        return result
+    if not queue_ok:
+        result["items"].extend(
+            {"task_id": task_id, "status": "skipped", "reason": "broker_inspection_failed"}
+            for task_id in valid_ids
+        )
+        return result
+
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - max(int(grace_sec or 0), 10)
+    live_task_id_set = set(live_guard.get("task_id_set") or set())
+    projection = {
+        "status": 1,
+        "celery_id": 1,
+        "deep_scan.status": 1,
+        "deep_scan.stage": 1,
+        "deep_scan.dispatch_ts": 1,
+        "deep_scan.celery_id": 1,
+        "deep_scan.queue": 1,
+        "dispatch_queue": 1,
+    }
+
+    try:
+        collection = utils.conn_db("task")
+    except Exception as exc:
+        logger.warning(
+            "reconcile deep task database connection failed error:%s",
+            safe_error_text(exc),
+        )
+        result["items"].extend(
+            {"task_id": task_id, "status": "failed", "reason": "database_query_failed"}
+            for task_id in valid_ids
+        )
+        return result
+
+    for task_id in valid_ids:
+        query_id = _task_query_id(task_id)
+        try:
+            item = collection.find_one({"_id": query_id}, projection)
+        except Exception as exc:
+            logger.warning(
+                "reconcile deep task query failed task_id:%s error:%s",
+                task_id,
+                safe_error_text(exc),
+            )
+            result["items"].append({"task_id": task_id, "status": "failed", "reason": "database_query_failed"})
+            continue
+
+        if not isinstance(item, dict):
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "not_found"})
+            continue
+        status = str(item.get("status", "") or "").strip().lower()
+        deep_scan = item.get("deep_scan") if isinstance(item.get("deep_scan"), dict) else {}
+        deep_status = str(deep_scan.get("status", "") or "").strip().lower()
+        if TaskStatus.is_terminal(status):
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "terminal"})
+            continue
+        if deep_status not in {"pending", "queued", "running"}:
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "not_deep_scan"})
+            continue
+
+        try:
+            dispatch_ts = int(deep_scan.get("dispatch_ts") or 0)
+        except (TypeError, ValueError):
+            dispatch_ts = 0
+        if dispatch_ts <= 0 or dispatch_ts > cutoff_ts:
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "not_stale"})
+            continue
+
+        current_ids = {
+            str(deep_scan.get("celery_id") or "").strip(),
+            str(item.get("celery_id") or "").strip(),
+        }
+        if current_ids.intersection(live_task_id_set):
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "active_worker"})
+            continue
+
+        queue_name = str(
+            deep_scan.get("queue") or item.get("dispatch_queue") or "arlheavy"
+        ).strip().lower()
+        if queue_name not in {"arltask", "arlheavy"}:
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "unsupported_queue"})
+            continue
+        if int(queue_count_map.get(queue_name, 0) or 0) > 0:
+            result["items"].append({"task_id": task_id, "status": "skipped", "reason": "queue_not_empty"})
+            continue
+
+        entry = {"task_id": task_id, "stage": deep_scan.get("stage"), "status": "would_mark_interrupted"}
+        if apply:
+            state_query = {
+                "_id": query_id,
+                "status": {"$nin": list(TaskStatus.TERMINAL)},
+                "deep_scan.status": deep_status,
+                "deep_scan.dispatch_ts": dispatch_ts,
+            }
+            if "stage" in deep_scan:
+                state_query["deep_scan.stage"] = deep_scan.get("stage")
+            if "celery_id" in deep_scan:
+                state_query["deep_scan.celery_id"] = deep_scan.get("celery_id")
+            finished_at = utils.curr_date()
+            try:
+                update = collection.update_one(
+                    state_query,
+                    {
+                        "$set": {
+                            "status": TaskStatus.ERROR,
+                            "end_time": finished_at,
+                            "interrupted": True,
+                            "stop_reason": "manual reconciliation of orphaned deep scan task",
+                            "deep_scan.status": "failed",
+                            "deep_scan.end_reason": "manual_reconciliation_worker_lost",
+                            "deep_scan.finished_at": finished_at,
+                            "deep_scan.error": "manual_reconciliation_worker_lost",
+                        }
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "reconcile deep task update failed task_id:%s error:%s",
+                    task_id,
+                    safe_error_text(exc),
+                )
+                entry.update({"status": "failed", "reason": "database_update_failed"})
+            else:
+                if int(getattr(update, "modified_count", 0) or 0) > 0:
+                    entry["status"] = "marked_interrupted"
+                else:
+                    entry.update({"status": "skipped", "reason": "changed_since_inspection"})
+        result["items"].append(entry)
+
     return result
 
 

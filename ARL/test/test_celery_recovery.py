@@ -1,5 +1,7 @@
+import contextlib
 import datetime
 import importlib.util
+import io
 import logging
 import pathlib
 import sys
@@ -17,6 +19,19 @@ def _build_logger():
         debug=lambda *args, **kwargs: None,
         exception=lambda *args, **kwargs: None,
     )
+
+
+class _TaskStatus(object):
+    DONE = "done"
+    DONE_PENDING = "done_pending"
+    DONE_DEGRADED = "done_degraded"
+    STOP = "stop"
+    ERROR = "error"
+    TERMINAL = (DONE, DONE_PENDING, DONE_DEGRADED, ERROR, STOP)
+
+    @classmethod
+    def is_terminal(cls, status):
+        return str(status or "").strip().lower() in cls.TERMINAL
 
 
 def _install_shared_stubs():
@@ -315,15 +330,7 @@ def _load_celerytask_module():
             "ERROR": "error",
         },
     )
-    modules_module.TaskStatus = type(
-        "TaskStatus",
-        (),
-        {
-            "DONE": "done",
-            "STOP": "stop",
-            "ERROR": "error",
-        },
-    )
+    modules_module.TaskStatus = _TaskStatus
     modules_module.TaskTag = type(
         "TaskTag",
         (),
@@ -424,6 +431,108 @@ class TestCeleryRecovery(unittest.TestCase):
         self.assertEqual(
             {"waiting": {"task": 1, "github_task": 0}, "deep_scan": {"requeued": 1, "skipped": 0, "failed": 0}},
             result,
+        )
+
+    def test_sigterm_recovers_progressive_task_by_deep_celery_id(self):
+        collection = MagicMock()
+        collection.update_one.return_value = SimpleNamespace(modified_count=1)
+        with patch.object(
+            utils_recovery_module,
+            "current_task",
+            SimpleNamespace(request=SimpleNamespace(id="deep-celery-id")),
+        ), patch.object(
+            utils_recovery_module,
+            "conn_db",
+            return_value=collection,
+        ), patch.object(
+            utils_recovery_module,
+            "curr_date",
+            return_value="2026-10-25 12:00:00",
+        ):
+            utils_recovery_module.mark_task_interrupted(signum=15)
+
+        collection.update_one.assert_called_once()
+        query, update = collection.update_one.call_args.args
+        self.assertEqual("deep-celery-id", query["deep_scan.celery_id"])
+        self.assertEqual({"$in": ["pending", "queued", "running"]}, query["deep_scan.status"])
+        self.assertIn("stop", query["status"]["$nin"])
+        self.assertEqual("deep_scan_pending", update["$set"]["status"])
+        self.assertEqual("pending", update["$set"]["deep_scan.status"])
+        self.assertTrue(update["$set"]["interrupted"])
+        self.assertNotIn("end_time", update["$set"])
+
+    def test_sigterm_does_not_overwrite_terminal_task(self):
+        task_collection = MagicMock()
+        task_collection.update_one.side_effect = [
+            SimpleNamespace(modified_count=0),
+            SimpleNamespace(modified_count=0),
+        ]
+        github_collection = MagicMock()
+        github_collection.update_one.return_value = SimpleNamespace(modified_count=0)
+        with patch.object(
+            utils_recovery_module,
+            "current_task",
+            SimpleNamespace(request=SimpleNamespace(id="root-celery-id")),
+        ), patch.object(
+            utils_recovery_module,
+            "conn_db",
+            side_effect=[task_collection, task_collection, github_collection],
+        ):
+            utils_recovery_module.mark_task_interrupted(signum=15)
+
+        progressive_query = task_collection.update_one.call_args_list[0].args[0]
+        root_query = task_collection.update_one.call_args_list[1].args[0]
+        github_query = github_collection.update_one.call_args.args[0]
+        for query in (progressive_query, root_query, github_query):
+            self.assertTrue(set(_TaskStatus.TERMINAL).issubset(set(query["status"]["$nin"])))
+
+    def test_manual_reconciliation_cli_defaults_to_dry_run_and_passes_only_given_ids(self):
+        reconcile = MagicMock(return_value={"dry_run": True, "items": []})
+        fake_celerytask = types.SimpleNamespace(
+            reconcile_stale_domain_deep_tasks=reconcile,
+            requeue_orphan_domain_deep_tasks_on_worker_start=MagicMock(),
+            requeue_orphan_waiting_tasks_on_worker_start=MagicMock(),
+            celery=types.SimpleNamespace(control=types.SimpleNamespace(purge=MagicMock())),
+        )
+        fake_app = types.ModuleType("app")
+        fake_app.__path__ = []
+        fake_app.celerytask = fake_celerytask
+        fake_utils = types.ModuleType("app.utils")
+        fake_utils.get_logger = _build_logger
+        tool_path = pathlib.Path(__file__).resolve().parents[1] / "app" / "tools" / "requeue_all_waiting.py"
+        spec = importlib.util.spec_from_file_location("test_reconcile_deep_task_tool", tool_path)
+        tool = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+
+        with patch.dict(sys.modules, {"app": fake_app, "app.utils": fake_utils}):
+            spec.loader.exec_module(tool)
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = tool.main([
+                    "--mark-interrupted",
+                    "--task-id",
+                    "6ad7b4845cd5b982cd3c9ab0",
+                    "--task-id",
+                    "6ad7b35ac60827a8a5a1ca3e",
+                ])
+                apply_exit_code = tool.main([
+                    "--mark-interrupted",
+                    "--task-id",
+                    "6ad7b4845cd5b982cd3c9ab0",
+                    "--apply",
+                ])
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual(0, apply_exit_code)
+        self.assertEqual(
+            [
+                (
+                    (["6ad7b4845cd5b982cd3c9ab0", "6ad7b35ac60827a8a5a1ca3e"],),
+                    {"apply": False},
+                ),
+                ((["6ad7b4845cd5b982cd3c9ab0"],), {"apply": True}),
+            ],
+            [(call.args, call.kwargs) for call in reconcile.call_args_list],
         )
 
     def test_celery_uses_early_ack_for_long_running_tasks(self):

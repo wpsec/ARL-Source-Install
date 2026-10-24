@@ -13,6 +13,7 @@ import re
 import sys
 import hashlib
 import socket
+import time
 from concurrent.futures import ThreadPoolExecutor
 from bson import ObjectId
 from urllib.parse import urlparse
@@ -873,10 +874,7 @@ def exit_gracefully(signum, frame):
 
 def mark_task_interrupted(signum):
     """
-    在 worker 收到终止信号时，尽量把运行中的任务标记为 error，并写入 stop_reason。
-    说明：
-    - 手动 stop 已提前写入 stop 状态，这里不会覆盖终态。
-    - 优先按当前 celery_id 反查任务，避免依赖进程内变量。
+    深度阶段中断时保留可恢复阶段；普通任务记录终态错误。
     """
     logger = get_logger()
     reason = "worker interrupted by signal {}".format(signum)
@@ -887,10 +885,38 @@ def mark_task_interrupted(signum):
         if not celery_id:
             return
 
+        task_query = {
+            "deep_scan.celery_id": str(celery_id),
+            "deep_scan.status": {"$in": ["pending", "queued", "running"]},
+            "status": {"$nin": list(TASK_TERMINAL_STATUSES)},
+        }
+        now_text = curr_date()
+        progressive_update = {
+            "$set": {
+                "status": "deep_scan_pending",
+                "interrupted": True,
+                "stop_reason": reason,
+                "deep_scan.status": "pending",
+                "deep_scan.celery_id": "",
+                "deep_scan.dispatch_ts": int(time.time()),
+                "deep_scan.recovery_at": now_text,
+                "deep_scan.interrupted_at": now_text,
+                "deep_scan.interruption_reason": reason,
+            }
+        }
+        task_result = conn_db("task").update_one(task_query, progressive_update)
+        if int(getattr(task_result, "modified_count", 0) or 0) > 0:
+            logger.warning(
+                "mark deep scan interrupted for recovery task celery_id:{} reason:{}".format(
+                    celery_id, reason
+                )
+            )
+            return
+
         update = {
             "$set": {
                 "status": "error",
-                "end_time": curr_date(),
+                "end_time": now_text,
                 "stop_reason": reason,
                 "interrupted": True,
             }
