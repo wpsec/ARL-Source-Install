@@ -118,7 +118,7 @@ class ScanPort(object):
         self.domain_info_list = domain_info_list
         self.ipv4_map = {}
         self.ip_cdn_map = {}
-        self.have_cdn_ip_list = []
+        self.confirmed_cdn_ip_set = set()
         self.skip_scan_cdn_ip = Config.PORT_SCAN_SKIP_CDN_IP_DEFAULT
 
         if option is None:
@@ -146,22 +146,24 @@ class ScanPort(object):
     def get_cdn_name(self, ip, domain_info):
         cdn_name = utils.get_cdn_name_by_ip(ip)
         if cdn_name:
+            self.confirmed_cdn_ip_set.add(ip)
             return cdn_name
 
         cname = ""
         if domain_info.type == "CNAME" and domain_info.record_list:
             cname = domain_info.record_list[0]
 
-        # 厂商专属 CNAME 属于高特异性证据，优先于通用 CDN 关键词，
-        # 让端口调度可以直接跳过已确认的 CDN/WAF 边缘 IP。
-        dns_vendor, _, _ = WAFSmartSkipGuard.identify_vendor_from_dns(cname=cname)
-        if dns_vendor:
-            return dns_vendor
-
-        # 吸收 kscan 启发式能力：CNAME 关键词 + 多IP跨网段
-        cdn_name = utils.infer_cdn_by_dns(cname=cname, ip_list=domain_info.ip_list)
+        # 只接受已维护的厂商 CNAME 规则作为确认依据，避免关键词误判后跳过扫描。
+        cdn_name = utils.get_cdn_name_by_cname(cname, include_heuristic=False)
         if cdn_name:
+            self.confirmed_cdn_ip_set.add(ip)
             return cdn_name
+
+        dns_vendor, confidence, evidence = WAFSmartSkipGuard.identify_vendor_from_dns(cname=cname)
+        edge_kind = WAFSmartSkipGuard._dns_edge_kind_from_evidence(evidence)
+        if confidence == "high" and edge_kind in {"cdn", "mixed"}:
+            self.confirmed_cdn_ip_set.add(ip)
+            return dns_vendor
 
         return ""
 
@@ -175,15 +177,14 @@ class ScanPort(object):
                 if ip not in self.ip_cdn_map:
                     cdn_name = self.get_cdn_name(ip, info)
                     self.ip_cdn_map[ip] = cdn_name
-                    if cdn_name:
-                        self.have_cdn_ip_list.append(ip)
 
         all_ipv4_list = list(self.ipv4_map.keys())
         skipped_cdn_ip_count = 0
         if self.skip_scan_cdn_ip:
-            cdn_ip_set = set(self.have_cdn_ip_list)
-            skipped_cdn_ip_count = len(cdn_ip_set)
-            all_ipv4_list = [ip for ip in all_ipv4_list if ip not in cdn_ip_set]
+            skipped_cdn_ip_count = len(self.confirmed_cdn_ip_set)
+            all_ipv4_list = [
+                ip for ip in all_ipv4_list if ip not in self.confirmed_cdn_ip_set
+            ]
 
         logger.info(
             "port_scan target_summary total:{} selected:{} skipped_cdn:{} skip_cdn_enabled:{}".format(
@@ -235,7 +236,7 @@ class ScanPort(object):
         scan_metrics = dict(getattr(ip_port_result, "metrics", {}) or {})
         scan_metrics.update({
             "cdn_skip_enabled": bool(self.skip_scan_cdn_ip),
-            "cdn_target_count": len(self.have_cdn_ip_list),
+            "cdn_target_count": len(self.confirmed_cdn_ip_set),
             "cdn_skipped_target_count": skipped_cdn_ip_count,
         })
         if not all_ipv4_list and skipped_cdn_ip_count:
@@ -256,11 +257,8 @@ class ScanPort(object):
         """保留 CDN IP 资产记录，但不伪造未经探测的开放端口。"""
         ret = []
 
-        for ip in self.ip_cdn_map:
+        for ip in sorted(self.confirmed_cdn_ip_set):
             cdn_name = self.ip_cdn_map[ip]
-            if not cdn_name:
-                continue
-
             item = {
                 "ip": ip,
                 "domain": list(self.ipv4_map[ip]),

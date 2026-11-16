@@ -151,13 +151,13 @@ def _get_cdn_name_by_cname(cname):
         return ""
 
 
-def get_cdn_name_by_cname(cname):
+def get_cdn_name_by_cname(cname, include_heuristic=True):
     cname = _normalize_cname(cname)
     cdn_name = _get_cdn_name_by_cname(cname)
 
     check_list = ["gslb", "dns", "cache"]
 
-    if not cdn_name:
+    if include_heuristic and not cdn_name:
         for check in check_list:
             if check in cname:
                 return "CDN"

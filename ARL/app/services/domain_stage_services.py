@@ -1231,22 +1231,107 @@ class DomainNetworkStageService(object):
 
     def run_ssl_cert(self):
         task = self.task
-        if task.options.get("port_scan"):
-            task.cert_map = ssl_cert(task.ip_info_list, task.base_domain)
+        port_scan_enabled = bool(task.options.get("port_scan"))
+        ip_info_by_ip = {}
+        if port_scan_enabled:
+            for info in task.ip_info_list:
+                if isinstance(info, dict):
+                    ip = str(info.get("ip", "") or "").strip()
+                else:
+                    ip = str(getattr(info, "ip", "") or "").strip()
+                if ip:
+                    ip_info_by_ip[ip] = info
+
+        ssl_targets = []
+        if port_scan_enabled:
+            target_ips = set(ip_info_by_ip)
         else:
-            fake_targets = []
-            for ip in sorted(task.ip_set):
-                domains = list(task.ipv4_map.get(ip, set()))
-                fake_targets.append(
-                    modules.IPInfo(
-                        ip=ip,
-                        domain=domains,
-                        port_info=[modules.PortInfo(port_id=443, service_name="https")],
-                        os_info={},
-                        cdn_name="",
-                    )
-                )
-            task.cert_map = ssl_cert(fake_targets, task.base_domain)
+            target_ips = set()
+        target_ips.update(
+            str(ip).strip()
+            for ip in task.ip_set
+            if str(ip).strip()
+        )
+        target_ips.update(
+            str(ip).strip()
+            for ip in task.ipv4_map
+            if str(ip).strip()
+        )
+        if port_scan_enabled:
+            # 证书探测覆盖无端口记录和跳过端口扫描的 CDN，但沿用端口阶段的目标过滤。
+            target_ips = {
+                ip for ip in target_ips
+                if utils.is_vaild_ip_target(ip) and utils.not_in_black_ips(ip)
+            }
+        for ip in sorted(target_ips):
+            info = ip_info_by_ip.get(ip)
+            if isinstance(info, dict):
+                info_domains = info.get("domain", [])
+                raw_port_info = info.get("port_info", [])
+                os_info = info.get("os_info", {})
+                cdn_name = info.get("cdn_name", "")
+                suspected_all_open = bool(info.get("_suspected_all_open"))
+            else:
+                info_domains = getattr(info, "domain", []) if info else []
+                raw_port_info = getattr(info, "port_info_list", []) if info else []
+                os_info = getattr(info, "os_info", {}) if info else {}
+                cdn_name = getattr(info, "cdn_name", "") if info else ""
+                suspected_all_open = bool(
+                    getattr(info, "_suspected_all_open", False)
+                ) if info else False
+
+            if isinstance(info_domains, str):
+                info_domains = [info_domains]
+            mapped_domains = task.ipv4_map.get(ip, set()) or set()
+            if isinstance(mapped_domains, str):
+                mapped_domains = [mapped_domains]
+            domains = {
+                str(domain).strip()
+                for domain in info_domains or []
+                if str(domain).strip()
+            }
+            domains.update(
+                str(domain).strip()
+                for domain in mapped_domains
+                if str(domain).strip()
+            )
+            if isinstance(raw_port_info, dict):
+                raw_port_info = [raw_port_info]
+            port_info = list(raw_port_info or [])
+
+            has_tcp_443 = False
+            if port_scan_enabled:
+                for item in port_info:
+                    if isinstance(item, dict):
+                        port_id = item.get("port_id")
+                        protocol = item.get("protocol", "tcp")
+                    else:
+                        port_id = getattr(item, "port_id", None)
+                        protocol = getattr(item, "protocol", "tcp")
+                    try:
+                        is_https_port = int(port_id) == 443
+                    except (TypeError, ValueError):
+                        is_https_port = False
+                    if is_https_port and str(protocol or "tcp").strip().lower() == "tcp":
+                        has_tcp_443 = True
+                        break
+
+            if not has_tcp_443:
+                port_info.append(modules.PortInfo(port_id=443, service_name="https"))
+
+            ssl_target = modules.IPInfo(
+                ip=ip,
+                domain=sorted(str(domain).strip() for domain in domains if str(domain).strip()),
+                port_info=port_info,
+                os_info=os_info or {},
+                cdn_name=str(cdn_name or ""),
+            )
+            if suspected_all_open:
+                setattr(ssl_target, "_suspected_all_open", True)
+            ssl_targets.append(ssl_target)
+
+        # 443 候选仅用于证书阶段，不回写为 IP 资产里的开放端口。
+        task.cert_map = ssl_cert(ssl_targets, task.base_domain)
 
         sni_success_endpoints = set()
         for target in task.cert_map:
@@ -1425,6 +1510,28 @@ class DomainNetworkStageService(object):
         nmap_merged = 0
         npoc_merged = 0
 
+        tls_443_ips = set()
+        try:
+            for cert_item in utils.conn_db("cert").find(
+                {"task_id": task.task_id, "port": 443},
+                {"ip": 1, "port": 1},
+            ):
+                if not isinstance(cert_item, dict):
+                    continue
+                ip = str(cert_item.get("ip") or "").strip()
+                try:
+                    port = int(cert_item.get("port"))
+                except (TypeError, ValueError):
+                    continue
+                if ip and port == 443:
+                    tls_443_ips.add(ip)
+        except Exception as exc:
+            logger.warning(
+                "load TLS endpoints for service summary failed task_id:{} error_type:{}".format(
+                    task.task_id, type(exc).__name__
+                )
+            )
+
         def _append_item(service_name, ip, port_id, product="", version="", source="",
                          npoc_scheme="", proto="tcp", nmap_service_method=""):
             nonlocal merged_total, nmap_merged, npoc_merged
@@ -1453,6 +1560,30 @@ class DomainNetworkStageService(object):
             except Exception:
                 return
 
+            service_sources = list(service_result.get("sources") or [])
+            service_conflict = service_result.get("conflict")
+            if (
+                source == "nmap"
+                and str(proto or "tcp").strip().lower() == "tcp"
+                and port_id == 443
+                and ip in tls_443_ips
+                and service == "http"
+            ):
+                service = "https"
+                service_conflict = {
+                    "chosen": "nmap_plus_tls_certificate",
+                    "rejected": [
+                        {
+                            "source": item_source,
+                            "value": str(service_name or "").strip(),
+                            "service": "http",
+                        }
+                        for item_source in service_sources
+                    ],
+                }
+                if "tls_certificate" not in service_sources:
+                    service_sources.append("tls_certificate")
+
             uniq_key = (service, ip, port_id)
             if uniq_key in service_seen:
                 return
@@ -1468,10 +1599,10 @@ class DomainNetworkStageService(object):
                 "product": normalized_product,
                 "version": str(version or "").strip(),
                 "service_confidence": service_result.get("confidence", 0),
-                "service_sources": list(service_result.get("sources") or []),
+                "service_sources": service_sources,
             }
-            if service_result.get("conflict"):
-                service_info["service_conflict"] = service_result["conflict"]
+            if service_conflict:
+                service_info["service_conflict"] = service_conflict
             service_map[service].append(service_info)
             merged_total += 1
             if source == "nmap":
