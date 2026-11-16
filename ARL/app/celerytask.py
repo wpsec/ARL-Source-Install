@@ -46,6 +46,10 @@ if _task_soft_time_limit <= 0:
 if _task_time_limit and _task_soft_time_limit and _task_soft_time_limit >= _task_time_limit:
     _task_soft_time_limit = max(_task_time_limit - 1, 1)
 
+# Keep heavy-task execution below the broker's delivery-acknowledgement window.
+_ARL_HEAVY_TASK_SOFT_TIME_LIMIT_SEC = 10_200
+_ARL_HEAVY_TASK_TIME_LIMIT_SEC = 10_800
+
 
 def _resolve_worker_prefetch_multiplier(raw_value):
     try:
@@ -1533,7 +1537,11 @@ def arl_task(options):
     run_task(options)
 
 
-@celery.task(queue='arlheavy')
+@celery.task(
+    queue='arlheavy',
+    soft_time_limit=_ARL_HEAVY_TASK_SOFT_TIME_LIMIT_SEC,
+    time_limit=_ARL_HEAVY_TASK_TIME_LIMIT_SEC,
+)
 def arl_task_heavy(options):
     """
     重任务队列入口
